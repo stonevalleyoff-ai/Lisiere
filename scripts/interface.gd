@@ -20,6 +20,7 @@ const Bouton := preload("res://scripts/interface_bouton.gd")
 const Carte := preload("res://scripts/interface_carte.gd")
 const Vol := preload("res://scripts/interface_vol.gd")
 const Carnet := preload("res://scripts/interface_carnet.gd")
+const Porte := preload("res://scripts/interface_porte.gd")
 const BRAISE := preload("res://shaders/interface_braise.gdshader")
 # sur un écran tactile, les messages nomment les boutons (scripts/tactile.gd) plutôt que les touches
 const TOUCHES_TACTILES := {"(Espace)": "(Agir)", "un feu (1)": "un feu (bouton Feu)", "touche 1": "bouton Feu", "(F)": "(Nourrir)", "(E)": "(Manger)", "(C)": "(Cuire)"}
@@ -28,6 +29,9 @@ const DUREE_NOTE := 5.5
 var tactile := false
 # l'écran-titre
 var _titre: Control
+var _compte: Bouton          # « Se connecter », ou le compte ouvert (scripts/session.gd)
+var _porte: Porte            # la page du compte, sur l'écran-titre (scripts/interface_porte.gd)
+var _session
 var _scene
 var _colonne: VBoxContainer
 var _nom_du_jeu: Label
@@ -84,6 +88,10 @@ func _ready() -> void:
 	_pause.visible = false
 	_pause.reprendre.connect(_reprendre)
 	_pause.quitter.connect(func(): vers_titre.emit())
+	_pause.compteur.connect(func():
+		var jeu = get_parent()
+		if jeu != null and jeu.has_method("basculer_ips"):
+			_pause.dire_compteur(jeu.basculer_ips()))
 	add_child(_pause)
 	_construire_chargement()
 	_montrer(null)
@@ -121,6 +129,7 @@ func _construire_titre() -> void:
 	_nom_du_jeu.add_theme_color_override("font_shadow_color", Color(P.ENCRE, 0.9))
 	_nom_du_jeu.add_theme_constant_override("shadow_offset_y", -3)
 	_nom_du_jeu.add_theme_constant_override("shadow_outline_size", 8)
+	_nom_du_jeu.add_theme_constant_override("outline_size", 0)
 	var m := ShaderMaterial.new()
 	m.shader = BRAISE
 	_nom_du_jeu.material = m
@@ -139,6 +148,11 @@ func _construire_titre() -> void:
 	_entrer.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_entrer.pressed.connect(_lancer)
 	_colonne.add_child(_entrer)
+	# (le compte, le même que celui de Stone Valley)
+	_compte = Bouton.new("Se connecter", 19)
+	_compte.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_compte.pressed.connect(func(): ouvrir_porte())
+	_colonne.add_child(_compte)
 	_etat_titre = _centre(T.libelle("", T.texte_moyen(), 15, P.BRAISE))
 	_colonne.add_child(_etat_titre)
 	_record = _centre(T.libelle("", T.titre_italique(), 17, Color(P.IVOIRE, 0.72)))
@@ -157,6 +171,34 @@ func _construire_titre() -> void:
 	_bas_titre.add_child(_pied)
 	_fondu = _plein(P.NUIT) as ColorRect
 	_titre.add_child(_fondu)
+	_porte = Porte.new()
+	_porte.fermee.connect(func(): _entrer.grab_focus())
+	_titre.add_child(_porte)
+
+
+# le compte : la porte le connaît, le bouton du titre le dit ; revenu d'un lien « mot de passe oublié », la porte s'ouvre
+func relier_session(s) -> void:
+	_session = s
+	_porte.session = s
+	s.change.connect(_dire_compte)
+	_dire_compte()
+
+
+func _dire_compte() -> void:
+	if _session == null:
+		return
+	var e: String = _session.email
+	if e.length() > 26:
+		e = e.left(24) + "…"
+	_compte.libelle = ("Ton compte · " + e) if _session.connecte() else "Se connecter"
+	_compte._mesurer()
+	_compte.queue_redraw()
+	if _session.nouveau_mdp and _titre.visible and not (_porte.visible and _porte.mode == "nouveau"):
+		ouvrir_porte("nouveau")
+
+
+func ouvrir_porte(mode: String = "") -> void:
+	_porte.ouvrir(mode)
 
 
 func _construire_chargement() -> void:
@@ -200,6 +242,7 @@ func montrer_titre(lieux: Array, infos: String, record: int) -> void:
 	if lieux.is_empty():
 		_etat_titre.text = "Aucun lieu ne se lit pour l'instant."
 	_apparaitre()
+	_dire_compte()
 
 
 func message_titre(t: String) -> void:
@@ -217,13 +260,13 @@ func _apparaitre() -> void:
 	if _apparition != null and _apparition.is_valid():
 		_apparition.kill()
 	_fondu.color.a = 1.0
-	for c in [_nom_du_jeu, _devise, _infos, _choix, _entrer, _bas_titre]:
+	for c in [_nom_du_jeu, _devise, _infos, _choix, _entrer, _compte, _bas_titre]:
 		c.modulate.a = 0.0
 	_apparition = create_tween().set_parallel()
 	_apparition.tween_property(_fondu, "color:a", 0.0, 1.6).set_trans(Tween.TRANS_SINE)
 	_apparition.tween_property(_nom_du_jeu, "modulate:a", 1.0, 1.4).set_delay(0.5)
 	_apparition.tween_property(_devise, "modulate:a", 1.0, 1.0).set_delay(1.2)
-	for c in [_infos, _choix, _entrer]:
+	for c in [_infos, _choix, _entrer, _compte]:
 		_apparition.tween_property(c, "modulate:a", 1.0, 0.8).set_delay(1.6)
 	_apparition.tween_property(_bas_titre, "modulate:a", 1.0, 1.0).set_delay(2.0)
 
@@ -354,8 +397,8 @@ func message(t: String, c: Color = Color(0.9, 0.86, 0.78)) -> void:
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.add_theme_stylebox_override("normal", _fond_de_note())
-	l.add_theme_color_override("font_shadow_color", Color(P.ENCRE, 0.5))
-	l.add_theme_constant_override("shadow_outline_size", 2)
+	l.add_theme_color_override("font_outline_color", Color(P.ENCRE, 0.5))
+	l.add_theme_constant_override("outline_size", 2)
 	var s := _hud.size
 	var maxw := minf(520.0, s.x - 430.0) if tactile else minf(720.0, s.x - 120.0)
 	var lw := T.texte_moyen().get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15 if tactile else 17).x + 48.0
@@ -441,6 +484,9 @@ func passer_au_tactile() -> void:
 	_infos.add_theme_font_size_override("font_size", 13)
 	_choix.mettre_compact(true)
 	_entrer.mettre_taille(25)
+	_compte.mettre_taille(16)
+	_porte.tactile = true
+	_porte._disposer()
 	_etat_titre.add_theme_font_size_override("font_size", 13)
 	_record.add_theme_font_size_override("font_size", 14)
 	_aide_titre.add_theme_font_size_override("font_size", 13)
@@ -463,6 +509,7 @@ func passer_au_tactile() -> void:
 
 func montrer_pause(oui: bool) -> void:
 	if oui:
+		_pause.dire_compteur(get_parent() != null and get_parent().get("ips") == true)
 		_pause.ouvrir()
 	else:
 		_pause.visible = false
@@ -534,6 +581,8 @@ func montrer_fin(titre: String, resume: String, lot: String) -> void:
 
 func _unhandled_input(e: InputEvent) -> void:
 	if _titre.visible:
+		if _porte.visible:
+			return
 		if e.is_action_pressed("valider"):
 			_lancer()
 		elif e.is_action_pressed("ui_left"):

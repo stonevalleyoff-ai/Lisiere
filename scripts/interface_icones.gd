@@ -4,8 +4,12 @@ extends RefCounted
 # baies, un œil, une bûche, une pierre, des fibres, de la viande crue ou cuite, la torche, la lance, le feu… Chacune est dessinée
 # dans une boîte de 100 unités, centrée, puis mise à la taille voulue : des aplats de la palette cernés d'encre, une touche de lumière.
 # Et les gestes de l'encre : un arc au pinceau (épais au milieu, effilé aux bouts), un trait, un disque net.
+# Chaque icône, chaque geste, est tracé une fois dans un maillage gardé (scripts/interface_trace.gd), puis dessiné d'un seul appel,
+# teinté de la couleur voulue : des dizaines de traits par icône, image après image, faisaient ramer un téléphone. Ce qui dessine
+# ici peut dessiner sur un CanvasItem (gardé, un appel) ou dans une trace (pour composer un maillage plus grand).
 
 const P := preload("res://scripts/palette.gd")
+const Trace := preload("res://scripts/interface_trace.gd")
 const NOMS := ["coeur", "baies", "oeil", "bois", "pierre", "fibre", "viande", "viande_cuite", "torche", "lance", "feu",
 	"soleil", "lune", "patte", "croix", "manger", "nourrir", "cuire", "pause"]
 
@@ -18,12 +22,24 @@ const CUIT := Color("8a5530")
 
 # une icône : son nom, son centre, sa taille (le côté de sa boîte), sa couleur multipliée (l'alpha, une ombre), un réglage (k :
 # l'ouverture de l'œil, de 0 à 1), et la transformation de celui qui dessine (s'il en a une)
-static func icone(ci: CanvasItem, nom: String, c: Vector2, s: float, m: Color = Color.WHITE, k: float = 1.0, base: Transform2D = Transform2D.IDENTITY) -> void:
-	if s < 1.0:
+static func icone(ci, nom: String, c: Vector2, s: float, m: Color = Color.WHITE, k: float = 1.0, base: Transform2D = Transform2D.IDENTITY) -> void:
+	if s < 1.0 or m.a <= 0.0:
+		return
+	# (l'encre ne descend pas sous un pixel et demi : les petites icônes restent nettes)
+	var w := snappedf(maxf(5.0, 150.0 / s), 0.5)
+	var kk := snappedf(clampf(k, 0.0, 1.0), 0.05) if nom == "oeil" else 1.0
+	if ci is CanvasItem:
+		var mesh := Trace.maillage("icone|%s|%.1f|%.2f" % [nom, w, kk], func(t): _icone(t, nom, w, Color.WHITE, kk))
+		ci.draw_set_transform_matrix(base * Transform2D(0.0, Vector2(s, s) / 100.0, 0.0, c))
+		ci.draw_mesh(mesh, null, Transform2D.IDENTITY, m)
+		ci.draw_set_transform_matrix(base)
 		return
 	ci.draw_set_transform_matrix(base * Transform2D(0.0, Vector2(s, s) / 100.0, 0.0, c))
-	# (l'encre ne descend pas sous un pixel et demi : les petites icônes restent nettes)
-	var w := maxf(5.0, 150.0 / s)
+	_icone(ci, nom, w, m, kk)
+	ci.draw_set_transform_matrix(base)
+
+
+static func _icone(ci, nom: String, w: float, m: Color, k: float) -> void:
 	match nom:
 		"coeur":
 			_coeur(ci, w, m)
@@ -65,15 +81,30 @@ static func icone(ci: CanvasItem, nom: String, c: Vector2, s: float, m: Color = 
 		"pause":
 			for x in [-13.0, 13.0]:
 				_forme(ci, _capsule(Vector2(x, -26), Vector2(x, 26), 8.0), P.IVOIRE * m, w, m)
-	ci.draw_set_transform_matrix(base)
 
 
 # --- les gestes de l'encre ---
 
 # un arc au pinceau, de l'angle a0 à a1 : plus épais au milieu, effilé aux bouts, un peu irrégulier (le grain du pinceau)
-static func arc_encre(ci: CanvasItem, c: Vector2, r: float, a0: float, a1: float, largeur: float, couleur: Color, effile: bool = true) -> void:
+static func arc_encre(ci, c: Vector2, r: float, a0: float, a1: float, largeur: float, couleur: Color, effile: bool = true) -> void:
+	if absf(a1 - a0) < 0.01 or couleur.a <= 0.0:
+		return
+	if ci is CanvasItem:
+		# (gardé à un demi-degré près : à l'œil, rien ne bouge ; une jauge qui baisse fait un maillage neuf de temps en temps)
+		var q := TAU / 720.0
+		var b0 := snappedf(a0, q)
+		var b1 := snappedf(a1, q)
+		var rq := snappedf(r, 0.25)
+		var lq := snappedf(largeur, 0.1)
+		var mesh := Trace.maillage("arc|%.2f|%.4f|%.4f|%.1f|%d" % [rq, b0, b1, lq, int(effile)], func(t): _arc_encre(t, Vector2.ZERO, rq, b0, b1, lq, Color.WHITE, effile))
+		ci.draw_mesh(mesh, null, Transform2D(0.0, c), couleur)
+		return
+	_arc_encre(ci, c, r, a0, a1, largeur, couleur, effile)
+
+
+static func _arc_encre(ci, c: Vector2, r: float, a0: float, a1: float, largeur: float, couleur: Color, effile: bool) -> void:
 	var etendue := absf(a1 - a0)
-	if etendue < 0.01 or couleur.a <= 0.0:
+	if etendue < 0.01:
 		return
 	# (en morceaux d'un quart de tour au plus : chaque morceau reste un polygone simple)
 	var morceaux := int(ceil(etendue / (PI * 0.5)))
@@ -103,9 +134,15 @@ static func arc_encre(ci: CanvasItem, c: Vector2, r: float, a0: float, a1: float
 
 
 # un trait au pinceau, effilé aux deux bouts
-static func trait_encre(ci: CanvasItem, a: Vector2, b: Vector2, largeur: float, couleur: Color) -> void:
+static func trait_encre(ci, a: Vector2, b: Vector2, largeur: float, couleur: Color) -> void:
 	var d := b - a
-	if d.length() < 0.5:
+	if d.length() < 0.5 or couleur.a <= 0.0:
+		return
+	if ci is CanvasItem:
+		var dq := d.snapped(Vector2(0.25, 0.25))
+		var lq := snappedf(largeur, 0.1)
+		var mesh := Trace.maillage("trait|%.2f|%.2f|%.1f" % [dq.x, dq.y, lq], func(t): trait_encre(t, Vector2.ZERO, dq, lq, Color.WHITE))
+		ci.draw_mesh(mesh, null, Transform2D(0.0, a), couleur)
 		return
 	var n := d.orthogonal().normalized()
 	var pts := PackedVector2Array()
@@ -121,25 +158,48 @@ static func trait_encre(ci: CanvasItem, a: Vector2, b: Vector2, largeur: float, 
 
 
 # un disque net (draw_circle n'est pas lissé : on le borde d'un trait qui l'est)
-static func disque(ci: CanvasItem, c: Vector2, r: float, couleur: Color) -> void:
+static func disque(ci, c: Vector2, r: float, couleur: Color) -> void:
 	if couleur.a <= 0.0 or r <= 0.0:
+		return
+	if ci is CanvasItem:
+		var rq := snappedf(r, 0.25)
+		var mesh := Trace.maillage("disque|%.2f" % rq, func(t): disque(t, Vector2.ZERO, rq, Color.WHITE))
+		ci.draw_mesh(mesh, null, Transform2D(0.0, c), couleur)
 		return
 	ci.draw_circle(c, r, couleur)
 	ci.draw_arc(c, r, 0.0, TAU, maxi(16, int(r * 1.5)), couleur, 1.0, true)
 
 
+# un anneau lissé (un draw_arc qui fait le tour), gardé : un appel au lieu de trois
+static func anneau(ci, c: Vector2, r: float, largeur: float, couleur: Color, n: int = 48) -> void:
+	if couleur.a <= 0.0 or r <= 0.0:
+		return
+	if ci is CanvasItem:
+		var rq := snappedf(r, 0.25)
+		var lq := snappedf(largeur, 0.1)
+		var mesh := Trace.maillage("anneau|%.2f|%.1f|%d" % [rq, lq, n], func(t): t.draw_arc(Vector2.ZERO, rq, 0.0, TAU, n, Color.WHITE, lq, true))
+		ci.draw_mesh(mesh, null, Transform2D(0.0, c), couleur)
+		return
+	ci.draw_arc(c, r, 0.0, TAU, n, couleur, largeur, true)
+
+
 # un jeton : le disque d'encre où se pose une icône (une ombre portée, un liseré pâle)
-static func jeton(ci: CanvasItem, c: Vector2, r: float, a: float = 1.0, lisere: Color = Color(1, 1, 1, 0)) -> void:
-	disque(ci, c + Vector2(0, 2), r + 2.0, Color(0, 0, 0, 0.28 * a))
-	disque(ci, c, r, Color(P.ENCRE, 0.7 * a))
-	ci.draw_arc(c, r - 1.0, 0.0, TAU, maxi(24, int(r * 2.0)), Color(P.IVOIRE, 0.16 * a), 1.2, true)
+static func jeton(ci, c: Vector2, r: float, a: float = 1.0, lisere: Color = Color(1, 1, 1, 0)) -> void:
+	if ci is CanvasItem:
+		var rq := snappedf(r, 0.25)
+		var mesh := Trace.maillage("jeton|%.2f" % rq, func(t): jeton(t, Vector2.ZERO, rq))
+		ci.draw_mesh(mesh, null, Transform2D(0.0, c), Color(1, 1, 1, a))
+	else:
+		disque(ci, c + Vector2(0, 2), r + 2.0, Color(0, 0, 0, 0.28 * a))
+		disque(ci, c, r, Color(P.ENCRE, 0.7 * a))
+		ci.draw_arc(c, r - 1.0, 0.0, TAU, maxi(24, int(r * 2.0)), Color(P.IVOIRE, 0.16 * a), 1.2, true)
 	if lisere.a > 0.0:
-		ci.draw_arc(c, r - 1.0, 0.0, TAU, maxi(24, int(r * 2.0)), lisere, 1.6, true)
+		anneau(ci, c, r - 1.0, 1.6, lisere, maxi(24, int(r * 2.0)))
 
 
 # --- les briques des icônes ---
 
-static func _forme(ci: CanvasItem, pts: PackedVector2Array, fond: Color, w: float, m: Color) -> void:
+static func _forme(ci, pts: PackedVector2Array, fond: Color, w: float, m: Color) -> void:
 	if pts.size() < 3:
 		return
 	ci.draw_colored_polygon(pts, fond)
@@ -175,13 +235,13 @@ static func _capsule(a: Vector2, b: Vector2, r: float) -> PackedVector2Array:
 	return pts
 
 
-static func _reflet(ci: CanvasItem, c: Vector2, r: float, a0: float, a1: float, w: float, m: Color, alpha: float = 0.6) -> void:
+static func _reflet(ci, c: Vector2, r: float, a0: float, a1: float, w: float, m: Color, alpha: float = 0.6) -> void:
 	ci.draw_arc(c, r, a0, a1, 10, Color(P.PAPIER, alpha) * m, w, true)
 
 
 # --- les icônes ---
 
-static func _coeur(ci: CanvasItem, w: float, m: Color) -> void:
+static func _coeur(ci, w: float, m: Color) -> void:
 	var pts := PackedVector2Array()
 	for i in 56:
 		var t := TAU * i / 56.0
@@ -197,7 +257,7 @@ static func _coeur(ci: CanvasItem, w: float, m: Color) -> void:
 	_reflet(ci, Vector2(-17, -13), 9.0, PI * 1.05, PI * 1.6, w * 0.9, m, 0.75)
 
 
-static func _baies(ci: CanvasItem, w: float, m: Color) -> void:
+static func _baies(ci, w: float, m: Color) -> void:
 	ci.draw_polyline(_bezier(Vector2(0, -16), Vector2(-2, -34), Vector2(8, -44)), P.ENCRE * m, w * 1.9, true)
 	ci.draw_polyline(_bezier(Vector2(0, -16), Vector2(-2, -34), Vector2(8, -44)), P.MOUSSE * m, w * 0.8, true)
 	var feuille := _bezier(Vector2(6, -40), Vector2(22, -56), Vector2(40, -40)) + _bezier(Vector2(40, -40), Vector2(22, -30), Vector2(6, -40))
@@ -209,7 +269,7 @@ static func _baies(ci: CanvasItem, w: float, m: Color) -> void:
 
 
 # l'œil : k, son ouverture (la peur l'ouvre, et la pupille se resserre)
-static func _oeil(ci: CanvasItem, w: float, m: Color, k: float) -> void:
+static func _oeil(ci, w: float, m: Color, k: float) -> void:
 	var o := lerpf(0.32, 1.0, clampf(k, 0.0, 1.0))
 	var haut := _bezier(Vector2(-46, 2), Vector2(0, -40.0 * o), Vector2(46, 2), 16)
 	var bas := _bezier(Vector2(46, 2), Vector2(0, 32.0 * o), Vector2(-46, 2), 16)
@@ -232,7 +292,7 @@ static func _oeil(ci: CanvasItem, w: float, m: Color, k: float) -> void:
 		ci.draw_line(p0, p0 + dir * (7.0 + 7.0 * o), P.ENCRE * m, w * 0.8, true)
 
 
-static func _buche(ci: CanvasItem, w: float, m: Color, c: Vector2, rot: float, e: float) -> void:
+static func _buche(ci, w: float, m: Color, c: Vector2, rot: float, e: float) -> void:
 	var tr := Transform2D(rot, c)
 	var corps := PackedVector2Array([Vector2(-36, -15), Vector2(30, -15), Vector2(30, 15), Vector2(-36, 15)])
 	var gauche := _ellipse(Vector2(-36, 0), 7, 15)
@@ -259,7 +319,7 @@ static func _buche(ci: CanvasItem, w: float, m: Color, c: Vector2, rot: float, e
 	ci.draw_line(tr * (Vector2(-10, -15) * e), tr * (Vector2(-4, -27) * e), ECORCE * m, w * 0.9, true)
 
 
-static func _pierre(ci: CanvasItem, w: float, m: Color) -> void:
+static func _pierre(ci, w: float, m: Color) -> void:
 	var pts := PackedVector2Array([Vector2(-40, 20), Vector2(-34, -6), Vector2(-16, -26), Vector2(10, -30), Vector2(32, -15),
 		Vector2(40, 10), Vector2(27, 27), Vector2(-12, 31)])
 	ci.draw_colored_polygon(pts, PIERRE * m)
@@ -270,7 +330,7 @@ static func _pierre(ci: CanvasItem, w: float, m: Color) -> void:
 	ci.draw_polyline(pts + PackedVector2Array([pts[0]]), P.ENCRE * m, w, true)
 
 
-static func _fibre(ci: CanvasItem, w: float, m: Color) -> void:
+static func _fibre(ci, w: float, m: Color) -> void:
 	# (une gerbe d'herbes sèches, liée d'un brin rouille : les brins s'écartent et retombent un peu)
 	var bouts := [Vector2(-40, -26), Vector2(-24, -42), Vector2(-4, -48), Vector2(16, -45), Vector2(34, -34), Vector2(44, -18)]
 	var brins := []
@@ -286,7 +346,7 @@ static func _fibre(ci: CanvasItem, w: float, m: Color) -> void:
 	ci.draw_line(Vector2(-13, 16), Vector2(13, 17), Color(P.ENCRE, 0.5) * m, w * 0.5, true)
 
 
-static func _viande(ci: CanvasItem, w: float, m: Color, cuite: bool) -> void:
+static func _viande(ci, w: float, m: Color, cuite: bool) -> void:
 	# (l'os, d'un seul tenant : le fût et ses deux têtes, qui dépassent en haut à droite)
 	var os := _capsule(Vector2(4, -4), Vector2(30, -30), 8.5)
 	for d in [Vector2(-8, 5), Vector2(5, -8)]:
@@ -312,7 +372,7 @@ static func _viande(ci: CanvasItem, w: float, m: Color, cuite: bool) -> void:
 		_reflet(ci, Vector2(-8, 6), 20.0, PI * 1.05, PI * 1.35, w * 0.8, m, 0.5)
 
 
-static func _flamme(ci: CanvasItem, w: float, m: Color, base: Vector2, larg: float, haut: float, penche: float) -> void:
+static func _flamme(ci, w: float, m: Color, base: Vector2, larg: float, haut: float, penche: float) -> void:
 	var tip := base + Vector2(penche, -haut)
 	var g := _bezier(base + Vector2(0, 2), base + Vector2(-larg * 1.05, -haut * 0.25), tip, 14)
 	var d := _bezier(tip, base + Vector2(larg * 1.05, -haut * 0.3), base + Vector2(0, 2), 14)
@@ -326,7 +386,7 @@ static func _flamme(ci: CanvasItem, w: float, m: Color, base: Vector2, larg: flo
 	ci.draw_colored_polygon(g3 + d3.slice(1, d3.size() - 1), P.BRAISE_COEUR * m)
 
 
-static func _torche(ci: CanvasItem, w: float, m: Color) -> void:
+static func _torche(ci, w: float, m: Color) -> void:
 	_forme(ci, _capsule(Vector2(-30, 46), Vector2(-2, 2), 8.0), ECORCE * m, w, m)
 	ci.draw_line(Vector2(-24, 34), Vector2(-6, 6), Color(P.PAPIER, 0.35) * m, w * 0.7, true)
 	# (la tête, de chiffons serrés de fibres)
@@ -337,7 +397,7 @@ static func _torche(ci: CanvasItem, w: float, m: Color) -> void:
 	_flamme(ci, w, m, Vector2(6, -12), 22.0, 42.0, 7.0)
 
 
-static func _lance(ci: CanvasItem, w: float, m: Color) -> void:
+static func _lance(ci, w: float, m: Color) -> void:
 	_forme(ci, _capsule(Vector2(-42, 42), Vector2(10, -10), 6.5), Color("8a6a48") * m, w, m)
 	ci.draw_line(Vector2(-34, 30), Vector2(2, -6), Color(P.PAPIER, 0.3) * m, w * 0.6, true)
 	# (la pointe : un éclat de pierre en feuille de saule)
@@ -352,7 +412,7 @@ static func _lance(ci: CanvasItem, w: float, m: Color) -> void:
 		ci.draw_line(p + Vector2(-7, -7), p + Vector2(7, 7), Color("d9cfb4") * m, w * 0.9, true)
 
 
-static func _feu(ci: CanvasItem, w: float, m: Color) -> void:
+static func _feu(ci, w: float, m: Color) -> void:
 	for r in [0.42, -0.42]:
 		var tr := Transform2D(r, Vector2(0, 30))
 		var b := _capsule(Vector2(-34, 0), Vector2(34, 0), 8.0)
@@ -364,7 +424,7 @@ static func _feu(ci: CanvasItem, w: float, m: Color) -> void:
 		_forme(ci, _ellipse(p, 10, 7), PIERRE * m, w * 0.9, m)
 
 
-static func _soleil(ci: CanvasItem, w: float, m: Color) -> void:
+static func _soleil(ci, w: float, m: Color) -> void:
 	for i in 8:
 		var d := Vector2.from_angle(TAU * i / 8.0)
 		ci.draw_line(d * 28.0, d * 42.0, P.BRAISE_COEUR * m, w * 1.3, true)
@@ -372,25 +432,25 @@ static func _soleil(ci: CanvasItem, w: float, m: Color) -> void:
 	ci.draw_circle(Vector2(5, 5), 11.0, Color(P.BRAISE, 0.5) * m)
 
 
-static func _lune(ci: CanvasItem, w: float, m: Color) -> void:
+static func _lune(ci, w: float, m: Color) -> void:
 	var dehors := _ellipse(Vector2.ZERO, 34, 34, 0.0, 40)
 	var dedans := _ellipse(Vector2(15, -9), 29, 29, 0.0, 40)
 	for p in Geometry2D.clip_polygons(dehors, dedans):
 		_forme(ci, p, Color("d8dcd6").lerp(P.LUNE, 0.25) * m, w * 0.8, m)
 
 
-static func _patte(ci: CanvasItem, w: float, m: Color) -> void:
+static func _patte(ci, w: float, m: Color) -> void:
 	_forme(ci, _ellipse(Vector2(0, 16), 21, 17), P.IVOIRE * m, w * 0.8, m)
 	for d in [Vector2(-26, -8), Vector2(-10, -24), Vector2(10, -24), Vector2(26, -8)]:
 		_forme(ci, _ellipse(d, 9, 11, d.x * 0.012), P.IVOIRE * m, w * 0.8, m)
 
 
-static func _croix(ci: CanvasItem, w: float, m: Color) -> void:
+static func _croix(ci, w: float, m: Color) -> void:
 	trait_encre(ci, Vector2(-34, -30), Vector2(34, 32), 15.0, P.SANG * m)
 	trait_encre(ci, Vector2(32, -34), Vector2(-30, 30), 13.0, P.SANG * m)
 
 
-static func _manger(ci: CanvasItem, w: float, m: Color) -> void:
+static func _manger(ci, w: float, m: Color) -> void:
 	for b in [[Vector2(-14, -6), 12.0], [Vector2(12, -6), 12.0], [Vector2(-1, -20), 11.0]]:
 		_forme(ci, _ellipse(b[0], b[1], b[1]), ROUGE * m, w * 0.9, m)
 		ci.draw_circle(b[0] + Vector2(-b[1] * 0.35, -b[1] * 0.35), b[1] * 0.22, Color(P.PAPIER, 0.85) * m)
@@ -403,7 +463,7 @@ static func _manger(ci: CanvasItem, w: float, m: Color) -> void:
 	ci.draw_arc(Vector2(0, 2), 30.0, PI * 0.15, PI * 0.45, 8, Color(P.PAPIER, 0.4) * m, w * 0.8, true)
 
 
-static func _cuire(ci: CanvasItem, w: float, m: Color) -> void:
+static func _cuire(ci, w: float, m: Color) -> void:
 	_flamme(ci, w, m, Vector2(0, 46), 20.0, 40.0, 0.0)
 	_forme(ci, _capsule(Vector2(-46, -6), Vector2(46, -6), 3.5), Color("8a6a48") * m, w * 0.8, m)
 	var chair := _ellipse(Vector2(0, -8), 24, 17, 0.1)

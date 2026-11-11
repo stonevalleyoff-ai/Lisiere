@@ -16,6 +16,7 @@ const P := preload("res://scripts/palette.gd")
 const Corps := preload("res://scripts/veilleuse_corps.gd")
 const Echarpe := preload("res://scripts/veilleuse_echarpe.gd")
 const Flamme := preload("res://scripts/veilleuse_flamme.gd")
+const Trace := preload("res://scripts/interface_trace.gd")
 const CAPE := P.CAPE
 const ECHARPE := P.ECHARPE
 const VISAGE := P.VISAGE
@@ -86,6 +87,7 @@ var lumiere: PointLight2D
 var morte := false
 
 var _corps := Corps.new()
+var _trace := Trace.new()
 var _echarpe := Echarpe.new()
 var _flamme: Flamme
 var _lueur: Lueur
@@ -605,8 +607,12 @@ func _torche(dt: float, mobile: bool) -> void:
 
 
 func _draw() -> void:
-	_corps.ci = self
+	# (tout le corps d'un seul appel de dessin : la trace recueille ses traits, une centaine, puis les rend d'un coup)
+	_trace.commencer(self)
+	_corps.ci = _trace
 	_corps.dessiner()
+	_trace.vider()
+	_corps.ci = self
 	if not _torche_sol.is_empty():
 		var t := _torche_sol
 		var dir := Vector2(sin(t["a"]), -cos(t["a"]))

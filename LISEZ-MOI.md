@@ -33,6 +33,15 @@ Le jeu lit le monde en ligne, par morceaux (`Orvane.lire_lieux`, `Orvane.lire_si
 
 **Les lots vont dans le bac à sable** (`monde: "essai"`, `scripts/regles.gd`) : Orvane les garde quatorze jours et aucun monde ne les lit. Tant que le jeu n'a pas sa clé (`CLE_JEU`, vide), rien n'est envoyé : l'écran de fin montre seulement ce qui le serait. Pour qu'il envoie : inscrire Lisière sur la [page d'inscription](https://stonevalleyoff-ai.github.io/orvane/inscription/), mettre la **clé du jeu** (publique, `orv_…`) dans `CLE_JEU`. La clé d'administration ne va jamais dans le jeu.
 
+## Le compte
+
+Le même que pour Stone Valley : le bouton « Se connecter », sous « Entrer dans la nuit », ouvre une page du carnet (`scripts/interface_porte.gd`) pour se connecter, créer un compte ou demander un nouveau mot de passe. Un compte de Stone Valley y entre tel quel.
+
+- **Le même Supabase** que Stone Valley, le projet « Vallée de pierre » (`scripts/session.gd`), et sa clé publique (sans compte connecté, elle n'ouvre rien). Tout passe par Supabase Auth : le jeu n'envoie l'adresse et le mot de passe qu'à lui, et ne garde que la session (`user://session.json`). Le jeton se renouvelle seul.
+- **Une adresse confirmée** : un compte neuf reçoit un courriel de Supabase. Le lien ramène à la page du jeu, si Supabase la connaît (Authentication › URL Configuration › Redirect URLs : `https://stonevalleyoff-ai.github.io/Lisiere/`) ; sinon à celle de Stone Valley, et le compte vaut pareil. Revenu d'un lien « mot de passe oublié », la page s'ouvre pour en choisir un nouveau.
+- **Dans un navigateur**, l'adresse et le mot de passe sont de vrais champs de la page, posés sur la feuille : sur un téléphone, le bon clavier s'ouvre, et le gestionnaire de mots de passe peut les remplir. Au doigt, la feuille monte en haut de l'écran, au-dessus du clavier.
+- **Sans compte**, la partie se joue pareil. Pour l'instant, être connecté ne change rien au jeu.
+
 ## Les touches
 
 | | au clavier | au doigt (un téléphone tenu à l'horizontale, une tablette) |
@@ -88,7 +97,7 @@ Sans Godot, `node outils/banc.js` vérifie le projet : chaque fichier qu'il nomm
 
 ## Où en est le jeu
 
-- **Écrit** : le jeu entier (`scripts/`, 39 fichiers, et `shaders/`), ses sons (faits par le code), son essai sans écran, sa vitrine, sa configuration d'export web.
+- **Écrit** : le jeu entier (`scripts/`, 43 fichiers, et `shaders/`), ses sons (faits par le code), son essai sans écran, sa vitrine, sa configuration d'export web.
 - **Vérifié à chaque PR** (`.github/workflows/verifications.yml`) : la syntaxe de chaque script (GDScript 4 avec `gdtoolkit`, JavaScript) ; le banc (`outils/banc.js`) ; et l'essai, dans Godot 4.3, sans écran.
 - **Vérifié dans Godot 4.3** (le 7 novembre 2026, au cycle 46) :
   - l'essai sans écran passe, sur la copie gardée (5 lieux) comme sur le monde publié (32 lieux, chacun chargé) ;
@@ -112,7 +121,7 @@ Le jeu a été retravaillé comme par une petite équipe de studio, chacun à so
 - **L'interface** (`interface*.gd`, `tactile.gd`) : un écran-titre vivant (la lune, trois plans de forêt, la brume, des yeux, la veilleuse au feu) ; des jauges en cercles d'encre ; le sac en icônes, où vole ce qu'on ramasse ; des recettes en cartes ; un cadran soleil et lune ; des cartes « Nuit 2 » et « L'aube » ; la pause et la fin en pages de carnet, la fin avec les bêtes croisées dessinées.
 - **Le son** (`sons*.gd`) : un vent à rafales qui suit celui de l'herbe ; des oiseaux le jour ; des grillons, des grenouilles, des chouettes la nuit ; les chasseurs qui hurlent ou grondent de leur côté ; un feu qui crépite au hasard ; des pas selon le sol ; la peur qui monte en bourdon et fait battre le cœur ; une musique discrète, en majeur le jour et en mineur la nuit. Il se prépare en arrière-plan, pendant l'écran-titre.
 
-Un seul vent pour tout le lieu (`jeu.vent()`) : l'herbe, les feuillages, les flammes, la fumée, la brume, l'écharpe et le son du vent. En qualité « mobile » (un écran tactile, ou `--mobile`) : moins d'herbe et de particules, pas d'ombres portées, pas d'effet qui relit l'écran, des feuillages et des pierres peints sans leurs cellules, un HUD redessiné vingt fois par seconde au plus, et aucun son fabriqué pendant la partie (ils se font tous au chargement du lieu : « les sons s'accordent »). Dans un navigateur, sur un écran tactile, l'image est calculée à 1,5 fois la résolution CSS au plus, et non à celle de l'écran (2 à 3 fois) : `?dpr=2` (ou 1, ou 3) au bout de l'adresse choisit autrement. `?ips` affiche le nombre d'images par seconde (et `-- --ips` hors navigateur).
+Un seul vent pour tout le lieu (`jeu.vent()`) : l'herbe, les feuillages, les flammes, la fumée, la brume, l'écharpe et le son du vent. En qualité « mobile » (un écran tactile, ou `--mobile`) : moins d'herbe et de particules, pas d'ombres portées, pas d'effet qui relit l'écran, des feuillages et des pierres peints sans leurs cellules, un HUD redessiné vingt fois par seconde au plus, et aucun son fabriqué pendant la partie (ils se font tous au chargement du lieu : « les sons s'accordent »). Dans un navigateur, sur un écran tactile, l'image est calculée à 1,5 fois la résolution CSS au plus, et non à celle de l'écran (2 à 3 fois) ; si elle traîne au début de la première partie (moins de 24 images par seconde), elle passe à 1 : `?dpr=2` (ou 1, ou 3) au bout de l'adresse choisit à sa place. Les icônes, les jetons, les arcs d'encre se tracent une fois dans un maillage gardé, la veilleuse et le feu se rendent d'un seul appel (`scripts/interface_trace.gd`), et les libellés ont un contour, non une ombre (Godot dessine l'ombre lettre après lettre) : sur un téléphone, une image coûtait 1 600 appels de dessin, elle en coûte 250. Le nombre d'images par seconde (et le temps du jeu, les appels de dessin, la résolution) s'affiche par la pause (« Afficher les images par seconde », le choix est gardé), ou par `?ips` au bout de l'adresse (`?ips=0` l'éteint ; `-- --ips` hors navigateur).
 
 ## Les choix
 

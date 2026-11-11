@@ -22,6 +22,7 @@ const Tactile := preload("res://scripts/tactile.gd")
 const Effets := preload("res://scripts/effets.gd")
 const Vitrine := preload("res://scripts/vitrine.gd")
 const Ciel := preload("res://scripts/ciel.gd")
+const Session := preload("res://scripts/session.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -66,12 +67,20 @@ var prelevements: Dictionary = {}
 var compte := ""
 var record := 0
 var essai = null
+var session
 var _directeur := 0.0
 var _vague := 0.0
 var _agir := 0.0
 var _grogne := 0.0
 var _etait_nuit := false
 var _deja: Dictionary = {}
+# le compteur d'images par seconde : affiché ou non (gardé dans la sauvegarde), et son étiquette
+var ips := false
+var _ips_label: Label
+# l'image d'un téléphone qui traîne : mesurée une fois, au début de la première partie (_regler_image)
+var _image_t := 0.0
+var _image_n := 0
+var _image_fait := false
 var _mort := -1.0
 # ce que le dernier geste vise : son son, ses éclats et l'arrêt d'image viennent quand il touche, à l'image (joueur.impact)
 var _coup_vise := {}
@@ -90,8 +99,12 @@ func _ready() -> void:
 	sons = Sons.new()
 	sons.mobile = qualite == "mobile"
 	add_child(sons)
+	# le compte, le même que celui de Stone Valley (scripts/session.gd) : facultatif, la partie se joue pareil
+	session = Session.new()
+	add_child(session)
 	ui = Interface.new()
 	add_child(ui)
+	ui.relier_session(session)
 	ui.commencer.connect(_commencer)
 	ui.recommencer.connect(func(): _commencer(biome))
 	ui.vers_titre.connect(_titre)
@@ -119,33 +132,64 @@ func _ready() -> void:
 	_titre()
 
 
-# le compteur d'images par seconde, discret, en haut au milieu : avec -- --ips, ou ?ips au bout de l'adresse du jeu web
+# le compteur d'images par seconde, discret, en haut au milieu. Il s'allume et s'éteint à la pause (basculer_ips), et le choix
+# est gardé ; ?ips au bout de l'adresse du jeu web l'allume, ?ips=0 l'éteint ; -- --ips hors navigateur
 func _compteur_ips() -> void:
-	var voulu := "--ips" in OS.get_cmdline_user_args()
+	if "--ips" in OS.get_cmdline_user_args():
+		ips = true
 	if OS.has_feature("web"):
 		var q = JavaScriptBridge.eval("window.location.search", true)
-		voulu = voulu or (typeof(q) == TYPE_STRING and str(q).contains("ips"))
-	if not voulu:
-		return
+		if typeof(q) == TYPE_STRING and str(q).contains("ips"):
+			ips = not (str(q).contains("ips=0") or str(q).contains("ips=non"))
+			_sauver()
 	var couche := CanvasLayer.new()
 	couche.layer = 20
 	add_child(couche)
-	var l := Label.new()
-	l.add_theme_font_size_override("font_size", 13)
-	l.add_theme_color_override("font_color", Color(0.9, 0.95, 0.85))
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	l.add_theme_constant_override("outline_size", 4)
-	l.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	l.position.y = 64.0
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	couche.add_child(l)
+	_ips_label = Label.new()
+	_ips_label.add_theme_font_size_override("font_size", 13)
+	_ips_label.add_theme_color_override("font_color", Color(0.9, 0.95, 0.85))
+	_ips_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_ips_label.add_theme_constant_override("outline_size", 4)
+	_ips_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_ips_label.position.y = 64.0
+	_ips_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ips_label.visible = ips
+	couche.add_child(_ips_label)
 	var minuteur := Timer.new()
 	minuteur.wait_time = 0.5
 	minuteur.autostart = true
 	minuteur.timeout.connect(func():
-		var ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
-		l.text = "%d images/s · %.1f ms de jeu · %s" % [Engine.get_frames_per_second(), ms, qualite])
+		if _ips_label.visible:
+			var ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+			var appels := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+			_ips_label.text = "%d images/s · %.1f ms de jeu · %d appels · ×%.2f · %s" % [Engine.get_frames_per_second(), ms, appels,
+				DisplayServer.screen_get_scale(), qualite])
 	couche.add_child(minuteur)
+
+
+# sur un téléphone, dans un navigateur, l'image se calcule à 1,5 fois la résolution CSS (export_presets.cfg, head_include). Si
+# elle traîne (moins de 24 images par seconde, six secondes durant, une fois le lieu installé), elle passe à 1 : 2,25 fois moins
+# de pixels à peindre. Une fois, à la première partie ; ?dpr= au bout de l'adresse décide à sa place.
+func _regler_image(delta: float) -> void:
+	if _image_fait or qualite != "mobile" or not OS.has_feature("web"):
+		return
+	_image_t += delta
+	if _image_t < 5.0:
+		return
+	_image_n += 1
+	if _image_t < 11.0:
+		return
+	_image_fait = true
+	if _image_n / (_image_t - 5.0) < 24.0 and DisplayServer.screen_get_scale() > 1.05:
+		JavaScriptBridge.eval("window.lisiere_dpr && !window.lisiere_dpr.force && window.lisiere_dpr.set(1.0)", true)
+
+
+# la pause : afficher ou masquer le compteur ; il le reste d'une partie à l'autre
+func basculer_ips() -> bool:
+	ips = not ips
+	_ips_label.visible = ips
+	_sauver()
+	return ips
 
 
 # les touches, posées ici : par leur place sur le clavier (ZQSD sur un clavier français, WASD sur un anglais)
@@ -421,6 +465,7 @@ func _process(delta: float) -> void:
 		# (le clic qui ferme la pause n'est pas un coup)
 		_pause_vue = false
 		_agir = 0.35
+	_regler_image(delta)
 	if _mort >= 0.0:
 		# (elle est tombée : le monde continue un instant sans elle, puis l'écran de fin)
 		_mort += delta
@@ -922,6 +967,7 @@ func _charger() -> void:
 		if typeof(s) == TYPE_DICTIONARY:
 			record = int(s.get("record", 0))
 			compte = str(s.get("compte", ""))
+			ips = bool(s.get("ips", false))
 	if compte == "":
 		# un compte opaque : Orvane ne peut pas remonter au joueur
 		compte = "h:" + ("lisiere-%d-%d" % [randi(), Time.get_unix_time_from_system()]).sha256_text().substr(0, 24)
@@ -931,4 +977,4 @@ func _charger() -> void:
 func _sauver() -> void:
 	var f := FileAccess.open(SAUVEGARDE, FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({"record": record, "compte": compte}))
+		f.store_string(JSON.stringify({"record": record, "compte": compte, "ips": ips}))

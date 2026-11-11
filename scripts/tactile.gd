@@ -10,6 +10,7 @@ extends CanvasLayer
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/interface_theme.gd")
 const I := preload("res://scripts/interface_icones.gd")
+const Trace := preload("res://scripts/interface_trace.gd")
 const ENCRE := P.IVOIRE
 const BRAISE := P.BRAISE
 const RAYON_STICK := 62.0
@@ -221,17 +222,20 @@ func _dessiner() -> void:
 	var tenu := _doigt_stick >= 0
 	var c := _centre if tenu else Vector2(130, t.y - 140)
 	var a := 0.8 if tenu else 0.32
-	I.disque(_dessin, c, RAYON_STICK, Color(P.ENCRE, 0.42 * a))
-	_dessin.draw_arc(c, RAYON_STICK - 1.0, 0.0, TAU, 64, Color(ENCRE, 0.4 * a), 2.0, true)
-	for k in 4:
-		var d := Vector2.from_angle(k * PI * 0.5)
-		var q := c + d * (RAYON_STICK - 12.0)
-		var o := d.orthogonal() * 5.0
-		_dessin.draw_polyline(PackedVector2Array([q - d * 4.0 + o, q, q - d * 4.0 - o]), Color(ENCRE, 0.5 * a), 1.6, true)
+	# (le socle et ses quatre chevrons, d'un seul maillage gardé : scripts/interface_trace.gd)
+	_dessin.draw_mesh(Trace.maillage("tactile|socle", func(t):
+		I.disque(t, Vector2.ZERO, RAYON_STICK, Color(P.ENCRE, 0.42))
+		t.draw_arc(Vector2.ZERO, RAYON_STICK - 1.0, 0.0, TAU, 64, Color(ENCRE, 0.4), 2.0, true)
+		for k in 4:
+			var d := Vector2.from_angle(k * PI * 0.5)
+			var q := d * (RAYON_STICK - 12.0)
+			var o := d.orthogonal() * 5.0
+			t.draw_polyline(PackedVector2Array([q - d * 4.0 + o, q, q - d * 4.0 - o]), Color(ENCRE, 0.5), 1.6, true)), null, Transform2D(0.0, c), Color(1, 1, 1, a))
 	var bout := c + _vecteur * RAYON_STICK
-	I.disque(_dessin, bout + Vector2(0, 2), 27.0, Color(0, 0, 0, 0.3 * a))
-	I.disque(_dessin, bout, 26.0, Color(P.ENCRE.lerp(P.CAPE, 0.5), 0.9 * a))
-	_dessin.draw_arc(bout, 25.0, 0.0, TAU, 48, Color(BRAISE if tenu else ENCRE, 0.85 * a), 2.0, true)
+	_dessin.draw_mesh(Trace.maillage("tactile|bouton", func(t):
+		I.disque(t, Vector2(0, 2), 27.0, Color(0, 0, 0, 0.3))
+		I.disque(t, Vector2.ZERO, 26.0, Color(P.ENCRE.lerp(P.CAPE, 0.5), 0.9))), null, Transform2D(0.0, bout), Color(1, 1, 1, a))
+	I.anneau(_dessin, bout, 25.0, 2.0, Color(BRAISE if tenu else ENCRE, 0.85 * a), 48)
 	I.disque(_dessin, bout, 6.0, Color(ENCRE, 0.5 * a))
 	if not tenu:
 		var g := T.texte_gras()
@@ -267,9 +271,12 @@ func _jeton(p: Vector2, r: float, appui: float, dispo: bool) -> void:
 	if appui > 0.01:
 		var h := r * 2.2
 		_dessin.draw_texture_rect(T.halo(), Rect2(p - Vector2(h, h), Vector2(h, h) * 2.0), false, Color(P.BRAISE, 0.35 * appui))
-	I.disque(_dessin, p + Vector2(0, 2), r + 1.5, Color(0, 0, 0, 0.3))
-	I.disque(_dessin, p, r, Color(P.ENCRE, 0.62 + 0.22 * appui))
-	_dessin.draw_arc(p, r - 3.5, 0.0, TAU, 48, Color(ENCRE, 0.12), 1.0, true)
+	# (l'ombre, le disque, le liseré pâle : un maillage gardé par taille et par enfoncement)
+	var aq := snappedf(appui, 0.1)
+	_dessin.draw_mesh(Trace.maillage("tactile|jeton|%.1f|%.1f" % [r, aq], func(t):
+		I.disque(t, Vector2(0, 2), r + 1.5, Color(0, 0, 0, 0.3))
+		I.disque(t, Vector2.ZERO, r, Color(P.ENCRE, 0.62 + 0.22 * aq))
+		t.draw_arc(Vector2.ZERO, r - 3.5, 0.0, TAU, 48, Color(ENCRE, 0.12), 1.0, true)), null, Transform2D(0.0, p))
 	var bord := Color(BRAISE, 0.7 if dispo else 0.0).lerp(P.BRAISE_COEUR, appui)
 	if not dispo:
 		bord = Color(ENCRE, 0.18)

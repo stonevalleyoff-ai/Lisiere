@@ -60,6 +60,25 @@ func _lancer() -> void:
 	# (en ligne, le monde change chaque jour : un lieu maigre est dit, et le jeu le refuse au lancement ; la copie, elle, doit tout jouer)
 	verif(maigres.is_empty() or jeu.donnees.en_ligne, "chaque lieu proposé se charge, avec des proies et des chasseurs" + (" ; sauf, refusés au lancement : %s" % ", ".join(PackedStringArray(maigres)) if maigres.size() > 0 else ""))
 
+	print("0. Le compte")
+	# (le compte de Stone Valley, sans réseau : la porte s'ouvre, refuse ce qui ne peut pas partir, et se ferme)
+	var S = jeu.session
+	var Ses := load("res://scripts/session.gd")
+	verif(S != null and not S.connecte() and str(Ses.URL).contains("ldazucyrnpewkqdneznc"), "le compte est celui de Stone Valley (le Supabase « Vallée de pierre »), et personne n'y est entré")
+	verif(S.dire("Invalid login credentials") == "adresse ou mot de passe incorrect" and S.dire("Email not confirmed").begins_with("adresse pas encore"), "les refus de Supabase sont dits en français")
+	var porte = jeu.ui._porte
+	jeu.ui._compte.pressed.emit()
+	verif(porte.visible and porte.mode == "connexion" and porte._adresse.visible and porte._mdp.visible and jeu.ui._compte.libelle == "Se connecter",
+		"« Se connecter », à l'écran-titre, ouvre la porte : une adresse, un mot de passe")
+	porte._adresse._ligne.text = "pas-une-adresse"
+	porte._mdp._ligne.text = "x"
+	await porte.valider()
+	var refus: String = porte._msg.text
+	porte.mettre_mode("inscription")
+	var inscrire: bool = porte._valider.libelle == "Créer le compte" and porte._bascule.libelle == "J'ai déjà un compte"
+	porte.fermer()
+	verif(refus == "adresse e-mail invalide" and inscrire and not porte.visible, "elle refuse une adresse mal faite sans rien envoyer, sait créer un compte, et se referme")
+
 	print("1. Le lieu")
 	await jeu._commencer("foret")
 	verif(jeu.en_partie, "une partie commence en forêt")

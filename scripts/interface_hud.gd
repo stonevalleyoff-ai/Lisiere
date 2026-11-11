@@ -9,6 +9,7 @@ const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/interface_theme.gd")
 const I := preload("res://scripts/interface_icones.gd")
 const R := preload("res://scripts/regles.gd")
+const Trace := preload("res://scripts/interface_trace.gd")
 
 
 # un ressort : il revient à zéro en oscillant (le sautillement d'un nombre, d'une carte)
@@ -155,7 +156,7 @@ class Jauges extends Allege:
 				draw_texture_rect(T.halo(), Rect2(c - Vector2(h2, h2), Vector2(h2, h2) * 2.0), false, Color(P.BRAISE_ROUGE, 0.6 * _eclair))
 			I.jeton(self, c, r)
 			var rr := r - 4.5
-			draw_arc(c, rr, 0.0, TAU, 56, Color(P.IVOIRE, 0.09), 4.5, true)
+			I.anneau(self, c, rr, 4.5, Color(P.IVOIRE, 0.09), 56)
 			var a0 := -PI * 0.5
 			var tr := clampf(float(_trace[i]) / 100.0, 0.0, 1.0)
 			if tr > v + 0.004:
@@ -210,13 +211,14 @@ class Cadran extends Allege:
 
 	# l'arc du ciel, l'horizon, l'astre qui passe (le soleil jusqu'au soir, la lune jusqu'au matin)
 	func _arc(c: Vector2, r: float, isz: float) -> void:
-		I.trait_encre(self, c + Vector2(-r - 16.0, 0), c + Vector2(r + 16.0, 0), 2.2, Color(P.IVOIRE, 0.45))
-		draw_arc(c, r, PI, TAU, 40, Color(P.ENCRE, 0.55), 5.0, true)
-		draw_arc(c, r, PI, TAU, 40, Color(P.IVOIRE, 0.2), 1.6, true)
-		for k in 5:
-			var a := PI + PI * k / 4.0
-			var d := Vector2.from_angle(a)
-			draw_line(c + d * (r - 3.0), c + d * (r + 3.0), Color(P.IVOIRE, 0.35), 1.2, true)
+		# (l'horizon, l'arc du ciel et ses graduations : ce qui ne bouge pas, d'un seul maillage gardé)
+		draw_mesh(Trace.maillage("cadran|%.1f" % r, func(t):
+			I.trait_encre(t, Vector2(-r - 16.0, 0), Vector2(r + 16.0, 0), 2.2, Color(P.IVOIRE, 0.45))
+			t.draw_arc(Vector2.ZERO, r, PI, TAU, 40, Color(P.ENCRE, 0.55), 5.0, true)
+			t.draw_arc(Vector2.ZERO, r, PI, TAU, 40, Color(P.IVOIRE, 0.2), 1.6, true)
+			for k in 5:
+				var d := Vector2.from_angle(PI + PI * k / 4.0)
+				t.draw_line(d * (r - 3.0), d * (r + 3.0), Color(P.IVOIRE, 0.35), 1.2, true)), null, Transform2D(0.0, c))
 		var col := P.LUNE.lerp(P.IVOIRE, 0.25) if nuit else P.BRAISE_COEUR.lerp(P.SOIR, u)
 		var a1 := PI + PI * clampf(u, 0.0, 1.0)
 		I.arc_encre(self, c, r, PI, a1, 3.2, Color(col, 0.95))
