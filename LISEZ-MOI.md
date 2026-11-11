@@ -2,7 +2,7 @@
 
 *Tenir jusqu'au matin.*
 
-Un jeu de survie et d'horreur en Godot 4, branché sur le monde vivant d'Orvane. On s'éveille à la lisière d'un lieu vrai du monde : une forêt, une prairie, une lande. Le jour, on récolte, on fabrique, on chasse. La nuit, on tient près d'un feu, et les chasseurs du lieu viennent tourner au bord de la lumière.
+Un jeu de survie et d'horreur en Godot 4, branché sur le monde vivant d'[Orvane](https://github.com/stonevalleyoff-ai/orvane). On s'éveille à la lisière d'un lieu vrai du monde : une forêt, une prairie, une lande. Le jour, on récolte, on fabrique, on chasse. La nuit, on tient près d'un feu, et les chasseurs du lieu viennent tourner au bord de la lumière.
 
 Chaque bête du jeu est une lignée vraie d'Orvane, au dernier cycle publié : son nombre, son dessin, son heure, sa vitesse et son caractère viennent du monde. Ce que le joueur croise et ce qu'il tue est compté, et renvoyé au monde.
 
@@ -29,7 +29,7 @@ Chaque bête du jeu est une lignée vraie d'Orvane, au dernier cycle publié : s
 | leur dessin, et leurs yeux qui brillent dans le noir | les planches publiées à chaque cycle (`morceaux/silhouettes/<biome>.json`, docs/21) |
 | ce que la partie renvoie | une rencontre par bête vue dans la lumière, un prélèvement par bête tuée, dans le biome d'Orvane où c'est arrivé (le kit : `Orvane.compter`, `clore`, `deposer`) |
 
-Le jeu lit le monde en ligne, par morceaux (`Orvane.lire_lieux`, `Orvane.lire_silhouettes`) : l'index, puis le seul lieu choisi. Sans réseau, il joue avec une copie de cinq lieux gardée dans `donnees/` (`node jeux/lisiere/outils/secours.js` la refait, depuis le monde publié).
+Le jeu lit le monde en ligne, par morceaux (`Orvane.lire_lieux`, `Orvane.lire_silhouettes`) : l'index, puis le seul lieu choisi. Sans réseau, il joue avec une copie de cinq lieux gardée dans `donnees/` (`node outils/secours.js` la refait, depuis le monde publié ; il lui faut une copie d'Orvane à côté de ce dépôt, `../orvane`, ou `--orvane <dossier>`).
 
 **Les lots vont dans le bac à sable** (`monde: "essai"`, `scripts/regles.gd`) : Orvane les garde quatorze jours et aucun monde ne les lit. Tant que le jeu n'a pas sa clé (`CLE_JEU`, vide), rien n'est envoyé : l'écran de fin montre seulement ce qui le serait. Pour qu'il envoie : inscrire Lisière sur la [page d'inscription](https://stonevalleyoff-ai.github.io/orvane/inscription/), mettre la **clé du jeu** (publique, `orv_…`) dans `CLE_JEU`. La clé d'administration ne va jamais dans le jeu.
 
@@ -45,33 +45,51 @@ Le jeu lit le monde en ligne, par morceaux (`Orvane.lire_lieux`, `Orvane.lire_si
 
 Les commandes tactiles (`scripts/tactile.gd`) s'allument seules sur un écran tactile. Elles pressent les mêmes actions que les touches. Un bouton pâlit quand on n'a pas de quoi s'en servir. Sur un petit écran l'image grossit ; tenu debout, le téléphone demande qu'on le tourne, et la partie attend.
 
-**Dans un navigateur** : https://stonevalleyoff-ai.github.io/orvane/lisiere/. La publication du site (`.github/workflows/cycle.yml`) exporte le jeu à chaque passe où il a changé.
+**Dans un navigateur** : https://stonevalleyoff-ai.github.io/Lisi-re/. Le jeu s'y installe aussi comme une application (voir plus bas).
+
+## L'application qu'on installe
+
+Lisière s'installe depuis le navigateur, comme une application (une PWA), sur un téléphone, une tablette ou un ordinateur : son icône sur l'écran d'accueil, plein écran, à l'horizontale, et **sans réseau** une fois ouvert une première fois.
+
+- **Sur Android** (Chrome) : le menu ⋮, « Installer l'application » (ou « Ajouter à l'écran d'accueil »).
+- **Sur iPhone, iPad** (Safari) : le bouton Partager, « Sur l'écran d'accueil ».
+- **Sur un ordinateur** (Chrome, Edge) : l'icône d'installation au bout de la barre d'adresse.
+
+Ce qui la fait :
+- **L'export web de Godot** (`export_presets.cfg`, « progressive_web_app ») : un manifeste, un service worker qui garde le jeu sur l'appareil, une page hors ligne (`outils/hors-ligne.html`, quand le jeu n'est pas encore gardé).
+- **`outils/pwa.js`**, après l'export : le manifeste complet (le nom, la langue, la couleur de la nuit, les icônes, deux images du jeu pour la fenêtre d'installation), et trois corrections au service worker de Godot 4.3. Il gardait à l'installation un fichier qu'un export sans fils d'exécution n'a pas (`index.worker.js`) : rien n'était gardé, le jeu ne s'ouvrait jamais hors ligne. Il ne gardait le gros du jeu (le `.wasm` et le `.pck`, près de 40 Mo) qu'au deuxième lancement. Et ouvert à l'adresse du dossier (`…/Lisi-re/`), il ne trouvait rien hors ligne.
+- **Hors ligne**, le jeu joue sur la copie du monde gardée dans `donnees/`, comme sans réseau : l'écran-titre le dit (« la copie gardée dans le jeu (hors ligne) »).
+- **Les mises à jour** : quand une version nouvelle est publiée, l'application la reçoit en arrière-plan ; elle s'ouvre à l'écran-titre, jamais au milieu d'une partie (`principal.gd`, `_nouvelle_version`).
+- **La publication** (`.github/workflows/publication.yml`) : à chaque changement de la branche par défaut, l'export, `outils/pwa.js`, puis GitHub Pages. Une seule fois, à la main : Settings › Pages › Source : « GitHub Actions ».
+
+**L'icône** (`icon.svg`) dit le jeu en une image, celle de `DIRECTION-ARTISTIQUE.md` : une veilleuse au bord d'un feu, et autour, le noir qui regarde. La lisière d'une forêt de sapins, bleu d'encre ; le feu et son cercle de braise ; la veilleuse assise, la capuche levée, l'écharpe rouille dans le vent ; et dans un grand sapin, deux yeux d'ambre qui la regardent. Comme tout le jeu, elle est faite par le code, avec la palette du jeu : `node outils/icone.js` la dessine, `outils/godot.sh --headless --path . --script res://outils/icone.gd` la rend en PNG dans `application/` (« any » aux coins arrondis, « maskable » pleine pour Android, et celle d'iOS). Ce qui compte tient dans le cercle du milieu : Android peut la découper en rond, en goutte, en carré.
 
 ## Lancer, essayer, exporter
 
 Godot 4.3 (`outils/godot.sh` le télécharge la première fois, vérifie son empreinte, puis le lance) :
 
 ```
-outils/godot.sh --path jeux/lisiere                                   # jouer
-outils/godot.sh --headless --path jeux/lisiere --import               # la première fois : importer le projet
-outils/godot.sh --headless --path jeux/lisiere -- --essai             # l'essai sans écran, sur la copie gardée
-outils/godot.sh --headless --path jeux/lisiere -- --essai --en-ligne  # l'essai sur le monde publié
-outils/godot.sh --modeles-web                                         # une fois : les modèles d'export web
-outils/godot.sh --headless --path jeux/lisiere --export-release Web ../../lisiere/index.html   # le jeu dans un navigateur
-outils/godot.sh --path jeux/lisiere -- --vitrine --heure nuit         # la vitrine : une scène jouée toute seule, pour regarder
-jeux/lisiere/outils/film.sh /tmp/film -- --vitrine --heure jour       # la filmer image par image (et sa planche-contact)
+outils/godot.sh --path .                                   # jouer
+outils/godot.sh --headless --path . --import               # la première fois : importer le projet
+outils/godot.sh --headless --path . -- --essai             # l'essai sans écran, sur la copie gardée
+outils/godot.sh --headless --path . -- --essai --en-ligne  # l'essai sur le monde publié
+outils/godot.sh --modeles-web                              # une fois : les modèles d'export web
+outils/godot.sh --headless --path . --export-release Web build/web/index.html   # le jeu dans un navigateur
+node outils/pwa.js build/web                               # … en application qu'on installe
+outils/godot.sh --path . -- --vitrine --heure nuit         # la vitrine : une scène jouée toute seule, pour regarder
+outils/film.sh /tmp/film -- --vitrine --heure jour         # la filmer image par image (et sa planche-contact)
 ```
 
 La vitrine (`scripts/vitrine.gd`) met en scène une partie à une heure choisie (`--heure jour|soir|nuit`, `--duree`, `--lieu`, `--mobile`) : le feu, des bêtes de chaque sorte, la veilleuse qui attend, marche, coupe, chasse, cueille, prend une torche, a peur et se fait mordre. `outils/film.sh` la filme avec un vrai rendu, sous un écran virtuel.
 
 L'essai (`scripts/essai.gd`) joue une partie tout seul, en accéléré, et vérifie : le lieu et ses bêtes dessinées, la récolte, les fabrications, la nuit, les chasseurs qui n'entrent pas dans la lumière du feu, la peur dans le noir, les échos, l'aube, la fin, et ce qui est compté pour Orvane. Il sort avec le code 0 si tout passe.
 
-Sans Godot, `node bancs/lisiere.js` vérifie le projet à chaque PR : chaque fichier qu'il nomme existe, il porte le kit Godot tel quel, et chaque lieu gardé se joue (des proies le jour, des chasseurs la nuit, un dessin pour chaque bête).
+Sans Godot, `node outils/banc.js` vérifie le projet : chaque fichier qu'il nomme existe, chaque lieu gardé se joue (des proies le jour, des chasseurs la nuit, un dessin pour chaque bête), l'export en fait une application, avec ses icônes. Il compare aussi la copie du kit Godot (`addons/orvane/`) à celle d'Orvane : le jeu choisit quand il la reprend, une copie en retard est seulement signalée.
 
 ## Où en est le jeu
 
 - **Écrit** : le jeu entier (`scripts/`, 39 fichiers, et `shaders/`), ses sons (faits par le code), son essai sans écran, sa vitrine, sa configuration d'export web.
-- **Vérifié à chaque PR** : la syntaxe GDScript 4 de chaque script (`gdtoolkit`) ; le projet et le monde gardé (`bancs/lisiere.js`) ; les planches (`bancs/morceaux.js`).
+- **Vérifié à chaque PR** (`.github/workflows/verifications.yml`) : la syntaxe de chaque script (GDScript 4 avec `gdtoolkit`, JavaScript) ; le banc (`outils/banc.js`) ; et l'essai, dans Godot 4.3, sans écran.
 - **Vérifié dans Godot 4.3** (le 7 novembre 2026, au cycle 46) :
   - l'essai sans écran passe, sur la copie gardée (5 lieux) comme sur le monde publié (32 lieux, chacun chargé) ;
   - le même essai, filmé avec un vrai rendu (`--write-movie`, sous un écran virtuel) : le feu et son halo, les chasseurs qui tournent à la lisière, les yeux dans le noir, les morsures, les échos, l'aube, l'écran de fin ;
@@ -79,7 +97,9 @@ Sans Godot, `node bancs/lisiere.js` vérifie le projet à chaque PR : chaque fic
 - **Corrigé ce jour-là** : la santé remontait de zéro (rassasiée et calme), et la partie ne s'arrêtait pas ; une bête frappée deux fois dans la même image mourait deux fois (deux prélèvements) ; le marais, gardé dans la copie, n'était jamais proposé (les lieux à demi dans l'eau sont jouables : le jeu n'y garde que les bêtes qui marchent) ; un lieu sans proie ni chasseur (l'ossuaire, les terres creuses) était proposé. L'essai ne dépend plus du hasard du directeur, joue son noir en pleine nuit, et vérifie chaque lieu proposé.
 - **Pas encore vérifié** : une partie jouée par une personne, jusqu'au bout ; le jeu sur un vrai téléphone (au doigt, il n'a été joué que sur un téléphone émulé, dans Chromium, avec de vrais touchers multipoints).
 
-Filmer l'essai (des images PNG, puis les regarder) : `xvfb-run -a outils/godot.sh --path jeux/lisiere --write-movie /tmp/film/f.png --fixed-fps 30 -- --essai`. Pas moins de 30 images par seconde : l'essai joue en accéléré, et à 10 images par seconde la caméra (lissée) s'envole hors du monde.
+- **L'application, vérifiée le 11 novembre 2026** dans Chromium : le manifeste se lit sans erreur, Chromium la dit installable, le service worker garde le jeu entier dès le premier lancement ; puis le serveur arrêté et le réseau coupé, le jeu s'ouvre (à `index.html` comme à l'adresse du dossier) sur la copie gardée. **Pas encore vérifié** : l'installation sur un vrai téléphone.
+
+Filmer l'essai (des images PNG, puis les regarder) : `xvfb-run -a outils/godot.sh --path . --write-movie /tmp/film/f.png --fixed-fps 30 -- --essai`. Pas moins de 30 images par seconde : l'essai joue en accéléré, et à 10 images par seconde la caméra (lissée) s'envole hors du monde.
 
 ## Ce qu'on voit, ce qu'on entend
 
@@ -110,3 +130,9 @@ Lisière est un jeu du genre survie-horreur (récolter, fabriquer, tenir la nuit
 - Une partie qui se garde d'une session à l'autre ; une manette.
 - Le jeu sur un vrai téléphone (il n'a été joué que sur un téléphone émulé, dans Chromium, sans carte graphique) : la lisibilité des petits textes, et surtout la vitesse de rendu. Dans Chromium en rendu logiciel, la partie retravaillée coûte environ 20 % de plus que l'ancienne, l'écran-titre environ trois fois plus : à mesurer sur un vrai appareil, et à alléger en qualité « mobile » s'il le faut.
 - Une écoute du son : il a été réglé sur des mesures (spectres, niveaux, crêtes), sans oreille.
+
+## D'où il vient
+
+Lisière est né dans le dépôt d'Orvane (`jeux/lisiere/`), comme le premier jeu à se servir du kit Godot. Il a son dépôt depuis le 11 novembre 2026, avec son histoire : les commits d'Orvane qui le touchaient sont ici, réécrits pour ce dossier. Il reste branché sur Orvane comme n'importe quel jeu : il lit le monde publié, et porte une copie du kit Godot (`addons/orvane/`, depuis `kits/godot/addons/orvane/`).
+
+Lisière est distribué sous la même licence qu'Orvane, la [PolyForm Shield 1.0.0](https://polyformproject.org/licenses/shield/1.0.0) (voir [LICENSE](LICENSE)), sauf les deux fontes de `polices/`, sous licence OFL (leurs licences sont à côté d'elles).

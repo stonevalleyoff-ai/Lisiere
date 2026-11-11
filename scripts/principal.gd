@@ -5,8 +5,8 @@ extends Node
 # lisière de la lumière, mordent dans le noir. La peur monte dans l'obscurité ; au comble, ce qu'on a tué revient, en échos.
 # Chaque bête croisée est comptée (« rencontre »), chaque bête tuée aussi (« prélèvement »), dans le lieu d'Orvane où c'est
 # arrivé : à la fin de la partie, le kit en fait un lot (docs/4), déposé dans le bac à sable d'Orvane quand le jeu a sa clé.
-#   outils/godot.sh --path jeux/lisiere                       jouer
-#   outils/godot.sh --headless --path jeux/lisiere -- --essai l'essai sans écran (scripts/essai.gd)
+#   outils/godot.sh --path .                       jouer
+#   outils/godot.sh --headless --path . -- --essai l'essai sans écran (scripts/essai.gd)
 
 const R := preload("res://scripts/regles.gd")
 const Donnees := preload("res://scripts/donnees.gd")
@@ -48,6 +48,7 @@ var yeux
 var feux: Array = []
 var en_partie := false
 var en_pause := false
+var au_titre := false
 var biome := ""
 var biome_info: Dictionary = {}
 var faune: Dictionary = {}
@@ -97,6 +98,9 @@ func _ready() -> void:
 	tactile.jeu = self
 	add_child(tactile)
 	_charger()
+	# l'application installée (une PWA, outils/pwa.js) : une version nouvelle s'ouvre à l'écran-titre, jamais pendant une partie
+	if OS.has_feature("web"):
+		JavaScriptBridge.pwa_update_available.connect(_nouvelle_version)
 	Orvane.jeu = "lisiere"
 	Orvane.monde = R.MONDE_DES_LOTS
 	Orvane.cle_jeu = R.CLE_JEU
@@ -138,6 +142,16 @@ func _titre() -> void:
 	await donnees.charger_index()
 	ui.montrer_titre(donnees.lieux(), _infos_monde(), record)
 	sons.titre()
+	au_titre = true
+	if OS.has_feature("web") and JavaScriptBridge.pwa_needs_update():
+		_nouvelle_version()
+
+
+# une version nouvelle du jeu est publiée, et l'application l'a reçue : à l'écran-titre, la page se recharge sur elle ; pendant
+# une partie, elle attend le retour à l'écran-titre
+func _nouvelle_version() -> void:
+	if au_titre and essai == null:
+		JavaScriptBridge.pwa_update()
 
 
 func _infos_monde() -> String:
@@ -173,6 +187,7 @@ func _commencer(b: String) -> void:
 
 
 func _nouvelle_partie() -> void:
+	au_titre = false
 	_vider()
 	Orvane.oublier()
 	var graine := randi()

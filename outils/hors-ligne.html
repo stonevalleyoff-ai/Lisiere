@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- Lisière — la page hors ligne (outils/hors-ligne.html) : l'application la montre quand elle n'a pas encore tout gardé
+     (le premier lancement se fait en ligne). Elle devient index.offline.html à l'export (export_presets.cfg). -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050609">
+<title>Lisière · hors ligne</title>
+<style>
+  :root { color-scheme: dark; --nuit: #050609; --papier: #e9dfc8; --ivoire: #cfc3a6; --braise: #f29a48; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(ellipse at 50% 85%, rgba(242, 154, 72, .16), transparent 60%), var(--nuit);
+    color: var(--ivoire); font: 17px/1.5 Georgia, 'Times New Roman', serif;
+    display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; box-sizing: border-box;
+  }
+  main { max-width: 30em; }
+  img { width: 96px; height: 96px; border-radius: 20%; }
+  h1 { color: var(--papier); font-weight: normal; letter-spacing: .3em; font-size: 2em; margin: .6em 0 .2em; }
+  em { display: block; margin-bottom: 1.4em; }
+  button {
+    font: inherit; color: var(--papier); background: none; border: 1px solid var(--braise); border-radius: 2em;
+    padding: .5em 1.6em; margin-top: 1.2em; cursor: pointer;
+  }
+  button:hover, button:focus-visible { background: rgba(242, 154, 72, .15); outline: none; }
+</style>
+</head>
+<body>
+<main>
+  <img src="index.icon.png" alt="">
+  <h1>LISIÈRE</h1>
+  <em>Tenir jusqu'au matin.</em>
+  <p>Pas de réseau, et le jeu n'est pas encore gardé sur cet appareil.</p>
+  <p>Ouvrez-le une fois en ligne : ensuite, il se joue sans réseau, avec les lieux gardés dans le jeu.</p>
+  <button onclick="location.reload()">Réessayer</button>
+</main>
+</body>
+</html>

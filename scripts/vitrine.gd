@@ -3,8 +3,8 @@ extends Node
 # Une scène jouée toute seule, pour regarder le jeu et le filmer : un lieu, une heure, un feu, des bêtes de chaque sorte, et la
 # veilleuse qui fait ce qu'on fait en jouant (attendre au feu, marcher, couper un arbre, cueillir, chasser, se faire mordre).
 # Rien n'est vérifié ici (c'est le travail de l'essai) : on regarde.
-#   outils/godot.sh --path jeux/lisiere -- --vitrine [--heure jour|soir|nuit] [--duree 12] [--lieu foret]
-#   jeux/lisiere/outils/film.sh <dossier> -- --vitrine --heure nuit      (filmée image par image, et sa planche-contact)
+#   outils/godot.sh --path . -- --vitrine [--heure jour|soir|nuit] [--duree 12] [--lieu foret]
+#   outils/film.sh <dossier> -- --vitrine --heure nuit      (filmée image par image, et sa planche-contact)
 
 const R := preload("res://scripts/regles.gd")
 

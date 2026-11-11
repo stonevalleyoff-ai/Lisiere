@@ -1,14 +1,20 @@
-// Lisière — LE MONDE GARDÉ DANS LE JEU (jeux/lisiere/outils/secours.js)
+// Lisière — LE MONDE GARDÉ DANS LE JEU (outils/secours.js)
 // Le jeu lit le monde d'Orvane en ligne. Sans réseau, il joue avec une copie de quelques lieux, gardée dans donnees/ : ce script
 // la refait, depuis le monde publié (par défaut) ou un dossier de monde, au même format que les morceaux (docs/21), allégée de
 // ce que le jeu ne lit pas. Les planches (les bêtes dessinées) sont refaites ici, par monde/planches.js ; l'herbier (les plantes
 // dessinées, et le temps qu'il fait, docs/49) est pris tel qu'il est publié, ou refait d'après flore.json par monde/herbier.js.
-//   node jeux/lisiere/outils/secours.js [--depuis <url ou dossier mondes/<id>/>] [--lieux foret,prairie,…]
+// Ces deux fichiers sont ceux d'Orvane : il en faut une copie (git clone https://github.com/stonevalleyoff-ai/orvane), à côté de
+// ce dépôt (../orvane), ou ailleurs avec --orvane <dossier> (ou la variable ORVANE).
+//   node outils/secours.js [--depuis <url ou dossier mondes/<id>/>] [--lieux foret,prairie,…] [--orvane ../orvane]
 'use strict';
 const fs = require('fs'), path = require('path');
-const ICI = path.join(__dirname, '..'), RACINE = path.join(ICI, '..', '..');
-const Planches = require(path.join(RACINE, 'monde/planches.js')), Herbier = require(path.join(RACINE, 'monde/herbier.js'));
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
+const ICI = path.join(__dirname, '..'), RACINE = path.resolve(arg('--orvane', process.env.ORVANE || path.join(ICI, '..', 'orvane')));
+if (!fs.existsSync(path.join(RACINE, 'monde/planches.js'))) {
+  console.error(`secours : pas d'Orvane dans ${RACINE} (git clone https://github.com/stonevalleyoff-ai/orvane ${path.relative(process.cwd(), RACINE) || '.'}, ou --orvane <dossier>)`);
+  process.exit(1);
+}
+const Planches = require(path.join(RACINE, 'monde/planches.js')), Herbier = require(path.join(RACINE, 'monde/herbier.js'));
 const DEPUIS = arg('--depuis', 'https://stonevalleyoff-ai.github.io/orvane/mondes/orvane/');
 const LIEUX = arg('--lieux', 'foret,prairie,lande,taiga,marais').split(',').filter(Boolean);
 const lire = async c => {
@@ -41,5 +47,5 @@ const ecrire = (c, o) => { const f = path.join(ICI, 'donnees', c); fs.mkdirSync(
     monde: { id: index.monde?.id, nom: index.monde?.nom, ne: index.monde?.ne, genre: index.monde?.genre }, cycle: index.cycle,
     biomes: index.biomes.map(b => ({ id: b.id, nom: b.nom, milieu: b.milieu, axes: b.axes, voisins: b.voisins, ...(b.meteo && typeof b.meteo === 'object' ? { meteo: b.meteo } : {}) })), catalogue: {}, evenements: [],
     taxons: index.taxons.filter(t => garder.has(t.id)) });
-  console.log(`le monde gardé dans le jeu : cycle ${index.cycle?.n}, ${LIEUX.length} lieux, ${Math.round(total / 1024)} Ko → jeux/lisiere/donnees/`);
+  console.log(`le monde gardé dans le jeu : cycle ${index.cycle?.n}, ${LIEUX.length} lieux, ${Math.round(total / 1024)} Ko → donnees/`);
 })().catch(e => { console.error('secours :', e.message); process.exit(1); });

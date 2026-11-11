@@ -1,0 +1,28 @@
+Lisière
+Copyright StoneValley
+
+Ce dépôt (le jeu, ses scripts, ses shaders, ses outils, son icône et sa documentation) est distribué
+sous la licence PolyForm Shield 1.0.0, comme Orvane, d'où il vient. Seul son texte fait foi :
+
+    https://polyformproject.org/licenses/shield/1.0.0
+
+Required Notice: Copyright StoneValley (https://github.com/stonevalleyoff-ai/Lisi-re)
+
+Deux exceptions :
+- les fontes de polices/ (IM Fell English, Alegreya Sans) sont sous la SIL Open Font License 1.1,
+  dont le texte est à côté de chacune (OFL.txt) ;
+- la copie du kit Godot d'Orvane (addons/orvane/) est sous la licence d'Orvane
+  (https://github.com/stonevalleyoff-ai/orvane/blob/main/LICENSE).
+
+
+En clair : ce résumé aide à lire la licence et n'a pas de valeur juridique ; seul le texte ci-dessus en a.
+
+Ce qui est permis, à tous, sans rien demander :
+- jouer, lire le code, le modifier pour son propre usage, l'étudier, s'en inspirer ;
+- redistribuer le code, modifié ou non, à condition de joindre cette licence (ou son adresse) et la
+  ligne « Required Notice » ci-dessus.
+
+Ce qui ne l'est pas :
+- se servir du code de Lisière pour fournir un produit qui lui fait concurrence.
+
+Le logiciel est fourni tel quel, sans garantie d'aucune sorte.

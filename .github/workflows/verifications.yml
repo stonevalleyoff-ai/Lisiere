@@ -1,0 +1,47 @@
+# Lisière — les vérifications : à chaque PR, et à chaque changement de main.
+# Sans Godot : chaque script se lit (JavaScript, GDScript 4), et le banc (outils/banc.js : le projet, le kit, le monde gardé,
+# l'application). Avec Godot 4.3, sans écran : l'essai (scripts/essai.gd), une partie jouée toute seule, en accéléré, sur la copie
+# du monde gardée dans le jeu. Pour qu'une PR rouge ne puisse pas être fusionnée : Settings › Branches, « Require status checks
+# to pass », et cocher « banc » et « essai ».
+name: verifications
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verifications-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  banc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: chaque fichier JavaScript se lit
+        run: |
+          r=0; for f in $(git ls-files '*.js'); do node --check "$f" || { echo "::error file=$f::ne se lit pas"; r=1; }; done; exit $r
+      - name: chaque script GDScript se lit (gdtoolkit)
+        run: |
+          pip install -q "gdtoolkit==4.*"
+          gdparse scripts/*.gd addons/orvane/*.gd outils/icone.gd > /dev/null && echo "les scripts se lisent"
+      - name: le banc (le kit est comparé à celui d'Orvane, en ligne)
+        run: node outils/banc.js
+  essai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot 4.3, gardé d'une passe à l'autre
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/orvane/godot-4.3
+          key: godot-4.3-stable
+      - name: l'essai, sans écran (scripts/essai.gd)
+        run: |
+          outils/godot.sh --headless --path . --import
+          outils/godot.sh --headless --path . -- --essai

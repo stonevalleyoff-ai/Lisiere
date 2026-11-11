@@ -24,6 +24,7 @@ Trois sensations, par ordre d'importance :
   Le feu et la torche sont les seules lumières chaudes. Dans leur cercle, les couleurs reviennent ; dehors, elles se retirent.
 - **La valeur** : la nuit, la plus grande part de l'écran est très sombre ; l'œil va au feu, puis aux yeux. Le jour, des valeurs moyennes, des ombres nettes au sol.
 - **La palette** : `scripts/palette.gd`. Une couleur qui n'y est pas se tire de celles-là.
+- **L'icône** (`icon.svg`, faite par `outils/icone.js`) : l'intention en une image. La lisière d'une forêt de sapins, bleu d'encre ; un feu et son cercle de braise ; la veilleuse assise, la capuche levée, l'écharpe rouille dans le vent ; et dans un grand sapin, deux yeux d'ambre qui la regardent (deux pâles plus loin). Le vent pousse la flamme, les étincelles et l'écharpe du même côté. Ce qui compte tient dans le cercle du milieu : Android peut la découper en rond.
 - **La typographie** : un titre à l'empattement de gravure (une fonte libre, licence OFL, gardée avec sa licence dans `polices/`), un texte courant lisible et sobre. Jamais la fonte par défaut à l'écran-titre.
 
 ## Comment ça bouge
@@ -68,12 +69,12 @@ Un département ne modifie que ses fichiers. S'il lui faut une accroche ailleurs
 ## Vérifier
 
 ```
-outils/godot.sh --headless --path jeux/lisiere --import                 # une fois, dans une copie neuve
-outils/godot.sh --headless --path jeux/lisiere -- --essai               # l'essai : il doit passer
-gdparse jeux/lisiere/scripts/*.gd                                       # la syntaxe, comme la CI
-node bancs/lisiere.js                                                   # le projet et le monde gardé
-jeux/lisiere/outils/film.sh /tmp/film -- --vitrine --heure nuit         # filmer la vitrine : regarder /tmp/film/planche.png
-jeux/lisiere/outils/film.sh /tmp/film -- --vitrine --heure jour --duree 10
+outils/godot.sh --headless --path . --import                 # une fois, dans une copie neuve
+outils/godot.sh --headless --path . -- --essai               # l'essai : il doit passer
+gdparse scripts/*.gd                                         # la syntaxe, comme la CI
+node outils/banc.js                                          # le projet, le kit, le monde gardé, l'application
+outils/film.sh /tmp/film -- --vitrine --heure nuit           # filmer la vitrine : regarder /tmp/film/planche.png
+outils/film.sh /tmp/film -- --vitrine --heure jour --duree 10
 ```
 
 La vitrine (`scripts/vitrine.gd`) met en scène une partie : le feu, des bêtes de chaque sorte, la veilleuse qui attend, marche, coupe, chasse, cueille, prend une torche, a peur et se fait mordre. On la filme avant et après chaque changement, et on compare.

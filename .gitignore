@@ -2,3 +2,5 @@
 .godot/
 *.import
 /export/
+# l'export web (outils/godot.sh --headless --path . --export-release Web build/web/index.html)
+/build/

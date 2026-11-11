@@ -1,0 +1,68 @@
+# Lisière — la publication : à chaque changement de la branche par défaut, le jeu est exporté pour un navigateur, fini en
+# application qu'on installe (outils/pwa.js : le manifeste, les icônes, le service worker qui le garde hors ligne), et servi
+# par GitHub Pages : https://<compte>.github.io/<dépôt>/
+# Une seule fois, à la main : Settings › Pages › Build and deployment › Source : « GitHub Actions ». Tant que ce n'est pas
+# fait, la publication le dit (une note sur la passe) et s'arrête là, sans échouer.
+name: publication
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: publication
+  cancel-in-progress: true
+jobs:
+  publier:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - name: GitHub Pages est-il ouvert, et servi par les actions ?
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          genre=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true)
+          if [ "$genre" = "workflow" ]; then echo "ouvert=oui" >> "$GITHUB_OUTPUT"; echo "GitHub Pages est ouvert"
+          else
+            echo "::notice title=publication::GitHub Pages n'est pas encore servi par les actions (${genre:-fermé}). Settings › Pages › Source : « GitHub Actions », puis Actions › publication › Run workflow."
+            echo "ouvert=non" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.pages.outputs.ouvert == 'oui'
+      - uses: actions/setup-node@v4
+        if: steps.pages.outputs.ouvert == 'oui'
+        with: { node-version: '22' }
+      - name: Godot 4.3 et ses modèles web, gardés d'une passe à l'autre
+        if: steps.pages.outputs.ouvert == 'oui'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/orvane/godot-4.3
+            ~/.local/share/godot/export_templates/4.3.stable
+          key: godot-4.3-stable-web
+      - name: le jeu, pour un navigateur
+        if: steps.pages.outputs.ouvert == 'oui'
+        run: |
+          outils/godot.sh --modeles-web
+          outils/godot.sh --headless --path . --import
+          mkdir -p "$RUNNER_TEMP/site"
+          outils/godot.sh --headless --path . --export-release Web "$RUNNER_TEMP/site/index.html"
+          # (un export à moitié fait n'est pas publié)
+          test -s "$RUNNER_TEMP/site/index.wasm" && test -s "$RUNNER_TEMP/site/index.pck"
+      - name: l'application qu'on installe (outils/pwa.js)
+        if: steps.pages.outputs.ouvert == 'oui'
+        run: node outils/pwa.js "$RUNNER_TEMP/site"
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outputs.ouvert == 'oui'
+        with:
+          path: ${{ runner.temp }}/site
+      - id: deploiement
+        if: steps.pages.outputs.ouvert == 'oui'
+        uses: actions/deploy-pages@v4

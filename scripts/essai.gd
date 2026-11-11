@@ -3,8 +3,8 @@ extends Node
 # Une partie jouée toute seule, en accéléré, sur la copie du monde gardée dans le jeu (sans réseau), qui vérifie que tout tient :
 # le lieu, ses bêtes dessinées d'après leurs planches, la récolte, les fabrications, le jeu du doigt, la nuit, les chasseurs qui n'entrent pas
 # dans la lumière du feu, la peur dans le noir, les échos, l'aube, la fin, et ce qui est compté pour Orvane.
-#   outils/godot.sh --headless --path jeux/lisiere -- --essai              (sur la copie gardée dans le jeu)
-#   outils/godot.sh --headless --path jeux/lisiere -- --essai --en-ligne   (sur le monde publié)
+#   outils/godot.sh --headless --path . -- --essai              (sur la copie gardée dans le jeu)
+#   outils/godot.sh --headless --path . -- --essai --en-ligne   (sur le monde publié)
 # Il sort avec le code 0 si tout passe, 1 sinon.
 
 var jeu
