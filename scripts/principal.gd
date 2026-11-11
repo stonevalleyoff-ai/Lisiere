@@ -4,7 +4,7 @@ extends Node
 # Le jour, on récolte et l'on chasse les bêtes du lieu ; la nuit, on tient près d'un feu : ses chasseurs viennent, tournent à la
 # lisière de la lumière, mordent dans le noir. La peur monte dans l'obscurité ; au comble, ce qu'on a tué revient, en échos.
 # Chaque bête croisée est comptée (« rencontre »), chaque bête tuée aussi (« prélèvement »), dans le lieu d'Orvane où c'est
-# arrivé : à la fin de la partie, le kit en fait un lot (docs/4), déposé dans le bac à sable d'Orvane quand le jeu a sa clé.
+# arrivé : à la fin de la partie, le kit en fait un lot (docs/4), déposé dans le monde d'Orvane (scripts/regles.gd : sa clé, son monde) ; l'essai et la vitrine n'envoient rien.
 #   outils/godot.sh --path .                       jouer
 #   outils/godot.sh --headless --path . -- --essai l'essai sans écran (scripts/essai.gd)
 
@@ -940,10 +940,15 @@ func _fin() -> void:
 	for k in prelevements:
 		np += int(prelevements[k])
 	var depot := "Le jeu n'a pas encore sa clé : le lot reste ici, rien n'est envoyé."
-	if Orvane.cle_jeu != "":
+	if essai != null:
+		# (une partie jouée toute seule, l'essai ou la vitrine : rien de vrai, rien ne part)
+		depot = "Une partie d'essai : rien n'est envoyé."
+		Orvane.oublier()
+	elif Orvane.cle_jeu != "":
 		Orvane.clore(compte)
 		Orvane.deposer(compte)
-		depot = "Le lot part dans le bac à sable d'Orvane (monde « %s »)." % Orvane.monde
+		depot = "Le lot part vers le monde d'Orvane : il y pèsera au cycle de cette nuit." if Orvane.monde == "orvane" else \
+			"Le lot part dans le bac à sable d'Orvane (monde « %s »)." % Orvane.monde
 	else:
 		Orvane.oublier()
 	var noms := []

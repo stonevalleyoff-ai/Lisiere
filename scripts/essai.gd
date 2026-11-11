@@ -256,6 +256,7 @@ func _lancer() -> void:
 		if not jeu.en_partie:
 			break
 	verif(not jeu.en_partie, "la santé à zéro, la partie s'arrête sur l'écran de fin, même rassasiée et calme")
+	verif(Orvane.cle_jeu != "" and Orvane.lots_en_attente() == 0 and Orvane.en_cours() == 0, "le jeu a sa clé d'Orvane, mais l'essai ne lui envoie rien")
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)
