@@ -2,10 +2,12 @@ extends RefCounted
 # Lisière — les règles du jeu, en un seul endroit (scripts/regles.gd)
 # Tout ce qui se règle quand on équilibre le jeu est ici : la durée des jours, la faim, la peur, les feux, les bêtes.
 
-# la clé du jeu Lisière (publique, « orv_… »), reçue à l'inscription sur Orvane ; vide, les lots restent dans le jeu
-const CLE_JEU := ""
-# où vont les lots : le bac à sable d'Orvane (gardés quatorze jours, lus par aucun monde) ; « orvane » pour peser sur le monde
-const MONDE_DES_LOTS := "essai"
+# la clé du jeu Lisière (publique, « orv_… », comme celle de Stone Valley), reçue à l'inscription sur Orvane ; vide, les lots
+# restent dans le jeu. La clé d'administration, elle, ne va jamais dans le jeu.
+const CLE_JEU := "orv_3754ff9530cdad6b7f037328e0e4e5a4"
+# où vont les lots : « orvane », le monde partagé (le cycle de la nuit les lit, comme ceux de Stone Valley) ; « essai », le bac à
+# sable (gardés quatorze jours, lus par aucun monde)
+const MONDE_DES_LOTS := "orvane"
 
 # le lieu : un carré de 4 200 pixels de côté, centré sur le réveil
 const DEMI := 2100.0

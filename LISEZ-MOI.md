@@ -31,7 +31,7 @@ Chaque bête du jeu est une lignée vraie d'Orvane, au dernier cycle publié : s
 
 Le jeu lit le monde en ligne, par morceaux (`Orvane.lire_lieux`, `Orvane.lire_silhouettes`) : l'index, puis le seul lieu choisi. Sans réseau, il joue avec une copie de cinq lieux gardée dans `donnees/` (`node outils/secours.js` la refait, depuis le monde publié ; il lui faut une copie d'Orvane à côté de ce dépôt, `../orvane`, ou `--orvane <dossier>`).
 
-**Les lots vont dans le bac à sable** (`monde: "essai"`, `scripts/regles.gd`) : Orvane les garde quatorze jours et aucun monde ne les lit. Tant que le jeu n'a pas sa clé (`CLE_JEU`, vide), rien n'est envoyé : l'écran de fin montre seulement ce qui le serait. Pour qu'il envoie : inscrire Lisière sur la [page d'inscription](https://stonevalleyoff-ai.github.io/orvane/inscription/), mettre la **clé du jeu** (publique, `orv_…`) dans `CLE_JEU`. La clé d'administration ne va jamais dans le jeu.
+**Les lots vont dans le monde d'Orvane** (`monde: "orvane"`, `scripts/regles.gd`), comme ceux de Stone Valley : à la fin d'une partie, le lot part dans le Supabase d'Orvane avec la **clé du jeu** (`CLE_JEU`, publique, `orv_…` : Lisière y est inscrit sous le nom « lisiere »), et le cycle de la nuit le lit. Sans réseau, il attend la fin de la partie suivante. L'essai et la vitrine n'envoient rien. `MONDE_DES_LOTS = "essai"` les mettrait dans le bac à sable (gardés quatorze jours, lus par aucun monde). La clé d'administration ne va jamais dans le jeu.
 
 ## Le compte
 
@@ -135,7 +135,6 @@ Lisière est un jeu du genre survie-horreur (récolter, fabriquer, tenir la nuit
 ## Ce qui reste
 
 - L'équilibrer, partie après partie (les règles sont toutes dans `scripts/regles.gd`).
-- Sa clé de jeu, pour que ses lots partent dans le bac à sable, puis dans le monde.
 - Une partie qui se garde d'une session à l'autre ; une manette.
 - Le jeu sur un vrai téléphone (il n'a été joué que sur un téléphone émulé, dans Chromium, sans carte graphique) : la lisibilité des petits textes, et surtout la vitesse de rendu. Dans Chromium en rendu logiciel, la partie retravaillée coûte environ 20 % de plus que l'ancienne, l'écran-titre environ trois fois plus : à mesurer sur un vrai appareil, et à alléger en qualité « mobile » s'il le faut.
 - Une écoute du son : il a été réglé sur des mesures (spectres, niveaux, crêtes), sans oreille.
