@@ -45,7 +45,7 @@ Le jeu lit le monde en ligne, par morceaux (`Orvane.lire_lieux`, `Orvane.lire_si
 
 Les commandes tactiles (`scripts/tactile.gd`) s'allument seules sur un écran tactile. Elles pressent les mêmes actions que les touches. Un bouton pâlit quand on n'a pas de quoi s'en servir. Sur un petit écran l'image grossit ; tenu debout, le téléphone demande qu'on le tourne, et la partie attend.
 
-**Dans un navigateur** : https://stonevalleyoff-ai.github.io/Lisi-re/. Le jeu s'y installe aussi comme une application (voir plus bas).
+**Dans un navigateur** : https://stonevalleyoff-ai.github.io/Lisiere/. Le jeu s'y installe aussi comme une application (voir plus bas).
 
 ## L'application qu'on installe
 
@@ -57,7 +57,7 @@ Lisière s'installe depuis le navigateur, comme une application (une PWA), sur u
 
 Ce qui la fait :
 - **L'export web de Godot** (`export_presets.cfg`, « progressive_web_app ») : un manifeste, un service worker qui garde le jeu sur l'appareil, une page hors ligne (`outils/hors-ligne.html`, quand le jeu n'est pas encore gardé).
-- **`outils/pwa.js`**, après l'export : le manifeste complet (le nom, la langue, la couleur de la nuit, les icônes, deux images du jeu pour la fenêtre d'installation), et trois corrections au service worker de Godot 4.3. Il gardait à l'installation un fichier qu'un export sans fils d'exécution n'a pas (`index.worker.js`) : rien n'était gardé, le jeu ne s'ouvrait jamais hors ligne. Il ne gardait le gros du jeu (le `.wasm` et le `.pck`, près de 40 Mo) qu'au deuxième lancement. Et ouvert à l'adresse du dossier (`…/Lisi-re/`), il ne trouvait rien hors ligne.
+- **`outils/pwa.js`**, après l'export : le manifeste complet (le nom, la langue, la couleur de la nuit, les icônes, deux images du jeu pour la fenêtre d'installation), et trois corrections au service worker de Godot 4.3. Il gardait à l'installation un fichier qu'un export sans fils d'exécution n'a pas (`index.worker.js`) : rien n'était gardé, le jeu ne s'ouvrait jamais hors ligne. Il ne gardait le gros du jeu (le `.wasm` et le `.pck`, près de 40 Mo) qu'au deuxième lancement. Et ouvert à l'adresse du dossier (`…/Lisiere/`), il ne trouvait rien hors ligne.
 - **Hors ligne**, le jeu joue sur la copie du monde gardée dans `donnees/`, comme sans réseau : l'écran-titre le dit (« la copie gardée dans le jeu (hors ligne) »).
 - **Les mises à jour** : quand une version nouvelle est publiée, l'application la reçoit en arrière-plan ; elle s'ouvre à l'écran-titre, jamais au milieu d'une partie (`principal.gd`, `_nouvelle_version`).
 - **La publication** (`.github/workflows/publication.yml`) : à chaque changement de la branche par défaut, l'export, `outils/pwa.js`, puis GitHub Pages. Une seule fois, à la main : Settings › Pages › Source : « GitHub Actions ».
