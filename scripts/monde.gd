@@ -110,7 +110,9 @@ func creer_sol(biome: Dictionary, graine: int) -> Node2D:
 	return _racine
 
 
-func generer(biome: Dictionary, graine: int) -> void:
+# le lieu semé d'après sa graine ; ou, une partie reprise (scripts/partie_gardee.gd), les objets tels qu'on les avait laissés :
+# gardes, une liste de [espèce, genre, x, y, graine, reste, repousse] (photo_objets)
+func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 	var axes: Dictionary = biome.get("axes", {})
 	var r := RandomNumberGenerator.new()
 	r.seed = graine
@@ -123,6 +125,19 @@ func generer(biome: Dictionary, graine: int) -> void:
 	var arbre := "sapin" if palette.get("froid", false) else "arbre"
 	lieu = str(biome.get("id", ""))
 	_lire_flore(arbre)
+	if not gardes.is_empty():
+		_reposer(gardes)
+	else:
+		_semer_tout(r, arbre, bosquets, couvert, humid, alt)
+	# le décor, l'herbe, les ombres, la lisière : une fois les objets posés (le décor se glisse autour d'eux)
+	if _racine != null:
+		_mat_herbe = Decor.semer(self, _racine, _terrain, _parts, palette, graine, _mobile)
+		for k in _ombres:
+			_case_ombre(k)
+		Decor.lisiere(self, palette, graine, _mobile)
+
+
+func _semer_tout(r: RandomNumberGenerator, arbre: String, bosquets, couvert: float, humid: float, alt: float) -> void:
 	_semer(r, arbre, int(70 + 430 * couvert), palette["feuilles"], bosquets, 0.25 + couvert)
 	_semer(r, "rocher", int(40 + 140 * alt), palette["pierre"], null, 1.0)
 	_semer(r, "buisson", int(40 + 110 * humid), palette["feuilles"], bosquets, 0.6)
@@ -133,12 +148,36 @@ func generer(biome: Dictionary, graine: int) -> void:
 		_poser("brindille", Vector2(r.randf_range(-120, 120), r.randf_range(-90, 90)), Color.WHITE, r.randi())
 	for i in 2:
 		_poser("rocher", Vector2(r.randf_range(-160, 160), r.randf_range(-130, 130)), palette["pierre"], r.randi())
-	# le décor, l'herbe, les ombres, la lisière : une fois les objets posés (le décor se glisse autour d'eux)
-	if _racine != null:
-		_mat_herbe = Decor.semer(self, _racine, _terrain, _parts, palette, graine, _mobile)
-		for k in _ombres:
-			_case_ombre(k)
-		Decor.lisiere(self, palette, graine, _mobile)
+
+
+# --- une partie gardée ---
+
+# chaque objet, tel qu'il est : [espèce, genre, x, y, graine, reste, repousse] (une souche était un arbre, son espèce le dit)
+func photo_objets() -> Array:
+	var out := []
+	for o in objets:
+		if is_instance_valid(o):
+			out.append([o._espece, o.genre, snappedf(o.position.x, 0.1), snappedf(o.position.y, 0.1), o.graine, o.reste, snappedf(o._repousse, 0.1)])
+	return out
+
+
+func _reposer(gardes: Array) -> void:
+	for g in gardes:
+		if typeof(g) != TYPE_ARRAY or g.size() < 7:
+			continue
+		var espece := str(g[0])
+		if not Objet.BUTIN.has(espece) or espece == "souche":
+			continue
+		var c: Color = Color.WHITE
+		match espece:
+			"arbre", "sapin", "buisson":
+				c = palette["feuilles"]
+			"rocher":
+				c = palette["pierre"]
+			"touffe":
+				c = palette["herbe"]
+		_poser(espece, Vector2(float(g[2]), float(g[3])), c, int(g[4]))
+		objets.back().reprendre(str(g[1]), int(g[5]), float(g[6]))
 
 
 # des objets d'un genre, au hasard, plus serrés là où le bruit des bosquets est haut ; rien sur le lieu du réveil

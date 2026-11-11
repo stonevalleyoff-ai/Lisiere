@@ -95,6 +95,7 @@ class Fin extends Control:
 	var _planches: Planches
 	var _lot: Label
 	var _resume: Label
+	var _tableau: Label
 	var _boutons: Array = []
 	var _t := 0.0
 
@@ -136,6 +137,11 @@ class Fin extends Control:
 		_resume.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_resume.visible = false
 		v.add_child(_resume)
+		# (le tableau des scores : le rang de la partie, ou pourquoi elle n'y va pas)
+		_tableau = Encre.libelle("", T.titre_italique(), 17, P.SANG)
+		_tableau.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_tableau.visible = false
+		v.add_child(_tableau)
 		var tete := Encre.libelle("Les bêtes croisées", T.capitales(), 19, P.ENCRE)
 		v.add_child(tete)
 		_planches = Planches.new()
@@ -157,8 +163,13 @@ class Fin extends Control:
 		_boutons = [b1, b2]
 		resized.connect(_disposer)
 
+	func dire_tableau(t: String) -> void:
+		_tableau.text = t
+		_tableau.visible = t != ""
+
 	func mettre_compact(oui: bool) -> void:
 		compact = oui
+		_tableau.add_theme_font_size_override("font_size", 14 if oui else 17)
 		_titre.add_theme_font_size_override("font_size", 38 if oui else 52)
 		_lieu.add_theme_font_size_override("font_size", 16 if oui else 19)
 		_stats.add_theme_constant_override("separation", 26 if oui else 46)

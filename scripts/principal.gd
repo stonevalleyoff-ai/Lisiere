@@ -23,6 +23,7 @@ const Effets := preload("res://scripts/effets.gd")
 const Vitrine := preload("res://scripts/vitrine.gd")
 const Ciel := preload("res://scripts/ciel.gd")
 const Session := preload("res://scripts/session.gd")
+const PartieGardee := preload("res://scripts/partie_gardee.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -68,6 +69,10 @@ var compte := ""
 var record := 0
 var essai = null
 var session
+# la graine du lieu (il se sème d'après elle) ; le numéro de la partie au tableau des scores ("" : elle n'y est pas)
+var graine := 0
+var partie_id := ""
+var _garde_ms := 0
 var _directeur := 0.0
 var _vague := 0.0
 var _agir := 0.0
@@ -106,6 +111,7 @@ func _ready() -> void:
 	add_child(ui)
 	ui.relier_session(session)
 	ui.commencer.connect(_commencer)
+	ui.reprendre_partie.connect(reprendre)
 	ui.recommencer.connect(func(): _commencer(biome))
 	ui.vers_titre.connect(_titre)
 	tactile = Tactile.new()
@@ -214,12 +220,17 @@ func _actions() -> void:
 # --- l'écran-titre, le début d'une partie ---
 
 func _titre() -> void:
+	if en_partie and _mort < 0.0:
+		_garder()
 	_vider()
 	ui.montrer_chargement("Le monde d'Orvane s'éveille…")
 	await donnees.charger_index()
 	ui.montrer_titre(donnees.lieux(), _infos_monde(), record)
+	ui.montrer_reprise(PartieGardee.lire() if essai == null else {})
 	sons.titre()
 	au_titre = true
+	if session != null and essai == null:
+		session.renvoyer_attente()
 	if OS.has_feature("web") and JavaScriptBridge.pwa_needs_update():
 		_nouvelle_version()
 
@@ -240,7 +251,7 @@ func _infos_monde() -> String:
 	return t + " : la copie gardée dans le jeu (hors ligne)."
 
 
-func _commencer(b: String) -> void:
+func _commencer(b: String, gardee: Dictionary = {}) -> void:
 	if b == "":
 		return
 	biome = b
@@ -262,7 +273,16 @@ func _commencer(b: String) -> void:
 	allure_temps = R.ALLURE_NEIGE if float(meteo.get("neige", 0.0)) >= R.NEIGE_AU_SOL else 1.0
 	if qualite == "mobile":
 		await _attendre_sons()
-	_nouvelle_partie()
+	_nouvelle_partie(gardee)
+
+
+# la partie gardée sur l'appareil, reprise là où on l'avait laissée (scripts/partie_gardee.gd)
+func reprendre() -> void:
+	var d := PartieGardee.lire()
+	if d.is_empty():
+		ui.message_titre("Il n'y a plus de partie à reprendre.")
+		return
+	await _commencer(str(d["biome"]), d)
 
 
 # sur un téléphone, les sons se fabriquent avant la partie (sons.gd, mobile) : pendant qu'on joue, ils figeraient l'image
@@ -274,11 +294,16 @@ func _attendre_sons() -> void:
 		await get_tree().process_frame
 
 
-func _nouvelle_partie() -> void:
+func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	au_titre = false
 	_vider()
-	Orvane.oublier()
-	var graine := randi()
+	var reprise := not gardee.is_empty()
+	if reprise:
+		# (ce qu'Orvane a déjà compté de cette partie, le kit l'a gardé : on ne l'oublie pas)
+		graine = int(gardee.get("graine", randi()))
+	else:
+		Orvane.oublier()
+		graine = randi()
 	scene = Node2D.new()
 	add_child(scene)
 	obscurite = CanvasModulate.new()
@@ -288,7 +313,7 @@ func _nouvelle_partie() -> void:
 	monde.y_sort_enabled = true
 	scene.add_child(monde.creer_sol(biome_info, graine))
 	scene.add_child(monde)
-	monde.generer(biome_info, graine)
+	monde.generer(biome_info, graine, gardee.get("objets", []) if reprise else [])
 	joueur = Joueur.new()
 	monde.add_child(joueur)
 	joueur.pas.connect(_sur_pas)
@@ -332,7 +357,18 @@ func _nouvelle_partie() -> void:
 	_agir = 0.35          # (le clic qui lance la partie n'est pas un coup)
 	en_pause = false
 	en_partie = true
+	_garde_ms = Time.get_ticks_msec()
 	ui.montrer_hud()
+	if reprise:
+		PartieGardee.appliquer(self, gardee)
+		ui.message("La partie reprend : %s, jour %d, %d nuit%s tenue%s." % [str(biome_info.get("nom", biome)), jour, nuits,
+			"s" if nuits > 1 else "", "s" if nuits > 1 else ""])
+		_garder()
+		return
+	partie_id = ""
+	if essai == null:
+		PartieGardee.effacer()
+		_ouvrir_au_tableau()
 	ui.message("Tu t'éveilles à la lisière : %s, %s. Le jour baisse vite." % [str(biome_info.get("nom", biome)), saison])
 	var dit := str(R.TEMPS_DIT.get(str(meteo.get("temps", "")), ""))
 	if allure_temps < 1.0:
@@ -459,6 +495,8 @@ func _process(delta: float) -> void:
 		en_pause = not en_pause
 		ui.montrer_pause(en_pause)
 	if en_pause:
+		if not _pause_vue:
+			_garder()
 		_pause_vue = true
 		return
 	if _pause_vue:
@@ -466,6 +504,9 @@ func _process(delta: float) -> void:
 		_pause_vue = false
 		_agir = 0.35
 	_regler_image(delta)
+	# (toutes les vingt secondes, à l'horloge de l'appareil : sur un téléphone qui rame, le temps du jeu avance moins vite)
+	if Time.get_ticks_msec() - _garde_ms >= 20000:
+		_garder()
 	if _mort >= 0.0:
 		# (elle est tombée : le monde continue un instant sans elle, puis l'écran de fin)
 		_mort += delta
@@ -933,6 +974,8 @@ func _fin() -> void:
 	if nuits > record:
 		record = nuits
 	_sauver()
+	if essai == null:
+		PartieGardee.effacer()
 	var nr := 0
 	var np := 0
 	for k in rencontres:
@@ -964,6 +1007,60 @@ func _fin() -> void:
 	var lot := "Ce que ta partie renvoie au monde d'Orvane : %d rencontre%s, %d prélèvement%s, dans le lieu « %s ». %s\n%s" % [
 		nr, "s" if nr > 1 else "", np, "s" if np > 1 else "", biome, depot, " · ".join(PackedStringArray(noms))]
 	ui.montrer_fin(titre, resume, lot)
+	_inscrire_au_tableau()
+
+
+# --- la partie gardée, le tableau des scores ---
+
+# la partie en cours, sur l'appareil (scripts/partie_gardee.gd) ; l'essai et la vitrine ne gardent rien
+func _garder() -> void:
+	_garde_ms = Time.get_ticks_msec()
+	if essai != null or not en_partie or _mort >= 0.0 or joueur == null or monde == null:
+		return
+	PartieGardee.ecrire(self)
+
+
+# l'application passe derrière une autre, la fenêtre perd la main, on la ferme : la partie se met en pause, et se garde
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_WM_WINDOW_FOCUS_OUT, NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED,
+			NOTIFICATION_WM_CLOSE_REQUEST]:
+		if en_partie and _mort < 0.0 and essai == null and ui != null:
+			if not en_pause:
+				en_pause = true
+				ui.montrer_pause(true)
+			_garder()
+
+
+# une partie commencée connecté a son numéro au tableau des scores (la base vérifiera, à la fin, le temps qu'elle a duré)
+func _ouvrir_au_tableau() -> void:
+	if essai != null or session == null or not session.connecte():
+		return
+	var id: String = await session.commencer_partie(biome, str(biome_info.get("nom", biome)))
+	if en_partie and partie_id == "" and id != "":
+		partie_id = id
+		_garder()
+
+
+func _inscrire_au_tableau() -> void:
+	if essai != null or session == null:
+		return
+	if partie_id == "":
+		if session.connecte():
+			ui.fin_tableau("Cette partie n'était pas inscrite au tableau des scores (pas de réseau quand elle a commencé).")
+		else:
+			ui.fin_tableau("Connecte-toi à l'écran-titre avant d'entrer dans la nuit : tes nuits iront au tableau des scores.")
+		return
+	var id := partie_id
+	partie_id = ""
+	ui.fin_tableau("Au tableau des scores…")
+	var r: Dictionary = await session.finir_partie(id, nuits, croisees, chassees)
+	if r.get("ok", false):
+		var m := int(r["meilleur"])
+		ui.fin_tableau("Au tableau des scores : rang %d (ta meilleure partie : %d nuit%s)." % [int(r["rang"]), m, "s" if m > 1 else ""])
+	elif r.get("attend", false):
+		ui.fin_tableau("Pas de réseau : tes nuits iront au tableau des scores dès qu'il reviendra.")
+	else:
+		ui.fin_tableau("Le tableau des scores refuse cette partie : %s." % str(r.get("erreur", "")))
 
 
 func _charger() -> void:

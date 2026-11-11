@@ -125,17 +125,118 @@ func jeton_valide() -> String:
 	return jeton
 
 
+# --- le tableau des scores (les fonctions lisiere_* de la base de Stone Valley) ---
+# Une partie commencée connecté a son numéro (lisiere_partie_commencer) ; à la fin, ses nuits tenues y sont inscrites
+# (lisiere_partie_finir : la base refuse plus de nuits que le temps passé n'en permet). Sans réseau à la fin, l'inscription
+# attend (user://tableau.json) et repart à l'écran-titre.
+
+const ATTENTE := "user://tableau.json"
+
+
+# une fonction de la base (/rest/v1/rpc/…), avec le jeton si l'on est connecté, sinon en anonyme
+func base(nom: String, args: Dictionary = {}) -> Dictionary:
+	var j := ""
+	if connecte():
+		j = await jeton_valide()
+	var r := await _http(URL + "/rest/v1/rpc/" + nom, args, HTTPClient.METHOD_POST, j)
+	# (les fonctions de Lisière répondent { ok, erreur } ; le tableau, une liste)
+	if r["ok"] and typeof(r["donnees"]) == TYPE_DICTIONARY and r["donnees"].has("ok") and not r["donnees"]["ok"]:
+		r["ok"] = false
+		r["erreur"] = str(r["donnees"].get("erreur", "refusé"))
+	return r
+
+
+# le numéro d'une partie qui commence ("" : pas de compte, ou pas de réseau)
+func commencer_partie(lieu: String, nom_du_lieu: String) -> String:
+	if not connecte():
+		return ""
+	var r := await base("lisiere_partie_commencer", {"p_lieu": lieu, "p_lieu_nom": nom_du_lieu})
+	return str(r["donnees"].get("partie", "")) if r["ok"] else ""
+
+
+# la fin d'une partie au tableau : { ok, rang, meilleur, erreur, attend } ; sans réseau, elle attend (attend = true)
+func finir_partie(partie: String, nuits: int, croisees: int, chassees: int) -> Dictionary:
+	var args := {"p_partie": partie, "p_nuits": nuits, "p_croisees": croisees, "p_chassees": chassees}
+	var r := await base("lisiere_partie_finir", args)
+	if r["ok"]:
+		var d: Dictionary = r["donnees"]
+		return {"ok": true, "rang": int(d.get("rang", 0)), "meilleur": int(d.get("meilleur", nuits)), "attend": false}
+	if int(r["code"]) == 0 or int(r["code"]) >= 500:
+		_mettre_en_attente(args)
+		return {"ok": false, "erreur": r["erreur"], "attend": true}
+	return {"ok": false, "erreur": r["erreur"], "attend": false}
+
+
+# ce qui attendait d'être inscrit, renvoyé (à l'écran-titre)
+func renvoyer_attente() -> void:
+	var liste := _attente()
+	if liste.is_empty() or not connecte():
+		return
+	var reste := []
+	for a in liste:
+		var r := await base("lisiere_partie_finir", a)
+		if not r["ok"] and (int(r["code"]) == 0 or int(r["code"]) >= 500):
+			reste.append(a)
+	_ecrire_attente(reste)
+
+
+func tableau(limite: int = 20) -> Dictionary:
+	var r := await base("lisiere_tableau", {"p_limite": limite})
+	if r["ok"] and typeof(r["donnees"]) == TYPE_ARRAY:
+		return {"ok": true, "lignes": r["donnees"]}
+	return {"ok": false, "lignes": [], "erreur": r.get("erreur", "")}
+
+
+func moi() -> Dictionary:
+	if not connecte():
+		return {"ok": false, "erreur": "pas de compte"}
+	var r := await base("lisiere_moi")
+	return r["donnees"] if r["ok"] else {"ok": false, "erreur": r["erreur"]}
+
+
+func nommer(pseudo: String) -> Dictionary:
+	var r := await base("lisiere_nommer", {"p_pseudo": pseudo})
+	return r["donnees"] if r["ok"] else {"ok": false, "erreur": r["erreur"]}
+
+
+func _attente() -> Array:
+	if not FileAccess.file_exists(ATTENTE):
+		return []
+	var d = JSON.parse_string(FileAccess.get_file_as_string(ATTENTE))
+	return d if typeof(d) == TYPE_ARRAY else []
+
+
+func _mettre_en_attente(args: Dictionary) -> void:
+	var liste := _attente()
+	liste.append(args)
+	_ecrire_attente(liste.slice(-20))
+
+
+func _ecrire_attente(liste: Array) -> void:
+	if liste.is_empty():
+		if FileAccess.file_exists(ATTENTE):
+			DirAccess.remove_absolute(ATTENTE)
+		return
+	var f := FileAccess.open(ATTENTE, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify(liste))
+
+
 # --- Supabase Auth ---
 
-# un appel : { ok, code, donnees, erreur } ; l'erreur est dite en français
+# un appel à Supabase Auth : { ok, code, donnees, erreur } ; l'erreur est dite en français
 func _appeler(chemin: String, corps, methode: int = HTTPClient.METHOD_POST, avec_jeton: bool = false, j: String = "") -> Dictionary:
+	return await _http(URL + "/auth/v1" + chemin, corps, methode, (j if j != "" else jeton) if avec_jeton else "")
+
+
+func _http(adresse: String, corps, methode: int, j: String) -> Dictionary:
 	var h := HTTPRequest.new()
 	h.timeout = 20.0
 	add_child(h)
 	var entetes := PackedStringArray(["Content-Type: application/json", "apikey: " + CLE])
-	if avec_jeton:
-		entetes.append("Authorization: Bearer " + (j if j != "" else jeton))
-	var e := h.request(URL + "/auth/v1" + chemin, entetes, methode, JSON.stringify(corps) if corps != null else "")
+	if j != "":
+		entetes.append("Authorization: Bearer " + j)
+	var e := h.request(adresse, entetes, methode, JSON.stringify(corps) if corps != null else "")
 	if e != OK:
 		h.queue_free()
 		return {"ok": false, "code": 0, "donnees": null, "erreur": "pas de connexion"}

@@ -40,7 +40,14 @@ Le même que pour Stone Valley : le bouton « Se connecter », sous « Entrer da
 - **Le même Supabase** que Stone Valley, le projet « Vallée de pierre » (`scripts/session.gd`), et sa clé publique (sans compte connecté, elle n'ouvre rien). Tout passe par Supabase Auth : le jeu n'envoie l'adresse et le mot de passe qu'à lui, et ne garde que la session (`user://session.json`). Le jeton se renouvelle seul.
 - **Une adresse confirmée** : un compte neuf reçoit un courriel de Supabase. Le lien ramène à la page du jeu, si Supabase la connaît (Authentication › URL Configuration › Redirect URLs : `https://stonevalleyoff-ai.github.io/Lisiere/`) ; sinon à celle de Stone Valley, et le compte vaut pareil. Revenu d'un lien « mot de passe oublié », la page s'ouvre pour en choisir un nouveau.
 - **Dans un navigateur**, l'adresse et le mot de passe sont de vrais champs de la page, posés sur la feuille : sur un téléphone, le bon clavier s'ouvre, et le gestionnaire de mots de passe peut les remplir. Au doigt, la feuille monte en haut de l'écran, au-dessus du clavier.
-- **Sans compte**, la partie se joue pareil. Pour l'instant, être connecté ne change rien au jeu.
+- **Sans compte**, la partie se joue pareil ; connecté, ses nuits vont au tableau des scores.
+
+## La partie gardée, le tableau des scores
+
+- **La partie gardée** (`scripts/partie_gardee.gd`, `user://partie.json`) : une partie en cours s'écrit sur l'appareil toutes les vingt secondes (à l'horloge de l'appareil), à la pause, quand l'application passe derrière une autre (la partie se met alors en pause) et quand on revient au titre. L'écran-titre propose « Reprendre · Forêt, jour 3 », devant « Entrer dans la nuit » (qui demande un second appui : la partie gardée serait perdue). On garde le lieu et sa graine, l'heure, les nuits tenues ; la veilleuse, son sac, sa lance, sa torche ; les feux et leur bois ; le lieu tel qu'on l'a laissé (les arbres abattus, les rochers entamés, les buissons qui repoussent, les brindilles ramassées ou tombées) ; ce qu'on a croisé et chassé, et les bêtes tuées dont les échos reviennent. Les bêtes reviennent d'elles-mêmes. À la fin de la partie, elle s'efface. L'essai et la vitrine n'y touchent pas.
+- **Le tableau des scores** (`scripts/interface_tableau.gd`, « Tableau des scores » à l'écran-titre) : les veilleuses qui ont tenu le plus de nuits, chacune sa meilleure partie, avec son nom, ses nuits, le lieu ; soi en rouge, et son rang même plus bas. Il se lit sans compte ; on y entre connecté : une partie commencée connectée a son numéro (`lisiere_partie_commencer`), et à la fin ses nuits y sont inscrites (`lisiere_partie_finir`) ; l'écran de fin dit le rang. Sans réseau à la fin, l'inscription attend (`user://tableau.json`) et repart à l'écran-titre.
+- **La base** : celle de Stone Valley (Supabase « Vallée de pierre »), deux tables à elles (`lisiere_parties`, `lisiere_joueurs`), fermées (rien ne s'y lit ni ne s'y écrit en direct), et des fonctions qui vérifient : un compte connecté, au plus 40 parties par heure, et pas plus de nuits que le temps passé n'en permet (trois minutes par nuit au moins, depuis le début de la partie : un jour de Lisière en dure quatre). Effacer son compte dans Stone Valley efface aussi ses parties.
+- **Le nom au tableau** : celui choisi dans la page du compte (« Enregistrer le nom », de 2 à 18 caractères), sinon celui de Stone Valley, sinon « Veilleuse ». L'adresse n'y paraît jamais.
 
 ## Les touches
 
@@ -97,7 +104,7 @@ Sans Godot, `node outils/banc.js` vérifie le projet : chaque fichier qu'il nomm
 
 ## Où en est le jeu
 
-- **Écrit** : le jeu entier (`scripts/`, 43 fichiers, et `shaders/`), ses sons (faits par le code), son essai sans écran, sa vitrine, sa configuration d'export web.
+- **Écrit** : le jeu entier (`scripts/`, 45 fichiers, et `shaders/`), ses sons (faits par le code), son essai sans écran, sa vitrine, sa configuration d'export web.
 - **Vérifié à chaque PR** (`.github/workflows/verifications.yml`) : la syntaxe de chaque script (GDScript 4 avec `gdtoolkit`, JavaScript) ; le banc (`outils/banc.js`) ; et l'essai, dans Godot 4.3, sans écran.
 - **Vérifié dans Godot 4.3** (le 7 novembre 2026, au cycle 46) :
   - l'essai sans écran passe, sur la copie gardée (5 lieux) comme sur le monde publié (32 lieux, chacun chargé) ;
@@ -135,7 +142,7 @@ Lisière est un jeu du genre survie-horreur (récolter, fabriquer, tenir la nuit
 ## Ce qui reste
 
 - L'équilibrer, partie après partie (les règles sont toutes dans `scripts/regles.gd`).
-- Une partie qui se garde d'une session à l'autre ; une manette.
+- Une manette.
 - Le jeu sur un vrai téléphone (il n'a été joué que sur un téléphone émulé, dans Chromium, sans carte graphique) : la lisibilité des petits textes, et surtout la vitesse de rendu. Dans Chromium en rendu logiciel, la partie retravaillée coûte environ 20 % de plus que l'ancienne, l'écran-titre environ trois fois plus : à mesurer sur un vrai appareil, et à alléger en qualité « mobile » s'il le faut.
 - Une écoute du son : il a été réglé sur des mesures (spectres, niveaux, crêtes), sans oreille.
 

@@ -9,6 +9,7 @@ extends CanvasLayer
 signal commencer(biome: String)
 signal recommencer
 signal vers_titre
+signal reprendre_partie
 
 const R := preload("res://scripts/regles.gd")
 const P := preload("res://scripts/palette.gd")
@@ -21,6 +22,8 @@ const Carte := preload("res://scripts/interface_carte.gd")
 const Vol := preload("res://scripts/interface_vol.gd")
 const Carnet := preload("res://scripts/interface_carnet.gd")
 const Porte := preload("res://scripts/interface_porte.gd")
+const Tableau := preload("res://scripts/interface_tableau.gd")
+const PartieGardee := preload("res://scripts/partie_gardee.gd")
 const BRAISE := preload("res://shaders/interface_braise.gdshader")
 # sur un écran tactile, les messages nomment les boutons (scripts/tactile.gd) plutôt que les touches
 const TOUCHES_TACTILES := {"(Espace)": "(Agir)", "un feu (1)": "un feu (bouton Feu)", "touche 1": "bouton Feu", "(F)": "(Nourrir)", "(E)": "(Manger)", "(C)": "(Cuire)"}
@@ -31,6 +34,11 @@ var tactile := false
 var _titre: Control
 var _compte: Bouton          # « Se connecter », ou le compte ouvert (scripts/session.gd)
 var _porte: Porte            # la page du compte, sur l'écran-titre (scripts/interface_porte.gd)
+var _tableau: Tableau        # le tableau des scores (scripts/interface_tableau.gd)
+var _tableau_b: Bouton
+var _ligne_compte: HBoxContainer
+var _reprise: Bouton       # « Reprendre · Forêt, jour 3 » : la partie gardée (scripts/partie_gardee.gd)
+var _confirmer := 0          # (une partie gardée : « Entrer dans la nuit » la remplace au second appui)
 var _session
 var _scene
 var _colonne: VBoxContainer
@@ -144,15 +152,27 @@ func _construire_titre() -> void:
 	_choix.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_colonne.add_child(_choix)
 	_colonne.add_child(_espace(4))
+	_reprise = Bouton.new("Reprendre", 29, false, true)
+	_reprise.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_reprise.pressed.connect(_reprendre_partie)
+	_reprise.visible = false
+	_colonne.add_child(_reprise)
 	_entrer = Bouton.new("Entrer dans la nuit", 31, false, true)
 	_entrer.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_entrer.pressed.connect(_lancer)
 	_colonne.add_child(_entrer)
-	# (le compte, le même que celui de Stone Valley)
+	# (le compte, le même que celui de Stone Valley ; le tableau des scores, de tous ceux qui jouent)
+	_ligne_compte = HBoxContainer.new()
+	_ligne_compte.alignment = BoxContainer.ALIGNMENT_CENTER
+	_ligne_compte.add_theme_constant_override("separation", 12)
+	_ligne_compte.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_colonne.add_child(_ligne_compte)
 	_compte = Bouton.new("Se connecter", 19)
-	_compte.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_compte.pressed.connect(func(): ouvrir_porte())
-	_colonne.add_child(_compte)
+	_ligne_compte.add_child(_compte)
+	_tableau_b = Bouton.new("Tableau des scores", 19)
+	_tableau_b.pressed.connect(func(): _tableau.ouvrir())
+	_ligne_compte.add_child(_tableau_b)
 	_etat_titre = _centre(T.libelle("", T.texte_moyen(), 15, P.BRAISE))
 	_colonne.add_child(_etat_titre)
 	_record = _centre(T.libelle("", T.titre_italique(), 17, Color(P.IVOIRE, 0.72)))
@@ -174,12 +194,17 @@ func _construire_titre() -> void:
 	_porte = Porte.new()
 	_porte.fermee.connect(func(): _entrer.grab_focus())
 	_titre.add_child(_porte)
+	_tableau = Tableau.new()
+	_tableau.fermee.connect(func(): _entrer.grab_focus())
+	_tableau.vers_le_compte.connect(func(): ouvrir_porte())
+	_titre.add_child(_tableau)
 
 
 # le compte : la porte le connaît, le bouton du titre le dit ; revenu d'un lien « mot de passe oublié », la porte s'ouvre
 func relier_session(s) -> void:
 	_session = s
 	_porte.session = s
+	_tableau.session = s
 	s.change.connect(_dire_compte)
 	_dire_compte()
 
@@ -198,7 +223,28 @@ func _dire_compte() -> void:
 
 
 func ouvrir_porte(mode: String = "") -> void:
+	_tableau.fermer()
 	_porte.ouvrir(mode)
+
+
+# la partie gardée : le bouton « Reprendre » la dit, et passe devant « Entrer dans la nuit »
+func montrer_reprise(d: Dictionary) -> void:
+	_confirmer = 0
+	_reprise.visible = not d.is_empty()
+	if _reprise.visible:
+		_reprise.libelle = "Reprendre · " + PartieGardee.resume(d)
+		_reprise._mesurer()
+	_entrer.principal = not _reprise.visible
+	_entrer.queue_redraw()
+
+
+func _reprendre_partie() -> void:
+	if _depart:
+		return
+	_depart = true
+	var tw := create_tween()
+	tw.tween_property(_fondu, "color:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+	tw.tween_callback(func(): reprendre_partie.emit())
 
 
 func _construire_chargement() -> void:
@@ -260,13 +306,13 @@ func _apparaitre() -> void:
 	if _apparition != null and _apparition.is_valid():
 		_apparition.kill()
 	_fondu.color.a = 1.0
-	for c in [_nom_du_jeu, _devise, _infos, _choix, _entrer, _compte, _bas_titre]:
+	for c in [_nom_du_jeu, _devise, _infos, _choix, _reprise, _entrer, _ligne_compte, _bas_titre]:
 		c.modulate.a = 0.0
 	_apparition = create_tween().set_parallel()
 	_apparition.tween_property(_fondu, "color:a", 0.0, 1.6).set_trans(Tween.TRANS_SINE)
 	_apparition.tween_property(_nom_du_jeu, "modulate:a", 1.0, 1.4).set_delay(0.5)
 	_apparition.tween_property(_devise, "modulate:a", 1.0, 1.0).set_delay(1.2)
-	for c in [_infos, _choix, _entrer, _compte]:
+	for c in [_infos, _choix, _reprise, _entrer, _ligne_compte]:
 		_apparition.tween_property(c, "modulate:a", 1.0, 0.8).set_delay(1.6)
 	_apparition.tween_property(_bas_titre, "modulate:a", 1.0, 1.0).set_delay(2.0)
 
@@ -275,6 +321,12 @@ func _apparaitre() -> void:
 func _lancer() -> void:
 	if _depart or _lieux.is_empty() or _choix.index < 0 or _choix.index >= _lieux.size():
 		return
+	if _reprise.visible and Time.get_ticks_msec() > _confirmer:
+		_confirmer = Time.get_ticks_msec() + 6000
+		_etat_titre.text = "La partie en cours sera perdue. Touche encore « Entrer dans la nuit » pour en commencer une autre." if tactile else \
+			"La partie en cours sera perdue. Encore une fois « Entrer dans la nuit » pour en commencer une autre."
+		return
+	_etat_titre.text = ""
 	_depart = true
 	var id := str(_lieux[_choix.index]["id"])
 	var tw := create_tween()
@@ -484,7 +536,10 @@ func passer_au_tactile() -> void:
 	_infos.add_theme_font_size_override("font_size", 13)
 	_choix.mettre_compact(true)
 	_entrer.mettre_taille(25)
+	_reprise.mettre_taille(23)
 	_compte.mettre_taille(16)
+	_tableau_b.mettre_taille(16)
+	_tableau.tactile = true
 	_porte.tactile = true
 	_porte._disposer()
 	_etat_titre.add_theme_font_size_override("font_size", 13)
@@ -577,14 +632,23 @@ func _placer_les_notes(delta: float) -> void:
 func montrer_fin(titre: String, resume: String, lot: String) -> void:
 	_montrer(_fin)
 	_fin.remplir(titre, resume, lot, get_parent())
+	_fin.dire_tableau("")
+
+
+# la fin : ce que dit le tableau des scores (le rang, ou pourquoi la partie n'y va pas)
+func fin_tableau(t: String) -> void:
+	_fin.dire_tableau(t)
 
 
 func _unhandled_input(e: InputEvent) -> void:
 	if _titre.visible:
-		if _porte.visible:
+		if _porte.visible or _tableau.visible:
 			return
 		if e.is_action_pressed("valider"):
-			_lancer()
+			if _reprise.visible:
+				_reprendre_partie()
+			else:
+				_lancer()
 		elif e.is_action_pressed("ui_left"):
 			_choix.passer(-1)
 		elif e.is_action_pressed("ui_right"):

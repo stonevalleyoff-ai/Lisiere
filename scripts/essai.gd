@@ -243,6 +243,14 @@ func _lancer() -> void:
 	verif(echo, "la peur haute, ce qu'on a tué revient en écho")
 	verif(perdu > 0.0, "le noir coûte de la santé (%d points perdus en quarante secondes)" % int(perdu))
 
+	# (la partie telle qu'elle est, avant l'aube, un arbre abattu en plus : elle sera reprise à la fin, et doit revenir pareille)
+	for x in jeu.monde.objets:
+		if (x.genre == "arbre" or x.genre == "sapin") and x.reste == x.plein:
+			for k in x.plein:
+				x.recolter()
+			break
+	var gardee: Dictionary = load("res://scripts/partie_gardee.gd").photo(jeu)
+
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
 	await _attendre(2.0)
@@ -257,6 +265,31 @@ func _lancer() -> void:
 			break
 	verif(not jeu.en_partie, "la santé à zéro, la partie s'arrête sur l'écran de fin, même rassasiée et calme")
 	verif(Orvane.cle_jeu != "" and Orvane.lots_en_attente() == 0 and Orvane.en_cours() == 0, "le jeu a sa clé d'Orvane, mais l'essai ne lui envoie rien")
+
+	print("7. La partie gardée")
+	var PG := load("res://scripts/partie_gardee.gd")
+	PG.ecrire_donnees(gardee)
+	var lu: Dictionary = PG.lire()
+	jeu.ui.montrer_reprise(lu)
+	verif(not lu.is_empty() and jeu.ui._reprise.visible and not jeu.ui._entrer.principal and str(jeu.ui._reprise.libelle).contains("Forêt"),
+		"une partie gardée se relit, et l'écran-titre propose de la reprendre (« %s »)" % jeu.ui._reprise.libelle)
+	await jeu._commencer(str(lu["biome"]), lu)
+	var revenue: Dictionary = JSON.parse_string(JSON.stringify(PG.photo(jeu)))
+	var avant_g: Dictionary = JSON.parse_string(JSON.stringify(gardee))
+	var souches := func(d): return d["objets"].filter(func(x): return x[1] == "souche").size()
+	var entames := func(d): return d["objets"].filter(func(x): return x[1] != "souche" and int(x[5]) < 4 and x[0] in ["arbre", "sapin", "rocher"]).size()
+	var pareil: bool = jeu.en_partie and souches.call(avant_g) > 0 and revenue["objets"].size() == avant_g["objets"].size() and souches.call(revenue) == souches.call(avant_g) \
+		and entames.call(revenue) == entames.call(avant_g) and revenue["joueur"]["inventaire"] == avant_g["joueur"]["inventaire"] \
+		and revenue["feux"].size() == avant_g["feux"].size() and absf(float(revenue["horloge"]) - float(avant_g["horloge"])) < 0.5 \
+		and revenue["nuits"] == avant_g["nuits"] and revenue["tuees"] == avant_g["tuees"] and revenue["graine"] == avant_g["graine"] \
+		and Vector2(revenue["joueur"]["x"], revenue["joueur"]["y"]).distance_to(Vector2(avant_g["joueur"]["x"], avant_g["joueur"]["y"])) < 1.0
+	verif(pareil, "reprise, elle revient pareille : %d objets dont %d souches, le sac (%d bois), %d feu, l'heure, %d nuit, %d bête tuée" % [
+		revenue["objets"].size(), souches.call(revenue), int(revenue["joueur"]["inventaire"].get("bois", 0)), revenue["feux"].size(),
+		int(revenue["nuits"]), revenue["tuees"].size()])
+	verif(not FileAccess.file_exists("user://partie.json") or PG.lire() == lu, "l'essai ne réécrit pas la partie gardée")
+	PG.effacer()
+	jeu.ui.montrer_reprise({})
+	verif(not jeu.ui._reprise.visible and jeu.ui._entrer.principal, "effacée, l'écran-titre ne propose plus que d'entrer dans la nuit")
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)
