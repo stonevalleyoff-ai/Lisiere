@@ -84,6 +84,10 @@ func _ready() -> void:
 	_pause.visible = false
 	_pause.reprendre.connect(_reprendre)
 	_pause.quitter.connect(func(): vers_titre.emit())
+	_pause.compteur.connect(func():
+		var jeu = get_parent()
+		if jeu != null and jeu.has_method("basculer_ips"):
+			_pause.dire_compteur(jeu.basculer_ips()))
 	add_child(_pause)
 	_construire_chargement()
 	_montrer(null)
@@ -463,6 +467,7 @@ func passer_au_tactile() -> void:
 
 func montrer_pause(oui: bool) -> void:
 	if oui:
+		_pause.dire_compteur(get_parent() != null and get_parent().get("ips") == true)
 		_pause.ouvrir()
 	else:
 		_pause.visible = false

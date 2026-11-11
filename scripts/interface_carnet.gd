@@ -309,6 +309,7 @@ class Planches extends Control:
 class Pause extends Control:
 	signal reprendre
 	signal quitter
+	signal compteur          # (afficher ou masquer le nombre d'images par seconde)
 
 	var compact := false
 	var tactile := false
@@ -317,6 +318,7 @@ class Pause extends Control:
 	var _sous: Label
 	var _commandes: Commandes
 	var _boutons: Array = []
+	var _ips
 	var _titre: Label
 	var _t := 0.0
 	var _vise := 0.0
@@ -354,7 +356,19 @@ class Pause extends Control:
 		h.add_child(b1)
 		h.add_child(b2)
 		_boutons = [b1, b2]
+		var h2 := HBoxContainer.new()
+		h2.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.add_child(h2)
+		_ips = Bouton.new("Afficher les images par seconde", 16, true)
+		_ips.pressed.connect(func(): compteur.emit())
+		h2.add_child(_ips)
 		resized.connect(_disposer)
+
+	# le bouton dit ce qu'il fera
+	func dire_compteur(visible_: bool) -> void:
+		_ips.libelle = "Masquer les images par seconde" if visible_ else "Afficher les images par seconde"
+		_ips._mesurer()
+		_ips.queue_redraw()
 
 	func mettre_tactile(oui: bool) -> void:
 		tactile = oui
