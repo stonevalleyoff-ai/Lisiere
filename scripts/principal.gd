@@ -24,6 +24,7 @@ const Vitrine := preload("res://scripts/vitrine.gd")
 const Ciel := preload("res://scripts/ciel.gd")
 const Session := preload("res://scripts/session.gd")
 const PartieGardee := preload("res://scripts/partie_gardee.gd")
+const Bestiaire := preload("res://scripts/bestiaire.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -133,6 +134,11 @@ func _ready() -> void:
 		return
 	if "--vitrine" in OS.get_cmdline_user_args():
 		essai = Vitrine.new()
+		add_child(essai)
+		return
+	if "--betes" in OS.get_cmdline_user_args():
+		# (la vitrine du bestiaire : toutes les bêtes d'un lieu, à regarder et à filmer)
+		essai = load("res://scripts/vitrine_betes.gd").new()
 		add_child(essai)
 		return
 	_titre()
@@ -273,7 +279,27 @@ func _commencer(b: String, gardee: Dictionary = {}) -> void:
 	allure_temps = R.ALLURE_NEIGE if float(meteo.get("neige", 0.0)) >= R.NEIGE_AU_SOL else 1.0
 	if qualite == "mobile":
 		await _attendre_sons()
+	await _dessiner_la_faune()
 	_nouvelle_partie(gardee)
+
+
+# les bêtes du lieu, dessinées avant la partie (scripts/bestiaire.gd les garde) : une bête qui vient n'attend pas son dessin, et
+# l'image ne saute pas quand elle arrive. Quelques-unes par image, pour que l'écran d'attente vive.
+func _dessiner_la_faune() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var vues := {}
+	var debut := Time.get_ticks_msec()
+	for k in faune:
+		for e in faune[k]:
+			if vues.has(e["id"]):
+				continue
+			vues[e["id"]] = true
+			var plan: Dictionary = e["lignee"].get("plan", {})
+			Bestiaire.lire(e["lignee"], Bestiaire.largeur_de(float(e["masse"]), Bestiaire.est_chasseur(plan)))
+			if Time.get_ticks_msec() - debut > 24:
+				await get_tree().process_frame
+				debut = Time.get_ticks_msec()
 
 
 # la partie gardée sur l'appareil, reprise là où on l'avait laissée (scripts/partie_gardee.gd)

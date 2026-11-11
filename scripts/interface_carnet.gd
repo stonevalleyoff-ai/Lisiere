@@ -9,6 +9,7 @@ const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/interface_theme.gd")
 const I := preload("res://scripts/interface_icones.gd")
 const Bouton := preload("res://scripts/interface_bouton.gd")
+const Bestiaire := preload("res://scripts/bestiaire.gd")
 const PAPIER := preload("res://shaders/interface_papier.gdshader")
 
 
@@ -210,8 +211,15 @@ class Fin extends Control:
 				_chiffres[i][1].text = mots[i]
 			var info: Dictionary = jeu.biome_info if "biome_info" in jeu else {}
 			_lieu.text = "%s, en %s — à la lisière d'un lieu vrai du monde d'Orvane" % [str(info.get("nom", jeu.biome)), str(jeu.saison)]
+			# (chaque bête croisée, et sa lignée dans la faune du lieu : elle est dessinée comme dans la partie)
+			var lignees := {}
+			if "faune" in jeu:
+				for k in jeu.faune:
+					for e in jeu.faune[k]:
+						lignees[str(e["id"])] = e["lignee"]
 			for id in jeu.vues:
-				liste.append({"id": id, "nom": str(jeu.vues[id]), "n": int(jeu.rencontres.get(id, 0)), "chasse": int(jeu.prelevements.get(id, 0))})
+				liste.append({"id": id, "nom": str(jeu.vues[id]), "n": int(jeu.rencontres.get(id, 0)), "chasse": int(jeu.prelevements.get(id, 0)),
+					"lignee": lignees.get(str(id), {})})
 			_planches.remplir(liste, str(jeu.biome))
 		else:
 			_lieu.text = ""
@@ -229,11 +237,14 @@ class Fin extends Control:
 		page.rotation = deg_to_rad(-0.6) * (1.0 - u)
 
 
-# les bêtes croisées, chacune dessinée d'après sa planche (Orvane.texture), son nom, ses rencontres ; une croix de sang si on l'a chassée
+# les bêtes croisées, chacune dessinée comme dans la partie (le bestiaire de Lisière ; à défaut, sa planche d'Orvane), son nom,
+# ses rencontres ; une croix de sang si on l'a chassée
 class Planches extends Control:
+	const LARGEUR := 150.0        # la largeur à laquelle une bête est dessinée pour le carnet (elle y est montrée plus petite)
 	var compact := false
 	var _betes: Array = []
 	var _textures := {}
+	var _portraits := {}          # la bête de Lisière : { tex, pos, taille } (pos : depuis le point où elle touche le sol)
 	var _t := 0.0
 
 	func _init() -> void:
@@ -243,9 +254,15 @@ class Planches extends Control:
 	func remplir(liste: Array, biome: String) -> void:
 		_betes = liste.slice(0, 12)
 		_textures.clear()
+		_portraits.clear()
 		var arbre := Engine.get_main_loop() as SceneTree
 		var orvane: Node = arbre.root.get_node_or_null("Orvane") if arbre != null else null
 		for b in _betes:
+			var lignee: Dictionary = b.get("lignee", {})
+			var po: Dictionary = Bestiaire.portrait(lignee, LARGEUR) if not lignee.is_empty() else {}
+			if not po.is_empty():
+				_portraits[b["id"]] = po
+				continue
 			var tex = null
 			if orvane != null and orvane.has_method("texture"):
 				tex = orvane.texture(str(b["id"]), 300.0, biome)
@@ -294,7 +311,15 @@ class Planches extends Control:
 			# (le sol de la planche, un trait d'encre ; puis le dessin)
 			I.trait_encre(self, c + Vector2(-lw * 0.42, lh * 0.45), c + Vector2(lw * 0.42, lh * 0.45), 1.4, Color(P.ENCRE, 0.35 * a))
 			var tex = _textures.get(b["id"])
-			if tex != null:
+			var po: Dictionary = _portraits.get(b["id"], {})
+			if not po.is_empty():
+				# (la bête de Lisière, posée sur le trait du sol, à la taille qui tient dans la case)
+				var t: Vector2 = po["taille"]
+				var k := minf(lw * 0.92 / t.x, lh * 0.98 / t.y)
+				var sol := c + Vector2(0.0, lh * 0.45)
+				var centre_x: float = po["pos"].x + t.x * 0.5
+				draw_texture_rect(po["tex"], Rect2(sol + Vector2(po["pos"].x - centre_x, po["pos"].y) * k, t * k), false, Color(1, 1, 1, a))
+			elif tex != null:
 				draw_texture_rect(tex, Rect2(c - Vector2(lw, lh) * 0.5, Vector2(lw, lh)), false, Color(1, 1, 1, a))
 			else:
 				I.icone(self, "patte", c, lh * 0.7, Color(1, 1, 1, 0.5 * a))

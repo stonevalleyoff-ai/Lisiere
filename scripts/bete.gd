@@ -15,6 +15,7 @@ const R := preload("res://scripts/regles.gd")
 const Donnees := preload("res://scripts/donnees.gd")
 const P := preload("res://scripts/palette.gd")
 const Squelette := preload("res://scripts/squelette.gd")
+const Bestiaire := preload("res://scripts/bestiaire.gd")
 const SHADER_ENCRE := preload("res://shaders/bete_encre.gdshader")
 const CHUTE := 0.55              # elle tombe (secondes)
 const GISANT := 0.7              # elle reste couchée
@@ -64,6 +65,7 @@ var _pivot: Node2D
 var _loin: Calque
 var _pres: Calque
 var _dessus: Sprite2D
+var _queue: Sprite2D
 var _tete: Sprite2D
 var _haut: Calque
 var _traine: Calque
@@ -144,7 +146,8 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 	role = r
 	masse = float(e["masse"])
 	var plan: Dictionary = lignee.get("plan", {})
-	largeur = clampf(26.0 * pow(masse, 0.28), 16.0, 150.0)
+	# (sa taille à l'écran : celle du bestiaire de Lisière, qui se lit en jouant)
+	largeur = Bestiaire.largeur_de(masse, Bestiaire.est_chasseur(plan))
 	pv_max = 8.0 + 22.0 * log(masse + 1.0) / log(10.0)
 	pv = pv_max
 	vitesse = 45.0 + 15.0 * float(plan.get("vitesse_rel", 4.0))
@@ -160,7 +163,18 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 		oeil = y[0]
 	# (le squelette tiré de la planche : le corps, la tête à part, chaque patte ; l'image est faite deux fois plus large qu'on
 	# ne la montre, elle reste nette sous le zoom)
-	_sq = Squelette.lire(id + "|" + biome, Orvane._silhouette(id, biome), largeur)
+	# la bête dessinée par Lisière d'après son plan de corps (scripts/bestiaire.gd) ; à défaut (une forme qu'on ne sait pas encore
+	# dessiner), sa planche d'Orvane
+	_sq = Bestiaire.lire(lignee, largeur)
+	if _sq.is_empty():
+		_sq = Squelette.lire(id + "|" + biome, Orvane._silhouette(id, biome), largeur)
+	else:
+		robe = Bestiaire.tons(plan)["robe"]
+		if not _sq["yeux"].is_empty():
+			# (son œil, là où Lisière l'a dessiné, dans le cadre que lit point_oeil)
+			var y0: Vector3 = _sq["yeux"][0]
+			var k170 := largeur / 170.0
+			oeil = Vector3(85.0 + y0.x / k170, 86.0 + y0.y / k170, y0.z / k170 / 1.25)
 	if not _sq.is_empty():
 		_monter()
 	regard = 1.0 if randf() < 0.5 else -1.0
@@ -207,6 +221,9 @@ func _monter() -> void:
 		_loin.peindre = _peindre_loin
 		_loin.material = _mat
 		_pivot.add_child(_loin)
+	# (la queue, quand Lisière l'a dessinée à part : derrière le corps)
+	if not _sq.get("queue", {}).is_empty():
+		_queue = _calque_sprite(_sq["queue"])
 	sprite = _calque_sprite(_sq["corps"])
 	if avec_pattes:
 		_pres = Calque.new()
@@ -692,6 +709,8 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 		_t_tete = Transform2D(tr, Vector2.ONE, 0.0, pv_t + td) * Transform2D(0.0, -pv_t)
 	var demi := Transform2D(0.0, Vector2(0.5, 0.5), 0.0, Vector2.ZERO)
 	sprite.transform = _t_corps * demi
+	if _queue != null:
+		_queue.transform = _t_corps * demi
 	if _dessus != null:
 		_dessus.transform = _t_corps * demi
 	if _tete != null:

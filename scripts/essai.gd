@@ -52,13 +52,33 @@ func _lancer() -> void:
 	verif(L.size() >= 3, "%d lieux jouables (%s)" % [L.size(), ", ".join(PackedStringArray(L.map(func(x): return str(x["nom"]))))])
 	# (chaque lieu proposé à l'écran-titre se charge, et a de quoi chasser et de quoi faire peur, comme _commencer le demande)
 	var maigres := []
+	# (et le bestiaire : chaque lignée jouable est dessinée par Lisière, d'après son plan de corps : scripts/bestiaire.gd)
+	var Best := load("res://scripts/bestiaire.gd")
+	var dessinees_l := {}
+	var mal := []
 	for l in L:
 		var inst: Dictionary = await jeu.donnees.charger_lieu(str(l["id"]))
 		var fl: Dictionary = jeu.donnees.faune(inst, str(l["id"])) if not inst.is_empty() else {}
 		if fl.is_empty() or (fl["proies_jour"].is_empty() and fl["proies_nuit"].is_empty()) or fl["chasseurs_nuit"].is_empty():
 			maigres.append(str(l["nom"]))
+		for k in fl:
+			for e in fl[k]:
+				if dessinees_l.has(e["id"]):
+					continue
+				var plan_e: Dictionary = e["lignee"].get("plan", {})
+				var sq_e: Dictionary = Best.lire(e["lignee"], Best.largeur_de(float(e["masse"]), Best.est_chasseur(plan_e)))
+				var pattes_e := int(plan_e.get("corps", {}).get("pattes", 0))
+				dessinees_l[e["id"]] = str(plan_e.get("corps", {}).get("forme", "?"))
+				if sq_e.is_empty() or sq_e["corps"].is_empty() or sq_e["yeux"].is_empty() or sq_e["pattes"].size() != pattes_e or (pattes_e > 0 and sq_e["atlas"] == null):
+					mal.append("%s (%s)" % [e["id"], dessinees_l[e["id"]]])
+	var formes_l := {}
+	for id_l in dessinees_l:
+		formes_l[dessinees_l[id_l]] = int(formes_l.get(dessinees_l[id_l], 0)) + 1
 	# (en ligne, le monde change chaque jour : un lieu maigre est dit, et le jeu le refuse au lancement ; la copie, elle, doit tout jouer)
 	verif(maigres.is_empty() or jeu.donnees.en_ligne, "chaque lieu proposé se charge, avec des proies et des chasseurs" + (" ; sauf, refusés au lancement : %s" % ", ".join(PackedStringArray(maigres)) if maigres.size() > 0 else ""))
+
+	verif(mal.is_empty() and dessinees_l.size() >= 60, "le bestiaire : les %d lignées jouables des lieux gardés sont dessinées par Lisière, avec leur œil et toutes leurs pattes (%s)%s" % [
+		dessinees_l.size(), str(formes_l), (" ; mal dessinées : " + ", ".join(PackedStringArray(mal.slice(0, 8)))) if not mal.is_empty() else ""])
 
 	print("0. Le compte")
 	# (le compte de Stone Valley, sans réseau : la porte s'ouvre, refuse ce qui ne peut pas partir, et se ferme)
@@ -107,7 +127,9 @@ func _lancer() -> void:
 			break
 	var dessinees := betes.filter(func(b): return b.sprite != null).size()
 	verif(betes.size() > 0, "des bêtes viennent, le jour : %d" % betes.size())
-	verif(dessinees > 0 and dessinees == betes.size(), "chacune est dessinée d'après sa planche (%d sur %d)" % [dessinees, betes.size()])
+	var de_lisiere := betes.filter(func(b): return b._sq.get("lisiere", false)).size()
+	verif(dessinees > 0 and dessinees == betes.size() and de_lisiere == betes.size(), "chacune est dessinée, par Lisière (%d sur %d), à sa taille (de %d à %d pixels)" % [
+		de_lisiere, betes.size(), int(betes.map(func(b): return b.largeur).min()), int(betes.map(func(b): return b.largeur).max())])
 
 	print("2. Les gestes")
 	var j = jeu.joueur
