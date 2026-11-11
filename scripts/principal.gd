@@ -22,6 +22,7 @@ const Tactile := preload("res://scripts/tactile.gd")
 const Effets := preload("res://scripts/effets.gd")
 const Vitrine := preload("res://scripts/vitrine.gd")
 const Ciel := preload("res://scripts/ciel.gd")
+const Session := preload("res://scripts/session.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -66,6 +67,7 @@ var prelevements: Dictionary = {}
 var compte := ""
 var record := 0
 var essai = null
+var session
 var _directeur := 0.0
 var _vague := 0.0
 var _agir := 0.0
@@ -97,8 +99,12 @@ func _ready() -> void:
 	sons = Sons.new()
 	sons.mobile = qualite == "mobile"
 	add_child(sons)
+	# le compte, le même que celui de Stone Valley (scripts/session.gd) : facultatif, la partie se joue pareil
+	session = Session.new()
+	add_child(session)
 	ui = Interface.new()
 	add_child(ui)
+	ui.relier_session(session)
 	ui.commencer.connect(_commencer)
 	ui.recommencer.connect(func(): _commencer(biome))
 	ui.vers_titre.connect(_titre)
