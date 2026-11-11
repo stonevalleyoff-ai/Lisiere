@@ -75,6 +75,10 @@ var _deja: Dictionary = {}
 # le compteur d'images par seconde : affiché ou non (gardé dans la sauvegarde), et son étiquette
 var ips := false
 var _ips_label: Label
+# l'image d'un téléphone qui traîne : mesurée une fois, au début de la première partie (_regler_image)
+var _image_t := 0.0
+var _image_n := 0
+var _image_fait := false
 var _mort := -1.0
 # ce que le dernier geste vise : son son, ses éclats et l'arrêt d'image viennent quand il touche, à l'image (joueur.impact)
 var _coup_vise := {}
@@ -151,8 +155,27 @@ func _compteur_ips() -> void:
 	minuteur.timeout.connect(func():
 		if _ips_label.visible:
 			var ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
-			_ips_label.text = "%d images/s · %.1f ms de jeu · %s" % [Engine.get_frames_per_second(), ms, qualite])
+			var appels := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+			_ips_label.text = "%d images/s · %.1f ms de jeu · %d appels · ×%.2f · %s" % [Engine.get_frames_per_second(), ms, appels,
+				DisplayServer.screen_get_scale(), qualite])
 	couche.add_child(minuteur)
+
+
+# sur un téléphone, dans un navigateur, l'image se calcule à 1,5 fois la résolution CSS (export_presets.cfg, head_include). Si
+# elle traîne (moins de 24 images par seconde, six secondes durant, une fois le lieu installé), elle passe à 1 : 2,25 fois moins
+# de pixels à peindre. Une fois, à la première partie ; ?dpr= au bout de l'adresse décide à sa place.
+func _regler_image(delta: float) -> void:
+	if _image_fait or qualite != "mobile" or not OS.has_feature("web"):
+		return
+	_image_t += delta
+	if _image_t < 5.0:
+		return
+	_image_n += 1
+	if _image_t < 11.0:
+		return
+	_image_fait = true
+	if _image_n / (_image_t - 5.0) < 24.0 and DisplayServer.screen_get_scale() > 1.05:
+		JavaScriptBridge.eval("window.lisiere_dpr && !window.lisiere_dpr.force && window.lisiere_dpr.set(1.0)", true)
 
 
 # la pause : afficher ou masquer le compteur ; il le reste d'une partie à l'autre
@@ -436,6 +459,7 @@ func _process(delta: float) -> void:
 		# (le clic qui ferme la pause n'est pas un coup)
 		_pause_vue = false
 		_agir = 0.35
+	_regler_image(delta)
 	if _mort >= 0.0:
 		# (elle est tombée : le monde continue un instant sans elle, puis l'écran de fin)
 		_mort += delta

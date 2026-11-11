@@ -34,7 +34,7 @@ const PIERRE := Color("8f8a7f")
 
 static var _doux: GradientTexture2D
 
-var ci: CanvasItem
+var ci                         # ce qui dessine : un CanvasItem, ou une trace qui recueille tout (scripts/interface_trace.gd)
 # --- la pose ---
 var cap := 0.0                # les hanches : 0 vers nous, PI/2 vers la droite de l'écran, PI de dos, -PI/2 vers la gauche
 var buste := 0.0              # le buste (les hanches et une torsion)
@@ -715,7 +715,10 @@ func _remplir(pts: PackedVector2Array, couleur: Color) -> void:
 		idx = Geometry2D.triangulate_polygon(pts)
 		if idx.is_empty():
 			return
-	RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), idx, pts, PackedColorArray([couleur]))
+	if ci is CanvasItem:
+		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), idx, pts, PackedColorArray([couleur]))
+	else:
+		ci.triangles(idx, pts, couleur)
 
 
 func _encre(pts: PackedVector2Array, largeur: float = TRAIT) -> void:

@@ -83,11 +83,10 @@ static func theme() -> Theme:
 	t.default_font = texte_moyen()
 	t.default_font_size = 16
 	t.set_color("font_color", "Label", P.IVOIRE)
-	# (une ombre douce sous chaque lettre : on lit sur l'herbe du jour comme dans le noir)
-	t.set_color("font_shadow_color", "Label", Color(P.ENCRE, 0.8))
-	t.set_constant("shadow_offset_x", "Label", 0)
-	t.set_constant("shadow_offset_y", "Label", 1)
-	t.set_constant("shadow_outline_size", "Label", 5)
+	# (un halo d'encre autour de chaque lettre : on lit sur l'herbe du jour comme dans le noir. Un contour, et non une ombre :
+	# Godot dessine l'ombre lettre après lettre, un appel de dessin chacune, quand le contour se fait en deux appels par libellé)
+	t.set_color("font_outline_color", "Label", Color(P.ENCRE, 0.8))
+	t.set_constant("outline_size", "Label", 5)
 	t.set_constant("line_spacing", "Label", 1)
 	for k in ["normal", "hover", "pressed", "focus", "disabled", "hover_pressed"]:
 		t.set_stylebox(k, "Button", StyleBoxEmpty.new())

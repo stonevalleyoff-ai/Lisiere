@@ -125,6 +125,7 @@ func _construire_titre() -> void:
 	_nom_du_jeu.add_theme_color_override("font_shadow_color", Color(P.ENCRE, 0.9))
 	_nom_du_jeu.add_theme_constant_override("shadow_offset_y", -3)
 	_nom_du_jeu.add_theme_constant_override("shadow_outline_size", 8)
+	_nom_du_jeu.add_theme_constant_override("outline_size", 0)
 	var m := ShaderMaterial.new()
 	m.shader = BRAISE
 	_nom_du_jeu.material = m
@@ -358,8 +359,8 @@ func message(t: String, c: Color = Color(0.9, 0.86, 0.78)) -> void:
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.add_theme_stylebox_override("normal", _fond_de_note())
-	l.add_theme_color_override("font_shadow_color", Color(P.ENCRE, 0.5))
-	l.add_theme_constant_override("shadow_outline_size", 2)
+	l.add_theme_color_override("font_outline_color", Color(P.ENCRE, 0.5))
+	l.add_theme_constant_override("outline_size", 2)
 	var s := _hud.size
 	var maxw := minf(520.0, s.x - 430.0) if tactile else minf(720.0, s.x - 120.0)
 	var lw := T.texte_moyen().get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15 if tactile else 17).x + 48.0

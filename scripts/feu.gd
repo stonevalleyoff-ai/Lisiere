@@ -12,6 +12,7 @@ const R := preload("res://scripts/regles.gd")
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/effets_textures.gd")
 const FLAMME := preload("res://shaders/feu_flamme.gdshader")
+const Trace := preload("res://scripts/interface_trace.gd")
 const RAYON_MIN := 90.0
 const BRAISES_DUREE := 26.0     # secondes : les braises d'un feu mort
 const FUMEE_DUREE := 16.0       # secondes : sa dernière fumée
@@ -374,13 +375,16 @@ func _preparer_foyer() -> void:
 
 # derrière la flamme : l'ombre du foyer, les pierres du fond, le lit de cendres, les bûches
 func _draw() -> void:
-	_ellipse(self, Vector2(0, 1), 25.0, 10.0, Color(P.ENCRE, 0.3))
+	# (le foyer d'un seul appel de dessin : la trace recueille ses traits, scripts/interface_trace.gd)
+	var t := Trace.new()
+	t.commencer(self)
+	_ellipse(t, Vector2(0, 1), 25.0, 10.0, Color(P.ENCRE, 0.3))
 	for p in _pierres:
 		if p[0].y < 0.0:
-			_pierre(self, p)
+			_pierre(t, p)
 	var vif := bois > 0.0
-	_ellipse(self, Vector2(0, 0), 14.0, 5.6, P.CENDRE.darkened(0.25) if vif else P.CENDRE.lerp(P.IVOIRE, 0.18))
-	_ellipse(self, Vector2(0, -0.5), 10.0, 3.8, P.CENDRE.lerp(P.IVOIRE, 0.25 if vif else 0.4))
+	_ellipse(t, Vector2(0, 0), 14.0, 5.6, P.CENDRE.darkened(0.25) if vif else P.CENDRE.lerp(P.IVOIRE, 0.18))
+	_ellipse(t, Vector2(0, -0.5), 10.0, 3.8, P.CENDRE.lerp(P.IVOIRE, 0.25 if vif else 0.4))
 	var r := RandomNumberGenerator.new()
 	r.seed = _graine + 3
 	var buches := []
@@ -394,18 +398,19 @@ func _draw() -> void:
 	buches.sort_custom(func(x, y): return (x[0].y + x[1].y) < (y[0].y + y[1].y))
 	for b in buches:
 		var ecorce := P.TERRE.darkened(0.45 + b[3]) if vif else P.ENCRE_DOUCE
-		draw_line(b[0], b[1], P.ENCRE, b[2] + 1.6)
-		draw_line(b[0], b[1], ecorce, b[2])
-		draw_line(b[0] + Vector2(0, -b[2] * 0.25), b[1] + Vector2(0, -b[2] * 0.25), ecorce.lightened(0.12), b[2] * 0.3)
+		t.draw_line(b[0], b[1], P.ENCRE, b[2] + 1.6)
+		t.draw_line(b[0], b[1], ecorce, b[2])
+		t.draw_line(b[0] + Vector2(0, -b[2] * 0.25), b[1] + Vector2(0, -b[2] * 0.25), ecorce.lightened(0.12), b[2] * 0.3)
 		for bout in [b[0], b[1]]:
-			draw_circle(bout, b[2] * 0.5 + 0.8, P.ENCRE)
-			draw_circle(bout, b[2] * 0.5, P.TERRE.lerp(P.IVOIRE, 0.35) if vif else P.CENDRE)
+			t.draw_circle(bout, b[2] * 0.5 + 0.8, P.ENCRE)
+			t.draw_circle(bout, b[2] * 0.5, P.TERRE.lerp(P.IVOIRE, 0.35) if vif else P.CENDRE)
 	if not vif:
 		for i in 9:
-			draw_circle(Vector2(r.randf_range(-9, 9), r.randf_range(-3, 2)), r.randf_range(0.6, 1.3), P.IVOIRE.darkened(0.25))
+			t.draw_circle(Vector2(r.randf_range(-9, 9), r.randf_range(-3, 2)), r.randf_range(0.6, 1.3), P.IVOIRE.darkened(0.25))
+	t.vider()
 
 
-func _pierre(c: CanvasItem, p: Array) -> void:
+func _pierre(c, p: Array) -> void:
 	var o: Vector2 = p[0]
 	_ellipse(c, o + Vector2(0, 0.6), p[1] + 0.9, p[2] + 0.9, P.ENCRE)
 	_ellipse(c, o, p[1], p[2], p[3])
@@ -413,7 +418,7 @@ func _pierre(c: CanvasItem, p: Array) -> void:
 
 
 # les braises : le lit qui rougeoie, des points qui battent, plus vifs dans un feu qui meurt ; puis elles s'éteignent
-func _dessiner_braises(c: CanvasItem) -> void:
+func _dessiner_braises(c) -> void:
 	var vif := bois > 0.0
 	var force := 1.0 if vif else clampf(1.0 - _eteint / BRAISES_DUREE, 0.0, 1.0)
 	if force <= 0.0:
@@ -431,7 +436,7 @@ func _dessiner_braises(c: CanvasItem) -> void:
 		c.draw_circle(b[0], b[1] * (0.7 + 0.3 * v), Color(col * (0.35 + 0.65 * v) * force, 1.0))
 
 
-func _dessiner_devant(c: CanvasItem) -> void:
+func _dessiner_devant(c) -> void:
 	for p in _pierres:
 		if p[0].y >= 0.0:
 			_pierre(c, p)
@@ -464,7 +469,7 @@ func _chercher_ombres() -> void:
 			_ombres.append([b, b.largeur * 0.42, b.largeur * 0.6, 0.18 + b.largeur / 220.0, 0.5])
 
 
-func _dessiner_sol(c: CanvasItem) -> void:
+func _dessiner_sol(c) -> void:
 	if _ombres.is_empty() or bois <= 0.0:
 		return
 	var r := rayon()
@@ -494,7 +499,7 @@ func _dessiner_sol(c: CanvasItem) -> void:
 		c.draw_polygon(pts, PackedColorArray([ombre, ombre, Color(P.ENCRE, 0.0), Color(P.ENCRE, 0.0)]))
 
 
-static func _ellipse(c: CanvasItem, o: Vector2, rx: float, ry: float, couleur: Color) -> void:
+static func _ellipse(c, o: Vector2, rx: float, ry: float, couleur: Color) -> void:
 	var pts := PackedVector2Array()
 	for i in 16:
 		var a := TAU * i / 16.0
@@ -510,10 +515,13 @@ class Calque extends Node2D:
 	func _draw() -> void:
 		if feu == null or not is_instance_valid(feu):
 			return
+		var t := Trace.new()
+		t.commencer(self)
 		if quoi == "braises":
-			feu._dessiner_braises(self)
+			feu._dessiner_braises(t)
 		else:
-			feu._dessiner_devant(self)
+			feu._dessiner_devant(t)
+		t.vider()
 
 
 # sous le feu, au sol : sa lueur (un enfant) et les ombres qu'il pousse
@@ -522,4 +530,7 @@ class Sol extends Node2D:
 
 	func _draw() -> void:
 		if feu != null and is_instance_valid(feu):
-			feu._dessiner_sol(self)
+			var t := Trace.new()
+			t.commencer(self)
+			feu._dessiner_sol(t)
+			t.vider()

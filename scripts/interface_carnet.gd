@@ -68,12 +68,12 @@ class Filet extends Control:
 		draw_colored_polygon(PackedVector2Array([c + Vector2(-5, 0), c + Vector2(0, -3.5), c + Vector2(5, 0), c + Vector2(0, 3.5)]), Color(P.SANG, 0.85))
 
 
-# un libellé sur le papier : sans ombre sous les lettres
+# un libellé sur le papier : sans halo autour des lettres
 class Encre:
 	static func libelle(t: String, f: Font, taille: int, c: Color, centre: bool = true) -> Label:
 		var l := T.libelle(t, f, taille, c)
-		l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
-		l.add_theme_constant_override("shadow_outline_size", 0)
+		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0))
+		l.add_theme_constant_override("outline_size", 0)
 		if centre:
 			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		return l
