@@ -424,6 +424,9 @@ func _vider_hud() -> void:
 func maj_hud(jeu) -> void:
 	var j = jeu.joueur
 	_jauges.valeurs = [j.sante, j.faim, j.peur]
+	_jauges.corps = j.temperature
+	_jauges.trempe = j.trempe
+	_jauges.en_feu = j.en_feu > 0.0
 	# (l'heure : où en est le soleil jusqu'au soir, ou la lune jusqu'au matin)
 	var t := fmod(jeu.horloge, R.DUREE)
 	var soir: float = R.DUREE * (1.0 - jeu.part_nuit)
