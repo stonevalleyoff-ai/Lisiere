@@ -1,6 +1,7 @@
 extends RefCounted
 # Lisière — les recettes des sons (scripts/sons_recettes.gd)
-# Chaque son du jeu, fait ici : du bruit filtré, des résonances amorties, des voix de bêtes, des tuiles d'ambiance, des notes.
+# Chaque son du jeu, fait ici : du bruit filtré, des résonances amorties, des voix de bêtes, des tuiles d'ambiance, des notes,
+# et le temps qu'il fait (la pluie, le tonnerre, l'incendie, la boue, l'eau : à la fin du fichier).
 # fabriquer(nom, r) rend [échantillons, taux]. Un chiffre au bout du nom tire une variante (« braise3 », « pas_neige1 »).
 # Les sons lointains reçoivent ensuite leur réverbère (LOINTAINS, fait par morceaux dans sons.gd).
 
@@ -14,6 +15,8 @@ const VIF := O.VIF
 const TUILES := {
 	"vent_grave": [6.0, 1.6], "vent_clair": [4.5, 1.2], "feu_souffle": [4.0, 1.0], "feu_braise": [2.5, 0.7],
 	"bourdon": [6.0, 1.8], "tension": [5.0, 1.4], "choeur": [6.0, 1.2],
+	"pluie_fine": [3.6, 1.0], "pluie_drue": [3.2, 1.0], "pluie_feuilles": [4.0, 1.1], "pluie_eau": [3.6, 1.0],
+	"brasier": [4.4, 1.2], "vent_hurle": [5.0, 1.4],
 }
 # les sons qui viennent de loin, avec leur réverbère : [durée de la queue, échos de la lisière, part du son direct]
 const LOINTAINS := {
@@ -31,6 +34,10 @@ const TAUX := {
 	"coup": VIF, "mord": SOURD, "grogne": SOURD, "murmure": SOURD, "manger": VIF, "allume": SOURD, "coeur": GRAVE,
 	"gresille": VIF, "eteint": SOURD, "chute": GRAVE, "nappe_jour": GRAVE, "nappe_nuit": GRAVE, "cloche": SOURD,
 	"flute": SOURD, "flute_longue": SOURD, "corne": GRAVE, "queue_sourde": SOURD, "queue_claire": SOURD, "queue_voix": SOURD,
+	# le temps qu'il fait
+	"pluie_fine": LENT, "pluie_drue": LENT, "pluie_feuilles": SOURD, "pluie_eau": LENT, "vent_hurle": GRAVE,
+	"tonnerre": GRAVE, "foudre": VIF, "presage": VIF, "brasier": GRAVE, "craque": VIF, "vapeur": VIF, "effondre": SOURD,
+	"pas_boue": VIF, "pas_eau": VIF, "frisson": SOURD, "cri": SOURD, "crache": VIF,
 }
 
 
@@ -73,7 +80,7 @@ static func fabriquer(nom: String, r: RandomNumberGenerator) -> Array:
 			return [_grondement(r), TAUX[base]]
 		"froissement":
 			return [_froissement(r), TAUX[base]]
-		"pas_feuilles", "pas_herbe", "pas_neige", "pas_terre":
+		"pas_feuilles", "pas_herbe", "pas_neige", "pas_terre", "pas_boue", "pas_eau":
 			return [_pas(base.substr(4), r), TAUX[base]]
 		"bois":
 			return [_bois(r), TAUX[base]]
@@ -115,6 +122,36 @@ static func fabriquer(nom: String, r: RandomNumberGenerator) -> Array:
 			return [_corne(r), TAUX[base]]
 		"queue_sourde", "queue_claire", "queue_voix":
 			return [_queue(base.substr(6), r), TAUX[base]]
+		"pluie_fine":
+			return [_pluie_fine(r), TAUX[base]]
+		"pluie_drue":
+			return [_pluie_drue(r), TAUX[base]]
+		"pluie_feuilles":
+			return [_pluie_feuilles(r), TAUX[base]]
+		"pluie_eau":
+			return [_pluie_eau(r), TAUX[base]]
+		"vent_hurle":
+			return [_vent_hurle(r), TAUX[base]]
+		"tonnerre":
+			return [_tonnerre(k, r), TAUX[base]]
+		"foudre":
+			return [_foudre(r), TAUX[base]]
+		"presage":
+			return [_presage(r), TAUX[base]]
+		"brasier":
+			return [_brasier(r), TAUX[base]]
+		"craque":
+			return [_craque(r), TAUX[base]]
+		"vapeur":
+			return [_vapeur(r), TAUX[base]]
+		"effondre":
+			return [_effondre(r), TAUX[base]]
+		"frisson":
+			return [_frisson(r), TAUX[base]]
+		"cri":
+			return [_cri(r), TAUX[base]]
+		"crache":
+			return [_crache(r), TAUX[base]]
 	return []
 
 
@@ -559,8 +596,40 @@ static func _froissement(r: RandomNumberGenerator) -> PackedFloat32Array:
 # --- les pas : un talon, puis la matière du sol ---
 
 static func _pas(sol: String, r: RandomNumberGenerator) -> PackedFloat32Array:
-	var s := O.vide(0.24, VIF)
+	var s := O.vide(0.34 if sol == "eau" else 0.24, VIF)
 	match sol:
+		"boue":
+			# la boue : le pied s'enfonce (un souffle mouillé qui s'ouvre), puis la succion quand il se décolle
+			O.mode(s, 0.0, r.randf_range(70.0, 88.0), 0.022, 0.45, VIF, 0.8)
+			var w := O.vide(0.13, VIF)
+			O.bruit(w, r)
+			O.bande_glissee(w, r.randf_range(380.0, 520.0), r.randf_range(1300.0, 1900.0), 2.2, VIF)
+			var nw := w.size()
+			for i in nw:
+				var u := float(i) / nw
+				w[i] *= pow(sin(PI * u), 0.6) * (1.0 - 0.5 * u)
+			O.normaliser(w, 0.8)
+			O.poser(s, w, int(0.006 * VIF), 1.0)
+			var ts := r.randf_range(0.11, 0.15)
+			O.mode(s, ts, r.randf_range(260.0, 380.0), 0.012, 0.5, VIF, 1.7)
+			_grains(s, ts - 0.02, 0.06, 7, 1500.0, 1.5, 0.3, VIF, r, Vector2(0.0008, 0.002))
+			O.bas(s, 3200.0, VIF)
+		"eau":
+			# on patauge : le pied entre dans l'eau (un « plouf » qui descend), l'eau rejaillit, deux bulles remontent
+			var w2 := O.vide(0.16, VIF)
+			O.bruit(w2, r)
+			O.bande_glissee(w2, r.randf_range(1100.0, 1500.0), r.randf_range(380.0, 520.0), 1.3, VIF)
+			var nw2 := w2.size()
+			for i in nw2:
+				var u2 := float(i) / nw2
+				w2[i] *= minf(1.0, u2 / 0.04) * (1.0 - u2) * (1.0 - u2)
+			O.normaliser(w2, 0.9)
+			O.poser(s, w2, 0, 1.0)
+			O.mode(s, 0.0, r.randf_range(95.0, 120.0), 0.02, 0.3, VIF, 0.8)
+			_grains(s, 0.03, 0.22, r.randi_range(22, 34), r.randf_range(2600.0, 3800.0), 0.8, 0.45, VIF, r, Vector2(0.0004, 0.0016))
+			for i in 2:
+				O.mode(s, r.randf_range(0.07, 0.2), r.randf_range(520.0, 980.0), r.randf_range(0.008, 0.016), r.randf_range(0.2, 0.4), VIF, 1.45)
+			O.bas(s, 5200.0, VIF)
 		"feuilles":
 			O.mode(s, 0.0, r.randf_range(85.0, 105.0), 0.018, 0.35, VIF, 0.8)
 			_grains(s, 0.004, 0.11, r.randi_range(16, 28), r.randf_range(1900.0, 3200.0), 0.9, 1.0, VIF, r)
@@ -961,3 +1030,361 @@ static func _queue(genre: String, r: RandomNumberGenerator) -> PackedFloat32Arra
 		s[i] *= 0.0 if t < 0.0 else minf(1.0, t / 0.03) * exp(-t / 0.42)
 	O.normaliser(s, 0.8)
 	return O.bords(s, SOURD)
+
+
+# --- le temps qu'il fait (joué par scripts/sons_temps.gd) ---
+
+# la pluie fine : des gouttes claires, qu'on compterait presque (chacune un tic très bref, parfois doublé d'un éclat) ; le voile
+# qui les porte est l'averse, jouée tout bas (scripts/sons_temps.gd)
+static func _pluie_fine(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var d: Array = TUILES["pluie_fine"]
+	var s := O.vide(d[0], LENT)
+	var fin := float(d[0]) - 0.02
+	var t := 0.0
+	while t < fin:
+		var a := 0.3 + 0.7 * pow(r.randf(), 1.5)
+		O.mode(s, t, r.randf_range(1900.0, 4300.0), r.randf_range(0.0004, 0.0011), a, LENT)
+		if r.randf() < 0.3:
+			O.eclat(s, t, r.randf_range(0.0002, 0.0005), a * 0.6, r, LENT)
+		t += -log(maxf(r.randf(), 0.0001)) / 95.0
+	O.niveau(s, 0.07)
+	return O.tuile(s, d[1], LENT)
+
+
+# l'averse : tant de gouttes qu'elles font un seul bruit, grenu, et le sol qui gronde dessous. Rien n'y revient qu'on
+# reconnaisse d'un tour à l'autre (ni grosse goutte ni vague) : une seule tuile suffit
+static func _pluie_drue(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var d: Array = TUILES["pluie_drue"]
+	var s := O.vide(d[0], LENT)
+	O.bruit_grenu(s, 1800.0, 0.7, 1.0, LENT, r, 0.01, 6.0)
+	O.bruit_grenu(s, 3600.0, 0.9, 0.7, LENT, r, 0.006, 8.0)
+	O.bruit_bande(s, 480.0, 0.7, 0.75, LENT, r)
+	# (rien près du Nyquist : le rééchantillonnage le replierait)
+	O.bas(s, 4300.0, LENT)
+	O.niveau(s, 0.17)
+	return O.tuile(s, d[1], LENT)
+
+
+# la pluie sous un arbre : les grosses gouttes qui tombent des feuilles, une à une, mates (un « toc » dont la note descend :
+# la feuille plie ; le tic de l'impact ; parfois elle rebondit sur la feuille du dessous)
+static func _pluie_feuilles(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var d: Array = TUILES["pluie_feuilles"]
+	var s := O.vide(d[0], SOURD)
+	var fin := float(d[0]) - 0.2
+	var t := 0.0
+	while t < fin:
+		var a := 0.3 + 0.7 * pow(r.randf(), 1.5)
+		var f := r.randf_range(420.0, 1500.0)
+		O.mode(s, t, f, r.randf_range(0.004, 0.009), a, SOURD, 0.8)
+		O.eclat(s, t, 0.0006, a * 0.35, r, SOURD)
+		if r.randf() < 0.25:
+			O.mode(s, t + r.randf_range(0.05, 0.12), f * r.randf_range(1.2, 1.6), 0.004, a * 0.4, SOURD, 0.85)
+		t += -log(maxf(r.randf(), 0.0001)) / 11.0
+	O.niveau(s, 0.1)
+	return O.tuile(s, d[1], SOURD)
+
+
+# la pluie sur l'eau : des bulles qui se referment (un « plip » qui monte)
+static func _pluie_eau(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var d: Array = TUILES["pluie_eau"]
+	var s := O.vide(d[0], LENT)
+	var fin := float(d[0]) - 0.12
+	var t := 0.0
+	while t < fin:
+		O.mode(s, t, r.randf_range(600.0, 2000.0), r.randf_range(0.007, 0.018), 0.12 + 0.88 * pow(r.randf(), 1.5), LENT, r.randf_range(1.15, 1.45))
+		t += -log(maxf(r.randf(), 0.0001)) / 15.0
+	O.niveau(s, 0.11)
+	return O.tuile(s, d[1], LENT)
+
+
+# le vent qui hurle dans les branches, pendant l'orage : un bruit serré dans une bande étroite dont la hauteur erre, et sa quinte
+static func _vent_hurle(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var d: Array = TUILES["vent_hurle"]
+	var s := O.vide(d[0], GRAVE)
+	var n := s.size()
+	O.bruit(s, r)
+	var b := s.duplicate()
+	var e := O.lent(n, 0.45, GRAVE, r)
+	O.bande_errante(s, e, 520.0, 0.42, 9.0, GRAVE)
+	O.bande_errante(b, e, 785.0, 0.42, 12.0, GRAVE)
+	var m := O.lent(n, 0.6, GRAVE, r)
+	for i in n:
+		s[i] = (s[i] + 0.45 * b[i]) * (0.55 + 0.45 * m[i])
+	O.niveau(s, 0.16)
+	return O.tuile(s, d[1], GRAVE)
+
+
+# le tonnerre qui roule : un grave immense, fait de coups qui se suivent en s'affaiblissant, chacun avec sa traîne ; par-dessus,
+# un médium (ce qu'un téléphone sait rendre) qui s'éteint plus vite. k = 2 : au loin (il arrive doucement, presque sans médium)
+static func _tonnerre(k: int, r: RandomNumberGenerator) -> PackedFloat32Array:
+	var loin := k % 3 == 2
+	var duree := 5.6
+	var s := O.vide(duree, GRAVE)
+	var n := s.size()
+	O.bruit_bas(s, 75.0, 210.0, 1.0, GRAVE, r)
+	var m := O.vide(duree, GRAVE)
+	# (à 0,36 de gain, ce médium a le niveau du bruit brun ci-dessus)
+	O.bruit_bande(m, 330.0, 0.5, 0.22 if loin else 0.5, GRAVE, r)
+	# les enveloppes, à gros grain (un point tous les 8 échantillons) : celle du grave, celle du médium
+	const PAS := 8
+	var nc := n / PAS + 2
+	var eg := PackedFloat32Array()
+	eg.resize(nc)
+	var em := PackedFloat32Array()
+	em.resize(nc)
+	var tc := float(GRAVE) / PAS
+	var t := 0.0
+	var a := 1.0
+	for c in r.randi_range(4, 6):
+		var kd := exp(-1.0 / (r.randf_range(0.7, 1.4) * tc))
+		var km := exp(-1.0 / (r.randf_range(0.3, 0.75) * tc))
+		var ka := exp(-1.0 / ((r.randf_range(0.12, 0.3) if loin else r.randf_range(0.02, 0.07)) * tc))
+		var x := a
+		var y := a
+		var z := a
+		for i in range(int(t * tc), nc):
+			eg[i] += x - z
+			em[i] += y - z
+			x *= kd
+			y *= km
+			z *= ka
+		t += r.randf_range(0.3, 1.0)
+		a *= r.randf_range(0.5, 0.9)
+	# le roulement : irrégulier
+	var rl := O.lent(n, 7.0, GRAVE, r)
+	var fin := int(1.2 * GRAVE)
+	for i in n:
+		var j := i / PAS
+		var u := float(i % PAS) / PAS
+		s[i] = (s[i] * (eg[j] + (eg[j + 1] - eg[j]) * u) + m[i] * (em[j] + (em[j + 1] - em[j]) * u)) * (0.7 + 0.3 * rl[i]) * minf(1.0, float(n - i) / fin)
+	O.normaliser(s, 0.92)
+	return O.bords(s, GRAVE)
+
+
+# la foudre tout près : l'air qui se déchire (des éclats secs qui se resserrent), le coup (tout le spectre d'un bloc, et le
+# choc dans le sol), puis ce qui craque encore en s'assourdissant
+static func _foudre(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var duree := 0.9
+	var s := O.vide(duree, VIF)
+	var tc := r.randf_range(0.07, 0.11)
+	# la déchirure et le coup, sans leurs aigus les plus durs
+	var e := O.vide(tc + 0.2, VIF)
+	var t := 0.004
+	var ecart := 0.024
+	while t < tc - 0.004:
+		O.eclat(e, t, r.randf_range(0.0004, 0.0012), r.randf_range(0.3, 0.7), r, VIF)
+		t += ecart * r.randf_range(0.6, 1.3)
+		ecart *= 0.8
+	O.eclat(e, tc, 0.02, 1.0, r, VIF)
+	O.bas(e, 5000.0, VIF)
+	O.poser(s, e, 0, 1.8)
+	# le corps du coup : un bas-médium qui cogne, et le choc dans le sol
+	var c := O.vide(0.5, VIF)
+	O.eclat(c, 0.0, 0.08, 1.0, r, VIF)
+	O.bas(c, 700.0, VIF)
+	O.bas(c, 1400.0, VIF)
+	O.poser(s, c, int(tc * VIF), 4.5)
+	O.mode(s, tc, 95.0, 0.11, 0.3, VIF, 0.6)
+	O.mode(s, tc, 190.0, 0.06, 0.2, VIF, 0.7)
+	var lq := duree - 0.12 - tc
+	var q := O.vide(lq, VIF)
+	t = 0.02
+	while t < lq - 0.03:
+		var u := t / lq
+		O.eclat(q, t, r.randf_range(0.002, 0.012), pow(1.0 - u, 1.5) * r.randf_range(0.3, 1.0), r, VIF)
+		t += r.randf_range(0.008, 0.05) * (1.0 + 2.0 * u)
+	O.bande_glissee(q, 3000.0, 500.0, 0.7, VIF)
+	O.poser(s, q, int(tc * VIF), 2.4)
+	O.normaliser(s, 0.95)
+	return O.bords(s, VIF)
+
+
+# le présage : l'air se charge (un souffle qui monte) et grésille (des étincelles de plus en plus serrées), puis se coupe net :
+# la foudre tombe au bout de 0,9 s (scripts/regles.gd, FOUDRE_ANNONCE)
+static func _presage(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var annonce := 0.9
+	var s := O.vide(annonce + 0.06, VIF)
+	var n := s.size()
+	var t := 0.01
+	while t < annonce:
+		var u := t / annonce
+		O.eclat(s, t, r.randf_range(0.00008, 0.0003), (0.15 + 0.85 * u * u) * r.randf_range(0.4, 1.0), r, VIF)
+		t += -log(maxf(r.randf(), 0.0001)) / lerpf(25.0, 420.0, u * u)
+	O.haut(s, 2600.0, VIF)
+	O.normaliser(s, 0.8)
+	var a := O.vide(annonce + 0.06, VIF)
+	O.bruit(a, r)
+	O.bande_glissee(a, 700.0, 4200.0, 2.5, VIF)
+	O.normaliser(a, 0.3)
+	for i in n:
+		var v := float(i) / VIF
+		var e := clampf(1.0 - (v - annonce) / 0.05, 0.0, 1.0)
+		s[i] = (s[i] + a[i] * pow(minf(1.0, v / annonce), 2.2)) * e
+	O.normaliser(s, 0.8)
+	return O.bords(s, VIF)
+
+
+# l'incendie : le ronflement d'un arbre en feu (le souffle du feu de camp, en plus grand : plus grave, avec un corps qui gronde
+# dans le médium, des flammes qui battent et de longues poussées)
+static func _brasier(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var d: Array = TUILES["brasier"]
+	var s := O.vide(d[0], GRAVE)
+	O.bruit_bas(s, 150.0, 400.0, 1.0, GRAVE, r)
+	O.bruit_bande(s, 560.0, 0.7, 0.42, GRAVE, r)
+	O.bruit_bande(s, 1250.0, 0.9, 0.13, GRAVE, r)
+	var m := O.lent(s.size(), 8.0, GRAVE, r)
+	var m2 := O.lent(s.size(), 0.5, GRAVE, r)
+	for i in s.size():
+		s[i] *= 0.6 + 0.26 * m[i] + 0.14 * m2[i]
+	O.niveau(s, 0.24)
+	return O.tuile(s, d[1], GRAVE)
+
+
+# le bois qui éclate dans l'incendie : un claquement, la fibre qui cède, des éclats qui retombent
+static func _craque(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.42, VIF)
+	var c := O.vide(0.42, VIF)
+	var t := 0.002
+	for i in 2 + r.randi() % 3:
+		O.eclat(c, t, r.randf_range(0.0004, 0.0012), r.randf_range(0.5, 1.0), r, VIF)
+		t += r.randf_range(0.004, 0.03)
+	O.bande(c, r.randf_range(1200.0, 2000.0), 0.9, VIF)
+	O.poser(s, c, 0, 1.0)
+	var f := r.randf_range(300.0, 520.0)
+	O.mode(s, 0.002, f, 0.03, 0.7, VIF, 0.92)
+	O.mode(s, 0.002, f * 2.6, 0.012, 0.3, VIF)
+	O.mode(s, 0.004, 120.0, 0.03, 0.13, VIF, 0.8)
+	_grains(s, 0.03, 0.3, r.randi_range(10, 18), 2200.0, 1.0, 0.3, VIF, r)
+	O.normaliser(s, 0.9)
+	return O.bords(s, VIF)
+
+
+# l'eau sur le feu : un sifflement de vapeur qui crachote et retombe, l'eau qui saisit la braise, des bulles qui crèvent
+static func _vapeur(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(1.25, VIF)
+	var n := s.size()
+	O.bruit(s, r)
+	O.bande(s, 4400.0, 0.8, VIF)
+	var m := O.lent(n, 26.0, VIF, r)
+	var e1 := 0.8
+	var e2 := 0.2
+	var k1 := exp(-1.0 / (0.28 * VIF))
+	var k2 := exp(-1.0 / (0.6 * VIF))
+	var montee := 0.012 * VIF
+	for i in n:
+		s[i] *= minf(1.0, i / montee) * (e1 + e2) * (0.72 + 0.28 * m[i])
+		e1 *= k1
+		e2 *= k2
+	O.normaliser(s, 0.7)
+	var c := O.vide(0.5, VIF)
+	O.eclat(c, 0.001, 0.004, 0.6, r, VIF)
+	for i in 5:
+		O.eclat(c, r.randf_range(0.03, 0.4), 0.0006, r.randf_range(0.15, 0.4), r, VIF)
+	O.bande(c, 2400.0, 1.0, VIF)
+	O.poser(s, c, 0, 1.0)
+	O.normaliser(s, 0.75)
+	return O.bords(s, VIF)
+
+
+# un arbre brûlé jusqu'au bout : le bois cède (deux ou trois craquements), ce qui reste tombe dans la cendre (un choc mat),
+# les braises retombent
+static func _effondre(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(1.7, SOURD)
+	var c := O.vide(0.5, SOURD)
+	var t := 0.004
+	for i in 2 + r.randi() % 2:
+		O.eclat(c, t, r.randf_range(0.0006, 0.0015), r.randf_range(0.5, 1.0), r, SOURD)
+		O.mode(s, t, r.randf_range(260.0, 480.0), 0.03, 0.4, SOURD, 0.9)
+		t += r.randf_range(0.05, 0.14)
+	O.bande(c, 1900.0, 0.9, SOURD)
+	O.poser(s, c, 0, 0.9)
+	var tc := t + 0.08
+	O.mode(s, tc, 78.0, 0.11, 0.45, SOURD, 0.6)
+	O.mode(s, tc, 150.0, 0.05, 0.45, SOURD, 0.7)
+	O.mode(s, tc, 310.0, 0.02, 0.25, SOURD)
+	var b := O.vide(1.2, SOURD)
+	O.bruit(b, r)
+	O.bande(b, 380.0, 0.7, SOURD)
+	var nb := b.size()
+	for i in nb:
+		var v := float(i) / SOURD
+		b[i] *= minf(1.0, v / 0.03) * exp(-v / 0.3)
+	O.normaliser(b, 0.45)
+	O.poser(s, b, int(tc * SOURD), 1.0)
+	_grains(s, tc + 0.03, 1.0, 46, 2600.0, 0.8, 0.4, SOURD, r)
+	O.normaliser(s, 0.9)
+	return O.bords(s, SOURD)
+
+
+# le froid : un souffle qui tremble (une inspiration brève, puis l'air qui sort en grelottant)
+static func _frisson(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(1.15, SOURD)
+	var n := s.size()
+	var b := O.vide(1.15, SOURD)
+	O.bruit(b, r)
+	var a := b.duplicate()
+	O.bande(a, r.randf_range(1000.0, 1250.0), 1.4, SOURD)
+	O.bande(b, r.randf_range(2100.0, 2500.0), 1.8, SOURD)
+	var f := r.randf_range(8.5, 11.0)
+	var ph := r.randf() * TAU
+	for i in n:
+		var t := float(i) / SOURD
+		if t < 0.26:
+			s[i] = (a[i] * 0.5 + b[i]) * 0.4 * sin(PI * t / 0.26)
+		elif t > 0.34 and t < 1.12:
+			var u := (t - 0.34) / 0.78
+			ph += TAU * f * (1.0 + 0.2 * u) / SOURD
+			s[i] = (a[i] + b[i] * 0.45) * pow(sin(PI * u), 0.6) * (1.0 - 0.5 * u) * (0.45 + 0.55 * (0.5 + 0.5 * sin(ph)))
+	O.haut(s, 500.0, SOURD)
+	O.normaliser(s, 0.6)
+	return O.bords(s, SOURD)
+
+
+# elle prend feu : l'air happé, et à peine une voix, brève, qui retombe (elle crie peu)
+static func _cri(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.5, SOURD)
+	var n := s.size()
+	var b := O.vide(0.5, SOURD)
+	O.bruit(b, r)
+	var a := b.duplicate()
+	O.bande_glissee(a, 900.0, 1700.0, 2.0, SOURD)
+	O.bande(b, 2900.0, 2.5, SOURD)
+	for i in n:
+		var t := float(i) / SOURD
+		s[i] = (a[i] + 0.4 * b[i]) * minf(1.0, t / 0.02) * exp(-maxf(0.0, t - 0.07) / 0.09)
+	O.normaliser(s, 0.7)
+	# (la voix : un « a » esquissé par ses harmoniques, qui descend d'une tierce)
+	var tab := O.table([[1.0, 0.6], [2.0, 1.0], [3.0, 0.5], [5.0, 0.15], [6.0, 0.1]])
+	var ph := 0.0
+	var f0 := r.randf_range(520.0, 580.0)
+	var i0 := int(0.05 * SOURD)
+	var nv := int(0.28 * SOURD)
+	var crete := 0.0
+	var v := PackedFloat32Array()
+	v.resize(nv)
+	for i in nv:
+		var t2 := float(i) / SOURD
+		ph += f0 * (1.0 - 0.26 * minf(1.0, t2 / 0.2)) / SOURD
+		if ph >= 1.0:
+			ph -= 1.0
+		var x := ph * O.TABLE
+		var k := int(x)
+		v[i] = (tab[k] + (tab[k + 1] - tab[k]) * (x - k)) * minf(1.0, t2 / 0.025) * exp(-maxf(0.0, t2 - 0.04) / 0.07)
+		crete = maxf(crete, absf(v[i]))
+	O.poser(s, v, i0, 0.3 / maxf(crete, 0.001))
+	O.bas(s, 3200.0, SOURD)
+	O.normaliser(s, 0.75)
+	return O.bords(s, SOURD)
+
+
+# une goutte de pluie sur les braises : « tss »
+static func _crache(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.17, VIF)
+	O.eclat(s, 0.001, r.randf_range(0.012, 0.035), 1.0, r, VIF)
+	O.haut(s, r.randf_range(2800.0, 4200.0), VIF)
+	var c := O.vide(0.17, VIF)
+	O.eclat(c, 0.0005, 0.0005, 0.8, r, VIF)
+	O.bande(c, r.randf_range(1400.0, 2200.0), 2.0, VIF)
+	O.poser(s, c, 0, 1.0)
+	O.normaliser(s, 0.8)
+	return O.bords(s, VIF)

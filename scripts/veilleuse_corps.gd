@@ -65,6 +65,18 @@ var allonge := 0.0            # 0 debout, 1 couchée
 var sens_chute := 1.0
 var echarpe := PackedVector2Array()   # la queue de l'écharpe (points, dans le nœud), simulée par le joueur
 var mobile := false
+# --- ce que le temps lui fait (le joueur le règle : scripts/joueur.gd) ---
+var mouille := 0.0            # de 0 (sèche) à 1 (trempée) : des gouttes tombent d'elle, son manteau luit
+var enfonce := 0.0            # en pixels : ses jambes dans l'eau, ses bottes dans la boue (on ne voit que ce qui dépasse)
+var eau := 0.0                # de 0 à 1 : elle est dans l'eau (des rides autour d'elle)
+var sillage := Vector2.ZERO   # sa marche dans l'eau, à l'écran (de 0 à 1) : le sillage part derrière elle
+var froid := 0.0              # de 0 à 1 : son souffle fait de la buée, son visage bleuit
+var chaud := 0.0              # de 0 à 1 : son visage rougit
+var boue := 0.0               # de 0 à 1 : la boue sur ses bottes
+var horloge := 0.0            # pour ce qui passe : les gouttes, la buée, les rides
+var c_visage := VISAGE
+var c_main := MAIN
+var c_botte := BOTTE
 # --- ce que le dessin donne au joueur ---
 var bout_torche := Vector2.ZERO
 var prof_torche := 0.0
@@ -114,11 +126,15 @@ func pt(v: Vector3, th: float) -> Vector2:
 		h += souffle * clampf((v.z - 12.0) / 16.0, 0.0, 1.0)
 	var f := v.x + penche * clampf(v.z / 36.0, 0.0, 1.4) + elan * k
 	var cote := v.y + hanche * k
-	return proj(Vector3(f, cote, h), th) + decal
+	return proj(Vector3(f, cote, h), th) + decal + Vector2(0.0, enfonce)
 
 
 # les points qui servent au joueur (la torche, l'écharpe, les mains), avant le dessin
 func preparer() -> void:
+	# (le froid bleuit son visage et ses mains, la chaleur les rougit ; la boue colle à ses bottes)
+	c_visage = VISAGE.lerp(P.LUNE.lightened(0.5), 0.45 * froid).lerp(P.BRAISE_ROUGE.lerp(VISAGE, 0.3), 0.8 * chaud)
+	c_main = MAIN.lerp(P.LUNE.lightened(0.4), 0.5 * froid).lerp(P.BRAISE_ROUGE.lerp(MAIN, 0.4), 0.6 * chaud)
+	c_botte = BOTTE.lerp(P.TERRE.lerp(P.ENCRE_DOUCE, 0.25), 0.75 * boue)
 	ancre_echarpe = chute * pt(Vector3(-3.6, 1.6, 29.6 + epaules), buste)
 	prof_echarpe = prof(Vector3(-3.6, 1.6, 0.0), buste)
 	main_d_ecran = chute * pt(main_d, buste)
@@ -156,23 +172,68 @@ func dessiner() -> void:
 	parts.sort_custom(func(a, b): return a[0] < b[0])
 	for p in parts:
 		p[1].call()
+	if allonge < 0.3:
+		if mouille > 0.15:
+			_gouttes()
+		if froid > 0.2:
+			_buee()
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-# l'ombre de contact : douce sous le corps, plus nette sous chaque pied posé
+# l'ombre de contact : douce sous le corps, plus nette sous chaque pied posé ; dans l'eau, des rides et son sillage
 func _ombres() -> void:
 	var t := doux()
 	var c := Vector2(decal.x, decal.y * 0.3 + 0.6)
 	var w := 24.0 + 5.0 * clampf(bas / 6.0, 0.0, 1.0) + 34.0 * allonge
 	var h := 8.0 + 2.5 * allonge
 	c.x += sens_chute * allonge * 17.0
-	ci.draw_texture_rect(t, Rect2(c - Vector2(w, h) * 0.5, Vector2(w, h)), false, Color(0, 0, 0, 0.42))
-	ci.draw_texture_rect(t, Rect2(c - Vector2(w, h) * 0.3, Vector2(w, h) * 0.6), false, Color(0, 0, 0, 0.28))
-	if allonge < 0.5:
+	var sec := 1.0 - 0.45 * eau
+	ci.draw_texture_rect(t, Rect2(c - Vector2(w, h) * 0.5, Vector2(w, h)), false, Color(0, 0, 0, 0.42 * sec))
+	ci.draw_texture_rect(t, Rect2(c - Vector2(w, h) * 0.3, Vector2(w, h) * 0.6), false, Color(0, 0, 0, 0.28 * sec))
+	if allonge < 0.5 and enfonce < 0.6:
 		for f in [pied_d, pied_g]:
 			var fp := pt(Vector3(f.x + 0.6, f.y, 0.0), cap)
 			var a := 0.4 * clampf(1.0 - f.z / 2.6, 0.0, 1.0) * (1.0 - allonge * 2.0)
 			ci.draw_texture_rect(t, Rect2(fp - Vector2(4.2, 1.6), Vector2(8.4, 3.2)), false, Color(0, 0, 0, a))
+	if eau > 0.04 and allonge < 0.5:
+		_rides(c)
+
+
+# dans l'eau : des rides qui s'élargissent autour d'elle ; quand elle marche, elles restent en arrière, et un sillage s'ouvre
+func _rides(c: Vector2) -> void:
+	var pale := P.PAPIER.lerp(P.ECHO, 0.4)
+	var v := sillage.length()
+	var arriere := -sillage.normalized() if v > 0.05 else Vector2.ZERO
+	for k in 2:
+		var u := fposmod(horloge * (0.5 + 0.5 * v) + k * 0.5, 1.0)
+		var rx := 8.0 + 13.0 * u
+		var rond := _ellipse(c + arriere * Vector2(1.0, 0.5) * (4.0 + 16.0 * u) * v, rx, rx * 0.4, 16)
+		rond.append(rond[0])
+		ci.draw_polyline(rond, Color(pale, 0.42 * (1.0 - u) * eau), 0.9, true)
+	if v > 0.15:
+		var travers := arriere.orthogonal()
+		for k in 2:
+			var cote := -1.0 if k == 0 else 1.0
+			var a := c + (travers * cote * 6.5 - arriere * 3.0) * Vector2(1.0, 0.5)
+			var m := c + (travers * cote * 10.5 + arriere * 9.0) * Vector2(1.0, 0.5)
+			var b := c + (travers * cote * 15.0 + arriere * 23.0) * Vector2(1.0, 0.5)
+			ci.draw_polyline(PackedVector2Array([a, m]), Color(pale, 0.5 * eau * v), 1.1, true)
+			ci.draw_polyline(PackedVector2Array([m, b]), Color(pale, 0.24 * eau * v), 0.9, true)
+
+
+# ce qu'on voit d'un trait qui descend dans l'eau (ou dans la boue) : la part au-dessus de la ligne y0
+static func _au_dessus(pts: PackedVector2Array, y0: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in pts.size():
+		var p := pts[i]
+		if p.y <= y0:
+			out.append(p)
+			continue
+		if i > 0 and pts[i - 1].y < y0:
+			var q := pts[i - 1]
+			out.append(q.lerp(p, (y0 - q.y) / (p.y - q.y)))
+		break
+	return out
 
 
 func _jambe(pied: Vector3, cote: float) -> void:
@@ -180,12 +241,30 @@ func _jambe(pied: Vector3, cote: float) -> void:
 	var genou := Vector3(pied.x * 0.5 + 0.7 + bas * 0.35, cote * 2.6, 5.2 + pied.z * 0.5)
 	var cheville := Vector3(pied.x, pied.y, pied.z + 1.4)
 	var pts := PackedVector2Array([pt(hanche_, cap), pt(genou, cap), pt(cheville, cap)])
-	ci.draw_polyline(pts, P.ENCRE, 4.6, true)
-	ci.draw_polyline(pts, JAMBE, 2.4, true)
 	# la botte : la tige, puis le pied qui pointe où elle va
 	var tige := PackedVector2Array([pt(Vector3(pied.x - 0.2, pied.y, pied.z + 3.6), cap), pt(Vector3(pied.x, pied.y, pied.z + 0.9), cap)])
+	if enfonce > 0.6:
+		# (dans l'eau, dans la boue : on ne voit que ce qui dépasse ; l'eau fait un anneau autour de la jambe)
+		var ligne := -0.3
+		var coupe := pts[2].y > ligne
+		pts = _au_dessus(pts, ligne)
+		if pts.size() > 1:
+			ci.draw_polyline(pts, P.ENCRE, 4.6, true)
+			ci.draw_polyline(pts, JAMBE, 2.4, true)
+		tige = _au_dessus(tige, ligne)
+		if tige.size() > 1:
+			ci.draw_polyline(tige, P.ENCRE, 4.8, true)
+			ci.draw_polyline(tige, c_botte, 2.6, true)
+		if coupe and pts.size() > 1 and eau > 0.04:
+			var o := pts[pts.size() - 1]
+			var anneau := _ellipse(Vector2(o.x, ligne + 0.3), 3.6, 1.3, 10)
+			anneau.append(anneau[0])
+			ci.draw_polyline(anneau, Color(P.PAPIER.lerp(P.ECHO, 0.4), 0.55 * eau), 0.8, true)
+		return
+	ci.draw_polyline(pts, P.ENCRE, 4.6, true)
+	ci.draw_polyline(pts, JAMBE, 2.4, true)
 	ci.draw_polyline(tige, P.ENCRE, 4.8, true)
-	ci.draw_polyline(tige, BOTTE, 2.6, true)
+	ci.draw_polyline(tige, c_botte, 2.6, true)
 	var talon := pt(Vector3(pied.x - 1.0, pied.y, pied.z + 0.8), cap)
 	var orteil := pt(Vector3(pied.x + 2.3, pied.y, pied.z + 0.8), cap)
 	var m := (talon + orteil) * 0.5
@@ -193,7 +272,7 @@ func _jambe(pied: Vector3, cote: float) -> void:
 	var rx := d.length() * 0.5 + 1.6
 	var ang := d.angle() if d.length() > 0.3 else 0.0
 	var sole := _ellipse(m, rx, 1.65, 10, ang)
-	_forme(sole, BOTTE)
+	_forme(sole, c_botte)
 	ci.draw_line(tige[0] + Vector2(-1.2, 0.4), tige[0] + Vector2(1.2, 0.4), CUIR_OMBRE, 1.0, true)
 
 
@@ -359,8 +438,8 @@ func _capuche() -> void:
 		var rxf := rx * 0.62
 		var ryf := ry * 0.74
 		var face := _ellipse(fc, rxf, ryf, 16)
-		_remplir(face, VISAGE)
-		_remplir(_vers_droite(face, fc.x + rxf * 0.25), VISAGE_OMBRE)
+		_remplir(face, c_visage)
+		_remplir(_vers_droite(face, fc.x + rxf * 0.25), c_visage.darkened(0.23))
 		# l'ombre du bord de la capuche, sur le front
 		var visiere := PackedVector2Array()
 		for i in 9:
@@ -574,7 +653,7 @@ func _bras(cote: float) -> void:
 		_lance(main)
 	if cote < 0.0 and torche:
 		_torche(main)
-	_forme(_ellipse(pts[2], 1.6, 1.5, 8), MAIN.darkened(0.3) if loin else MAIN, 0.9)
+	_forme(_ellipse(pts[2], 1.6, 1.5, 8), c_main.darkened(0.3) if loin else c_main, 0.9)
 	if cote > 0.0 and objet != "":
 		_objet(pts[2])
 
@@ -619,6 +698,44 @@ func _objet(p: Vector2) -> void:
 		"brindille":
 			ci.draw_line(p + Vector2(-4.0, 1.2), p + Vector2(4.0, -1.4), P.ENCRE, 2.6, true)
 			ci.draw_line(p + Vector2(-4.0, 1.2), p + Vector2(4.0, -1.4), BOIS, 1.2, true)
+
+
+# --- ce que le temps lui fait ---
+
+# trempée : des gouttes tombent de sa capuche, de son écharpe, du bas de son manteau ; l'étoffe mouillée luit
+func _gouttes() -> void:
+	var pale := P.PAPIER.lerp(P.ECHO, 0.55)
+	var departs := [pt(Vector3(1.0, 9.6, 8.6), cap) + cape * 0.8, pt(Vector3(4.6, -1.0, 33.4 - tete_baisse), tete), pt(Vector3(1.0, -9.6, 8.6), cap) + cape * 0.8,
+		pt(Vector3(-4.0, 2.0, 26.0), buste), pt(Vector3(6.0, 3.0, 9.0), cap) + cape * 0.8]
+	var n := clampi(int(ceil(mouille * 5.0 - 0.7)), 0, 5)
+	for k in n:
+		var u := fposmod(horloge * (1.05 + 0.17 * k) + k * 0.37, 1.0)
+		var d: Vector2 = departs[k]
+		# (elle perle un instant, puis tombe jusqu'au sol)
+		var y := lerpf(d.y, enfonce - 0.5, smoothstep(0.25, 1.0, u) * smoothstep(0.25, 1.0, u))
+		var x := d.x + cape.x * 0.1
+		ci.draw_line(Vector2(x, y - (0.5 + 1.9 * smoothstep(0.25, 0.6, u))), Vector2(x, y), Color(pale, (0.3 + 0.4 * smoothstep(0.2, 0.5, u)) * (1.0 - smoothstep(0.85, 1.0, u))), 0.8, true)
+	# (le reflet de l'eau sur la capuche et l'épaule, du côté du jour)
+	var c := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste)
+	ci.draw_line(c + Vector2(-4.6, -3.4), c + Vector2(-2.2, -5.4), Color(pale, 0.42 * mouille), 1.0, true)
+	var ep := pt(Vector3(0.0, 0.0, 26.6 + epaules), buste)
+	ci.draw_line(ep + Vector2(-5.8, 0.6), ep + Vector2(-4.6, 4.4), Color(pale, 0.34 * mouille), 1.0, true)
+
+
+# elle a froid : son souffle fait de la buée, par bouffées, devant sa bouche
+func _buee() -> void:
+	if cos(tete) < -0.35:
+		return
+	var u := fposmod(horloge / 2.1, 1.0) / 0.46
+	if u >= 1.0:
+		return
+	var devant := Vector2(sin(tete), cos(tete) * INCL)
+	var bouche := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste) + proj(Vector3(3.9, 0.0, -3.2), tete)
+	var pale := P.PAPIER.lerp(P.ECHO, 0.35)
+	var a := 0.55 * froid * (1.0 - u) * smoothstep(0.0, 0.15, u)
+	var p := bouche + devant * (2.5 + 8.0 * u) + Vector2(0.0, -3.0 * u * u)
+	ci.draw_circle(p, 1.5 + 3.0 * u, Color(pale, a))
+	ci.draw_circle(p + devant * 2.2 + Vector2(0.8, -1.4), 1.0 + 2.2 * u, Color(pale, a * 0.7))
 
 
 # --- la silhouette seule (l'éclair d'une blessure, le liseré de lune la nuit) ---

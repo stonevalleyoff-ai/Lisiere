@@ -210,6 +210,61 @@ static func bruit_bas(s: PackedFloat32Array, f1: float, f2: float, g: float, tau
 	return s
 
 
+# du bruit dans un passe-bande, comme bruit_bande, mais grenu : une part des échantillons (« part ») sont « force » fois plus
+# forts (des gouttes, des grains, dans un bruit continu), ajouté, en une seule boucle
+static func bruit_grenu(s: PackedFloat32Array, fc: float, q: float, g: float, taux: int, r: RandomNumberGenerator, part: float = 0.01, force: float = 6.0) -> PackedFloat32Array:
+	var w := TAU * minf(fc, taux * 0.45) / taux
+	var al := sin(w) / (2.0 * q)
+	var a0 := 1.0 + al
+	var b0 := al / a0
+	var a1 := -2.0 * cos(w) / a0
+	var a2 := (1.0 - al) / a0
+	var seuil := 1.0 - part
+	var x1 := 0.0
+	var x2 := 0.0
+	var y1 := 0.0
+	var y2 := 0.0
+	for i in s.size():
+		var x := r.randf_range(-1.0, 1.0)
+		if x > seuil or x < -seuil:
+			x *= force
+		var y := b0 * (x - x2) - a1 * y1 - a2 * y2
+		x2 = x1
+		x1 = x
+		y2 = y1
+		y1 = y
+		s[i] += y * g
+	return s
+
+
+# un passe-bande dont la fréquence erre : f0 × 2^(e × octaves), e étant un bruit lent de -1 à 1 (lent(), plus bas), de la
+# longueur de s ; recalculé par blocs de 32 échantillons
+static func bande_errante(s: PackedFloat32Array, e: PackedFloat32Array, f0: float, octaves: float, q: float, taux: int) -> PackedFloat32Array:
+	var x1 := 0.0
+	var x2 := 0.0
+	var y1 := 0.0
+	var y2 := 0.0
+	var b0 := 0.0
+	var a1 := 0.0
+	var a2 := 0.0
+	for i in s.size():
+		if i % 32 == 0:
+			var w := TAU * minf(f0 * pow(2.0, e[i] * octaves), taux * 0.45) / taux
+			var al := sin(w) / (2.0 * q)
+			var a0 := 1.0 + al
+			b0 = al / a0
+			a1 = -2.0 * cos(w) / a0
+			a2 = (1.0 - al) / a0
+		var x := s[i]
+		var y := b0 * (x - x2) - a1 * y1 - a2 * y2
+		x2 = x1
+		x1 = x
+		y2 = y1
+		y1 = y
+		s[i] = y
+	return s
+
+
 # un bruit lent, de -1 à 1 (des turbulences, des vacillements) : tiré sur une grille grossière, puis interpolé
 static func lent(n: int, fc: float, taux: int, r: RandomNumberGenerator) -> PackedFloat32Array:
 	var pas := 32

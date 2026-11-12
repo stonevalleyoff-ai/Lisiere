@@ -24,6 +24,15 @@ var temps := ""
 var image := ""
 var moments: Array = []
 var _but := Vector2.ZERO
+var _regles := {}              # (l'atelier : --boue, --crue, --neige-sol, --force, --vent, pour voir un état précis)
+# (l'atelier « feu » : --feu brasier|restes|pluie, --nu (sans l'interface), --appels (les appels de dessin, à la fin))
+var feu := ""
+var nu := false
+var appels := false
+var _appels_max := 0
+var _appels_somme := 0.0
+var _appels_n := 0
+var _brules: Array = []
 
 
 func _ready() -> void:
@@ -39,11 +48,18 @@ func _ready() -> void:
 				lieu = a[i + 1]
 			"--temps":
 				temps = a[i + 1]
+			"--feu":
+				feu = a[i + 1]
+				temps = "incendie"
 			"--image":
 				image = a[i + 1]
+			"--boue", "--crue", "--neige-sol", "--force", "--vent":
+				_regles[a[i]] = float(a[i + 1])
 			"--a":
 				for x in a[i + 1].split(","):
 					moments.append(float(x))
+	nu = a.has("--nu")
+	appels = a.has("--appels")
 	_lancer.call_deferred()
 
 
@@ -133,6 +149,16 @@ func _poser_le_temps() -> void:
 			C.vent = 0.5
 		_:
 			C.forcer(temps, 1.0, 9999.0)
+	if _regles.has("--force"):
+		C.forcer(C.temps, float(_regles["--force"]), 9999.0)
+	if _regles.has("--boue"):
+		C.boue = float(_regles["--boue"])
+	if _regles.has("--crue"):
+		C.crue = float(_regles["--crue"])
+	if _regles.has("--neige-sol"):
+		C.neige_sol = float(_regles["--neige-sol"])
+	if _regles.has("--vent"):
+		C.vent = float(_regles["--vent"])
 
 
 # ce qui arrive pendant la scène : la foudre tombe sur un arbre (puis tout près d'elle), le feu prend
@@ -147,7 +173,9 @@ func _le_temps_passe(u: float) -> void:
 	if temps == "orage" and u > 0.8 and not _fait.has("foudre2"):
 		_fait["foudre2"] = true
 		jeu.climat.frapper(j.position + Vector2(48, -10), R.FOUDRE_ANNONCE)
-	if temps == "incendie" and u > 0.08 and not _fait.has("feu"):
+	if feu != "":
+		_atelier_feu(u)
+	elif temps == "incendie" and u > 0.08 and not _fait.has("feu"):
 		_fait["feu"] = true
 		var arbre2 = _un_arbre(80.0, 260.0)
 		if arbre2 != null:
@@ -161,6 +189,66 @@ func _le_temps_passe(u: float) -> void:
 		moments.pop_front()
 		_fait["images"] = int(_fait.get("images", 0)) + 1
 		get_viewport().get_texture().get_image().save_png("%s_%d.png" % [image, int(_fait["images"])])
+		print("APPELS %s %d : %d (objets %d)" % [image.get_file(), int(_fait["images"]), int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))])
+
+
+# (l'atelier « feu ») un grand feu (24 objets), ce qui reste, la pluie qui éteint
+func _atelier_feu(u: float) -> void:
+	var j = jeu.joueur
+	var I = jeu.incendie
+	if u > 0.03 and not _fait.has("place"):
+		_fait["place"] = true
+		# (là où le lieu est le plus touffu, pas trop loin)
+		var centre: Vector2 = j.position + Vector2(150, -30)
+		var mieux := 0
+		for o in jeu.monde.autour(j.position, 1300.0):
+			if o.combustible():
+				var n: int = jeu.monde.autour(o.position, 190.0).filter(func(x): return x.combustible()).size()
+				if n > mieux:
+					mieux = n
+					centre = o.position
+		j.position = jeu.monde.repousser(centre + Vector2(-150, 70), 8.0)
+		_fait["centre"] = centre
+		_but = j.position
+		_plan = [[0.0, 1.0, "aller"]]
+	if u > (0.06 if feu == "long" else 0.3) and not _fait.has("feu") and feu != "rien":
+		_fait["feu"] = true
+		var centre: Vector2 = _fait["centre"]
+		var proches: Array = jeu.monde.autour(centre, 330.0)
+		proches.sort_custom(func(a, b): return centre.distance_squared_to(a.position) < centre.distance_squared_to(b.position))
+		var genres := {}
+		for o in proches:
+			if not o.combustible() or o.position.distance_to(j.position) < 50.0:
+				continue
+			if feu == "brasier" or int(genres.get(o._espece, 0)) < 3:
+				if I.enflammer(o):
+					genres[o._espece] = int(genres.get(o._espece, 0)) + 1
+					_brules.append(o)
+		print("vitrine : ", I.foyers.size(), " foyers ", genres)
+	if feu == "restes" and u > 0.5 and not _fait.has("vite"):
+		# (tout finit de brûler d'un coup, ou presque)
+		_fait["vite"] = true
+		for f in I.foyers:
+			f.objet.brule = minf(f.objet.brule, randf_range(0.3, 2.5))
+	if feu == "pluie" and u > 0.55 and not _fait.has("pluie"):
+		_fait["pluie"] = true
+		jeu.climat.forcer("pluie", 1.0, 9999.0)
+	if feu == "brasier":
+		# (le feu ne meurt pas pendant qu'on compte)
+		for f in I.foyers:
+			f.objet.brule = maxf(f.objet.brule, 6.0)
+	if appels:
+		var n := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+		var quand := "avant" if (u > 0.14 and u < 0.3) else ("apres" if u > 0.5 else "")
+		if quand != "":
+			_fait[quand] = float(_fait.get(quand, 0.0)) + n
+			_fait[quand + "_n"] = int(_fait.get(quand + "_n", 0)) + 1
+			_fait[quand + "_max"] = maxi(int(_fait.get(quand + "_max", 0)), n)
+			_fait["foyers_max"] = maxi(int(_fait.get("foyers_max", 0)), I.foyers.size())
+		if u >= 1.0 and not _fait.has("dit"):
+			_fait["dit"] = true
+			print("vitrine : appels de dessin, avant le feu %d (au pire %d) ; avec %d foyers %d (au pire %d)" % [int(float(_fait.get("avant", 0.0)) / maxi(1, int(_fait.get("avant_n", 0)))),
+				int(_fait.get("avant_max", 0)), int(_fait.get("foyers_max", 0)), int(float(_fait.get("apres", 0.0)) / maxi(1, int(_fait.get("apres_n", 0)))), int(_fait.get("apres_max", 0))])
 
 
 func _un_arbre(de: float, a: float):
@@ -182,6 +270,8 @@ func _process(delta: float) -> void:
 	var j = jeu.joueur
 	j.sante = maxf(j.sante, 60.0)
 	var u := _t / duree
+	if nu and jeu.ui != null and jeu.ui.visible:
+		jeu.ui.visible = false
 	_le_temps_passe(u)
 	if u >= 1.0:
 		_pret = false

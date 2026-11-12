@@ -7,6 +7,10 @@ extends Node
 # grenouilles, chouette, branches, chasseurs), le feu (un souffle, des braises, des crépitements tirés au hasard), les pas selon
 # le sol, les gestes, la peur (un bourdon, le cœur, le monde qui se resserre puis se tait), la musique (sons_musique.gd),
 # l'espace (un réverbère la nuit, un panoramique selon où est ce qui sonne), et la fin.
+# Et le temps qu'il fait (sons_temps.gd, d'après climat.gd et incendie.gd) : la pluie, du crachin à l'averse, autre sous un
+# feuillage et les pieds dans l'eau ; la foudre et son tonnerre ; l'incendie ; les pas dans la boue, l'eau, la neige ; le corps
+# qui brûle ou grelotte ; le vent qui enfle et hurle pendant l'orage ; les bêtes qui se taisent sous la pluie, la neige qui
+# étouffe tout.
 # Le jeu appelle : jouer(nom, volume_db, hauteur), niveau(boucle, v), taire(), maj(jeu, delta) à chaque image, pas(position)
 # à chaque pied posé (sinon, une cadence tirée de joueur.en_mouvement), et titre() quand l'écran-titre se montre.
 # Dans un navigateur (Godot 4.3, sans fils d'exécution), les sons passent par l'API Web Audio : les bus n'y ont pas d'effets,
@@ -16,6 +20,7 @@ const O := preload("res://scripts/sons_outils.gd")
 const F := preload("res://scripts/sons_recettes.gd")
 const Ambiance := preload("res://scripts/sons_ambiance.gd")
 const Musique := preload("res://scripts/sons_musique.gd")
+const Temps := preload("res://scripts/sons_temps.gd")
 
 const B_LISIERE := "Lisiere"
 const B_MONDE := "Lisiere-monde"          # tout le lieu : la peur l'assourdit (hors navigateur, par un passe-bas), la fin le tait
@@ -31,11 +36,15 @@ const MOUILLE := {"bois": 0.35, "pierre": 0.3, "herbe": 0.15, "coup": 0.3, "mord
 	"manger": 0.0, "pas": 0.12}
 # dans un navigateur, la queue de réverbère toute faite qui va à chaque son
 const QUEUES := {"pierre": "queue_claire", "herbe": "queue_claire", "grogne": "queue_voix", "allume": "queue_voix", "mord": "queue_voix"}
-# les couches continues : [bus, niveau à 1 (dB), variantes, vitesse de lissage]
+# les couches continues : [bus, niveau à 1 (dB), variantes, vitesse de lissage] ; un cinquième terme, vrai : la couche est
+# placée à l'oreille (son panoramique se règle, comme celui d'une voix placée)
 const COUCHES := {
 	"vent_grave": [B_AMBIANCE, -9.0, 2, 0.8], "vent_clair": [B_AMBIANCE, -13.0, 2, 1.2], "choeur": [B_AMBIANCE, -7.0, 1, 0.5],
 	"feu_souffle": [B_MONDE, -12.0, 2, 2.0], "feu_braise": [B_MONDE, -14.0, 1, 2.0],
 	"bourdon": [B_PEUR, -5.0, 1, 0.6], "tension": [B_PEUR, -12.0, 1, 0.5],
+	# le temps qu'il fait (sons_temps.gd)
+	"pluie_drue": [B_AMBIANCE, -2.0, 1, 0.8], "pluie_fine": [B_AMBIANCE, -12.0, 2, 0.8], "pluie_feuilles": [B_AMBIANCE, -9.0, 2, 0.8],
+	"pluie_eau": [B_AMBIANCE, -12.0, 1, 0.8], "vent_hurle": [B_AMBIANCE, -13.0, 1, 0.9], "brasier": [B_MONDE, -4.0, 1, 1.5, true],
 }
 # les anciens noms de boucles, pour niveau()
 const ALIAS := {"vent": ["vent_grave", "vent_clair"], "nuit": ["bourdon"], "feu": ["feu_souffle", "feu_braise"]}
@@ -45,12 +54,19 @@ const FILE := ["bois", "pierre", "herbe", "coup", "manger", "allume", "coeur", "
 	"pop0", "pop1", "pop2", "oiseau0", "oiseau1", "oiseau2", "oiseau3", "nappe_jour", "cloche", "bourdon0", "grillon0",
 	"grillon1", "choeur0", "eteint", "gresille", "froissement0", "froissement1", "nappe_nuit", "tension0", "chute", "flute",
 	"flute_longue", "vent_clair1", "feu_souffle1", "vent_grave1", "murmure", "corne", "hurlement0", "hurlement1", "grondement",
-	"chouette", "craquement"]
+	"chouette", "craquement",
+	# le temps qu'il fait : la pluie, la foudre, l'incendie, la boue et l'eau sous les pas, le corps
+	"pluie_drue0", "pluie_fine0", "pluie_feuilles0", "foudre0", "tonnerre0", "presage", "brasier0", "craque0", "vapeur",
+	"pas_boue0", "pas_boue1", "pas_boue2", "pas_boue3", "pas_eau0", "pas_eau1", "pas_eau2", "tonnerre1", "tonnerre2", "foudre1",
+	"pluie_fine1", "pluie_feuilles1", "pluie_eau0", "vent_hurle0", "craque1", "effondre", "crache0", "crache1", "crache2",
+	"frisson", "cri"]
 const VOIX := 14
 const VOIX_2D := 18
 
 var duree_lancement_ms := 0.0     # le temps pris au lancement (_ready)
 var duree_preparation_ms := 0.0   # le temps pris, image après image, à préparer les sons
+var duree_maj_ms := 0.0           # le temps pris, image après image, à jouer (maj et _process, sans la préparation)
+var journal = null                # (pour un essai) un tableau : chaque son demandé s'y note [horloge, nom, dB, hauteur, pan, bus, prêt]
 var preparation_finie_ms := -1.0  # quand la file s'est vidée (depuis le lancement)
 
 # sur un téléphone (jeu.qualite « mobile ») : aucun son ne se fabrique pendant la partie, ils se font tous avant (le jeu attend
@@ -65,8 +81,8 @@ var _travail = null               # un réverbère en cours : [nom, Reverbe, sec
 var _repos := 0.0                 # en partie, le temps avant la prochaine recette (on espace les à-coups)
 var _voix: Array = []
 var _voix2d: Array = []
-var _depart: PackedFloat64Array = PackedFloat64Array()
-var _depart2d: PackedFloat64Array = PackedFloat64Array()
+var _fin: PackedFloat64Array = PackedFloat64Array()       # quand chaque voix aura fini (à l'horloge des sons)
+var _fin2d: PackedFloat64Array = PackedFloat64Array()
 var _i := 0
 var _i2d := 0
 var _couches := {}
@@ -76,14 +92,15 @@ var _filtre: AudioEffectLowPassFilter
 var _coupure := 20000.0
 var _ambiance
 var _musique
+var _temps
 var _horloge := 0.0
-var _plus_tard: Array = []        # [attente, nom, vol, hauteur, bus]
+var _plus_tard: Array = []        # [attente, nom, vol, hauteur, bus] et, pour un son placé qu'on peut sauter, son panoramique
 
 # ce qu'on sait de la partie
 var _joueur
 var _sol := "herbe"
 var _sol2 := "herbe"
-var _dernier_pas := ""
+var _dernier_pas := {}            # la dernière variante jouée, par sol
 var _pas_signal := false
 var _pas_t := 0.0
 var _coeur_t := 0.0
@@ -92,6 +109,7 @@ var _betes_t := 0.0
 var _feux := {}
 var _grain := 0.0
 var _pop := 2.0
+var _crache := 0.0
 var _flamme := 0.0
 var _nuit_entiere := false
 var _nuits := 0
@@ -141,7 +159,7 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_voix.append(p)
-	_depart.resize(VOIX)
+	_fin.resize(VOIX)
 	var force := 1.0 / maxf(0.05, float(ProjectSettings.get_setting("audio/general/2d_panning_strength", 0.5)))
 	for i in VOIX_2D:
 		var q := AudioStreamPlayer2D.new()
@@ -151,7 +169,7 @@ func _ready() -> void:
 		q.panning_strength = force
 		add_child(q)
 		_voix2d.append(q)
-	_depart2d.resize(VOIX_2D)
+	_fin2d.resize(VOIX_2D)
 	for nom in COUCHES:
 		var c := Couche.new()
 		c.nom = nom
@@ -160,8 +178,14 @@ func _ready() -> void:
 		c.variantes = COUCHES[nom][2]
 		c.vitesse = COUCHES[nom][3]
 		c.periode = F.TUILES[nom][0] - F.TUILES[nom][1]
+		c.place = COUCHES[nom].size() > 4 and bool(COUCHES[nom][4])
 		for k in 2:
-			var p2 := AudioStreamPlayer.new()
+			var p2: Node = AudioStreamPlayer.new()
+			if c.place:
+				p2 = AudioStreamPlayer2D.new()
+				p2.attenuation = 0.0
+				p2.max_distance = 1.0e6
+				p2.panning_strength = force
 			p2.bus = c.bus
 			p2.volume_db = -80.0
 			add_child(p2)
@@ -172,6 +196,7 @@ func _ready() -> void:
 		_file.append_array(["queue_sourde", "queue_claire", "queue_voix"])
 	_ambiance = Ambiance.new(self)
 	_musique = Musique.new(self)
+	_temps = Temps.new(self)
 	duree_lancement_ms = (Time.get_ticks_usec() - t0) / 1000.0
 
 
@@ -179,6 +204,9 @@ func _ready() -> void:
 
 func jouer(nom: String, volume_db: float = 0.0, hauteur: float = 1.0) -> void:
 	if not F.TAUX.has(nom.rstrip("0123456789")):
+		return
+	# (la foudre : principal.gd joue encore un « coup » très grave quand elle tombe ; le tonnerre le remplace, sons_temps.gd)
+	if nom == "coup" and hauteur < 0.6 and _temps.image_foudre == Engine.get_process_frames():
 		return
 	var pan := 0.0
 	var bus := B_MONDE
@@ -199,15 +227,49 @@ func jouer(nom: String, volume_db: float = 0.0, hauteur: float = 1.0) -> void:
 		_son("gresille", volume_db + float(GAINS["gresille"]) + 3.0, 1.0, 0.0, 0.0, B_MONDE, true)
 
 
-# un pied posé (le signal « pas » de la veilleuse, ou la cadence de maj)
-func pas(_p = null) -> void:
+# un pied posé (le signal « pas » de la veilleuse, ou la cadence de maj), en p : le sol du lieu, et ce que le temps en a fait
+# (sons_temps.gd) : l'eau où l'on patauge, la neige tombée, la boue (plus épaisse dans ses flaques)
+func pas(p = null) -> void:
 	var sol := _sol if _r.randf() < 0.78 else _sol2
-	var nom := "pas_%s%d" % [sol, _r.randi() % 4]
-	if nom == _dernier_pas:
-		nom = "pas_%s%d" % [sol, (int(nom.right(1)) + 1) % 4]
-	_dernier_pas = nom
 	var vol: float = {"feuilles": -15.0, "herbe": -17.0, "neige": -14.0, "terre": -16.0}.get(sol, -16.0) + _r.randf_range(-1.5, 1.5)
-	_son(nom, vol, _r.randf_range(0.92, 1.08), 0.0, MOUILLE["pas"] * _espace, B_MONDE, false)
+	var ou := Vector2.ZERO
+	if p is Vector2:
+		ou = p
+	elif _joueur != null and is_instance_valid(_joueur):
+		ou = _joueur.position
+	var t: Array = _temps.sol(ou)
+	var boue: float = t[0]
+	var eau: float = t[1]
+	var neige: float = t[2]
+	if eau > 0.04:
+		# on patauge : plus grave et plus fort à mesure que l'eau monte ; sous peu d'eau, le sol s'entend encore
+		_un_pas("eau", 3, lerpf(-19.0, -12.0, eau) + _r.randf_range(-1.5, 1.5), lerpf(1.18, 0.86, eau) * _r.randf_range(0.95, 1.05))
+		if eau > 0.35 or mobile:
+			return
+		vol -= 5.0 + 12.0 * eau
+	elif sol != "neige" and neige > 0.15 and _r.randf() < smoothstep(0.15, 0.5, neige):
+		sol = "neige"
+		vol = -14.0 + _r.randf_range(-1.5, 1.5)
+	elif boue > 0.08 and not (mobile and boue <= 0.35):
+		# la boue : le pied s'enfonce et se décolle, d'autant plus bas et plus fort qu'elle est épaisse ; puis elle couvre le sol
+		_un_pas("boue", 4, lerpf(-25.0, -15.0, boue) + _r.randf_range(-1.5, 1.5), lerpf(1.12, 0.84, boue) * _r.randf_range(0.95, 1.05))
+		if boue > 0.7 or mobile:
+			return
+		vol -= 8.0 * boue
+	_un_pas(sol, 4, vol, _r.randf_range(0.92, 1.08))
+
+
+# un pas sur ce sol : une de ses variantes, jamais deux fois la même de suite ; s'il n'est pas prêt, le sol du lieu à sa place
+func _un_pas(sol: String, variantes: int, vol: float, hauteur: float) -> void:
+	var k := _r.randi() % variantes
+	if k == int(_dernier_pas.get(sol, -1)):
+		k = (k + 1) % variantes
+	_dernier_pas[sol] = k
+	var nom := "pas_%s%d" % [sol, k]
+	if not _prets.has(nom) and sol != _sol:
+		_demander(nom, true)
+		nom = "pas_%s%d" % [_sol, k % 4]
+	_son(nom, vol, hauteur, 0.0, MOUILLE["pas"] * _espace, B_MONDE, false)
 
 
 # le volume d'une boucle, de 0 (silence) à 1 (« vent », « nuit », « feu », ou le nom d'une couche) ; il y va doucement
@@ -235,6 +297,7 @@ func taire() -> void:
 	arreter_brefs()
 	_plus_tard.clear()
 	_musique.vider()
+	_temps.taire()
 	_joueur = null
 	_mort = -1.0
 	_espace = 0.0
@@ -245,12 +308,17 @@ func taire() -> void:
 	_coupure = 20000.0
 
 
-# arrête tous les sons brefs (l'essai arrête les AudioStreamPlayer ; les voix placées, des AudioStreamPlayer2D, s'arrêtent ici)
+# arrête tous les sons brefs (l'essai arrête les AudioStreamPlayer ; les voix placées et les couches placées, des
+# AudioStreamPlayer2D, s'arrêtent ici)
 func arreter_brefs() -> void:
 	for p in _voix:
 		p.stop()
 	for q in _voix2d:
 		q.stop()
+	for nom in _couches:
+		if _couches[nom].place:
+			for q2 in _couches[nom].lecteurs:
+				q2.stop()
 
 
 # --- ce que l'ambiance et la musique appellent ---
@@ -282,6 +350,7 @@ func _process(delta: float) -> void:
 	_repos = maxf(0.0, _repos - dt)
 	if not (mobile and en_partie):
 		_preparer(8000 if not en_partie else 2500, en_partie)
+	var t0 := Time.get_ticks_usec()
 	# l'écran-titre : le vent, et le thème
 	var titre: bool = not en_partie and jeu != null and "essai" in jeu and jeu.essai == null and (_titre_dit or _ecran_titre(jeu))
 	if titre and not _titre:
@@ -309,11 +378,16 @@ func _process(delta: float) -> void:
 		var e: Array = _plus_tard[i]
 		e[0] -= dt
 		if e[0] <= 0.0:
-			_son(e[1], e[2], e[3], 0.0, 0.0, e[4], true)
+			# (un son du temps, placé : sur un téléphone il ne se fabrique pas en jouant, il est prêt ou il saute)
+			if e.size() > 5:
+				_son(e[1], e[2], e[3], e[5], 0.0, e[4], not mobile)
+			else:
+				_son(e[1], e[2], e[3], 0.0, 0.0, e[4], true)
 			_plus_tard.remove_at(i)
 	for nom in _couches:
 		_couche_maj(_couches[nom], dt)
 	_bus_maj(dt)
+	duree_maj_ms += (Time.get_ticks_usec() - t0) / 1000.0
 
 
 var _effets = null
@@ -324,6 +398,7 @@ func maj(jeu, delta: float) -> void:
 	if j == null:
 		return
 	var dt := delta / maxf(Engine.time_scale, 0.001)
+	var t0 := Time.get_ticks_usec()
 	if j != _joueur:
 		_nouvelle_partie(jeu, j)
 	_betes_t -= dt
@@ -345,13 +420,25 @@ func maj(jeu, delta: float) -> void:
 	_espace = (1.0 - l) * (0.6 + 0.4 * float(_traits["couvert"]))
 	# ce qui est clair (les aigus du lieu) se retire quand la peur monte : un passe-bas fait à la main, partout
 	var clair := 1.0 - 0.85 * smoothstep(0.2, 0.75, peur)
+	# le temps qu'il fait (sons_temps.gd) : la pluie, la foudre, l'incendie, le corps ; et ce qu'il fait taire : les bêtes sous la
+	# pluie et l'orage (les grenouilles tiennent sous la pluie, pas sous l'orage), tout ce qui est clair et l'écho sous la neige
+	_temps.maj(jeu, j, dt, morte, comble)
+	var sec: float = _temps.sec
+	clair *= 1.0 - 0.45 * float(_temps.etouffe)
+	_espace *= 1.0 - 0.8 * float(_temps.etouffe)
 	var c := {
 		"l": l, "peur": peur, "comble": comble, "morte": morte, "clair": clair, "ici": j.position, "betes": _betes,
-		"couvert": _traits["couvert"], "profonde": 1.0 - smoothstep(0.0, 0.15, l),
-		"grillons": smoothstep(0.75, 0.15, l) * (0.0 if _traits["froid"] else 1.0) * (1.0 - 0.35 * float(_traits["couvert"])) * clair,
-		"grenouilles": smoothstep(0.55, 0.95, _traits["humide"]) * smoothstep(0.65, 0.15, l) * (0.0 if _traits["froid"] else 1.0) * clair,
-		"oiseaux": smoothstep(0.4, 0.85, l) * (0.45 if _traits["froid"] else 1.0) * (0.55 + 0.45 * float(_traits["couvert"])) * clair,
+		"couvert": _traits["couvert"], "profonde": (1.0 - smoothstep(0.0, 0.15, l)) * sec,
+		"grillons": smoothstep(0.75, 0.15, l) * (0.0 if _traits["froid"] else 1.0) * (1.0 - 0.35 * float(_traits["couvert"])) * clair * sec,
+		"grenouilles": smoothstep(0.55, 0.95, _traits["humide"]) * smoothstep(0.65, 0.15, l) * (0.0 if _traits["froid"] else 1.0) * clair
+			* (1.0 - smoothstep(0.15, 0.5, float(_temps.orage))),
+		"oiseaux": smoothstep(0.4, 0.85, l) * (0.45 if _traits["froid"] else 1.0) * (0.55 + 0.45 * float(_traits["couvert"])) * clair * sec,
 	}
+	# (la canicule : les grillons chantent en plein jour)
+	if not _traits["froid"]:
+		c["grillons"] = maxf(c["grillons"], 0.55 * float(_temps.chaleur) * clair * sec)
+	if _temps.eclaircie() and not morte:
+		_ambiance.eclaircie()
 	_vent(jeu, l, clair, morte)
 	_feu(jeu, j, dt, morte, comble)
 	_pas_maj(j, dt, morte)
@@ -368,16 +455,20 @@ func maj(jeu, delta: float) -> void:
 		_nuits = jeu.nuits
 		_musique.aube()
 		_ambiance.aube()
-	_musique.maj(dt, "" if morte else ("jour" if l > 0.5 else "nuit"), peur < 0.45)
-	# les bus : la peur assourdit le lieu, le comble le tait presque ; la musique s'efface la première
+	# (sous l'orage, aucune phrase ne commence)
+	_musique.maj(dt, "" if morte else ("jour" if l > 0.5 else "nuit"), peur < 0.45 and float(_temps.orage) < 0.35)
+	# les bus : la peur assourdit le lieu, le comble le tait presque ; la musique s'efface la première, et sous l'orage ; la
+	# neige étouffe le lieu (hors navigateur, par le même passe-bas que la peur)
 	if not morte:
 		var monde := 1.0 - 0.45 * smoothstep(0.35, 0.9, peur) - 0.5 * comble
 		_bus_cible[B_MONDE] = linear_to_db(maxf(monde, 0.001))
-		_bus_cible[B_AMBIANCE] = linear_to_db(maxf(1.0 - 0.55 * smoothstep(0.3, 0.85, peur), 0.001))
-		_bus_cible[B_MUSIQUE] = -4.0 + linear_to_db(maxf(1.0 - smoothstep(0.25, 0.55, peur), 0.001))
+		_bus_cible[B_AMBIANCE] = linear_to_db(maxf(1.0 - 0.55 * smoothstep(0.3, 0.85, peur), 0.001)) - 3.0 * float(_temps.etouffe)
+		_bus_cible[B_MUSIQUE] = -4.0 + linear_to_db(maxf(1.0 - smoothstep(0.25, 0.55, peur), 0.001)) + float(_temps.musique_db)
 		_coupure = lerpf(20000.0, 650.0, pow(smoothstep(0.3, 0.95, peur), 0.7))
 		if comble > 0.0:
 			_coupure = lerpf(_coupure, 380.0, comble)
+		_coupure = minf(_coupure, 20000.0 * pow(0.19, float(_temps.etouffe)))
+	duree_maj_ms += (Time.get_ticks_usec() - t0) / 1000.0
 
 
 # --- la partie ---
@@ -410,6 +501,7 @@ func _nouvelle_partie(jeu, j) -> void:
 	_nuits = jeu.nuits
 	_mort = -1.0
 	_ambiance.nouvelle_partie(_traits)
+	_temps.nouvelle_partie(jeu)
 	_musique.vider()
 	_musique._attente = 30.0
 
@@ -437,23 +529,44 @@ func _lieu(axes: Dictionary, froid: bool) -> void:
 			devant.append("pas_%s%d" % [s, k])
 	if _traits["humide"] > 0.55 and not froid:
 		devant.append_array(["grenouille0", "grenouille1"])
+	# (la neige peut tomber ailleurs que dans le froid : l'hiver presque partout, et là où le monde en a déjà posé)
+	if not froid and _neige_possible():
+		for k in 4:
+			devant.append("pas_neige%d" % k)
 	for nom in devant:
 		_demander(nom, false)
 
 
-# le vent : une respiration lente pour tout le lieu, et des rafales ; plus de feuilles sous le couvert, plus froid s'il gèle
+# la neige peut-elle venir ici, à cette saison ? (scripts/climat.gd : le froid du lieu, de la saison, de la nuit ; le temps du monde)
+func _neige_possible() -> bool:
+	var jeu = get_parent()
+	if jeu == null:
+		return false
+	var m = jeu.get("meteo")
+	if m is Dictionary and (float(m.get("neige", 0.0)) > 0.0 or str(m.get("temps", "")) in ["neige", "tempete"]):
+		return true
+	return float(_traits["temp"]) < (0.66 if str(jeu.get("saison")) == "hiver" else 0.4)
+
+
+# le vent : une respiration lente pour tout le lieu, et des rafales ; plus de feuilles sous le couvert, plus froid s'il gèle.
+# Le temps qu'il fait règle sa force (climat.vent : 0,12 par temps calme, jusqu'à 0,9 dans l'orage) : il enfle, il monte, et
+# dans l'orage il se met à hurler dans les branches, par rafales
 func _vent(jeu, l: float, clair: float, morte: bool) -> void:
 	var g := rafale(float(jeu.horloge))
 	if jeu.has_method("vent"):
 		g = clampf(float(jeu.vent()), 0.0, 1.0)
 	var couvert: float = _traits["couvert"]
 	var froid: bool = _traits["froid"]
+	var force: float = _temps.vent
+	var enfle := lerpf(0.9, 1.7, smoothstep(0.1, 0.9, force))
 	var base := (1.0 - 0.3 * couvert) * (1.15 if froid else 1.0) * (0.9 + 0.1 * l)
 	var k := 0.0 if morte else 1.0
-	_couches["vent_grave"].cible = (0.5 + 0.5 * g) * base * k
-	_couches["vent_grave"].hauteur = 0.9 + 0.2 * g
-	_couches["vent_clair"].cible = (0.12 + 0.88 * pow(g, 1.6)) * (0.55 + 0.45 * couvert) * clair * k * (0.75 + 0.25 * l)
-	_couches["vent_clair"].hauteur = (0.85 + 0.3 * g) * (1.1 if froid else 1.0)
+	_couches["vent_grave"].cible = (0.5 + 0.5 * g) * base * k * enfle
+	_couches["vent_grave"].hauteur = 0.9 + 0.2 * g + 0.15 * force
+	_couches["vent_clair"].cible = (0.12 + 0.88 * pow(g, 1.6)) * (0.55 + 0.45 * couvert) * clair * k * (0.75 + 0.25 * l) * enfle
+	_couches["vent_clair"].hauteur = (0.85 + 0.3 * g + 0.2 * force) * (1.1 if froid else 1.0)
+	_couches["vent_hurle"].cible = smoothstep(0.38, 0.85, force) * (0.3 + 0.7 * pow(g, 1.3)) * k
+	_couches["vent_hurle"].hauteur = 0.88 + 0.26 * g
 
 
 # la respiration du lieu, de 0 (calme) à 1 (une rafale) : un souffle de trente secondes, et des rafales qui passent ;
@@ -474,9 +587,13 @@ func _feu(jeu, j, dt: float, morte: bool, comble: float) -> void:
 		var id: int = f.get_instance_id()
 		var allume: bool = f.allume()
 		var d: float = j.position.distance_to(f.position)
-		# (un feu qui s'éteint : un dernier souffle)
+		# (un feu qui s'éteint : un dernier souffle ; noyé par l'eau qui monte : un sifflement de vapeur)
 		if _feux.get(id, false) and not allume and d < 600.0 and not morte:
-			_son("eteint", float(GAINS["eteint"]) + linear_to_db(maxf(0.05, 1.0 - d / 600.0)), 1.0, pan_de(f.position), 0.0, B_MONDE, false)
+			var noye := false
+			if jeu.get("climat") != null:
+				noye = float(jeu.climat.eau(f.position)) > 0.3
+			_son("vapeur" if noye else "eteint", (-4.0 if noye else float(GAINS["eteint"])) + linear_to_db(maxf(0.05, 1.0 - d / 600.0)), 0.9 if noye else 1.0,
+				pan_de(f.position), 0.0, B_MONDE, false)
 		_feux[id] = allume
 		if allume and d < d0:
 			d0 = d
@@ -490,7 +607,8 @@ func _feu(jeu, j, dt: float, morte: bool, comble: float) -> void:
 	_flamme = clampf(_flamme + _r.randf_range(-1.0, 1.0) * dt * 0.6, -0.05, 0.05)
 	_couches["feu_souffle"].cible = prox * (0.45 + 0.55 * vif) * k
 	_couches["feu_souffle"].hauteur = 0.92 + 0.12 * vif + _flamme
-	_couches["feu_braise"].cible = prox * (0.3 + 0.7 * vif) * k
+	# (la couche des braises sert aussi à l'incendie, et à la veilleuse en feu : sons_temps.gd)
+	_couches["feu_braise"].cible = maxf(prox * (0.3 + 0.7 * vif) * k, float(_temps.braise))
 	if prox < 0.01 or k <= 0.0:
 		return
 	var pan := pan_de(proche.position) * 0.6
@@ -503,6 +621,13 @@ func _feu(jeu, j, dt: float, morte: bool, comble: float) -> void:
 	if _pop <= 0.0:
 		_pop = -log(maxf(_r.randf(), 0.0001)) / (0.12 + 0.35 * vif)
 		_son("pop%d" % (_r.randi() % 3), linear_to_db(prox * k) + _r.randf_range(-12.0, -5.0), _r.randf_range(0.85, 1.15), pan, 0.0, B_MONDE, false)
+	# sous la pluie, il crache : des gouttes sur les braises, d'autant plus qu'il pleut
+	var pluie: float = _temps.pluie
+	if pluie > 0.08:
+		_crache -= dt
+		if _crache <= 0.0:
+			_crache = -log(maxf(_r.randf(), 0.0001)) / ((0.8 + 5.0 * pluie) * (0.6 if mobile else 1.0))
+			_son("crache%d" % (_r.randi() % 3), linear_to_db(prox * k) + _r.randf_range(-19.0, -9.0), _r.randf_range(0.8, 1.3), pan, 0.0, B_MONDE, false)
 
 
 # les pas : au signal de la veilleuse s'il existe ; sinon, à la cadence de sa marche
@@ -559,6 +684,8 @@ func _tomber() -> void:
 
 func _son(nom: String, vol: float, hauteur: float, pan: float, mouille: float, bus: String, maintenant: bool) -> void:
 	var w := _flux(nom, maintenant)
+	if journal != null:
+		journal.append([_horloge, nom, vol, hauteur, pan, bus, w != null])
 	if w == null or vol < -70.0:
 		return
 	if absf(pan) < 0.03:
@@ -578,7 +705,7 @@ func _son(nom: String, vol: float, hauteur: float, pan: float, mouille: float, b
 
 
 func _jouer_1d(w: AudioStreamWAV, vol: float, hauteur: float, bus: String) -> void:
-	var k := _libre(_voix, _depart, _i)
+	var k := _libre(_voix, _fin, _i)
 	_i = k + 1
 	var p: AudioStreamPlayer = _voix[k]
 	p.stop()
@@ -586,26 +713,35 @@ func _jouer_1d(w: AudioStreamWAV, vol: float, hauteur: float, bus: String) -> vo
 	p.bus = bus
 	p.volume_db = vol
 	_hauteur(p, hauteur)
-	_depart[k] = _horloge
+	_fin[k] = _horloge + w.get_length() / clampf(hauteur, 0.05, 16.0)
 
 
 func _jouer_2d(w: AudioStreamWAV, vol: float, hauteur: float, pan: float, bus: String) -> void:
-	var k := _libre(_voix2d, _depart2d, _i2d)
+	var k := _libre(_voix2d, _fin2d, _i2d)
 	_i2d = k + 1
 	var q: AudioStreamPlayer2D = _voix2d[k]
 	q.stop()
 	pan = clampf(pan, -1.0, 1.0)
-	# (le lecteur est posé à l'écran, de côté : le moteur en tire le panoramique ; au centre, un lecteur 2D rend 6 dB de moins
-	# qu'un lecteur simple, et l'on garde la même puissance d'un bord à l'autre)
+	q.global_position = _place(pan)
+	q.stream = w
+	q.bus = bus
+	q.volume_db = vol + _db_place(pan)
+	_hauteur(q, hauteur)
+	_fin2d[k] = _horloge + w.get_length() / clampf(hauteur, 0.05, 16.0)
+
+
+# où poser un lecteur placé (une voix, une couche) pour ce panoramique : à l'écran, de côté ; le moteur en tire le panoramique
+func _place(pan: float) -> Vector2:
 	var vp := get_viewport()
 	var ct := vp.get_global_canvas_transform() * vp.get_canvas_transform()
 	var sz := vp.get_visible_rect().size
-	q.global_position = ct.affine_inverse() * (sz * 0.5 + Vector2(pan * sz.x, 0.0))
-	q.stream = w
-	q.bus = bus
-	q.volume_db = vol + 6.02 - 10.0 * log(1.0 + pan * pan) / log(10.0)
-	_hauteur(q, hauteur)
-	_depart2d[k] = _horloge
+	return ct.affine_inverse() * (sz * 0.5 + Vector2(pan * sz.x, 0.0))
+
+
+# ce qu'il faut rendre à un lecteur placé : au centre, il sonne 6 dB sous un lecteur simple ; et l'on garde la même puissance
+# d'un bord à l'autre
+func _db_place(pan: float) -> float:
+	return 6.02 - 10.0 * log(1.0 + pan * pan) / log(10.0)
 
 
 # lance un lecteur à cette hauteur (dans un navigateur, Godot 4.3 ne transmet pas la hauteur posée avant play() : seule une
@@ -616,17 +752,18 @@ func _hauteur(p, hauteur: float) -> void:
 	p.pitch_scale = clampf(hauteur, 0.05, 16.0)
 
 
-# une voix libre, à partir de i ; sinon, la plus ancienne
-func _libre(voix: Array, depart: PackedFloat64Array, i: int) -> int:
+# une voix libre, à partir de i ; sinon, celle qui allait finir la première (un tonnerre qui roule encore n'est pas coupé par
+# un crépitement)
+func _libre(voix: Array, fin: PackedFloat64Array, i: int) -> int:
 	var n := voix.size()
-	var vieille := 0
+	var tot := 0
 	for j in n:
 		var k := (i + j) % n
 		if not voix[k].playing:
 			return k
-		if depart[k] < depart[vieille]:
-			vieille = k
-	return vieille
+		if fin[k] < fin[tot]:
+			tot = k
+	return tot
 
 
 # la bête la plus proche de ces rôles, à moins de « rayon » : sa place à l'oreille
@@ -660,6 +797,8 @@ class Couche:
 	var variantes := 1
 	var vitesse := 1.0
 	var derniere := -1
+	var place := false        # ses lecteurs sont placés (des AudioStreamPlayer2D) : pan dit où
+	var pan := 0.0
 
 
 func _couche_maj(c: Couche, dt: float) -> void:
@@ -671,6 +810,12 @@ func _couche_maj(c: Couche, dt: float) -> void:
 				p.volume_db = -80.0
 		return
 	var db := c.gain_db + linear_to_db(maxf(c.v, 0.00001))
+	if c.place:
+		var pan := clampf(c.pan, -1.0, 1.0)
+		var ou := _place(pan)
+		db += _db_place(pan)
+		for q in c.lecteurs:
+			q.global_position = ou
 	for p in c.lecteurs:
 		p.volume_db = db
 		p.pitch_scale = c.hauteur
@@ -690,7 +835,7 @@ func _couche_maj(c: Couche, dt: float) -> void:
 		return
 	var var_k: int = choix[_r.randi() % choix.size()]
 	c.derniere = var_k
-	var p2: AudioStreamPlayer = c.lecteurs[c.tour]
+	var p2 = c.lecteurs[c.tour]
 	c.tour = 1 - c.tour
 	p2.stop()
 	p2.stream = _prets["%s%d" % [c.nom, var_k]]

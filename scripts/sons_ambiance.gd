@@ -4,6 +4,8 @@ extends RefCounted
 # l'aube) ; au soir et la nuit, des grillons qui chantent par phrases, chacun à son pas (plus vite s'il fait chaud), des
 # grenouilles si le lieu est humide, une chouette de temps en temps (une autre lui répond), une branche qui casse au loin ;
 # quand des chasseurs sont là, leurs hurlements ou leurs grondements, d'où ils sont, et ce qui bouge dans les fourrés tout près.
+# Sous la pluie et l'orage les oiseaux, les grillons, la chouette se taisent (sons.gd baisse ce qu'il donne ici) ; à
+# l'éclaircie, les oiseaux reviennent ensemble.
 # sons.gd lui donne, à chaque image, ce qu'il faut savoir du moment (c) ; elle joue par sons.evenement().
 
 var s                        # le nœud des sons
@@ -50,6 +52,12 @@ func nouvelle_partie(c: Dictionary) -> void:
 func aube() -> void:
 	_choeur_aube = 28.0
 	_oiseau = 0.5
+
+
+# la pluie cesse : les oiseaux reviennent ensemble, un moment (sons.gd, d'après sons_temps.gd)
+func eclaircie() -> void:
+	_choeur_aube = maxf(_choeur_aube, 10.0)
+	_oiseau = minf(_oiseau, 1.5)
 
 
 func maj(dt: float, c: Dictionary) -> void:

@@ -20,6 +20,9 @@ var camera: Camera2D
 var obscurite: CanvasModulate
 # la couche du sol (sous ce qui se tient debout) : les feux y posent leur lueur et leurs ombres
 var sol: Node2D
+# les flammes de l'incendie (scripts/incendie_flammes.gd, qui se présente ici à chaque partie) : sa nuée sert aussi aux bouffées
+# d'un instant (la vapeur, les éclats de boue, les éclaboussures)
+var flammes
 # la couleur du monde la nuit (l'obscurité y multiplie tout) : un bleu d'encre, assez clair pour qu'on devine les formes
 var nuit_monde := P.NUIT_BLEUE.lerp(P.LUNE, 0.06)
 var _lieu
@@ -91,6 +94,7 @@ func vider() -> void:
 	camera = null
 	obscurite = null
 	sol = null
+	flammes = null
 	if _lieu != null:
 		_lieu.vider()
 	_lieu = null
@@ -129,7 +133,7 @@ func maj(delta: float) -> void:
 	if _lieu != null and camera != null:
 		_lieu.maj(delta, {"nuit": nuit, "peur": _peur, "vent": vent(), "centre": camera.get_screen_center_position(), "vue": vue,
 			"lucioles": _crepuscule(), "brume_matin": _brume_matin(), "obscur": obscurite.color if obscurite != null else Color.WHITE,
-			"lumieres": _lumieres()})
+			"lumieres": _lumieres(), "climat": jeu.climat})
 	var e := {
 		"ratio": vue.x / maxf(vue.y, 1.0), "nuit": nuit * 0.32, "peur": _peur, "coeur": _coeur * smoothstep(0.62, 0.75, _peur),
 		"blessure": _blessure, "froid": _froid, "aube": _aube, "echo": _echo, "fin": fin, "noir": noir,
@@ -361,16 +365,41 @@ func recolte(p: Vector2, genre: String) -> void:
 				{"vitesse": [40.0, 90.0], "gravite": Vector2(0, 300), "duree": 0.6, "taille": [0.4, 0.6], "tourne": true})
 
 
-# un pas sur le sol (la veilleuse, une bête qui bondit) : un peu de poussière de la couleur du sol, qui retombe
-# (pas encore appelé par le jeu : une accroche pour le signal « pas » de la veilleuse)
+# un pas sur le sol (la veilleuse) : dans l'eau, des éclaboussures ; dans la boue, des éclats de boue ; au sec, un peu de
+# poussière de la couleur du sol, qui retombe (principal.gd l'appelle à chaque pied posé)
 func pas(p: Vector2, fort: float = 0.5) -> void:
 	if _air() == null:
 		return
+	var climat = jeu.climat if jeu != null and jeu.get("climat") != null else null
+	if climat != null and flammes != null and is_instance_valid(flammes):
+		var eau: float = climat.eau(p)
+		if eau > 0.05:
+			flammes.bref(flammes.EAU, p + Vector2(0, -1), 3 + int(4 * fort * (0.5 + eau)), 17.0 + 12.0 * eau, 0.5, 0.9)
+			return
+		var boue: float = climat.boue
+		if boue > 0.25:
+			# (plus la boue est épaisse là où elle marche, plus elle en arrache)
+			var epais: float = clampf((1.0 - float(climat.allure(p))) / 0.3, 0.0, 1.0)
+			if epais > 0.15:
+				flammes.bref(flammes.BOUE, p + Vector2(0, -1), 2 + int(4 * fort * epais), 13.0 + 9.0 * epais, 0.46)
+			return
+		if float(climat.pluie) > 0.3 or float(climat.neige_sol) > 0.2:
+			return
 	var pal: Dictionary = jeu.monde.palette if jeu != null and jeu.monde != null else {}
 	var c: Color = pal.get("sol", P.TERRE).lightened(0.25)
 	_gerbe(p + Vector2(0, -1), int(3 + 4 * fort), T.point_doux(), T.rampe([[0.0, Color(c, 0.35 * fort + 0.1)], [1.0, Color(c, 0.0)]]), true,
 		{"vitesse": [8.0, 26.0], "dir": Vector2(0, -1), "spread": 70.0, "gravite": Vector2(vent() * 8.0, 10), "amortir": 20.0,
 		"duree": 0.7, "taille": [0.08, 0.16], "grandit": true, "rayon": 3.0})
+
+
+# les flammes de la veilleuse s'éteignent en p : dans l'eau, sous la pluie, une bouffée de vapeur ; sinon un peu de fumée
+func flammes_eteintes(p: Vector2, mouillee: bool) -> void:
+	if flammes == null or not is_instance_valid(flammes):
+		return
+	if mouillee:
+		flammes.bref(flammes.VAPEUR, p, 9, 22.0, 1.5)
+	else:
+		flammes.bref(flammes.FUMEE, p, 4, 17.0, 1.8, 0.7)
 
 
 # un feu de camp prend : une gerbe, un éclat
