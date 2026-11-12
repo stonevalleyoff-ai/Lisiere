@@ -27,6 +27,8 @@ const PartieGardee := preload("res://scripts/partie_gardee.gd")
 const Bestiaire := preload("res://scripts/bestiaire.gd")
 const Climat := preload("res://scripts/climat.gd")
 const Incendie := preload("res://scripts/incendie.gd")
+const TempsSol := preload("res://scripts/temps_sol.gd")
+const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -378,6 +380,11 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	couche_ciel.add_child(ciel)
 	incendie.vider()
 	climat.preparer(graine, biome_info.get("axes", {}), meteo)
+	# (ce que le temps dessine dans le lieu : le sol détrempé, l'eau, la foudre ; les flammes de l'incendie)
+	for dessin in [TempsSol.new(), IncendieFlammes.new()]:
+		dessin.jeu = self
+		scene.add_child(dessin)
+		dessin.poser(scene, monde)
 	horloge = R.TRANSITION + 2.0
 	jour = 1
 	nuits = 0

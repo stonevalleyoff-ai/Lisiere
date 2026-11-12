@@ -5,6 +5,9 @@ extends Node
 # Rien n'est vérifié ici (c'est le travail de l'essai) : on regarde.
 #   outils/godot.sh --path . -- --vitrine [--heure jour|soir|nuit] [--duree 12] [--lieu foret]
 #   outils/film.sh <dossier> -- --vitrine --heure nuit      (filmée image par image, et sa planche-contact)
+# Le temps qu'il fait, montré (scripts/climat.gd) : --temps pluie|orage|crue|neige|brouillard|canicule|incendie. La veilleuse
+# attend, tourne, puis va là où ça se passe (sous un arbre, dans l'eau, près de l'arbre frappé, contre les flammes).
+#   --image <chemin> --a 0.3,0.6,0.9   écrit <chemin>_1.png, _2.png… à ces moments (en fractions de la durée)
 
 const R := preload("res://scripts/regles.gd")
 
@@ -17,6 +20,10 @@ var _pret := false
 var _plan: Array = []          # [debut, fin, geste]
 var _fait := {}
 var _coup := 0.0
+var temps := ""
+var image := ""
+var moments: Array = []
+var _but := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -30,6 +37,13 @@ func _ready() -> void:
 				duree = float(a[i + 1])
 			"--lieu":
 				lieu = a[i + 1]
+			"--temps":
+				temps = a[i + 1]
+			"--image":
+				image = a[i + 1]
+			"--a":
+				for x in a[i + 1].split(","):
+					moments.append(float(x))
 	_lancer.call_deferred()
 
 
@@ -73,7 +87,92 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	if temps != "":
+		_poser_le_temps()
 	_pret = true
+
+
+# le temps qu'on veut voir, tout de suite, et là où la veilleuse ira
+func _poser_le_temps() -> void:
+	var C = jeu.climat
+	var j = jeu.joueur
+	_plan = [[0.0, 0.12, "attendre"], [0.12, 0.4, "tourner"], [0.4, 1.0, "aller"]]
+	_but = j.position + Vector2(240, 60)
+	var arbre = _plus_proche(["arbre", "sapin"])
+	match temps:
+		"pluie":
+			C.forcer("pluie", 1.0, 9999.0)
+			C.boue = 1.0
+			if arbre != null:
+				_but = arbre.position + Vector2(5, 8)
+		"orage":
+			C.forcer("orage", 1.0, 9999.0)
+			C.boue = 0.7
+		"crue":
+			C.forcer("pluie", 0.8, 9999.0)
+			C.boue = 1.0
+			C.crue = 1.0
+			var d0 := INF
+			for k in 1600:
+				var q: Vector2 = j.position + Vector2(-1200.0 + 60.0 * (k % 40), -1200.0 + 60.0 * (k / 40))
+				if C.eau(q) > 0.85 and q.distance_to(j.position) < d0 and jeu.monde.repousser(q, 8.0).distance_to(q) < 1.0:
+					d0 = q.distance_to(j.position)
+					_but = q
+			# (on part du bord de l'eau, pour la voir y entrer)
+			j.position = _but + (j.position - _but).normalized() * 230.0
+			_plan = [[0.0, 0.1, "attendre"], [0.1, 1.0, "aller"]]
+		"neige":
+			C.forcer("neige", 1.0, 9999.0)
+			C.neige_sol = 0.9
+			j.temperature = 32.0
+		"canicule":
+			C.forcer("canicule", 1.0, 9999.0)
+			j.temperature = 74.0
+		"incendie":
+			C.forcer("clair", 0.0, 9999.0)
+			C.vent = 0.5
+		_:
+			C.forcer(temps, 1.0, 9999.0)
+
+
+# ce qui arrive pendant la scène : la foudre tombe sur un arbre (puis tout près d'elle), le feu prend
+func _le_temps_passe(u: float) -> void:
+	var j = jeu.joueur
+	if temps == "orage" and u > 0.22 and not _fait.has("foudre"):
+		_fait["foudre"] = true
+		var arbre = _un_arbre(90.0, 230.0)
+		if arbre != null:
+			jeu.climat.frapper(arbre.position, R.FOUDRE_ANNONCE, arbre)
+			_but = arbre.position + Vector2(52.0 * (1.0 if j.position.x >= arbre.position.x else -1.0), 12.0)
+	if temps == "orage" and u > 0.8 and not _fait.has("foudre2"):
+		_fait["foudre2"] = true
+		jeu.climat.frapper(j.position + Vector2(48, -10), R.FOUDRE_ANNONCE)
+	if temps == "incendie" and u > 0.08 and not _fait.has("feu"):
+		_fait["feu"] = true
+		var arbre2 = _un_arbre(80.0, 260.0)
+		if arbre2 != null:
+			jeu.incendie.enflammer(arbre2)
+			for o in jeu.monde.autour(arbre2.position, 70.0):
+				if o != arbre2 and _fait.size() < 4:
+					jeu.incendie.enflammer(o)
+			# (elle s'approche, puis finit contre les flammes : elle prend feu)
+			_but = arbre2.position + Vector2(16.0 * (1.0 if j.position.x >= arbre2.position.x else -1.0), 6.0)
+	if not moments.is_empty() and u >= float(moments[0]) and image != "":
+		moments.pop_front()
+		_fait["images"] = int(_fait.get("images", 0)) + 1
+		get_viewport().get_texture().get_image().save_png("%s_%d.png" % [image, int(_fait["images"])])
+
+
+func _un_arbre(de: float, a: float):
+	var j = jeu.joueur
+	var meilleur = null
+	var d0 := INF
+	for o in jeu.monde.autour(j.position, a):
+		var d: float = j.position.distance_to(o.position)
+		if o.couvert() > 0.0 and d >= de and d < d0:
+			d0 = d
+			meilleur = o
+	return meilleur
 
 
 func _process(delta: float) -> void:
@@ -83,6 +182,7 @@ func _process(delta: float) -> void:
 	var j = jeu.joueur
 	j.sante = maxf(j.sante, 60.0)
 	var u := _t / duree
+	_le_temps_passe(u)
 	if u >= 1.0:
 		_pret = false
 		_quitter()
@@ -121,6 +221,9 @@ func _process(delta: float) -> void:
 				b.position = j.position + Vector2(26.0 * j.regard, 0)
 				_cadence("chasser", delta)
 			j.deplacer(Vector2.ZERO, delta, jeu.monde)
+		"aller":
+			var da: Vector2 = _but - j.position
+			j.deplacer(da.normalized() if da.length() > 6.0 else Vector2.ZERO, delta, jeu.monde)
 		"torche":
 			if not _fait.has("torche"):
 				_fait["torche"] = true
