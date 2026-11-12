@@ -32,7 +32,6 @@ var sec := 1.0              # 1 : les bêtes chantent ; 0 : la pluie, l'orage le
 var etouffe := 0.0          # la neige (tombée, qui tombe), le brouillard : de 0 à 1
 var musique_db := 0.0       # ce que l'orage retire à la musique
 var braise := 0.0           # ce que l'incendie (ou la veilleuse en feu) demande à la couche des braises
-var image_foudre := -1      # l'image où la foudre est tombée (sons.gd y tait le « coup » que le jeu joue encore)
 
 var _r := RandomNumberGenerator.new()
 var _jeu
@@ -193,7 +192,6 @@ func _presage(p: Vector2, _dans: float) -> void:
 # elle tombe en p. Près : le claquement, sec, tout de suite, puis le roulement. Plus loin : le claquement vient en retard, plus
 # faible et plus sourd ; au loin il n'y a plus que le roulement, longtemps après l'éclair
 func _foudre(p: Vector2, _sur) -> void:
-	image_foudre = Engine.get_process_frames()
 	if not _ici() or _trop_tot("foudre", 0.35):
 		return
 	var d: float = p.distance_to(s._joueur.position)

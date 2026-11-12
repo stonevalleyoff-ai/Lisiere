@@ -76,7 +76,7 @@ func maj(delta: float, e: Dictionary) -> void:
 		pluie = c.pluie
 		neige = c.neige
 		brouillard = c.brouillard
-		chaleur = clampf(float(c.chaleur) / 0.22, 0.0, 1.0)
+		chaleur = clampf(float(c.chaleur) / 0.3, 0.0, 1.0)
 	_derive += (Vector2(8.0 + vent * 30.0, 2.5) + sens * souffle * 70.0) * delta
 	# (une brume presque blanche : elle prend la couleur de ce qui l'éclaire, bleue dans le noir, chaude près d'un feu)
 	var col := P.PAPIER.lerp(P.IVOIRE.lerp(P.LUNE, 0.3).darkened(0.2), clampf(nuit * 1.3, 0.0, 1.0))

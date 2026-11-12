@@ -205,9 +205,6 @@ func _ready() -> void:
 func jouer(nom: String, volume_db: float = 0.0, hauteur: float = 1.0) -> void:
 	if not F.TAUX.has(nom.rstrip("0123456789")):
 		return
-	# (la foudre : principal.gd joue encore un « coup » très grave quand elle tombe ; le tonnerre le remplace, sons_temps.gd)
-	if nom == "coup" and hauteur < 0.6 and _temps.image_foudre == Engine.get_process_frames():
-		return
 	var pan := 0.0
 	var bus := B_MONDE
 	match nom:

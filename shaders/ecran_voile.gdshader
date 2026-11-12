@@ -1,7 +1,7 @@
 // Lisière — le voile de l'écran (shaders/ecran_voile.gdshader)
 // Posé sur l'image sans la lire (il ne coûte presque rien, sur un téléphone comme sur un ordinateur) : la nuit qui bleuit les
 // noirs (jamais d'un noir plat), la vignette (toujours un peu ; beaucoup avec la peur, et au-delà de 70 elle bat avec le
-// cœur), la morsure (un voile rouge, des bords d'encre rouge), le souffle froid de la tombée, la lumière de l'aube, le frisson
+// cœur), la morsure (un voile rouge, des bords d'encre rouge), le souffle froid de la tombée, le givre quand le corps a froid, la fournaise quand il a trop chaud ou qu'il brûle, la lumière de l'aube, le frisson
 // d'un écho, la fin qui assombrit tout, et un grain très léger. Alpha prémultiplié : il peut assombrir et éclairer.
 // Sur un ordinateur, la passe d'écran (shaders/ecran_post.gdshader) retire la couleur ; sans elle (« seul »), le voile l'imite.
 shader_type canvas_item;
@@ -15,6 +15,8 @@ uniform float peur = 0.0;
 uniform float coeur = 0.0;
 uniform float blessure = 0.0;
 uniform float froid = 0.0;
+uniform float givre = 0.0;
+uniform float fournaise = 0.0;
 uniform float aube = 0.0;
 uniform float echo = 0.0;
 uniform float fin = 0.0;
@@ -25,6 +27,8 @@ uniform vec4 ombre : source_color = vec4(0.1, 0.14, 0.25, 1.0);
 uniform vec4 sang : source_color = vec4(0.48, 0.11, 0.11, 1.0);
 uniform vec4 c_peur : source_color = vec4(0.54, 0.44, 0.84, 1.0);
 uniform vec4 c_froid : source_color = vec4(0.44, 0.53, 0.72, 1.0);
+uniform vec4 c_givre : source_color = vec4(0.8, 0.89, 0.97, 1.0);
+uniform vec4 c_braise : source_color = vec4(0.93, 0.44, 0.15, 1.0);
 uniform vec4 c_aube : source_color = vec4(0.91, 0.73, 0.63, 1.0);
 uniform vec4 c_echo : source_color = vec4(0.75, 0.89, 1.0, 1.0);
 
@@ -56,6 +60,21 @@ void fragment() {
 		float bord = smoothstep(0.0, 0.04, re + (n - 0.5) * 0.55 - mix(1.05, 0.72, blessure));
 		v = sur(v, sang.rgb * 0.7, blessure * 0.22);
 		v = sur(v, sang.rgb * (0.6 + 0.4 * n), clamp(bord * (0.35 + 0.6 * blessure), 0.0, 0.92));
+	}
+	if (givre > 0.01) {
+		// le corps a froid : le givre gagne par les bords, en aiguilles tournées vers le centre (le bruit, étiré le long du rayon)
+		float tour = atan(c.y, c.x * ratio) * 0.63662;
+		float n = texture(bruit, vec2(tour * 2.0, re * 0.3)).r * 0.65 + texture(bruit, UV * vec2(ratio, 1.0) * 2.3).r * 0.35;
+		float bord = smoothstep(0.0, 0.09, re + (n - 0.5) * 0.55 - mix(1.14, 0.76, givre));
+		v = sur(v, c_givre.rgb * 0.45, givre * 0.1);
+		v = sur(v, c_givre.rgb * (0.62 + 0.38 * n), clamp(bord * (0.22 + 0.5 * givre), 0.0, 0.8));
+	}
+	if (fournaise > 0.01) {
+		// la chaleur accable, ou elle brûle : les bords rougeoient et montent comme une flamme
+		float n = texture(bruit, UV * vec2(ratio, 1.0) * 1.1 + vec2(0.0, TIME * 0.4)).r;
+		float bord = smoothstep(0.0, 0.32, re + (n - 0.5) * 0.5 - mix(1.16, 0.84, fournaise));
+		v = sur(v, c_braise.rgb * 0.8, fournaise * 0.08);
+		v = sur(v, c_braise.rgb * (0.5 + 0.5 * n), clamp(bord * (0.2 + 0.42 * fournaise), 0.0, 0.7));
 	}
 	v = sur(v, encre.rgb * 0.5, noir);
 	// ce qui éclaire : ajouté par-dessus (le bleu des noirs la nuit, la lumière de l'aube)

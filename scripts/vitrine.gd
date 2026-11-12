@@ -8,6 +8,8 @@ extends Node
 # Le temps qu'il fait, montré (scripts/climat.gd) : --temps pluie|orage|crue|neige|brouillard|canicule|incendie. La veilleuse
 # attend, tourne, puis va là où ça se passe (sous un arbre, dans l'eau, près de l'arbre frappé, contre les flammes).
 #   --image <chemin> --a 0.3,0.6,0.9   écrit <chemin>_1.png, _2.png… à ces moments (en fractions de la durée)
+#   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
+#   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
 const R := preload("res://scripts/regles.gd")
 
@@ -24,7 +26,7 @@ var temps := ""
 var image := ""
 var moments: Array = []
 var _but := Vector2.ZERO
-var _regles := {}              # (l'atelier : --boue, --crue, --neige-sol, --force, --vent, pour voir un état précis)
+var _regles := {}              # (l'atelier : --boue, --crue, --neige-sol, --force, --vent, --corps (sa température), pour voir un état précis)
 # (l'atelier « feu » : --feu brasier|restes|pluie, --nu (sans l'interface), --appels (les appels de dessin, à la fin))
 var feu := ""
 var nu := false
@@ -53,7 +55,7 @@ func _ready() -> void:
 				temps = "incendie"
 			"--image":
 				image = a[i + 1]
-			"--boue", "--crue", "--neige-sol", "--force", "--vent":
+			"--boue", "--crue", "--neige-sol", "--force", "--vent", "--corps":
 				_regles[a[i]] = float(a[i + 1])
 			"--a":
 				for x in a[i + 1].split(","):
@@ -105,6 +107,28 @@ func _lancer() -> void:
 	]
 	if temps != "":
 		_poser_le_temps()
+	# (--sans son,ciel,sol,flammes : pour chercher ce qui coûte, on éteint une chose à la fois)
+	var args := OS.get_cmdline_user_args()
+	var i_sans := args.find("--sans")
+	if i_sans >= 0 and i_sans + 1 < args.size():
+		for quoi in args[i_sans + 1].split(","):
+			var cibles: Array = []
+			match quoi:
+				"son":
+					cibles = [jeu.sons]
+				"ciel":
+					cibles = [jeu.ciel]
+				"sol":
+					cibles = jeu.scene.get_children().filter(func(n): return n.get_script() == jeu.TempsSol)
+				"flammes":
+					cibles = jeu.scene.get_children().filter(func(n): return n.get_script() == jeu.IncendieFlammes)
+				"effets":
+					cibles = [jeu.effets]
+			for n in cibles:
+				n.process_mode = Node.PROCESS_MODE_DISABLED
+				if n is CanvasItem:
+					n.visible = false
+			print("vitrine : sans ", quoi, " (", cibles.size(), ")")
 	_pret = true
 
 
@@ -251,6 +275,30 @@ func _atelier_feu(u: float) -> void:
 				int(_fait.get("avant_max", 0)), int(_fait.get("foyers_max", 0)), int(float(_fait.get("apres", 0.0)) / maxi(1, int(_fait.get("apres_n", 0)))), int(_fait.get("apres_max", 0))])
 
 
+# (--mesure) toutes les cinq secondes : les images par seconde, la plus longue image, le temps du jeu (les scripts), les appels
+var _mesure_ms := 0
+var _mesure_n := 0
+var _mesure_max := 0
+var _mesure_avant := 0
+
+func _mesurer() -> void:
+	if not OS.get_cmdline_user_args().has("--mesure"):
+		return
+	var ms := Time.get_ticks_msec()
+	if _mesure_avant > 0:
+		_mesure_max = maxi(_mesure_max, ms - _mesure_avant)
+	_mesure_avant = ms
+	_mesure_n += 1
+	if _mesure_ms == 0:
+		_mesure_ms = ms
+	elif ms - _mesure_ms >= 5000:
+		print("vitrine mesure : %.1f images/s, la plus longue %d ms, %d appels, jeu %.0f ms au pire (%s, à %d s)" % [_mesure_n * 1000.0 / (ms - _mesure_ms), _mesure_max,
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, temps, int(_t)])
+		_mesure_ms = ms
+		_mesure_n = 0
+		_mesure_max = 0
+
+
 func _un_arbre(de: float, a: float):
 	var j = jeu.joueur
 	var meilleur = null
@@ -273,6 +321,9 @@ func _process(delta: float) -> void:
 	if nu and jeu.ui != null and jeu.ui.visible:
 		jeu.ui.visible = false
 	_le_temps_passe(u)
+	_mesurer()
+	if _regles.has("--corps"):
+		j.temperature = float(_regles["--corps"])
 	if u >= 1.0:
 		_pret = false
 		_quitter()

@@ -90,7 +90,8 @@ var _deja: Dictionary = {}
 var ips := false
 var _ips_label: Label
 # l'image d'un téléphone qui traîne : mesurée une fois, au début de la première partie (_regler_image)
-var _image_t := 0.0
+var _image_ms := 0
+var _image_vue := 0
 var _image_n := 0
 var _image_fait := false
 var _mort := -1.0
@@ -195,19 +196,30 @@ func _compteur_ips() -> void:
 
 # sur un téléphone, dans un navigateur, l'image se calcule à 1,5 fois la résolution CSS (export_presets.cfg, head_include). Si
 # elle traîne (moins de 24 images par seconde, six secondes durant, une fois le lieu installé), elle passe à 1 : 2,25 fois moins
-# de pixels à peindre. Une fois, à la première partie ; ?dpr= au bout de l'adresse décide à sa place.
-func _regler_image(delta: float) -> void:
+# de pixels à peindre. Elle y reste ; on la surveille tant que la partie dure (le temps qu'il fait peut peser plus tard) ; ?dpr= au
+# bout de l'adresse décide à sa place.
+func _regler_image(_delta: float) -> void:
 	if _image_fait or qualite != "mobile" or not OS.has_feature("web"):
 		return
-	_image_t += delta
-	if _image_t < 5.0:
+	# (à l'horloge de l'appareil, par fenêtres de six secondes, tant que la partie dure : un orage, une crue peuvent peser
+	# plus tard que les premières secondes. Une pause, un onglet caché : on recommence à compter)
+	var ms := Time.get_ticks_msec()
+	if _image_ms == 0 or ms - _image_vue > 700:
+		_image_ms = ms + (5000 if _image_ms == 0 else 1500)
+		_image_n = 0
+	_image_vue = ms
+	if ms < _image_ms:
 		return
 	_image_n += 1
-	if _image_t < 11.0:
+	if ms - _image_ms < 6000:
 		return
-	_image_fait = true
-	if _image_n / (_image_t - 5.0) < 24.0 and DisplayServer.screen_get_scale() > 1.05:
-		JavaScriptBridge.eval("window.lisiere_dpr && !window.lisiere_dpr.force && window.lisiere_dpr.set(1.0)", true)
+	var par_seconde := _image_n * 1000.0 / (ms - _image_ms)
+	_image_ms = ms
+	_image_n = 0
+	if par_seconde < 24.0:
+		_image_fait = true
+		if DisplayServer.screen_get_scale() > 1.05:
+			JavaScriptBridge.eval("window.lisiere_dpr && !window.lisiere_dpr.force && window.lisiere_dpr.set(1.0)", true)
 
 
 # la pause : afficher ou masquer le compteur ; il le reste d'une partie à l'autre
@@ -1164,6 +1176,7 @@ func _temps_du_corps(delta: float) -> void:
 	for f in feux:
 		if is_instance_valid(f) and f.allume() and climat.eau(f.position) > 0.3:
 			f.bois = 0.0
+			effets.flammes_eteintes(f.position + Vector2(0.0, -8.0), true)
 			ui.message("L'eau a noyé le feu.", Color(0.72, 0.82, 0.92))
 
 
@@ -1194,8 +1207,6 @@ func foudre_tombee(p: Vector2, sur) -> void:
 		return
 	var d: float = joueur.position.distance_to(p)
 	effets.secousse(clampf(1.2 - d / 500.0, 0.0, 1.0))
-	if d < 700.0:
-		sons.jouer("coup", lerpf(2.0, -14.0, clampf(d / 700.0, 0.0, 1.0)), 0.45)
 	var dans_l_eau: bool = climat.eau(joueur.position) > 0.2 and climat.eau(p) > 0.05
 	var rayon: float = R.FOUDRE_RAYON * (1.9 if dans_l_eau else 1.0)
 	if d < rayon and _mort < 0.0:

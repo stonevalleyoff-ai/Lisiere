@@ -117,7 +117,7 @@ func _process(delta: float) -> void:
 	var orage: float = c.orage
 	var neige: float = c.neige
 	var brouillard: float = c.brouillard
-	var chaleur: float = clampf(float(c.chaleur) / 0.22, 0.0, 1.0)
+	var chaleur: float = clampf(float(c.chaleur) / 0.3, 0.0, 1.0)
 	_couvert = lerpf(_couvert, 1.0 if str(c.temps) == "couvert" else 0.0, clampf(delta / 5.0, 0.0, 1.0))
 	var eclat := _eclat(delta)
 	# (la nuit est déjà sombre : l'orage l'assombrit moins, on doit encore s'y retrouver)

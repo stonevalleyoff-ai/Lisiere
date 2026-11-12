@@ -23,6 +23,8 @@ var sol: Node2D
 # les flammes de l'incendie (scripts/incendie_flammes.gd, qui se présente ici à chaque partie) : sa nuée sert aussi aux bouffées
 # d'un instant (la vapeur, les éclats de boue, les éclaboussures)
 var flammes
+var _givre := 0.0
+var _fournaise := 0.0
 # la couleur du monde la nuit (l'obscurité y multiplie tout) : un bleu d'encre, assez clair pour qu'on devine les formes
 var nuit_monde := P.NUIT_BLEUE.lerp(P.LUNE, 0.06)
 var _lieu
@@ -73,6 +75,8 @@ func nouvelle_partie(s: Node2D, c: Camera2D, o: CanvasModulate) -> void:
 	_blessure = 0.0
 	_choc = 0.0
 	_froid = 0.0
+	_givre = 0.0
+	_fournaise = 0.0
 	_aube = 0.0
 	_echo = 0.0
 	_fin = -1.0
@@ -138,6 +142,13 @@ func maj(delta: float) -> void:
 		"ratio": vue.x / maxf(vue.y, 1.0), "nuit": nuit * 0.32, "peur": _peur, "coeur": _coeur * smoothstep(0.62, 0.75, _peur),
 		"blessure": _blessure, "froid": _froid, "aube": _aube, "echo": _echo, "fin": fin, "noir": noir,
 	}
+	# le corps : le givre gagne l'écran quand elle a froid (net sous R.FROID, où la santé part), la fournaise quand elle a trop
+	# chaud, et tout de suite quand elle brûle
+	var t_corps: float = j.temperature
+	_givre = lerpf(_givre, clampf((R.FROID + 9.0 - t_corps) / 18.0, 0.0, 1.0), clampf(delta * 1.5, 0.0, 1.0))
+	_fournaise = lerpf(_fournaise, 1.0 if j.en_feu > 0.0 else clampf((t_corps - R.CHAUD + 6.0) / 22.0, 0.0, 0.8), clampf(delta * (6.0 if j.en_feu > 0.0 else 1.5), 0.0, 1.0))
+	e["givre"] = _givre if _givre > 0.01 else 0.0
+	e["fournaise"] = _fournaise if _fournaise > 0.01 else 0.0
 	e["grain"] = (0.035 + 0.02 * nuit) * (1.0 if _ecran.haute else 0.6)
 	if _ecran.haute:
 		e["aberration"] = smoothstep(0.82, 1.0, _peur) * 0.8 + _choc
