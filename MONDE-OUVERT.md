@@ -11,6 +11,7 @@ géographie du monde d'Orvane**. Ce document dit ce qui est décidé, les étape
 3. **Le but ne change pas** : survivre le plus de nuits. On explore librement.
 4. **L'eau est une frontière** : ni nage, ni bateau. Mais on fabrique des **ponts éphémères** (voir l'étape 4).
 5. Le jeu d'aujourd'hui reste jouable (« un seul lieu ») tant que le monde ouvert n'est pas solide.
+6. **On s'éveille au centre, dans la prairie.** Les grottes sont une région comme les autres.
 
 ## L'idée
 
@@ -32,9 +33,9 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
 1. **La carte.** *Fait.* `node outils/carte.js` pose les 160 parcelles sur une grille en nid d'abeille (des régions de même
    taille), par un recuit qui cherche à respecter les voisinages d'Orvane, et écrit `donnees/carte.json` (un point par région,
    ses voisines, ses frontières fermées). `--svg` la dessine.
-2. **Un biome sans bord.** Le lieu d'aujourd'hui fabriqué par morceaux autour de la veilleuse, sans limite : le sol, les
-   objets, les bêtes, le temps qu'il fait, la partie gardée par différences. C'est l'étape qui prouve la fluidité sur un
-   téléphone.
+2. **Un biome sans bord.** *Fait, à essayer sur un vrai téléphone.* Le lieu d'aujourd'hui fabriqué par morceaux autour de la
+   veilleuse, sans limite : le sol, les objets, les bêtes, le temps qu'il fait, la partie gardée par différences. C'est
+   l'étape qui prouve la fluidité sur un téléphone. À l'écran-titre : « La grande prairie ».
 3. **Plusieurs biomes.** Le jeu lit la carte : les régions, les transitions (quelques centaines de pixels où les plantes se
    mêlent), le sol qui passe d'une palette à l'autre, la faune par parcelle, le temps par région, les lots avec leur parcelle.
    Les frontières fermées deviennent des crêtes.
@@ -57,7 +58,24 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
   leurs parcelles se suivent, sur la carte pas toujours ;
 - les terres font environ 290 000 pixels d'est en ouest : une demi-heure de marche.
 
-**À décider en regardant la carte** : la taille (`--cote`), où l'on s'éveille, ce que deviennent les grottes.
+**Étape 2, faite** (`scripts/monde.gd`, mode « ouvert ») :
+- le lieu se fait par **morceaux de 700 pixels**, à 1 400 pixels autour de la veilleuse (25 à 35 morceaux, 500 à 650 objets :
+  autant qu'un lieu fermé), et se défait à 2 300. Un morceau est toujours le même au même endroit (la graine du lieu et sa
+  place) ; il se fabrique en 2 à 7 millisecondes, un par image ;
+- on ne garde que **ce qu'on a changé** (par morceau : un arbre abattu ou brûlé, un rocher entamé, une brindille ramassée,
+  un buisson cueilli, qui repousse pendant qu'on est loin). La partie gardée aussi : 78 octets dans l'essai pour tout un lieu ;
+- le décor se sème par rectangle (`scripts/decor.gd`, `semer_dans`), le sol peint n'a plus de limite et ses bruits lents se
+  répètent sans couture tous les 5 400 pixels, la fenêtre du sol mouillé (le relief, les flaques) suit la veilleuse, les bêtes
+  laissées à plus de 2 600 pixels s'en vont, les brindilles de l'aube tombent autour d'elle ;
+- le lieu fermé ne change pas ;
+- vérifié : l'essai (8 vérifications pour le lieu sans bord) ; la vitrine (`--ouvert`) sur 6 000 pixels de marche, par temps
+  clair et sous la pluie ; l'export web dans un téléphone émulé : 203 à 234 appels de dessin, comme le lieu fermé.
+- **pas mesuré** : la fluidité sur un vrai téléphone. Dans l'émulateur (qui dessine sans carte graphique), une image longue
+  revient en marchant à chaque nouvelle tuile de sol peint (`scripts/decor_sol.gd` : la tuile est peinte, puis relue de la
+  carte graphique). Le lieu fermé a le même coût, mais on y marche moins loin. Si ça saccade en marchant sur un vrai
+  téléphone, c'est là qu'il faudra changer de méthode (garder la tuile sur la carte graphique, sans la relire).
+
+**À faire à l'étape 3** : lire `donnees/carte.json`, s'éveiller dans la prairie du centre, les régions et leurs transitions.
 
 ## Ce qui reste incertain
 

@@ -279,7 +279,7 @@ func montrer_titre(lieux: Array, infos: String, record: int) -> void:
 	var choix := -1
 	for i in lieux.size():
 		var l: Dictionary = lieux[i]
-		options.append({"nom": str(l["nom"]), "detail": "%d lignées vivent ici" % int(l["lignees"])})
+		options.append({"nom": str(l["nom"]), "detail": str(l.get("detail", "%d lignées vivent ici" % int(l["lignees"])))})
 		if l["id"] == avant or (avant == "" and l["id"] == "foret"):
 			choix = i
 	if choix < 0 and lieux.size() > 0:

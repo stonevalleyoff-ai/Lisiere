@@ -127,7 +127,7 @@ func _ready() -> void:
 	ui = Interface.new()
 	add_child(ui)
 	ui.relier_session(session)
-	ui.commencer.connect(_commencer)
+	ui.commencer.connect(_lieu_choisi)
 	ui.reprendre_partie.connect(reprendre)
 	ui.recommencer.connect(func(): _commencer(biome, {}, ouvert))
 	ui.vers_titre.connect(_titre)
@@ -258,7 +258,7 @@ func _titre() -> void:
 	_vider()
 	ui.montrer_chargement("Le monde d'Orvane s'éveille…")
 	await donnees.charger_index()
-	ui.montrer_titre(donnees.lieux(), _infos_monde(), record)
+	ui.montrer_titre(_lieux_du_titre(), _infos_monde(), record)
 	ui.montrer_reprise(PartieGardee.lire() if essai == null else {})
 	sons.titre()
 	au_titre = true
@@ -273,6 +273,23 @@ func _titre() -> void:
 func _nouvelle_version() -> void:
 	if au_titre and essai == null:
 		JavaScriptBridge.pwa_update()
+
+
+# les lieux qu'on propose : ceux du monde, et, à l'essai, le lieu sans bord (MONDE-OUVERT.md : la prairie du centre, où l'on
+# s'éveillera dans le monde ouvert)
+func _lieux_du_titre() -> Array:
+	var lieux: Array = donnees.lieux()
+	for l in lieux:
+		if str(l["id"]) == "prairie":
+			return [{"id": "ouvert:prairie", "nom": "La grande prairie", "lignees": l["lignees"], "detail": "sans bord : le monde ouvert, à l'essai"}] + lieux
+	return lieux
+
+
+func _lieu_choisi(id: String) -> void:
+	if id.begins_with("ouvert:"):
+		_commencer(id.trim_prefix("ouvert:"), {}, true)
+	else:
+		_commencer(id)
 
 
 func _infos_monde() -> String:
