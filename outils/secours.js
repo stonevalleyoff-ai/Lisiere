@@ -27,7 +27,10 @@ const ecrire = (c, o) => { const f = path.join(ICI, 'donnees', c); fs.mkdirSync(
 
 (async () => {
   const index = await lire('index.json'), garder = new Set();
+  // (la carte du monde, outils/carte.js, ne se refait pas ici : on la garde)
+  const fCarte = path.join(ICI, 'donnees/carte.json'), carte = fs.existsSync(fCarte) ? fs.readFileSync(fCarte) : null;
   fs.rmSync(path.join(ICI, 'donnees'), { recursive: true, force: true });
+  if (carte) { fs.mkdirSync(path.join(ICI, 'donnees'), { recursive: true }); fs.writeFileSync(fCarte, carte); }
   let total = 0, flore;
   for (const b of LIEUX) {
     const M = await lire('biomes/' + encodeURIComponent(b) + '.json');
