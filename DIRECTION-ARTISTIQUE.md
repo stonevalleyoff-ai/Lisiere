@@ -9,7 +9,7 @@ Lisière doit tenir dans une image : **une veilleuse au bord d'un feu, et autour
 Trois sensations, par ordre d'importance :
 1. **La chaleur précieuse.** Le feu est la chose la plus belle de l'écran. Il vit, il crépite, il pousse l'ombre des troncs, il réchauffe les couleurs. Le quitter doit coûter.
 2. **Le noir qui a des yeux.** La nuit n'est pas noire : bleu d'encre, brume, silhouettes. On devine plus qu'on ne voit. Les yeux disent qui est là.
-3. **Des bêtes vraies.** Chaque bête marche, respire, sursaute, fuit, tombe. Elles viennent du monde d'Orvane : on ne redessine pas leurs planches, on les anime.
+3. **Des bêtes vraies.** Chaque bête marche, respire, sursaute, fuit, tombe. Elles viennent du monde d'Orvane (chaque bête est une lignée, avec son plan de corps) ; leur dessin, lui, est celui de Lisière : à l'encre, comme le reste du carnet (« Le bestiaire », plus bas).
 
 ## Ce qu'on voit
 
@@ -32,7 +32,7 @@ Trois sensations, par ordre d'importance :
 - **Tout réagit.** L'herbe s'écarte au passage, un buisson cueilli frémit, un arbre frappé lâche des feuilles, un rocher des éclats, une bête frappée recule et sursaute.
 - **Le poids** : une anticipation avant le geste, un suivi après (l'écharpe continue, la cape retombe) ; un léger écrasement à l'impact ; un arrêt d'image de quelques centièmes sur un coup, plus long sur une mise à mort ; la caméra tremble à la morsure.
 - **Le vent** : une seule respiration pour tout le lieu (herbe, feuillages, flammes, brume, son du vent), lente, avec des rafales.
-- **Les bêtes** : leurs pattes (les segments de leurs planches) marchent pour de vrai, le corps oscille au pas, la tête suit ; au repos, elles respirent et regardent ; la fuite est un bond. Sans pattes (serpents, poissons), le corps entier ondule.
+- **Les bêtes** : leurs pattes (les morceaux de leur dessin) marchent pour de vrai, le corps oscille au pas, la tête suit ; au repos, elles respirent et regardent ; la fuite est un bond. Sans pattes (serpents, poissons), le corps entier ondule.
 - **La mesure** : rien ne gigote sans raison. Des mouvements lents au repos, vifs dans l'action.
 
 ## L'équipe
@@ -40,7 +40,7 @@ Trois sensations, par ordre d'importance :
 | département | fichiers dont il a la charge | ce qu'il livre |
 | --- | --- | --- |
 | Environnement | `scripts/monde.gd`, `scripts/objet.gd`, `shaders/sol*`, `shaders/vegetation*` | le sol peint, l'herbe qui ondule, les arbres, buissons, rochers et touffes redessinés, le vent dans les feuillages, les feuillages qui s'effacent devant la veilleuse, des détails (fougères, champignons, bois mort, fleurs selon le lieu), la lisière du monde |
-| Créatures | `scripts/bete.gd` | les bêtes animées d'après leurs planches (pattes, pas, respiration, regard), les réactions (sursaut, recul, fuite), la mort (chute, puis l'encre qui s'efface), les échos (fumée d'encre pâle) |
+| Créatures | `scripts/bete.gd`, `scripts/bestiaire*.gd`, `scripts/squelette.gd`, `scripts/vitrine_betes.gd`, `outils/planche_betes.gd`, `shaders/bete_encre.gdshader` | les bêtes dessinées par Lisière d'après le plan de corps de leur lignée (« Le bestiaire »), animées (pattes, pas, respiration, regard, queue), les réactions (sursaut, recul, fuite), la mort (chute, puis l'encre qui s'efface), les échos (fumée d'encre pâle) |
 | La veilleuse | `scripts/joueur.gd` | la veilleuse redessinée et animée : marche, course, attente, respiration, gestes de récolte (couper, casser, cueillir, ramasser), coup de lance, torche, blessure, peur (elle se recroqueville), chute |
 | Lumière et effets | `scripts/feu.gd`, `scripts/yeux.gd`, `scripts/effets.gd`, `shaders/feu*`, `shaders/ecran*` | le feu (flammes, braises, fumée, chaleur), la torche, la couleur du monde à chaque heure, la brume de nuit, les yeux, la caméra (secousse, arrêt d'image), les particules (éclats, poussière, feuilles, braises, lucioles), les effets d'écran (peur, blessure, grain, vignette) |
 | Interface | `scripts/interface.gd`, `scripts/tactile.gd`, `polices/` | l'écran-titre (une scène vivante), le HUD (jauges, objets dessinés en icônes, recettes en cartes), les cartes de titre (« Nuit 2 », « L'aube »), les objets récoltés qui volent vers le sac, l'écran de fin en page de carnet (les bêtes croisées, dessinées), la pause, les boutons tactiles |
@@ -48,6 +48,41 @@ Trois sensations, par ordre d'importance :
 | Direction (intégration) | `scripts/principal.gd`, `scripts/essai.gd`, `scripts/vitrine.gd`, `scripts/regles.gd`, `scripts/donnees.gd`, `project.godot`, ce document | les accroches entre départements, l'intégration, la passe finale de cohérence, les essais |
 
 Un département ne modifie que ses fichiers. S'il lui faut une accroche ailleurs, il la demande à la direction (son rapport le dit), et il peut l'ajouter, pour essayer, dans sa copie seulement.
+
+## Le bestiaire
+
+Les bêtes de Lisière sont dessinées par Lisière. Le monde d'Orvane donne à chaque lignée un **plan de corps** (`plan.corps` : sa forme, ses pattes, la longueur de son corps, de son cou, de son museau, ses oreilles, sa queue, ses cornes, sa crête, sa carapace, son motif, ses organes, ses couleurs) ; Lisière en fait un dessin à l'encre, dans ses tons, à une taille qui se lit en jouant. La planche d'Orvane ne sert plus que de secours (une forme qu'on ne sait pas encore dessiner).
+
+**L'intention.** Une bête est une page du carnet qui s'est levée : dessinée par quelqu'un qui l'a regardée longtemps. On la reconnaît à sa silhouette avant de voir ses détails. De jour, elle est belle et vraie : on a envie de la regarder brouter. De nuit, un chasseur est une masse d'encre et deux yeux d'ambre.
+
+**Le dessin**
+- **La silhouette d'abord.** Trois masses qui se lisent à 40 pixels : la tête, le corps, l'arrière (la cuisse, la queue). Ce que dit le plan se voit, et se force un peu (de longues oreilles sont plus longues, un long museau plus long : d'un quart environ). Deux lignées aux plans différents ne se confondent pas.
+- **L'encre.** Un cerne net (`p.e`, de 1,2 à 2,1 pixels), plus lourd en bas à droite, du côté de l'ombre (`p.volume` le fait). Les traits du dedans sont plus fins (la moitié). Des hachures courtes, rares, là où la forme tourne (le poil du dos, la cuisse, l'ombre du ventre) ; aucune sur une bête de moins de 44 pixels. L'encre est `P.ENCRE`, jamais un gris.
+- **Trois tons.** La lumière vient d'en haut à gauche : un ton clair, le ton de la robe, un ton d'ombre qui tire vers le bleu de la nuit. Le dos est plus sombre, le ventre plus pâle. Les pattes, l'oreille, la corne du côté qu'on ne voit pas sont dans le ton lointain.
+- **Les couleurs** viennent de la lignée, accordées au jeu (`Bestiaire.tons`) : sa teinte reste, mais ramenée à un pigment de carnet (un bleu vif devient un bleu d'ardoise, un rose un vieux rose). On ne prend de couleur que dans `p.tons` : la robe, la lumière, l'ombre, le dos, le ventre, le lointain, l'accent (le creux d'une oreille, une crête, une caroncule), l'œil, l'os (cornes, griffes, crocs), la truffe.
+- **L'œil** fait vivre la bête : toujours lisible (jamais sous un pixel et demi de rayon), un éclat de papier en haut à gauche. Une proie a l'œil rond et sombre ; un chasseur, l'œil d'ambre sous une arcade qui tombe.
+- **Le caractère.** Une proie : des formes rondes, la tête haute qui guette, des oreilles qui se voient ; elle donne envie de ne pas la tuer. Un chasseur : des angles, la tête basse en avant des épaules, des épaules fortes, un croc qui dépasse, des griffes claires ; il fait peur même immobile.
+- **La mesure.** Rien de mécanique : les contours passent par `p.vivant` (la main tremble un peu), et la même lignée se dessine toujours pareil (le hasard vient de `p.r`, semé par son nom). Rien de plastique : pas de dégradé lisse sans encre dessus, pas de flou.
+
+**La taille** (`Bestiaire.largeur_de`) : la largeur du dessin, du nez au bout de la queue, d'après la masse. La veilleuse fait 22 pixels de large et 44 de haut. 200 g : 38 ; 1 kg : 48 ; 5 kg : 66 ; 35 kg : 98 ; 60 kg : 109 ; un chasseur, 12 % de plus. Une bête d'un kilo se lit d'un coup d'œil ; un grand chasseur domine la veilleuse.
+
+**La technique**
+- `scripts/bestiaire.gd` : l'entrée (`lire`, `portrait`, `largeur_de`, `tons`), le cache. `scripts/bestiaire_planche.gd` : la planche, ses gestes (`volume`, `aplat`, `tracer`, `cerne`, `hachures`, `poils`, `bandes`, `taches`, `oeil`, `patte`, les chemins `ferme`, `ouvert`, `ruban`, `bords`, `ellipse`, `vivant`). Une forme par fichier : `scripts/bestiaire_<forme>.gd`, avec `static func dessiner(p)`.
+- Les mesures sont en pixels montrés ; l'origine est le point où la bête touche le sol, sous son milieu ; elle regarde à droite ; y monte vers le négatif. Tout tient dans la largeur `p.L` et dans 1,1 `p.L` de haut.
+- Quatre calques, de l'arrière vers l'avant : `queue` (elle balance : `p.pivot("queue", …)` à sa racine), les pattes lointaines, `corps`, les pattes proches, `dessus` (ce qui passe devant elles : l'épaule, une carapace, une aile repliée), `tete` (le cou et la tête, qui pivotent : `p.pivot("tete", …)` à la base du cou). Un corps sans pattes (un serpent) tient dans `corps` seul, avec `p.onde = true` : le shader le fait onduler.
+- Une patte (`p.patte`) : ses articulations de la hanche au pied posé (y = 0), trois points au moins, sa largeur à chacune. La bête plie le genou et pose le pied (`bete.gd`, `_ik`) ; les morceaux sont dessinés couchés dans un atlas.
+- Le dessin est un SVG que Godot change en image (deux pixels d'image par pixel montré) : des chemins, des cercles, des ellipses, des découpes (`clipPath`), des dégradés linéaires, de l'opacité. Pas de filtre, pas de texte, pas d'image. Il se fait sans écran (`--headless`), en quelques millisecondes par bête.
+- Une bête coûte peu : quatre calques au plus et deux couches de pattes (six à huit appels de dessin). Pas de calque de plus.
+
+**Vérifier**
+```
+outils/godot.sh --headless --path . -s outils/planche_betes.gd -- --lieu foret,lande,marais,prairie,taiga --sortie /tmp/planche
+        # toutes les bêtes, au repos, sur les tons du sol : /tmp/planche_jeu.png (comme en jouant), /tmp/planche_agrandi.png
+        # (--forme hexapode, --id tiskata,dunvi pour n'en voir que certaines)
+outils/godot.sh --path . -- --betes --lieu foret --figees --image /tmp/betes      # dans le vrai jeu, une image par page
+outils/godot.sh --path . -- --betes --lieu foret --heure nuit --image /tmp/betes  # de nuit
+outils/film.sh /tmp/film -- --betes --lieu foret --page 1 --duree 8               # filmées : elles vont, broutent, guettent
+```
 
 ## Les accroches (déjà posées dans `principal.gd`)
 

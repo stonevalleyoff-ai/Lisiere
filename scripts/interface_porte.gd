@@ -22,7 +22,7 @@ const SOUS := {
 	"compte": "",
 }
 const VALIDER := {"connexion": "Se connecter", "inscription": "Créer le compte", "oubli": "Envoyer le lien", "nouveau": "Enregistrer",
-	"compte": "Se déconnecter"}
+	"compte": "Enregistrer le nom"}
 
 var session
 var mode := "connexion"
@@ -33,6 +33,7 @@ var _titre: Label
 var _sous: Label
 var _adresse: Champ
 var _mdp: Champ
+var _nom: Champ              # (connecté : le nom au tableau des scores)
 var _msg: Label
 var _valider: Bouton
 var _bascule: Bouton
@@ -68,6 +69,8 @@ func _init() -> void:
 	v.add_child(_adresse)
 	_mdp = Champ.new("password", "mot de passe", "current-password")
 	v.add_child(_mdp)
+	_nom = Champ.new("text", "ton nom au tableau des scores", "nickname")
+	v.add_child(_nom)
 	_msg = Carnet.Encre.libelle("", T.texte_moyen(), 15, P.SANG)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_msg)
@@ -86,7 +89,7 @@ func _init() -> void:
 	h2.add_theme_constant_override("separation", 14)
 	v.add_child(h2)
 	_bascule = Bouton.new("Créer un compte", 16, true)
-	_bascule.pressed.connect(func(): mettre_mode("inscription" if mode == "connexion" else "connexion"))
+	_bascule.pressed.connect(_basculer)
 	h2.add_child(_bascule)
 	_oubli = Bouton.new("Mot de passe oublié", 16, true)
 	_oubli.pressed.connect(func(): mettre_mode("oubli"))
@@ -103,6 +106,8 @@ func ouvrir(m: String = "") -> void:
 	_entrees = _compter_entrees()
 	if m != "compte" and m != "nouveau" and not tactile:
 		_adresse.prendre_focus.call_deferred()
+	if m == "compte":
+		_lire_compte()
 
 
 func fermer() -> void:
@@ -123,9 +128,10 @@ func mettre_mode(m: String) -> void:
 	_valider._mesurer()
 	_adresse.visible = m in ["connexion", "inscription", "oubli"]
 	_mdp.visible = m in ["connexion", "inscription", "nouveau"]
+	_nom.visible = m == "compte"
 	_mdp.autocomplete("current-password" if m == "connexion" else "new-password")
-	_bascule.visible = m in ["connexion", "inscription", "oubli"]
-	_bascule.libelle = "Créer un compte" if m == "connexion" else "J'ai déjà un compte"
+	_bascule.visible = m in ["connexion", "inscription", "oubli", "compte"]
+	_bascule.libelle = "Créer un compte" if m == "connexion" else ("Se déconnecter" if m == "compte" else "J'ai déjà un compte")
 	_bascule._mesurer()
 	_oubli.visible = m == "connexion"
 	_retour.libelle = "Retour" if m != "compte" else "Fermer"
@@ -147,9 +153,15 @@ func valider() -> void:
 	var adresse := _adresse.texte().strip_edges()
 	var mdp := _mdp.texte()
 	if mode == "compte":
-		session.deconnexion()
-		mettre_mode("connexion")
-		dire("Tu as quitté ton compte.", true)
+		_occupe = true
+		dire("…", true)
+		var rn: Dictionary = await session.nommer(_nom.texte())
+		_occupe = false
+		if rn.get("ok", false):
+			_nom.ecrire(str(rn.get("pseudo", "")))
+			dire("Ton nom au tableau : %s." % str(rn.get("pseudo", "")), true)
+		else:
+			dire(str(rn.get("erreur", "erreur inattendue")))
 		return
 	if mode in ["connexion", "inscription", "oubli"] and not _adresse_valide(adresse):
 		dire("adresse e-mail invalide")
@@ -166,7 +178,7 @@ func valider() -> void:
 			if r["ok"]:
 				_mdp.vider()
 				mettre_mode("compte")
-				dire("Bienvenue.", true)
+				_lire_compte("Bienvenue. ")
 		"inscription":
 			r = await session.inscription(adresse, mdp)
 			if r["ok"]:
@@ -191,6 +203,33 @@ func valider() -> void:
 	if not r.get("ok", false):
 		dire(str(r.get("erreur", "erreur inattendue")))
 	_occupe = false
+
+
+func _basculer() -> void:
+	if mode == "compte":
+		session.deconnexion()
+		mettre_mode("connexion")
+		dire("Tu as quitté ton compte.", true)
+	else:
+		mettre_mode("inscription" if mode == "connexion" else "connexion")
+
+
+# connecté : le nom au tableau (choisi ici, sinon celui de Stone Valley), la meilleure partie et son rang
+func _lire_compte(avant: String = "") -> void:
+	if session == null or not session.connecte():
+		return
+	var r: Dictionary = await session.moi()
+	if mode != "compte" or not visible:
+		return
+	if not r.get("ok", false):
+		dire(avant + "Le tableau des scores ne se lit pas pour l'instant.", avant != "")
+		return
+	_nom.ecrire(str(r.get("pseudo", "")))
+	var m = r.get("meilleur")
+	if m == null:
+		dire(avant + "Pas encore de partie au tableau : tes nuits y entreront à la fin de ta prochaine partie.", true)
+	else:
+		dire(avant + "Ta meilleure partie : %d nuit%s, rang %d au tableau." % [int(m), "s" if int(m) > 1 else "", int(r.get("rang", 0))], true)
 
 
 static func _adresse_valide(a: String) -> bool:
@@ -316,6 +355,12 @@ var f=document.getElementById('lisiere-porte');(f||document.body).appendChild(i)
 			var v = JavaScriptBridge.eval("(document.getElementById('%s')||{}).value||''" % _id, true)
 			return str(v) if typeof(v) == TYPE_STRING else ""
 		return _ligne.text
+
+	func ecrire(t: String) -> void:
+		if _web:
+			JavaScriptBridge.eval("(function(){var i=document.getElementById('%s');if(i)i.value=%s;})()" % [_id, JSON.stringify(t)], true)
+		else:
+			_ligne.text = t
 
 	func vider() -> void:
 		if _web:

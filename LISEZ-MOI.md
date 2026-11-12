@@ -25,8 +25,8 @@ Chaque bête du jeu est une lignée vraie d'Orvane, au dernier cycle publié : s
 | la longueur des nuits | la saison du monde ce jour-là (`cycle.saison`) : un tiers du jour en été, la moitié en hiver |
 | les bêtes qui viennent, et combien souvent | les lignées vivantes du biome et leur `effectif` (les plus nombreuses viennent plus souvent) ; celles qui vivent en groupe (`sociabilite`) viennent en bande |
 | qui chasse, qui fuit, et quand | `regime` (un carnivore, ou un omnivore de plus de 15 kg, chasse) et `activite` (de jour, de nuit, au crépuscule) |
-| leur taille, leur force, leur vitesse, leur flair, leur audace | `masse_kg`, `vitesse_rel`, `perception`, `temperament` |
-| leur dessin, et leurs yeux qui brillent dans le noir | les planches publiées à chaque cycle (`morceaux/silhouettes/<biome>.json`, docs/21) |
+| leur taille (de 38 à 150 pixels : une bête d'un kilo se lit d'un coup d'œil, un grand chasseur domine la veilleuse), leur force, leur vitesse, leur flair, leur audace | `masse_kg`, `vitesse_rel`, `perception`, `temperament` |
+| leur dessin, et leurs yeux qui brillent dans le noir | le plan de corps de la lignée (`plan.corps` : sa forme, ses pattes, son cou, son museau, ses oreilles, sa queue, ses cornes, son motif, ses organes, ses couleurs) : Lisière la dessine elle-même, à l'encre (`scripts/bestiaire.gd`) ; à défaut (une forme qu'elle ne sait pas encore dessiner), la planche publiée à chaque cycle (`morceaux/silhouettes/<biome>.json`, docs/21) |
 | ce que la partie renvoie | une rencontre par bête vue dans la lumière, un prélèvement par bête tuée, dans le biome d'Orvane où c'est arrivé (le kit : `Orvane.compter`, `clore`, `deposer`) |
 
 Le jeu lit le monde en ligne, par morceaux (`Orvane.lire_lieux`, `Orvane.lire_silhouettes`) : l'index, puis le seul lieu choisi. Sans réseau, il joue avec une copie de cinq lieux gardée dans `donnees/` (`node outils/secours.js` la refait, depuis le monde publié ; il lui faut une copie d'Orvane à côté de ce dépôt, `../orvane`, ou `--orvane <dossier>`).
@@ -40,7 +40,14 @@ Le même que pour Stone Valley : le bouton « Se connecter », sous « Entrer da
 - **Le même Supabase** que Stone Valley, le projet « Vallée de pierre » (`scripts/session.gd`), et sa clé publique (sans compte connecté, elle n'ouvre rien). Tout passe par Supabase Auth : le jeu n'envoie l'adresse et le mot de passe qu'à lui, et ne garde que la session (`user://session.json`). Le jeton se renouvelle seul.
 - **Une adresse confirmée** : un compte neuf reçoit un courriel de Supabase. Le lien ramène à la page du jeu, si Supabase la connaît (Authentication › URL Configuration › Redirect URLs : `https://stonevalleyoff-ai.github.io/Lisiere/`) ; sinon à celle de Stone Valley, et le compte vaut pareil. Revenu d'un lien « mot de passe oublié », la page s'ouvre pour en choisir un nouveau.
 - **Dans un navigateur**, l'adresse et le mot de passe sont de vrais champs de la page, posés sur la feuille : sur un téléphone, le bon clavier s'ouvre, et le gestionnaire de mots de passe peut les remplir. Au doigt, la feuille monte en haut de l'écran, au-dessus du clavier.
-- **Sans compte**, la partie se joue pareil. Pour l'instant, être connecté ne change rien au jeu.
+- **Sans compte**, la partie se joue pareil ; connecté, ses nuits vont au tableau des scores.
+
+## La partie gardée, le tableau des scores
+
+- **La partie gardée** (`scripts/partie_gardee.gd`, `user://partie.json`) : une partie en cours s'écrit sur l'appareil toutes les vingt secondes (à l'horloge de l'appareil), à la pause, quand l'application passe derrière une autre (la partie se met alors en pause) et quand on revient au titre. L'écran-titre propose « Reprendre · Forêt, jour 3 », devant « Entrer dans la nuit » (qui demande un second appui : la partie gardée serait perdue). On garde le lieu et sa graine, l'heure, les nuits tenues ; la veilleuse, son sac, sa lance, sa torche ; les feux et leur bois ; le lieu tel qu'on l'a laissé (les arbres abattus, les rochers entamés, les buissons qui repoussent, les brindilles ramassées ou tombées) ; ce qu'on a croisé et chassé, et les bêtes tuées dont les échos reviennent. Les bêtes reviennent d'elles-mêmes. À la fin de la partie, elle s'efface. L'essai et la vitrine n'y touchent pas.
+- **Le tableau des scores** (`scripts/interface_tableau.gd`, « Tableau des scores » à l'écran-titre) : les veilleuses qui ont tenu le plus de nuits, chacune sa meilleure partie, avec son nom, ses nuits, le lieu ; soi en rouge, et son rang même plus bas. Il se lit sans compte ; on y entre connecté : une partie commencée connectée a son numéro (`lisiere_partie_commencer`), et à la fin ses nuits y sont inscrites (`lisiere_partie_finir`) ; l'écran de fin dit le rang. Sans réseau à la fin, l'inscription attend (`user://tableau.json`) et repart à l'écran-titre.
+- **La base** : celle de Stone Valley (Supabase « Vallée de pierre »), deux tables à elles (`lisiere_parties`, `lisiere_joueurs`), fermées (rien ne s'y lit ni ne s'y écrit en direct), et des fonctions qui vérifient : un compte connecté, au plus 40 parties par heure, et pas plus de nuits que le temps passé n'en permet (trois minutes par nuit au moins, depuis le début de la partie : un jour de Lisière en dure quatre). Effacer son compte dans Stone Valley efface aussi ses parties.
+- **Le nom au tableau** : celui choisi dans la page du compte (« Enregistrer le nom », de 2 à 18 caractères), sinon celui de Stone Valley, sinon « Veilleuse ». L'adresse n'y paraît jamais.
 
 ## Les touches
 
@@ -87,6 +94,8 @@ outils/godot.sh --headless --path . --export-release Web build/web/index.html   
 node outils/pwa.js build/web                               # … en application qu'on installe
 outils/godot.sh --path . -- --vitrine --heure nuit         # la vitrine : une scène jouée toute seule, pour regarder
 outils/film.sh /tmp/film -- --vitrine --heure jour         # la filmer image par image (et sa planche-contact)
+outils/godot.sh --headless --path . -s outils/planche_betes.gd -- --lieu foret --sortie /tmp/planche   # le bestiaire d'un lieu, en une image, sans écran
+outils/godot.sh --path . -- --betes --lieu foret            # la vitrine du bestiaire : toutes les bêtes d'un lieu, dans le vrai jeu (--heure nuit, --image, --figees)
 ```
 
 La vitrine (`scripts/vitrine.gd`) met en scène une partie à une heure choisie (`--heure jour|soir|nuit`, `--duree`, `--lieu`, `--mobile`) : le feu, des bêtes de chaque sorte, la veilleuse qui attend, marche, coupe, chasse, cueille, prend une torche, a peur et se fait mordre. `outils/film.sh` la filme avec un vrai rendu, sous un écran virtuel.
@@ -97,7 +106,7 @@ Sans Godot, `node outils/banc.js` vérifie le projet : chaque fichier qu'il nomm
 
 ## Où en est le jeu
 
-- **Écrit** : le jeu entier (`scripts/`, 43 fichiers, et `shaders/`), ses sons (faits par le code), son essai sans écran, sa vitrine, sa configuration d'export web.
+- **Écrit** : le jeu entier (`scripts/`, 52 fichiers, et `shaders/`), ses sons (faits par le code), son essai sans écran, sa vitrine, sa configuration d'export web.
 - **Vérifié à chaque PR** (`.github/workflows/verifications.yml`) : la syntaxe de chaque script (GDScript 4 avec `gdtoolkit`, JavaScript) ; le banc (`outils/banc.js`) ; et l'essai, dans Godot 4.3, sans écran.
 - **Vérifié dans Godot 4.3** (le 7 novembre 2026, au cycle 46) :
   - l'essai sans écran passe, sur la copie gardée (5 lieux) comme sur le monde publié (32 lieux, chacun chargé) ;
@@ -115,7 +124,7 @@ Filmer l'essai (des images PNG, puis les regarder) : `xvfb-run -a outils/godot.s
 Le jeu a été retravaillé comme par une petite équipe de studio, chacun à son métier, sur une direction artistique commune (`DIRECTION-ARTISTIQUE.md` : l'intention, la palette de `scripts/palette.gd`, comment ça bouge, qui a la charge de quoi). Les règles n'ont pas bougé. Tout est fait par le code : aucune image ni aucun son venus d'ailleurs, sauf deux fontes libres (IM Fell English et Alegreya Sans, licence OFL, dans `polices/`).
 
 - **Le lieu** (`monde.gd`, `objet.gd`, `decor*.gd`) : un sol peint d'après les axes du lieu (terre, mousse, feuilles mortes une à une, neige, boue), cuit par tuiles ; de l'herbe, des fougères et des roseaux qui ondulent au vent et s'écartent devant la veilleuse ; des arbres, sapins, rochers, buissons et touffes à l'encre, qu'on entaille, qu'on abat, qu'on use ; des couronnes qui s'effacent quand on passe dessous ; le décor selon le lieu ; quatre rangs de forêt pour clore le monde.
-- **Les bêtes** (`bete.gd`, `squelette.gd`) : leurs pattes sont lues dans leurs planches et marchent pour de vrai (en diagonale, en trépied, en alternance), sans glisser ; elles respirent, broutent, guettent, fuient en bondissant, se tapissent à l'affût ; frappées, elles sursautent ; tuées, elles s'affaissent et leur encre s'émiette ; les serpents ondulent ; les échos sont une fumée pâle.
+- **Les bêtes** (`bestiaire*.gd`, `bete.gd`) : dessinées par Lisière, à l'encre, d'après le plan de corps de leur lignée (un cerne plus lourd du côté de l'ombre, trois tons, le dos sombre et le ventre pâle, un œil qui vit ; les couleurs de la lignée, ramenées à des pigments de carnet) : des quadrupèdes (le mufle rond d'un brouteur, le museau en coin et le croc d'un chasseur, des cornes, des crêtes, des carapaces), des hexapodes de chitine, des serpents à écailles, des oiseaux, des bipèdes. Leurs pattes marchent pour de vrai (en diagonale, en trépied, en alternance), sans glisser ; leur queue balance ; elles respirent, clignent de l'œil, broutent, guettent, fuient en bondissant, se tapissent à l'affût ; frappées, elles sursautent ; tuées, elles s'affaissent et leur encre s'émiette ; les serpents ondulent ; les échos sont une fumée pâle. La direction artistique dit comment (`DIRECTION-ARTISTIQUE.md`, « Le bestiaire »).
 - **La veilleuse** (`joueur.gd`, `veilleuse_*.gd`) : redessinée, elle se tourne de face, de profil et de dos ; elle marche, respire, tremble de peur ; chaque récolte a son geste, la lance son estoc ; l'écharpe est une chaîne simulée qui prend le vent ; à la fin, elle tombe à genoux, lâche la torche et s'effondre.
 - **La lumière et les effets** (`feu.gd`, `yeux.gd`, `effets*.gd`, `shaders/`) : un feu vivant (deux langues de flamme, des braises, des étincelles, une fumée, une lueur au sol, de fausses ombres poussées par sa lumière), dont le cercle de lumière est la zone sûre ; la couleur de l'heure, de l'aube rose au soir mauve et à la nuit bleu d'encre ; une brume au sol ; des yeux qui brillent et clignent ; la caméra qui tremble et l'image qui s'arrête un instant sur un coup ; des particules ; la peur qui ferme et décolore l'écran au rythme du cœur ; la morsure qui le tache de rouge.
 - **L'interface** (`interface*.gd`, `tactile.gd`) : un écran-titre vivant (la lune, trois plans de forêt, la brume, des yeux, la veilleuse au feu) ; des jauges en cercles d'encre ; le sac en icônes, où vole ce qu'on ramasse ; des recettes en cartes ; un cadran soleil et lune ; des cartes « Nuit 2 » et « L'aube » ; la pause et la fin en pages de carnet, la fin avec les bêtes croisées dessinées.
@@ -135,7 +144,7 @@ Lisière est un jeu du genre survie-horreur (récolter, fabriquer, tenir la nuit
 ## Ce qui reste
 
 - L'équilibrer, partie après partie (les règles sont toutes dans `scripts/regles.gd`).
-- Une partie qui se garde d'une session à l'autre ; une manette.
+- Une manette.
 - Le jeu sur un vrai téléphone (il n'a été joué que sur un téléphone émulé, dans Chromium, sans carte graphique) : la lisibilité des petits textes, et surtout la vitesse de rendu. Dans Chromium en rendu logiciel, la partie retravaillée coûte environ 20 % de plus que l'ancienne, l'écran-titre environ trois fois plus : à mesurer sur un vrai appareil, et à alléger en qualité « mobile » s'il le faut.
 - Une écoute du son : il a été réglé sur des mesures (spectres, niveaux, crêtes), sans oreille.
 

@@ -52,13 +52,33 @@ func _lancer() -> void:
 	verif(L.size() >= 3, "%d lieux jouables (%s)" % [L.size(), ", ".join(PackedStringArray(L.map(func(x): return str(x["nom"]))))])
 	# (chaque lieu proposé à l'écran-titre se charge, et a de quoi chasser et de quoi faire peur, comme _commencer le demande)
 	var maigres := []
+	# (et le bestiaire : chaque lignée jouable est dessinée par Lisière, d'après son plan de corps : scripts/bestiaire.gd)
+	var Best := load("res://scripts/bestiaire.gd")
+	var dessinees_l := {}
+	var mal := []
 	for l in L:
 		var inst: Dictionary = await jeu.donnees.charger_lieu(str(l["id"]))
 		var fl: Dictionary = jeu.donnees.faune(inst, str(l["id"])) if not inst.is_empty() else {}
 		if fl.is_empty() or (fl["proies_jour"].is_empty() and fl["proies_nuit"].is_empty()) or fl["chasseurs_nuit"].is_empty():
 			maigres.append(str(l["nom"]))
+		for k in fl:
+			for e in fl[k]:
+				if dessinees_l.has(e["id"]):
+					continue
+				var plan_e: Dictionary = e["lignee"].get("plan", {})
+				var sq_e: Dictionary = Best.lire(e["lignee"], Best.largeur_de(float(e["masse"]), Best.est_chasseur(plan_e)))
+				var pattes_e := int(plan_e.get("corps", {}).get("pattes", 0))
+				dessinees_l[e["id"]] = str(plan_e.get("corps", {}).get("forme", "?"))
+				if sq_e.is_empty() or sq_e["corps"].is_empty() or sq_e["yeux"].is_empty() or sq_e["pattes"].size() != pattes_e or (pattes_e > 0 and sq_e["atlas"] == null):
+					mal.append("%s (%s)" % [e["id"], dessinees_l[e["id"]]])
+	var formes_l := {}
+	for id_l in dessinees_l:
+		formes_l[dessinees_l[id_l]] = int(formes_l.get(dessinees_l[id_l], 0)) + 1
 	# (en ligne, le monde change chaque jour : un lieu maigre est dit, et le jeu le refuse au lancement ; la copie, elle, doit tout jouer)
 	verif(maigres.is_empty() or jeu.donnees.en_ligne, "chaque lieu proposé se charge, avec des proies et des chasseurs" + (" ; sauf, refusés au lancement : %s" % ", ".join(PackedStringArray(maigres)) if maigres.size() > 0 else ""))
+
+	verif(mal.is_empty() and dessinees_l.size() >= 60, "le bestiaire : les %d lignées jouables des lieux gardés sont dessinées par Lisière, avec leur œil et toutes leurs pattes (%s)%s" % [
+		dessinees_l.size(), str(formes_l), (" ; mal dessinées : " + ", ".join(PackedStringArray(mal.slice(0, 8)))) if not mal.is_empty() else ""])
 
 	print("0. Le compte")
 	# (le compte de Stone Valley, sans réseau : la porte s'ouvre, refuse ce qui ne peut pas partir, et se ferme)
@@ -107,7 +127,9 @@ func _lancer() -> void:
 			break
 	var dessinees := betes.filter(func(b): return b.sprite != null).size()
 	verif(betes.size() > 0, "des bêtes viennent, le jour : %d" % betes.size())
-	verif(dessinees > 0 and dessinees == betes.size(), "chacune est dessinée d'après sa planche (%d sur %d)" % [dessinees, betes.size()])
+	var de_lisiere := betes.filter(func(b): return b._sq.get("lisiere", false)).size()
+	verif(dessinees > 0 and dessinees == betes.size() and de_lisiere == betes.size(), "chacune est dessinée, par Lisière (%d sur %d), à sa taille (de %d à %d pixels)" % [
+		de_lisiere, betes.size(), int(betes.map(func(b): return b.largeur).min()), int(betes.map(func(b): return b.largeur).max())])
 
 	print("2. Les gestes")
 	var j = jeu.joueur
@@ -243,6 +265,14 @@ func _lancer() -> void:
 	verif(echo, "la peur haute, ce qu'on a tué revient en écho")
 	verif(perdu > 0.0, "le noir coûte de la santé (%d points perdus en quarante secondes)" % int(perdu))
 
+	# (la partie telle qu'elle est, avant l'aube, un arbre abattu en plus : elle sera reprise à la fin, et doit revenir pareille)
+	for x in jeu.monde.objets:
+		if (x.genre == "arbre" or x.genre == "sapin") and x.reste == x.plein:
+			for k in x.plein:
+				x.recolter()
+			break
+	var gardee: Dictionary = load("res://scripts/partie_gardee.gd").photo(jeu)
+
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
 	await _attendre(2.0)
@@ -257,6 +287,31 @@ func _lancer() -> void:
 			break
 	verif(not jeu.en_partie, "la santé à zéro, la partie s'arrête sur l'écran de fin, même rassasiée et calme")
 	verif(Orvane.cle_jeu != "" and Orvane.lots_en_attente() == 0 and Orvane.en_cours() == 0, "le jeu a sa clé d'Orvane, mais l'essai ne lui envoie rien")
+
+	print("7. La partie gardée")
+	var PG := load("res://scripts/partie_gardee.gd")
+	PG.ecrire_donnees(gardee)
+	var lu: Dictionary = PG.lire()
+	jeu.ui.montrer_reprise(lu)
+	verif(not lu.is_empty() and jeu.ui._reprise.visible and not jeu.ui._entrer.principal and str(jeu.ui._reprise.libelle).contains("Forêt"),
+		"une partie gardée se relit, et l'écran-titre propose de la reprendre (« %s »)" % jeu.ui._reprise.libelle)
+	await jeu._commencer(str(lu["biome"]), lu)
+	var revenue: Dictionary = JSON.parse_string(JSON.stringify(PG.photo(jeu)))
+	var avant_g: Dictionary = JSON.parse_string(JSON.stringify(gardee))
+	var souches := func(d): return d["objets"].filter(func(x): return x[1] == "souche").size()
+	var entames := func(d): return d["objets"].filter(func(x): return x[1] != "souche" and int(x[5]) < 4 and x[0] in ["arbre", "sapin", "rocher"]).size()
+	var pareil: bool = jeu.en_partie and souches.call(avant_g) > 0 and revenue["objets"].size() == avant_g["objets"].size() and souches.call(revenue) == souches.call(avant_g) \
+		and entames.call(revenue) == entames.call(avant_g) and revenue["joueur"]["inventaire"] == avant_g["joueur"]["inventaire"] \
+		and revenue["feux"].size() == avant_g["feux"].size() and absf(float(revenue["horloge"]) - float(avant_g["horloge"])) < 0.5 \
+		and revenue["nuits"] == avant_g["nuits"] and revenue["tuees"] == avant_g["tuees"] and revenue["graine"] == avant_g["graine"] \
+		and Vector2(revenue["joueur"]["x"], revenue["joueur"]["y"]).distance_to(Vector2(avant_g["joueur"]["x"], avant_g["joueur"]["y"])) < 1.0
+	verif(pareil, "reprise, elle revient pareille : %d objets dont %d souches, le sac (%d bois), %d feu, l'heure, %d nuit, %d bête tuée" % [
+		revenue["objets"].size(), souches.call(revenue), int(revenue["joueur"]["inventaire"].get("bois", 0)), revenue["feux"].size(),
+		int(revenue["nuits"]), revenue["tuees"].size()])
+	verif(not FileAccess.file_exists("user://partie.json") or PG.lire() == lu, "l'essai ne réécrit pas la partie gardée")
+	PG.effacer()
+	jeu.ui.montrer_reprise({})
+	verif(not jeu.ui._reprise.visible and jeu.ui._entrer.principal, "effacée, l'écran-titre ne propose plus que d'entrer dans la nuit")
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)

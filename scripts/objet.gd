@@ -187,6 +187,22 @@ func epuise() -> bool:
 	return reste <= 0
 
 
+# une partie reprise : l'objet tel qu'on l'avait laissé (entamé, abattu en souche, ou qui repousse), sans le geste qui l'y a mené
+func reprendre(g: String, r: int, repousse: float) -> void:
+	reste = clampi(r, 0, plein)
+	if g == "souche" and genre != "souche":
+		genre = "souche"
+		rayon = 6.0
+		material = fixe
+		if couronne != null:
+			couronne.queue_free()
+			couronne = null
+	if repousse > 0.0:
+		_repousse = repousse
+		set_process(true)
+	queue_redraw()
+
+
 # la veilleuse, debout en p, est-elle cachée par ce feuillage ? (derrière le tronc, sous la couronne)
 func cache(p: Vector2) -> bool:
 	if couronne == null or _chute >= 0.0 or p.y >= position.y - 2.0:
