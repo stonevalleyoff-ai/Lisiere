@@ -546,7 +546,15 @@ func _lieu_sans_bord() -> void:
 	print("8. Le lieu sans bord")
 	# (MONDE-OUVERT.md, étape 2 : le lieu se fabrique par morceaux autour de la veilleuse, et ne garde que ce qu'on y change)
 	var propose: Array = jeu._lieux_du_titre()
-	verif(str(propose[0]["id"]) == "ouvert:prairie" and propose.size() == jeu.donnees.lieux().size() + 1, "l'écran-titre propose « %s » (%s), avec les lieux du monde" % [propose[0]["nom"], propose[0]["detail"]])
+	var rang_foret := -1
+	var rang_ouvert := -1
+	for i in propose.size():
+		if str(propose[i]["id"]) == "foret":
+			rang_foret = i
+		elif str(propose[i]["id"]) == "ouvert:prairie":
+			rang_ouvert = i
+	verif(rang_ouvert == rang_foret + 1 and rang_foret >= 0 and propose.size() == jeu.donnees.lieux().size() + 1,
+		"l'écran-titre propose « %s » (%s) juste après la forêt, sur laquelle la liste s'ouvre" % [propose[rang_ouvert]["nom"], propose[rang_ouvert]["detail"]])
 	await jeu._commencer("prairie", {}, true)
 	var W = jeu.monde
 	var jo = jeu.joueur

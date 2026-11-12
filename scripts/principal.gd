@@ -278,10 +278,16 @@ func _nouvelle_version() -> void:
 # les lieux qu'on propose : ceux du monde, et, à l'essai, le lieu sans bord (MONDE-OUVERT.md : la prairie du centre, où l'on
 # s'éveillera dans le monde ouvert)
 func _lieux_du_titre() -> Array:
-	var lieux: Array = donnees.lieux()
+	var lieux: Array = donnees.lieux().duplicate()
 	for l in lieux:
 		if str(l["id"]) == "prairie":
-			return [{"id": "ouvert:prairie", "nom": "La grande prairie", "lignees": l["lignees"], "detail": "sans bord : le monde ouvert, à l'essai"}] + lieux
+			# (juste après la forêt, sur laquelle la liste s'ouvre : une flèche à droite et on y est)
+			var ou := 0
+			for i in lieux.size():
+				if str(lieux[i]["id"]) == "foret":
+					ou = i + 1
+			lieux.insert(ou, {"id": "ouvert:prairie", "nom": "La grande prairie", "lignees": l["lignees"], "detail": "sans bord : le monde ouvert, à l'essai"})
+			break
 	return lieux
 
 

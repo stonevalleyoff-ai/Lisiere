@@ -35,7 +35,7 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
    ses voisines, ses frontières fermées). `--svg` la dessine.
 2. **Un biome sans bord.** *Fait, à essayer sur un vrai téléphone.* Le lieu d'aujourd'hui fabriqué par morceaux autour de la
    veilleuse, sans limite : le sol, les objets, les bêtes, le temps qu'il fait, la partie gardée par différences. C'est
-   l'étape qui prouve la fluidité sur un téléphone. À l'écran-titre : « La grande prairie ».
+   l'étape qui prouve la fluidité sur un téléphone. À l'écran-titre : « La grande prairie », juste après la forêt.
 3. **Plusieurs biomes.** Le jeu lit la carte : les régions, les transitions (quelques centaines de pixels où les plantes se
    mêlent), le sol qui passe d'une palette à l'autre, la faune par parcelle, le temps par région, les lots avec leur parcelle.
    Les frontières fermées deviennent des crêtes.
