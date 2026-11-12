@@ -29,6 +29,14 @@ var _climat
 var _nappe: Node2D
 var _mat: ShaderMaterial
 var _mobile := false
+# un lieu sans bord (scripts/monde.gd) : le relief et les flaques sont cuits dans une fenêtre autour de la veilleuse, refaite
+# quand elle s'en éloigne (le relief ligne à ligne, deux millisecondes par image : rien ne fige)
+var _ouvert := false
+var _origine := Vector2.ZERO
+var _cuit_v := PackedFloat32Array()
+var _cuit_n := 0
+var _cuit_y := -1                  # la ligne où en est la cuisson (-1 : rien en cours)
+var _cuit_o := Vector2.ZERO
 var _t := 0.0
 var _montre := false
 var _presages: Array = []      # [où, ce qui reste, la durée, le rayon, dans l'eau]
@@ -60,9 +68,12 @@ func poser(scene: Node2D, monde: Node2D) -> void:
 	_cuire()
 	_couleurs()
 	_mat.set_shader_parameter("etendue", Decor.ETENDUE)
-	_mat.set_shader_parameter("demi", R.DEMI)
+	_ouvert = bool(monde.get("ouvert"))
+	_mat.set_shader_parameter("demi", 1.0e9 if _ouvert else R.DEMI)
 	_mat.set_shader_parameter("simple", _mobile)
 	_nappe = Nappe.new()
+	if _ouvert:
+		_nappe.demi = 300000.0
 	_nappe.name = "TempsSol"
 	_nappe.material = _mat
 	_nappe.visible = false
@@ -78,29 +89,52 @@ func poser(scene: Node2D, monde: Node2D) -> void:
 # --- le relief et les flaques, cuits une fois ---
 
 func _cuire() -> void:
+	_commencer_cuisson(Vector2.ZERO)
+	_avancer_cuisson(-1)
+	_finir_cuisson()
+	_mat.set_shader_parameter("bruit", bruit_fin())
+
+
+# la fenêtre cuite autour de « origine » : Decor.ETENDUE de côté
+func _commencer_cuisson(origine: Vector2) -> void:
 	# (sans écran, rien ne se peint : deux textures de rien)
-	var sans_ecran := DisplayServer.get_name() == "headless"
+	_cuit_n = 8 if DisplayServer.get_name() == "headless" else (384 if _mobile else 512)
+	_cuit_v.resize(_cuit_n * _cuit_n)
+	_cuit_y = 0
+	_cuit_o = origine
+
+
+# le relief : le bruit de climat.relief, en demi-flottants (un octet ne suffit pas : le bord de l'eau ferait des marches),
+# compté depuis RELIEF_MILIEU, là où sont les rives, pour y être le plus fin. La butte du réveil, le shader l'ajoute.
+# Quelques lignes à la fois (budget, en microsecondes ; négatif : tout d'un coup) ; vrai quand c'est fini
+func _avancer_cuisson(budget: int) -> bool:
+	var n := _cuit_n
 	var etendue: float = Decor.ETENDUE
-	# le relief : le bruit de climat.relief, en demi-flottants (un octet ne suffit pas : le bord de l'eau ferait des marches),
-	# compté depuis RELIEF_MILIEU, là où sont les rives, pour y être le plus fin. La butte du réveil, le shader l'ajoute.
-	var n := 8 if sans_ecran else (384 if _mobile else 512)
-	var bruit: FastNoiseLite = _climat._relief
-	var valeurs := PackedFloat32Array()
-	valeurs.resize(n * n)
 	var pas := etendue / n
-	var i := 0
-	for y in n:
-		var wy := (y + 0.5) * pas - etendue * 0.5
+	var bruit: FastNoiseLite = _climat._relief
+	var t0 := Time.get_ticks_usec()
+	while _cuit_y < n:
+		var wy := (_cuit_y + 0.5) * pas - etendue * 0.5 + _cuit_o.y
+		var i := _cuit_y * n
 		for x in n:
-			valeurs[i] = bruit.get_noise_2d((x + 0.5) * pas - etendue * 0.5, wy) * 0.5 + 0.5 - RELIEF_MILIEU
+			_cuit_v[i] = bruit.get_noise_2d((x + 0.5) * pas - etendue * 0.5 + _cuit_o.x, wy) * 0.5 + 0.5 - RELIEF_MILIEU
 			i += 1
-	var img := Image.create_from_data(n, n, false, Image.FORMAT_RF, valeurs.to_byte_array())
+		_cuit_y += 1
+		if budget >= 0 and Time.get_ticks_usec() - t0 > budget:
+			break
+	return _cuit_y >= n
+
+
+func _finir_cuisson() -> void:
+	var n := _cuit_n
+	var etendue: float = Decor.ETENDUE
+	var img := Image.create_from_data(n, n, false, Image.FORMAT_RF, _cuit_v.to_byte_array())
 	img.convert(Image.FORMAT_RH)
 	_mat.set_shader_parameter("relief", ImageTexture.create_from_image(img))
 	_mat.set_shader_parameter("relief_milieu", RELIEF_MILIEU)
 	# les flaques : le bruit de climat.allure, lu par Godot lui-même (à la même échelle, au milieu de chaque texel). Ses
 	# octaves les plus fines, plus petites qu'un texel, n'y sont pas : le gain rend à la valeur sa mesure.
-	var m := 8 if sans_ecran else (512 if _mobile else 1024)
+	var m := 8 if n <= 8 else (512 if _mobile else 1024)
 	var vrai: FastNoiseLite = _climat._flaques
 	var f: FastNoiseLite = vrai.duplicate()
 	var gain := 1.0
@@ -108,10 +142,22 @@ func _cuire() -> void:
 		f.fractal_octaves = mini(vrai.fractal_octaves, 2 if _mobile else 3)
 		gain = _somme(vrai.fractal_gain, f.fractal_octaves) / _somme(vrai.fractal_gain, vrai.fractal_octaves)
 	f.frequency = vrai.frequency * etendue / m
-	f.offset = Vector3(0.5 - m * 0.5 + vrai.offset.x * m / etendue, 0.5 - m * 0.5 + vrai.offset.y * m / etendue, 0.0)
+	f.offset = Vector3(0.5 - m * 0.5 + (vrai.offset.x + _cuit_o.x) * m / etendue, 0.5 - m * 0.5 + (vrai.offset.y + _cuit_o.y) * m / etendue, 0.0)
 	_mat.set_shader_parameter("flaques", _fine(f.get_image(m, m, false, false, false)))
 	_mat.set_shader_parameter("flaques_gain", gain)
-	_mat.set_shader_parameter("bruit", bruit_fin())
+	_mat.set_shader_parameter("origine", _cuit_o)
+	_origine = _cuit_o
+	_cuit_y = -1
+
+
+# (un lieu sans bord) la fenêtre cuite suit la veilleuse : refaite dès qu'elle s'en éloigne de 1 100 pixels, bien avant que
+# l'écran n'en sorte. Rend faux tant qu'elle ne couvre pas ce qu'on voit (on n'a rien à montrer de juste)
+func _fenetre(p: Vector2) -> bool:
+	if _cuit_y < 0 and p.distance_to(_origine) > 1100.0:
+		_commencer_cuisson(p.snapped(Vector2(16.0, 16.0)))
+	if _cuit_y >= 0 and _avancer_cuisson(2000):
+		_finir_cuisson()
+	return maxf(absf(p.x - _origine.x), absf(p.y - _origine.y)) < Decor.ETENDUE * 0.5 - 760.0
 
 
 # (une image d'octets, passée en demi-flottants : entre deux texels, le filtrage ne fait plus de marches, sur aucune carte.
@@ -170,6 +216,8 @@ func _process(delta: float) -> void:
 	_la_foudre(delta)
 	var pluie: float = c.pluie
 	var montre: bool = c.boue > 0.02 or c.crue > 0.01 or c.neige_sol > 0.02 or pluie > 0.03 or not _presages.is_empty() or not _marques.is_empty() or _eclair >= 0.0 or _eclat > 0.0
+	if montre and _ouvert and jeu.joueur != null and not _fenetre(jeu.joueur.position):
+		montre = false
 	if montre != _montre:
 		_montre = montre
 		_nappe.visible = montre
@@ -533,6 +581,7 @@ func _la_foudre(delta: float) -> void:
 class Nappe extends Node2D:
 	const RG := preload("res://scripts/regles.gd")
 
+	var demi := RG.DEMI + 320.0      # (un lieu sans bord : tout le monde)
+
 	func _draw() -> void:
-		var d := RG.DEMI + 320.0
-		draw_rect(Rect2(-d, -d, d * 2.0, d * 2.0), Color.WHITE)
+		draw_rect(Rect2(-demi, -demi, demi * 2.0, demi * 2.0), Color.WHITE)

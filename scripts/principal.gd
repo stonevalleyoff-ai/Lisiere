@@ -62,6 +62,7 @@ var biome := ""
 var biome_info: Dictionary = {}
 var faune: Dictionary = {}
 var saison := "été"
+var ouvert := false           # le lieu sans bord (MONDE-OUVERT.md)
 var part_nuit := 0.33
 var horloge := 0.0
 var jour := 1
@@ -126,9 +127,9 @@ func _ready() -> void:
 	ui = Interface.new()
 	add_child(ui)
 	ui.relier_session(session)
-	ui.commencer.connect(_commencer)
+	ui.commencer.connect(_lieu_choisi)
 	ui.reprendre_partie.connect(reprendre)
-	ui.recommencer.connect(func(): _commencer(biome))
+	ui.recommencer.connect(func(): _commencer(biome, {}, ouvert))
 	ui.vers_titre.connect(_titre)
 	tactile = Tactile.new()
 	tactile.jeu = self
@@ -257,7 +258,7 @@ func _titre() -> void:
 	_vider()
 	ui.montrer_chargement("Le monde d'Orvane s'éveille…")
 	await donnees.charger_index()
-	ui.montrer_titre(donnees.lieux(), _infos_monde(), record)
+	ui.montrer_titre(_lieux_du_titre(), _infos_monde(), record)
 	ui.montrer_reprise(PartieGardee.lire() if essai == null else {})
 	sons.titre()
 	au_titre = true
@@ -274,6 +275,23 @@ func _nouvelle_version() -> void:
 		JavaScriptBridge.pwa_update()
 
 
+# les lieux qu'on propose : ceux du monde, et, à l'essai, le lieu sans bord (MONDE-OUVERT.md : la prairie du centre, où l'on
+# s'éveillera dans le monde ouvert)
+func _lieux_du_titre() -> Array:
+	var lieux: Array = donnees.lieux()
+	for l in lieux:
+		if str(l["id"]) == "prairie":
+			return [{"id": "ouvert:prairie", "nom": "La grande prairie", "lignees": l["lignees"], "detail": "sans bord : le monde ouvert, à l'essai"}] + lieux
+	return lieux
+
+
+func _lieu_choisi(id: String) -> void:
+	if id.begins_with("ouvert:"):
+		_commencer(id.trim_prefix("ouvert:"), {}, true)
+	else:
+		_commencer(id)
+
+
 func _infos_monde() -> String:
 	var c: Dictionary = donnees.index.get("cycle", {})
 	var s := str(c.get("saison", {}).get("nom", ""))
@@ -283,10 +301,12 @@ func _infos_monde() -> String:
 	return t + " : la copie gardée dans le jeu (hors ligne)."
 
 
-func _commencer(b: String, gardee: Dictionary = {}) -> void:
+# ouvert_ : le lieu sans bord (MONDE-OUVERT.md), fabriqué par morceaux autour de la veilleuse
+func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> void:
 	if b == "":
 		return
 	biome = b
+	ouvert = ouvert_ or bool(gardee.get("ouvert", false))
 	ui.montrer_chargement("Le lieu s'éveille…")
 	var inst: Dictionary = await donnees.charger_lieu(b)
 	if inst.is_empty():
@@ -362,9 +382,15 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	monde = Monde.new()
 	monde.jeu = self
 	monde.y_sort_enabled = true
+	monde.ouvert = ouvert
 	scene.add_child(monde.creer_sol(biome_info, graine))
 	scene.add_child(monde)
-	monde.generer(biome_info, graine, gardee.get("objets", []) if reprise else [])
+	if reprise:
+		# (l'heure d'abord : ce qui repoussait dans un lieu sans bord se compte depuis elle)
+		horloge = float(gardee.get("horloge", 0.0))
+		if ouvert:
+			monde.reprendre_ouvert(gardee.get("monde", {}))
+	monde.generer(biome_info, graine, gardee.get("objets", []) if (reprise and not ouvert) else [])
 	joueur = Joueur.new()
 	monde.add_child(joueur)
 	joueur.pas.connect(_sur_pas)
@@ -422,6 +448,9 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	joueur.en_feu = 0.0
 	if reprise:
 		PartieGardee.appliquer(self, gardee)
+		if ouvert:
+			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
+			monde.suivre(joueur.position, true)
 		ui.message("La partie reprend : %s, jour %d, %d nuit%s tenue%s." % [str(biome_info.get("nom", biome)), jour, nuits,
 			"s" if nuits > 1 else "", "s" if nuits > 1 else ""])
 		_garder()
@@ -978,7 +1007,8 @@ func _groupe(e: Dictionary, role: String, dmin: float, dmax: float) -> void:
 	var p := Vector2.ZERO
 	for essai_ in 8:
 		p = joueur.position + Vector2.from_angle(randf() * TAU) * randf_range(dmin, dmax)
-		p = Vector2(clampf(p.x, -R.DEMI, R.DEMI), clampf(p.y, -R.DEMI, R.DEMI))
+		if not ouvert:
+			p = Vector2(clampf(p.x, -R.DEMI, R.DEMI), clampf(p.y, -R.DEMI, R.DEMI))
 		if eclairage(p) < 0.3 or role != "chasseur":
 			break
 	var n := 1

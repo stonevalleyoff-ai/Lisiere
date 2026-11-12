@@ -330,6 +330,11 @@ func eclaire(p: Vector2) -> float:
 
 
 # une partie reprise : l'objet tel qu'on l'avait laissé (entamé, abattu en souche, ou qui repousse), sans le geste qui l'y a mené
+# tel qu'il a été semé : ni entamé, ni abattu, ni brûlé, ni en train de repousser (un lieu sans bord ne garde que ce qui a changé)
+func intact() -> bool:
+	return reste >= plein and _repousse <= 0.0 and not calcine and brule <= 0.0 and genre == _espece
+
+
 func reprendre(g: String, r: int, repousse: float, brule_: bool = false) -> void:
 	reste = clampi(r, 0, plein)
 	if brule_:

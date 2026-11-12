@@ -628,7 +628,12 @@ func _aller(vers: Vector2, v: float, delta: float) -> void:
 	# (elle ne se retourne que si elle va vraiment de l'autre côté : pas à chaque pas de travers, quand elle monte ou descend)
 	if absf(pas.x) > 0.02 and (signf(pas.x) == regard or absf(pas.x) > 0.3 * pas.length()):
 		regard = signf(pas.x)
-	position = Vector2(clampf(position.x, -R.DEMI, R.DEMI), clampf(position.y, -R.DEMI, R.DEMI))
+	if jeu != null and jeu.monde != null and jeu.monde.ouvert:
+		# (un lieu sans bord : celle qu'on a laissée loin derrière s'en va)
+		if role != "echo" and etat != "mort" and jeu.joueur != null and position.distance_to(jeu.joueur.position) > 2600.0:
+			queue_free()
+	else:
+		position = Vector2(clampf(position.x, -R.DEMI, R.DEMI), clampf(position.y, -R.DEMI, R.DEMI))
 
 
 func _errer(delta: float) -> void:

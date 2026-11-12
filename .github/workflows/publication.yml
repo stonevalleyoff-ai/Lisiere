@@ -11,8 +11,9 @@ permissions:
   contents: read
   pages: write
   id-token: write
+# (une passe par branche : pousser une autre branche juste après une fusion n'annule plus la publication en cours)
 concurrency:
-  group: publication
+  group: publication-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   publier:

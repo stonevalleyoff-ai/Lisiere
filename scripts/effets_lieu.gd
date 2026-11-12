@@ -28,6 +28,8 @@ func poser(scene: Node2D, monde: Node2D, qualite: String, axes: Dictionary, pale
 	scene.add_child(sol)
 	scene.move_child(sol, monde.get_index())
 	_brume_sol = _nappe(0.0024, 0.45)
+	if monde.get("ouvert"):
+		_brume_sol.demi = 300000.0
 	scene.add_child(_brume_sol)
 	scene.move_child(_brume_sol, monde.get_index())
 	air = Node2D.new()
@@ -216,6 +218,7 @@ func _neige_() -> CPUParticles2D:
 class Nappe extends Node2D:
 	const RG := preload("res://scripts/regles.gd")
 
+	var demi := RG.DEMI + 1400.0     # (un lieu sans bord : tout le monde, scripts/monde.gd)
+
 	func _draw() -> void:
-		var d := RG.DEMI + 1400.0
-		draw_rect(Rect2(-d, -d, d * 2.0, d * 2.0), Color.WHITE)
+		draw_rect(Rect2(-demi, -demi, demi * 2.0, demi * 2.0), Color.WHITE)

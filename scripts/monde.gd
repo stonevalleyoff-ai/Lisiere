@@ -21,6 +21,10 @@ const SHADER_OMBRE := preload("res://shaders/sol_ombre.gdshader")
 const CASE := 200.0
 const CASE_OMBRE := 420.0
 const EFFACE := 0.35           # l'opacité d'une couronne qui cache la veilleuse
+# un lieu sans bord (MONDE-OUVERT.md) : il se fabrique par morceaux autour de la veilleuse
+const MORCEAU := 700.0         # le côté d'un morceau
+const PORTEE := 1400.0         # jusqu'où le lieu existe autour d'elle
+const OUBLI := 2300.0          # plus loin, un morceau est défait : on ne garde que ce qu'on y a changé
 
 var jeu
 var objets: Array = []
@@ -40,6 +44,18 @@ var _mat_ombre: ShaderMaterial
 # (docs/49) les plantes du lieu, d'après l'herbier d'Orvane : par genre d'objet, celles qu'on sème et leur poids
 var lieu := ""
 var flore := {}
+# sans bord : ses morceaux faits (place → { objets, noeuds }), ce qu'on y a changé (« x,y » → { rang : [genre, reste, repousse,
+# brûlé, l'heure], ou null s'il n'y est plus }), ce qui y est tombé depuis (« x,y » → [[genre, x, y, graine]…])
+var ouvert := false
+var _morceaux := {}
+var _changes := {}
+var _ajouts := {}
+var _graine := 0
+var _bosquets: FastNoiseLite
+var _arbre := "arbre"
+var _mesures := [0.4, 0.5, 0.3]      # le couvert, l'humidité, l'altitude du lieu
+var _outils := {}
+var _calques: Array = []             # ce qui est posé à plat, l'herbe et les plantes, ce qui dépasse, les ombres : dans cet ordre
 
 
 # les couleurs du lieu, d'après ses axes (0 à 1), toutes tirées de la palette (scripts/palette.gd)
@@ -79,7 +95,7 @@ func creer_sol(biome: Dictionary, graine: int) -> Node2D:
 	palette = couleurs(axes)
 	_parts = Decor.parts(axes)
 	_mobile = jeu != null and str(jeu.get("qualite")) == "mobile"
-	_terrain = Decor.terrain(graine)
+	_terrain = Decor.terrain(graine, ouvert)
 	Objet.matieres()
 	Objet.vegetation.set_shader_parameter("simple", _mobile)
 	Objet.fixe.set_shader_parameter("simple", _mobile)
@@ -97,13 +113,20 @@ func creer_sol(biome: Dictionary, graine: int) -> Node2D:
 	_mat_sol.set_shader_parameter("encre", Vector3(P.ENCRE.r, P.ENCRE.g, P.ENCRE.b))
 	for k in ["mousse", "herbe", "litiere", "cailloux", "neige", "boue", "fentes"]:
 		_mat_sol.set_shader_parameter("part_" + k, float(_parts[k]))
-	_mat_sol.set_shader_parameter("demi", R.DEMI)
+	_mat_sol.set_shader_parameter("demi", 1.0e9 if ouvert else R.DEMI)
 	# (le sol est cuit par tuiles, autour de la caméra : scripts/decor_sol.gd ; peint une fois, il garde ses détails sur un
 	# téléphone, à un texel par pixel du monde au lieu de 1,35 ; sans écran, rien ne se peint)
 	if DisplayServer.get_name() != "headless":
 		_sol = SolCuit.new()
 		_sol.preparer(_mat_sol, 1.0 if _mobile else R.ZOOM)
+		if ouvert:
+			_sol.limite = 1 << 24
 		_racine.add_child(_sol)
+	_calques = []
+	for i in 4:
+		var calque := Node2D.new()
+		_racine.add_child(calque)
+		_calques.append(calque)
 	_mat_ombre = ShaderMaterial.new()
 	_mat_ombre.shader = SHADER_OMBRE
 	_mat_ombre.set_shader_parameter("teinte", Vector3(P.NUIT.r, P.NUIT.g, P.NUIT.b).lerp(Vector3(P.NUIT_BLEUE.r, P.NUIT_BLEUE.g, P.NUIT_BLEUE.b), 0.4))
@@ -125,13 +148,24 @@ func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 	var arbre := "sapin" if palette.get("froid", false) else "arbre"
 	lieu = str(biome.get("id", ""))
 	_lire_flore(arbre)
+	_graine = graine
+	_bosquets = bosquets
+	_arbre = arbre
+	_mesures = [couvert, humid, alt]
+	if ouvert:
+		# (rien d'un coup : les morceaux autour du réveil, puis ceux qu'on approche)
+		if _racine != null:
+			_outils = Decor.outils(_parts, palette, graine)
+			_mat_herbe = _outils["mat"]
+		suivre(Vector2.ZERO, true)
+		return
 	if not gardes.is_empty():
 		_reposer(gardes)
 	else:
 		_semer_tout(r, arbre, bosquets, couvert, humid, alt)
 	# le décor, l'herbe, les ombres, la lisière : une fois les objets posés (le décor se glisse autour d'eux)
 	if _racine != null:
-		_mat_herbe = Decor.semer(self, _racine, _terrain, _parts, palette, graine, _mobile)
+		_mat_herbe = Decor.semer(self, _calques, _terrain, _parts, palette, graine, _mobile)
 		for k in _ombres:
 			_case_ombre(k)
 		Decor.lisiere(self, palette, graine, _mobile)
@@ -261,7 +295,7 @@ func _plante(genre: String, graine: int) -> Dictionary:
 	return L[0]
 
 
-func _poser(genre: String, p: Vector2, couleur: Color, graine: int) -> void:
+func _poser(genre: String, p: Vector2, couleur: Color, graine: int):
 	var o = Objet.new()
 	o.preparer(genre, couleur, graine)
 	var pl := _plante(genre, graine)
@@ -282,24 +316,63 @@ func _poser(genre: String, p: Vector2, couleur: Color, graine: int) -> void:
 		_ombres[ko][0].queue_redraw()
 	elif _mat_herbe != null:
 		_case_ombre(ko)
+	return o
 
 
 # chaque aube, des brindilles tombées dans la nuit
 func semer_brindilles(n: int) -> void:
 	var r := RandomNumberGenerator.new()
 	r.randomize()
+	if ouvert:
+		# (autour de la veilleuse, à la même densité ; pas plus de six par morceau : elles ne s'entassent pas là où l'on reste)
+		var c: Vector2 = jeu.joueur.position if jeu != null and jeu.get("joueur") != null else Vector2.ZERO
+		for i in int(ceil(n * PORTEE * PORTEE / (R.DEMI * R.DEMI))):
+			var q := c + Vector2(r.randf_range(-PORTEE, PORTEE), r.randf_range(-PORTEE, PORTEE))
+			var k := _cle_m(q)
+			var nom := _nom_m(k)
+			if not _morceaux.has(k) or _ajouts.get(nom, []).size() >= 6:
+				continue
+			var g := r.randi()
+			var o = _poser("brindille", q, Color.WHITE, g)
+			o.set_meta("m", k)
+			o.set_meta("ajout", true)
+			_morceaux[k]["objets"].append(o)
+			if not _ajouts.has(nom):
+				_ajouts[nom] = []
+			_ajouts[nom].append(["brindille", snappedf(q.x, 0.1), snappedf(q.y, 0.1), g])
+		return
 	for i in n:
 		_poser("brindille", Vector2(r.randf_range(-R.DEMI, R.DEMI), r.randf_range(-R.DEMI, R.DEMI)), Color.WHITE, r.randi())
 
 
 func retirer(o) -> void:
+	if ouvert and o.has_meta("m"):
+		var km: Vector2i = o.get_meta("m")
+		var nom := _nom_m(km)
+		if o.has_meta("rang"):
+			if not _changes.has(nom):
+				_changes[nom] = {}
+			_changes[nom][str(o.get_meta("rang"))] = null
+		elif _ajouts.has(nom):
+			_ajouts[nom] = _ajouts[nom].filter(func(e): return int(e[3]) != o.graine)
+		if _morceaux.has(km):
+			_morceaux[km]["objets"].erase(o)
+	_defaire(o)
+
+
+func _defaire(o) -> void:
 	var k := _cle(o.position)
 	if _grille.has(k):
 		_grille[k].erase(o)
 	var ko := _cle_ombre(o.position)
 	if _ombres.has(ko):
 		_ombres[ko][1].erase(o)
-		if _ombres[ko][0] != null:
+		if _ombres[ko][1].is_empty() and ouvert:
+			# (plus rien dans cette case : son dessin s'en va avec)
+			if _ombres[ko][0] != null:
+				_ombres[ko][0].queue_free()
+			_ombres.erase(ko)
+		elif _ombres[ko][0] != null:
 			_ombres[ko][0].queue_redraw()
 	_effaces.erase(o)
 	objets.erase(o)
@@ -347,7 +420,182 @@ func repousser(p: Vector2, r: float) -> Vector2:
 		var l := d.length()
 		if l < m:
 			p = (o.position + d / l * m) if l > 0.001 else p + Vector2(m, 0)
+	if ouvert:
+		return p
 	return Vector2(clampf(p.x, -R.DEMI, R.DEMI), clampf(p.y, -R.DEMI, R.DEMI))
+
+
+# --- un lieu sans bord : ses morceaux (MONDE-OUVERT.md, étape 2) ---
+
+func _cle_m(p: Vector2) -> Vector2i:
+	return Vector2i(int(floor(p.x / MORCEAU)), int(floor(p.y / MORCEAU)))
+
+
+static func _nom_m(k: Vector2i) -> String:
+	return "%d,%d" % [k.x, k.y]
+
+
+# chaque image : fabriquer ce qui manque autour de p (le morceau le plus proche ; tous d'un coup si « tout »), défaire ce qui est loin
+func suivre(p: Vector2, tout := false) -> void:
+	for k in _morceaux.keys():
+		var c := (Vector2(k) + Vector2(0.5, 0.5)) * MORCEAU
+		if maxf(absf(c.x - p.x), absf(c.y - p.y)) > OUBLI:
+			_oublier(k)
+	var a := _cle_m(p - Vector2(PORTEE, PORTEE))
+	var b := _cle_m(p + Vector2(PORTEE, PORTEE))
+	var manque: Array = []
+	var d0 := INF
+	for x in range(a.x, b.x + 1):
+		for y in range(a.y, b.y + 1):
+			var k := Vector2i(x, y)
+			if _morceaux.has(k):
+				continue
+			var d := ((Vector2(k) + Vector2(0.5, 0.5)) * MORCEAU).distance_squared_to(p)
+			if tout:
+				manque.append(k)
+			elif d < d0:
+				d0 = d
+				manque = [k]
+	for k in manque:
+		_fabriquer(k)
+
+
+# ce qu'un morceau contient, tiré de la graine du lieu et de sa place (toujours le même) : [genre, place, ton, graine]. Les
+# mêmes densités qu'un lieu fermé, rapportées à sa surface ; plus serré là où le bruit des bosquets est haut ; rien sur le réveil
+func _plan_m(k: Vector2i) -> Array:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash(Vector3i(_graine, k.x, k.y))
+	var rect := Rect2(Vector2(k) * MORCEAU, Vector2(MORCEAU, MORCEAU))
+	var ka := rect.get_area() / (4.0 * R.DEMI * R.DEMI)
+	var couvert: float = _mesures[0]
+	var plan: Array = []
+	_prevoir(r, plan, rect, _arbre, (70.0 + 430.0 * couvert) * ka, "feuilles", _bosquets, 0.25 + couvert)
+	_prevoir(r, plan, rect, "rocher", (40.0 + 140.0 * float(_mesures[2])) * ka, "pierre", null, 1.0)
+	_prevoir(r, plan, rect, "buisson", (40.0 + 110.0 * float(_mesures[1])) * ka, "feuilles", _bosquets, 0.6)
+	_prevoir(r, plan, rect, "touffe", (90.0 + 130.0 * (1.0 - couvert)) * ka, "herbe", null, 1.0)
+	_prevoir(r, plan, rect, "brindille", 160.0 * ka, "", _bosquets, 0.6)
+	# au réveil, de quoi faire un premier feu à portée (les mêmes, quel que soit le morceau où ils tombent)
+	var r0 := RandomNumberGenerator.new()
+	r0.seed = _graine + 31
+	for i in 8:
+		var q := Vector2(r0.randf_range(-120, 120), r0.randf_range(-90, 90)) if i < 6 else Vector2(r0.randf_range(-160, 160), r0.randf_range(-130, 130))
+		var g := r0.randi()
+		if rect.has_point(q):
+			plan.append(["brindille" if i < 6 else "rocher", q, "" if i < 6 else "pierre", g])
+	return plan
+
+
+func _prevoir(r: RandomNumberGenerator, plan: Array, rect: Rect2, genre: String, combien: float, ton: String, bruit, densite: float) -> void:
+	var n := Decor._nombre(r, combien)
+	var poses := 0
+	var essais := 0
+	while poses < n and essais < n * 12:
+		essais += 1
+		var p := Decor._dans(r, rect)
+		if p.length() < 150.0:
+			continue
+		if bruit != null:
+			var v: float = bruit.get_noise_2d(p.x, p.y)
+			if r.randf() > clampf(densite * 0.5 + v * 0.9, 0.04, 1.0):
+				continue
+		plan.append([genre, p, ton, r.randi()])
+		poses += 1
+
+
+var pire_ms := 0.0      # (la vitrine, --mesure) le morceau le plus long à fabriquer, et sa part d'objets
+
+func _fabriquer(k: Vector2i) -> void:
+	var t0 := Time.get_ticks_usec()
+	_fabriquer_(k)
+	pire_ms = maxf(pire_ms, (Time.get_ticks_usec() - t0) / 1000.0)
+
+
+func _fabriquer_(k: Vector2i) -> void:
+	var nom := _nom_m(k)
+	var changes: Dictionary = _changes.get(nom, {})
+	var heure: float = float(jeu.horloge) if jeu != null and jeu.get("horloge") != null else 0.0
+	var liste: Array = []
+	var plan := _plan_m(k)
+	for i in plan.size():
+		var e: Array = plan[i]
+		var c = changes.get(str(i), false)
+		if c == null:
+			continue
+		var o = _poser(str(e[0]), e[1], palette[e[2]] if e[2] != "" else Color.WHITE, int(e[3]))
+		o.set_meta("m", k)
+		o.set_meta("rang", i)
+		liste.append(o)
+		if typeof(c) == TYPE_ARRAY and c.size() >= 5:
+			# (ce qui repoussait a continué de repousser pendant qu'on était loin)
+			var reste_a_pousser := float(c[2])
+			if reste_a_pousser > 0.0:
+				reste_a_pousser -= heure - float(c[4])
+				if reste_a_pousser <= 0.0:
+					changes.erase(str(i))
+					continue
+			o.reprendre(str(c[0]), int(c[1]), reste_a_pousser, int(c[3]) == 1)
+	for e in _ajouts.get(nom, []):
+		var o = _poser(str(e[0]), Vector2(float(e[1]), float(e[2])), Color.WHITE, int(e[3]))
+		o.set_meta("m", k)
+		o.set_meta("ajout", true)
+		liste.append(o)
+	var noeuds: Array = []
+	if _racine != null and not _outils.is_empty():
+		var rect := Rect2(Vector2(k) * MORCEAU, Vector2(MORCEAU, MORCEAU))
+		noeuds = Decor.semer_dans(self, _calques, _terrain, _parts, palette, hash(Vector3i(_graine + 7, k.x, k.y)), _mobile, rect, _outils, liste)
+	_morceaux[k] = {"objets": liste, "noeuds": noeuds}
+
+
+# ce qu'on a changé dans un morceau (un arbre abattu ou brûlé, un buisson cueilli, un rocher entamé), noté pour le retrouver
+func _noter(k: Vector2i) -> void:
+	var nom := _nom_m(k)
+	var changes: Dictionary = _changes.get(nom, {})
+	var heure: float = float(jeu.horloge) if jeu != null and jeu.get("horloge") != null else 0.0
+	for o in _morceaux[k]["objets"]:
+		if not is_instance_valid(o) or not o.has_meta("rang"):
+			continue
+		var i := str(o.get_meta("rang"))
+		if o.intact():
+			changes.erase(i)
+		else:
+			# (ce qui brûle quand on s'éloigne aura brûlé)
+			var feu: bool = o.brule > 0.0
+			var arbre: bool = o.genre == "arbre" or o.genre == "sapin"
+			changes[i] = ["souche" if (feu and arbre) else o.genre, 0 if feu else o.reste, snappedf(o._repousse, 0.1), 1 if (o.calcine or feu) else 0, snappedf(heure, 0.1)]
+	if changes.is_empty():
+		_changes.erase(nom)
+	else:
+		_changes[nom] = changes
+
+
+func _oublier(k: Vector2i) -> void:
+	_noter(k)
+	var m: Dictionary = _morceaux[k]
+	for o in m["objets"]:
+		if is_instance_valid(o):
+			_defaire(o)
+	for n in m["noeuds"]:
+		if is_instance_valid(n):
+			n.queue_free()
+	_morceaux.erase(k)
+
+
+# une partie gardée : ce qu'on a changé et ce qui est tombé, par morceau (le reste se refait de la graine)
+func photo_ouvert() -> Dictionary:
+	for k in _morceaux:
+		_noter(k)
+	return {"changes": _changes.duplicate(true), "ajouts": _ajouts.duplicate(true)}
+
+
+func reprendre_ouvert(d: Dictionary) -> void:
+	_changes = {}
+	_ajouts = {}
+	var c = d.get("changes", {})
+	var a = d.get("ajouts", {})
+	if typeof(c) == TYPE_DICTIONARY:
+		_changes = c.duplicate(true)
+	if typeof(a) == TYPE_DICTIONARY:
+		_ajouts = a.duplicate(true)
 
 
 # le vent ici, maintenant (environ 0,2 à 1,3) : le même calcul que le shader (shaders/vegetation_vent.gdshaderinc) ; pour le son
@@ -405,6 +653,8 @@ func _process(delta: float) -> void:
 	if j == null or not is_instance_valid(j):
 		return
 	var p: Vector2 = j.position
+	if ouvert:
+		suivre(p)
 	if _mat_herbe != null:
 		_mat_herbe.set_shader_parameter("veilleuse", p)
 	for o in autour(p, 120.0):
@@ -435,7 +685,7 @@ func _case_ombre(k: Vector2i) -> void:
 	var liste: Array = _ombres[k][1]
 	var mobile := _mobile
 	c.dessin = func(n: CanvasItem): _dessiner_ombres(n, liste, mobile)
-	_racine.add_child(c)
+	_calques[3].add_child(c)
 	_ombres[k][0] = c
 
 

@@ -20,7 +20,8 @@ const ENCRE := Color(0.086, 0.075, 0.059, 0.9)
 
 # --- le terrain : trois bruits lents, cuits une fois (le sol et le décor les lisent), et deux motifs fins sans couture ---
 
-static func terrain(graine: int) -> Dictionary:
+# (sans_couture : pour un lieu sans bord, les trois bruits lents se répètent sans raccord tous les ETENDUE pixels)
+static func terrain(graine: int, sans_couture := false) -> Dictionary:
 	var t := {}
 	var reglages := [["plaques", 0.023, 4], ["taches", 0.07, 3], ["voiles", 0.042, 3]]
 	for k in reglages.size():
@@ -29,7 +30,7 @@ static func terrain(graine: int) -> Dictionary:
 		b.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 		b.frequency = reglages[k][1]
 		b.fractal_octaves = reglages[k][2]
-		t[reglages[k][0]] = b.get_image(TEX, TEX, false, false, true)
+		t[reglages[k][0]] = b.get_seamless_image(TEX, TEX, false, false, 0.1, true) if sans_couture else b.get_image(TEX, TEX, false, false, true)
 	for k in 2:
 		var b := FastNoiseLite.new()
 		b.seed = graine + 7 + k * 13
@@ -41,8 +42,9 @@ static func terrain(graine: int) -> Dictionary:
 
 
 static func lire(img: Image, p: Vector2) -> float:
-	var u := clampi(int((p.x / ETENDUE + 0.5) * TEX), 0, TEX - 1)
-	var v := clampi(int((p.y / ETENDUE + 0.5) * TEX), 0, TEX - 1)
+	# (au-delà de l'étendue, l'image se répète, comme pour le shader du sol)
+	var u := posmod(int(floor((p.x / ETENDUE + 0.5) * TEX)), TEX)
+	var v := posmod(int(floor((p.y / ETENDUE + 0.5) * TEX)), TEX)
 	return img.get_pixel(u, v).r
 
 
@@ -242,7 +244,15 @@ static func maillage_fleurs(r: RandomNumberGenerator, tige: Color, coeur: Color)
 
 # --- semer : l'herbe et les plantes (MultiMesh, par case), puis ce qui est posé (un nœud par case) ---
 
-static func semer(monde, racine: Node2D, t: Dictionary, s: Dictionary, pal: Dictionary, graine: int, mobile: bool) -> ShaderMaterial:
+# tout le lieu d'un coup (un lieu fermé) : rend la matière de l'herbe, à qui le monde donne le temps et la place de la veilleuse
+static func semer(monde, calques: Array, t: Dictionary, s: Dictionary, pal: Dictionary, graine: int, mobile: bool) -> ShaderMaterial:
+	var o := outils(s, pal, graine)
+	semer_dans(monde, calques, t, s, pal, graine, mobile, Rect2(-R.DEMI, -R.DEMI, 2.0 * R.DEMI, 2.0 * R.DEMI), o, monde.objets)
+	return o["mat"]
+
+
+# ce qui sert à semer, fait une fois par partie : la matière de l'herbe, et un modèle par plante
+static func outils(s: Dictionary, pal: Dictionary, graine: int) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = graine + 909
 	var mat := ShaderMaterial.new()
@@ -251,27 +261,48 @@ static func semer(monde, racine: Node2D, t: Dictionary, s: Dictionary, pal: Dict
 	mat.set_shader_parameter("petale_a", Vector3(fleurs[0].r, fleurs[0].g, fleurs[0].b))
 	mat.set_shader_parameter("petale_b", Vector3(fleurs[1].r, fleurs[1].g, fleurs[1].b))
 	mat.set_shader_parameter("petale_c", Vector3(fleurs[2].r, fleurs[2].g, fleurs[2].b))
-	var k := 0.4 if mobile else 1.0
 	var herbe: Color = pal["herbe"]
 	var sec := float(s["sec"])
 	var paille := herbe.lerp(P.IVOIRE.darkened(0.15), 0.35 + sec * 0.4)
-	var modeles := {
+	return {"mat": mat, "modeles": {
 		"herbe_courte": maillage_herbe(r, herbe, 5, 7.5, 1.4),
 		"herbe_haute": maillage_herbe(r, herbe.lerp(paille, 0.3), 7, 12.5, 1.6),
 		"herbe_seche": maillage_herbe(r, paille, 6, 10.0, 1.8),
 		"fougere": maillage_fougere(r, pal["fougere"]),
 		"roseaux": maillage_roseaux(r, pal["herbe"].lerp(P.MOUSSE, 0.3).darkened(0.1), P.TERRE.darkened(0.25)),
 		"fleurs": maillage_fleurs(r, herbe.darkened(0.1), P.BRAISE_COEUR.darkened(0.08)),
-	}
+	}}
+
+
+static func _dans(r: RandomNumberGenerator, rect: Rect2) -> Vector2:
+	return Vector2(r.randf_range(rect.position.x, rect.end.x), r.randf_range(rect.position.y, rect.end.y))
+
+
+# (un nombre qui n'est pas entier : sa part de chance fait le dernier)
+static func _nombre(r: RandomNumberGenerator, x: float) -> int:
+	return int(floor(x)) + (1 if r.randf() < x - floor(x) else 0)
+
+
+# sème un rectangle du lieu (tout le lieu, ou un morceau d'un lieu sans bord : scripts/monde.gd), à la même densité. calques :
+# les trois nœuds où ranger ce qui est posé à plat, l'herbe et les plantes, ce qui dépasse. objets : ceux de ce rectangle (les
+# fougères viennent à leur pied). Rend les nœuds créés (un morceau qu'on oublie les défait).
+static func semer_dans(monde, calques: Array, t: Dictionary, s: Dictionary, pal: Dictionary, graine: int, mobile: bool, rect: Rect2, o: Dictionary, objets: Array) -> Array:
+	var r := RandomNumberGenerator.new()
+	r.seed = graine + 909
+	var mat: ShaderMaterial = o["mat"]
+	var modeles: Dictionary = o["modeles"]
+	var k := 0.4 if mobile else 1.0
+	var ka := rect.get_area() / (4.0 * R.DEMI * R.DEMI)
+	var sec := float(s["sec"])
 	# chaque case : ses instances, par modèle (position, échelle, retournement, teinte, couleur des pétales)
 	var cases := {}
 	var froid := float(s["froid"])
-	var n_herbe := int((3000.0 + 26000.0 * float(s["herbe"]) + 4000.0 * float(s["mousse"])) * (1.0 - froid * 0.6) * (1.0 - float(s["chaud"]) * sec * 0.7) * k)
+	var n_herbe := _nombre(r, (3000.0 + 26000.0 * float(s["herbe"]) + 4000.0 * float(s["mousse"])) * (1.0 - froid * 0.6) * (1.0 - float(s["chaud"]) * sec * 0.7) * k * ka)
 	var essais := n_herbe * 3
 	var poses := 0
 	while poses < n_herbe and essais > 0:
 		essais -= 1
-		var q := Vector2(r.randf_range(-R.DEMI, R.DEMI), r.randf_range(-R.DEMI, R.DEMI))
+		var q := _dans(r, rect)
 		var ici := sol_ici(t, s, q)
 		var envie := 0.08 + 0.92 * float(ici["herbe"]) + 0.25 * float(ici["mousse"])
 		envie *= (1.0 - float(ici["neige"]) * 0.9) * (1.0 - float(ici["boue"]) * 0.6) * (1.0 - float(ici["use"]) * 0.8)
@@ -287,51 +318,52 @@ static func semer(monde, racine: Node2D, t: Dictionary, s: Dictionary, pal: Dict
 			elif x < 0.25 + 0.4 * float(ici["herbe"]):
 				genre = "herbe_haute"
 			var teinte := Color.WHITE.darkened(r.randf_range(0.0, 0.22)).lerp(Color(1.08, 1.05, 0.8), float(ici["a"]) * 0.3 * r.randf())
-			_instance(cases, genre, qq, r.randf_range(0.75, 1.25), teinte, r)
+			_instance(cases, rect, genre, qq, r.randf_range(0.75, 1.25), teinte, r)
 			poses += 1
 	# les fougères : au pied des arbres, et dans la mousse, sous le couvert
-	var n_f := int(1100.0 * float(s["couvert"]) * clampf(float(s["humide"]) * 1.4 - 0.3, 0.0, 1.0) * (1.0 - froid * 0.5) * k)
-	var arbres: Array = monde.objets.filter(func(o): return o.genre == "arbre" or o.genre == "sapin")
+	var n_f := _nombre(r, 1100.0 * float(s["couvert"]) * clampf(float(s["humide"]) * 1.4 - 0.3, 0.0, 1.0) * (1.0 - froid * 0.5) * k * ka)
+	var arbres: Array = objets.filter(func(x): return x.genre == "arbre" or x.genre == "sapin")
 	for i in n_f:
 		var q: Vector2
 		if not arbres.is_empty() and r.randf() < 0.55:
-			var o = arbres[r.randi() % arbres.size()]
-			q = o.position + Vector2.from_angle(r.randf() * TAU) * r.randf_range(18.0, 46.0) * Vector2(1.0, 0.7)
+			var pied = arbres[r.randi() % arbres.size()]
+			q = pied.position + Vector2.from_angle(r.randf() * TAU) * r.randf_range(18.0, 46.0) * Vector2(1.0, 0.7)
 		else:
-			q = Vector2(r.randf_range(-R.DEMI, R.DEMI), r.randf_range(-R.DEMI, R.DEMI))
+			q = _dans(r, rect)
 			var ici := sol_ici(t, s, q)
 			if r.randf() > 0.25 + float(ici["mousse"]) * 0.75 or float(ici["neige"]) > 0.5:
 				continue
 		if q.length() < 190.0 or _gene(monde, q, 6.0):
 			continue
-		_instance(cases, "fougere", q, r.randf_range(0.8, 1.25), Color.WHITE.darkened(r.randf_range(0.0, 0.2)), r)
+		_instance(cases, rect, "fougere", q, r.randf_range(0.8, 1.25), Color.WHITE.darkened(r.randf_range(0.0, 0.2)), r)
 	# les roseaux, dans la boue ; les fleurs, dans l'herbe
-	var n_ro := int(1400.0 * float(s["boue"]) * k)
+	var n_ro := _nombre(r, 1400.0 * float(s["boue"]) * k * ka)
 	for i in n_ro * 3:
 		if n_ro <= 0:
 			break
-		var q := Vector2(r.randf_range(-R.DEMI, R.DEMI), r.randf_range(-R.DEMI, R.DEMI))
+		var q := _dans(r, rect)
 		if (float(sol_ici(t, s, q)["boue"]) < 0.5 and r.randf() > 0.2) or q.length() < 200.0:
 			continue
 		for j in r.randi_range(1, 3):
-			_instance(cases, "roseaux", q + Vector2(r.randf_range(-10, 10), r.randf_range(-6, 6)), r.randf_range(0.8, 1.2), Color.WHITE.darkened(r.randf_range(0.0, 0.15)), r)
+			_instance(cases, rect, "roseaux", q + Vector2(r.randf_range(-10, 10), r.randf_range(-6, 6)), r.randf_range(0.8, 1.2), Color.WHITE.darkened(r.randf_range(0.0, 0.15)), r)
 		n_ro -= 1
-	var n_fl := int(1600.0 * float(s["herbe"]) * (1.0 - froid * 0.8) * (1.0 - sec * 0.5) * k + 120.0 * k)
+	var n_fl := _nombre(r, (1600.0 * float(s["herbe"]) * (1.0 - froid * 0.8) * (1.0 - sec * 0.5) * k + 120.0 * k) * ka)
 	for i in n_fl * 2:
 		if n_fl <= 0:
 			break
-		var q := Vector2(r.randf_range(-R.DEMI, R.DEMI), r.randf_range(-R.DEMI, R.DEMI))
+		var q := _dans(r, rect)
 		var ici := sol_ici(t, s, q)
 		if r.randf() > 0.15 + float(ici["herbe"]) * 0.85 or float(ici["neige"]) > 0.3 or q.length() < 150.0:
 			continue
 		# (des fleurs d'une même couleur, en colonie)
 		var couleur := r.randf()
 		for j in r.randi_range(2, 6):
-			_instance(cases, "fleurs", q + Vector2(r.randf_range(-22, 22), r.randf_range(-14, 14)), r.randf_range(0.85, 1.15), Color.WHITE, r, couleur)
+			_instance(cases, rect, "fleurs", q + Vector2(r.randf_range(-22, 22), r.randf_range(-14, 14)), r.randf_range(0.85, 1.15), Color.WHITE, r, couleur)
 		n_fl -= 1
 	# ce qui est posé à plat d'abord (flaques, cailloux, congères), puis l'herbe et les plantes, puis ce qui dépasse
-	var poses_ := _poser(monde, t, s, graine, mobile)
-	_calques(racine, poses_, ["flaque", "cailloux", "congere"], pal)
+	var faits: Array = []
+	var poses_ := _poser(monde, t, s, graine, mobile, rect, objets)
+	faits.append_array(_calques(calques[0], poses_, ["flaque", "cailloux", "congere"], pal))
 	# les MultiMesh, case par case (le moteur ne dessine que les cases à l'écran)
 	for cle in cases:
 		for genre in cases[cle]:
@@ -350,15 +382,16 @@ static func semer(monde, racine: Node2D, t: Dictionary, s: Dictionary, pal: Dict
 			var mmi := MultiMeshInstance2D.new()
 			mmi.multimesh = mm
 			mmi.material = mat
-			racine.add_child(mmi)
-	_calques(racine, poses_, ["bois_mort", "bruyere", "champignons"], pal)
-	return mat
+			calques[1].add_child(mmi)
+			faits.append(mmi)
+	faits.append_array(_calques(calques[2], poses_, ["bois_mort", "bruyere", "champignons"], pal))
+	return faits
 
 
-static func _instance(cases: Dictionary, genre: String, q: Vector2, echelle: float, teinte: Color, r: RandomNumberGenerator, petale := 0.0) -> void:
-	if absf(q.x) > R.DEMI + 10.0 or absf(q.y) > R.DEMI + 10.0:
+static func _instance(cases: Dictionary, rect: Rect2, genre: String, q: Vector2, echelle: float, teinte: Color, r: RandomNumberGenerator, petale := 0.0) -> void:
+	if not rect.grow(10.0).has_point(q):
 		return
-	var cle := Vector2i(int(floor((q.x + R.DEMI) / CASE)), int(floor((q.y + R.DEMI) / CASE)))
+	var cle := Vector2i(int(floor(q.x / CASE)), int(floor(q.y / CASE)))
 	if not cases.has(cle):
 		cases[cle] = {}
 	if not cases[cle].has(genre):
@@ -376,22 +409,21 @@ static func _gene(monde, q: Vector2, marge: float) -> bool:
 
 
 # ce qui est posé au sol, rangé par case : [genre, place, graine]
-static func _poser(monde, t: Dictionary, s: Dictionary, graine: int, mobile: bool) -> Dictionary:
+static func _poser(monde, t: Dictionary, s: Dictionary, graine: int, mobile: bool, rect: Rect2, objets: Array) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = graine + 4242
-	var k := 0.6 if mobile else 1.0
+	var k := (0.6 if mobile else 1.0) * rect.get_area() / (4.0 * R.DEMI * R.DEMI)
 	var cases := {}
 	var froid := float(s["froid"])
 	var humid := float(s["humide"])
 	var couvert := float(s["couvert"])
-	var objets: Array = monde.objets
 	var plan := [
-		["cailloux", int((200.0 + 900.0 * float(s["cailloux"])) * k)],
-		["champignons", int(260.0 * couvert * clampf(humid * 1.5 - 0.35, 0.0, 1.0) * (1.0 - froid * 0.7) * k)],
-		["bois_mort", int((20.0 + 110.0 * couvert) * k)],
-		["flaque", int((260.0 * float(s["boue"]) + 25.0 * clampf(humid - 0.6, 0.0, 1.0)) * k)],
-		["bruyere", int(900.0 * float(s["lande"]) * k)],
-		["congere", int(260.0 * froid * k)],
+		["cailloux", _nombre(r, (200.0 + 900.0 * float(s["cailloux"])) * k)],
+		["champignons", _nombre(r, 260.0 * couvert * clampf(humid * 1.5 - 0.35, 0.0, 1.0) * (1.0 - froid * 0.7) * k)],
+		["bois_mort", _nombre(r, (20.0 + 110.0 * couvert) * k)],
+		["flaque", _nombre(r, (260.0 * float(s["boue"]) + 25.0 * clampf(humid - 0.6, 0.0, 1.0)) * k)],
+		["bruyere", _nombre(r, 900.0 * float(s["lande"]) * k)],
+		["congere", _nombre(r, 260.0 * froid * k)],
 	]
 	for e in plan:
 		var genre: String = e[0]
@@ -399,7 +431,7 @@ static func _poser(monde, t: Dictionary, s: Dictionary, graine: int, mobile: boo
 		var essais := n * 4
 		while n > 0 and essais > 0:
 			essais -= 1
-			var q := Vector2(r.randf_range(-R.DEMI, R.DEMI), r.randf_range(-R.DEMI, R.DEMI))
+			var q := _dans(r, rect)
 			if (genre == "champignons" or genre == "congere") and not objets.is_empty() and r.randf() < 0.6:
 				var o = objets[r.randi() % objets.size()]
 				if o.genre == "brindille" or o.genre == "touffe":
@@ -418,7 +450,7 @@ static func _poser(monde, t: Dictionary, s: Dictionary, graine: int, mobile: boo
 					ok = float(ici["neige"]) < 0.3
 			if not ok or q.length() < (130.0 if genre == "cailloux" else 210.0) or _gene(monde, q, 10.0 if genre != "flaque" else 20.0):
 				continue
-			var cle := Vector2i(int(floor((q.x + R.DEMI) / CASE)), int(floor((q.y + R.DEMI) / CASE)))
+			var cle := Vector2i(int(floor(q.x / CASE)), int(floor(q.y / CASE)))
 			if not cases.has(cle):
 				cases[cle] = []
 			cases[cle].append([genre, q, r.randi()])
@@ -427,7 +459,8 @@ static func _poser(monde, t: Dictionary, s: Dictionary, graine: int, mobile: boo
 
 
 # un nœud par case, qui dessine une fois ce qui y est posé (de ces genres-là), de l'arrière vers l'avant
-static func _calques(racine: Node2D, cases: Dictionary, genres: Array, pal: Dictionary) -> void:
+static func _calques(racine: Node2D, cases: Dictionary, genres: Array, pal: Dictionary) -> Array:
+	var faits: Array = []
 	for cle in cases:
 		var liste: Array = cases[cle].filter(func(e): return genres.has(e[0]))
 		if liste.is_empty():
@@ -437,6 +470,8 @@ static func _calques(racine: Node2D, cases: Dictionary, genres: Array, pal: Dict
 		c.material = Objet.fixe
 		c.dessin = func(n: CanvasItem): _dessiner_case(n, liste, pal)
 		racine.add_child(c)
+		faits.append(c)
+	return faits
 
 
 static func _dessiner_case(n: CanvasItem, liste: Array, pal: Dictionary) -> void:

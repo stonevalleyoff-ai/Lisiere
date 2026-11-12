@@ -55,7 +55,7 @@ static func photo(jeu) -> Dictionary:
 		"v": VERSION,
 		"quand": int(Time.get_unix_time_from_system()),
 		"biome": jeu.biome,
-		"nom": str(jeu.biome_info.get("nom", jeu.biome)),
+		"nom": ("La grande %s" % str(jeu.biome_info.get("nom", jeu.biome)).to_lower()) if jeu.ouvert else str(jeu.biome_info.get("nom", jeu.biome)),
 		"graine": jeu.graine,
 		"horloge": snappedf(jeu.horloge, 0.01),
 		"jour": jeu.jour,
@@ -76,7 +76,10 @@ static func photo(jeu) -> Dictionary:
 		},
 		"climat": jeu.climat.photo(),
 		"feux": feux,
-		"objets": jeu.monde.photo_objets(),
+		# (un lieu sans bord ne garde que ce qu'on y a changé : le reste se refait de sa graine)
+		"ouvert": jeu.ouvert,
+		"objets": [] if jeu.ouvert else jeu.monde.photo_objets(),
+		"monde": jeu.monde.photo_ouvert() if jeu.ouvert else {},
 	}
 
 
