@@ -8,6 +8,7 @@ extends Node
 # Le temps qu'il fait, montré (scripts/climat.gd) : --temps pluie|orage|crue|neige|brouillard|canicule|incendie. La veilleuse
 # attend, tourne, puis va là où ça se passe (sous un arbre, dans l'eau, près de l'arbre frappé, contre les flammes).
 #   --image <chemin> --a 0.3,0.6,0.9   écrit <chemin>_1.png, _2.png… à ces moments (en fractions de la durée)
+#   --ouvert   le lieu sans bord (MONDE-OUVERT.md) : la veilleuse marche droit devant elle
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -68,7 +69,7 @@ func _ready() -> void:
 func _lancer() -> void:
 	jeu.donnees.hors_ligne_force = true
 	await jeu.donnees.charger_index()
-	await jeu._commencer(lieu)
+	await jeu._commencer(lieu, {}, OS.get_cmdline_user_args().has("--ouvert"))
 	var soir: float = R.DUREE * (1.0 - jeu.part_nuit)
 	match heure:
 		"jour":
@@ -107,6 +108,9 @@ func _lancer() -> void:
 	]
 	if temps != "":
 		_poser_le_temps()
+	if jeu.ouvert:
+		# (le lieu sans bord : elle marche droit devant elle, pour voir le monde se faire et se défaire)
+		_plan = [[0.0, 0.06, "attendre"], [0.06, 1.0, "est"]]
 	# (--sans son,ciel,sol,flammes : pour chercher ce qui coûte, on éteint une chose à la fois)
 	var args := OS.get_cmdline_user_args()
 	var i_sans := args.find("--sans")
@@ -293,7 +297,9 @@ func _mesurer() -> void:
 		_mesure_ms = ms
 	elif ms - _mesure_ms >= 5000:
 		print("vitrine mesure : %.1f images/s, la plus longue %d ms, %d appels, jeu %.0f ms au pire (%s, à %d s)" % [_mesure_n * 1000.0 / (ms - _mesure_ms), _mesure_max,
-			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, temps, int(_t)])
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+			temps if not jeu.ouvert else "sans bord : %d morceaux, %d objets, à %d pixels, un morceau en %.0f ms au pire" % [jeu.monde._morceaux.size(), jeu.monde.objets.size(), int(jeu.joueur.position.x), jeu.monde.pire_ms], int(_t)])
+		jeu.monde.pire_ms = 0.0
 		_mesure_ms = ms
 		_mesure_n = 0
 		_mesure_max = 0
@@ -362,6 +368,8 @@ func _process(delta: float) -> void:
 				b.position = j.position + Vector2(26.0 * j.regard, 0)
 				_cadence("chasser", delta)
 			j.deplacer(Vector2.ZERO, delta, jeu.monde)
+		"est":
+			j.deplacer(Vector2(1.0, 0.12).normalized(), delta, jeu.monde)
 		"aller":
 			var da: Vector2 = _but - j.position
 			j.deplacer(da.normalized() if da.length() > 6.0 else Vector2.ZERO, delta, jeu.monde)

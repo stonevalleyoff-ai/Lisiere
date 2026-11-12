@@ -241,7 +241,8 @@ func _lancer() -> void:
 	var creux := Vector2.ZERO
 	for k in 400:
 		var q2 := Vector2(-1800.0 + 180.0 * (k % 20), -1800.0 + 180.0 * (k / 20))
-		if C.eau(q2) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0:
+		# (un creux franc : l'eau y est profonde là où elle sera, et là où sera le feu qu'on y noie)
+		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0:
 			creux = q2
 			break
 	j.position = creux
@@ -528,6 +529,7 @@ func _lancer() -> void:
 	PG.effacer()
 	jeu.ui.montrer_reprise({})
 	verif(not jeu.ui._reprise.visible and jeu.ui._entrer.principal, "effacée, l'écran-titre ne propose plus que d'entrer dans la nuit")
+	await _lieu_sans_bord()
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)
@@ -536,3 +538,80 @@ func _lancer() -> void:
 		p.stop()
 	await get_tree().create_timer(0.3, true, false, true).timeout
 	get_tree().quit(0 if ok else 1)
+
+
+# le lieu sans bord, à part : ses noms ne se mêlent pas à ceux de la partie d'avant
+func _lieu_sans_bord() -> void:
+	var PG := load("res://scripts/partie_gardee.gd")
+	print("8. Le lieu sans bord")
+	# (MONDE-OUVERT.md, étape 2 : le lieu se fabrique par morceaux autour de la veilleuse, et ne garde que ce qu'on y change)
+	await jeu._commencer("prairie", {}, true)
+	var W = jeu.monde
+	var jo = jeu.joueur
+	# (ce qu'il y a à moins de 600 pixels d'un point, dans l'ordre : pour dire si c'est le même lieu)
+	var signature := func(centre: Vector2) -> String:
+		var l: Array = W.autour(centre, 600.0).map(func(x): return "%s %d %d" % [x.genre, int(round(x.position.x)), int(round(x.position.y))])
+		l.sort()
+		return "|".join(PackedStringArray(l))
+	var n0: int = W.objets.size()
+	var loin0 := 0.0
+	for x in W.objets:
+		loin0 = maxf(loin0, maxf(absf(x.position.x), absf(x.position.y)))
+	verif(jeu.en_partie and jeu.ouvert and W.ouvert and n0 > 100 and loin0 <= W.PORTEE + W.MORCEAU and W._morceaux.size() >= 16,
+		"au réveil, le lieu n'existe qu'autour d'elle : %d objets en %d morceaux, à moins de %d pixels" % [n0, W._morceaux.size(), int(loin0)])
+	jo.position = Vector2(jeu.R.DEMI - 40.0, 0.0)
+	for k in 30:
+		jo.deplacer(Vector2(1, 0), 0.1, W)
+	verif(jo.position.x > jeu.R.DEMI + 100.0, "elle passe l'ancien bord du lieu (%d pixels à l'est, il était à %d)" % [int(jo.position.x), int(jeu.R.DEMI)])
+	var depart: String = signature.call(Vector2.ZERO)
+	var ici := Vector2(9000.0, 300.0)
+	jo.position = ici
+	W.suivre(ici, true)
+	var n1: int = W.objets.size()
+	verif(not W.autour(ici, 600.0).is_empty() and W.autour(Vector2.ZERO, 600.0).is_empty() and n1 < n0 * 2 and n1 > n0 / 3,
+		"à 9 000 pixels de là, le lieu s'est fait autour d'elle et défait derrière elle : %d objets, comme au réveil" % n1)
+	# ce qu'elle change là-bas : un arbre brûlé, une brindille ramassée, un buisson cueilli (qui repoussera)
+	var le_plus_pres := func(test: Callable):
+		var mieux_ = null
+		var d0 := INF
+		for x in W.autour(ici, 900.0):
+			if test.call(x) and x.position.distance_to(ici) < d0:
+				d0 = x.position.distance_to(ici)
+				mieux_ = x
+		return mieux_
+	var arbre_la = le_plus_pres.call(func(x): return x.couvert() > 0.0)
+	var brindille_la = le_plus_pres.call(func(x): return x.genre == "brindille")
+	var buisson_la = le_plus_pres.call(func(x): return x.genre == "buisson" or x.genre == "touffe")
+	var p_arbre: Vector2 = arbre_la.position
+	var p_brindille: Vector2 = brindille_la.position
+	var p_buisson: Vector2 = buisson_la.position
+	arbre_la.calciner()
+	W.retirer(brindille_la)
+	buisson_la.reprendre(buisson_la.genre, 0, 50.0)
+	var a_cet_endroit := func(p: Vector2):
+		var l: Array = W.autour(p, 1.5)
+		return l[0] if not l.is_empty() else null
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	verif(signature.call(Vector2.ZERO) == depart and W.autour(ici, 900.0).is_empty(), "revenue au réveil, elle retrouve le même lieu, objet pour objet")
+	jo.position = ici
+	W.suivre(ici, true)
+	var souche_la = a_cet_endroit.call(p_arbre)
+	var buisson_vide = a_cet_endroit.call(p_buisson)
+	verif(souche_la != null and souche_la.genre == "souche" and souche_la.calcine and a_cet_endroit.call(p_brindille) == null and buisson_vide != null and buisson_vide.reste == 0,
+		"et là-bas, ce qu'elle avait changé : la souche noire de l'arbre brûlé, la brindille qui n'y est plus, le buisson cueilli")
+	# le temps passe pendant qu'elle est loin : le buisson a repoussé
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	jeu.horloge += 120.0
+	jo.position = ici
+	W.suivre(ici, true)
+	var buisson_plein = a_cet_endroit.call(p_buisson)
+	verif(buisson_plein != null and buisson_plein.intact() and a_cet_endroit.call(p_arbre).genre == "souche", "deux minutes plus tard, le buisson a repoussé sans elle ; la souche est toujours une souche")
+	# gardée, la partie ne retient que ce qui a changé
+	var gardee2: Dictionary = JSON.parse_string(JSON.stringify(PG.photo(jeu)))
+	await jeu._commencer("prairie", gardee2)
+	var souche2 = jeu.monde.autour(p_arbre, 1.5)
+	verif(jeu.ouvert and gardee2["objets"].is_empty() and gardee2["monde"]["changes"].size() >= 1 and jeu.joueur.position.distance_to(ici) < 1.0
+		and souche2.size() == 1 and souche2[0].genre == "souche" and souche2[0].calcine and jeu.monde.autour(p_brindille, 1.5).is_empty(),
+		"gardée puis reprise, la partie sans bord revient là où elle était, avec ce qu'elle avait changé (%d octets pour tout le lieu)" % JSON.stringify(gardee2["monde"]).length())

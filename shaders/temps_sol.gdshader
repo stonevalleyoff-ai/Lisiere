@@ -13,6 +13,7 @@ uniform sampler2D relief : filter_linear, repeat_disable;      // le bruit du re
 uniform sampler2D flaques : filter_linear, repeat_disable;     // le bruit des flaques
 uniform sampler2D bruit : filter_linear, repeat_enable;        // un bruit doux, sans couture
 uniform float etendue = 5400.0;
+uniform vec2 origine = vec2(0.0);      // le centre de la fenêtre cuite (un lieu sans bord : elle suit la veilleuse)
 uniform float demi = 2100.0;
 uniform float relief_milieu = 0.38;
 uniform float flaques_gain = 0.9;      // (cuit avec moins d'octaves que le bruit du jeu : ce qu'il faut pour retrouver sa valeur)
@@ -171,7 +172,7 @@ vec4 presager(vec4 v, vec4 p, float mouille, float n2, float px) {
 
 void fragment() {
 	float px = clamp(fwidth(monde.x), 0.2, 4.0);        // un pixel de l'écran, en pixels du lieu
-	vec2 uv = monde / etendue + 0.5;
+	vec2 uv = (monde - origine) / etendue + 0.5;
 	float n1 = texture(bruit, monde / 610.0).r;
 	float n2 = texture(bruit, monde / 230.0 + 0.31).r;
 	// (le sens de la vue : une dérivée d'écran rapportée au lieu)

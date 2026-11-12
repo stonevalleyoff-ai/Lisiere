@@ -12,6 +12,7 @@ const LIMITE := 6              # au-delà de ces tuiles (6 × 512 = 3 072 pixels
 const GARDEES := 20            # les tuiles gardées en mémoire
 
 var materiau: ShaderMaterial
+var limite := LIMITE           # (un lieu sans bord, scripts/monde.gd : pas de limite)
 var densite := 1.35
 var _tuiles := {}              # tuile → [Sprite2D, ImageTexture, quand elle a servi]
 var _peintres: Array = []      # les SubViewports, hors de l'arbre quand elles ne peignent pas
@@ -38,6 +39,8 @@ func _peintre() -> SubViewport:
 	vp.transparent_bg = false
 	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	var quad := Peinture.new()
+	if limite > LIMITE:
+		quad.demi = 300000.0
 	quad.material = materiau
 	vp.add_child(quad)
 	return vp
@@ -65,8 +68,8 @@ func suivre(vue: Rect2) -> void:
 	var b := (vue.end / TUILE).floor()
 	var centre := vue.get_center() / TUILE - Vector2(0.5, 0.5)
 	var manque := []
-	for x in range(maxi(int(a.x), -LIMITE), mini(int(b.x), LIMITE - 1) + 1):
-		for y in range(maxi(int(a.y), -LIMITE), mini(int(b.y), LIMITE - 1) + 1):
+	for x in range(maxi(int(a.x), -limite), mini(int(b.x), limite - 1) + 1):
+		for y in range(maxi(int(a.y), -limite), mini(int(b.y), limite - 1) + 1):
 			var k := Vector2i(x, y)
 			if _tuiles.has(k):
 				_tuiles[k][2] = _tour
@@ -126,6 +129,7 @@ func _exit_tree() -> void:
 
 # ce que peint chaque peintre : un grand rectangle, en coordonnées du monde, que sa transformation cadre sur la tuile
 class Peinture extends Node2D:
+	var demi := TUILE * (LIMITE + 1)      # (un lieu sans bord : tout le monde)
+
 	func _draw() -> void:
-		var l := TUILE * (LIMITE + 1)
-		draw_rect(Rect2(-l, -l, l * 2.0, l * 2.0), Color.WHITE)
+		draw_rect(Rect2(-demi, -demi, demi * 2.0, demi * 2.0), Color.WHITE)

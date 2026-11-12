@@ -76,7 +76,10 @@ static func photo(jeu) -> Dictionary:
 		},
 		"climat": jeu.climat.photo(),
 		"feux": feux,
-		"objets": jeu.monde.photo_objets(),
+		# (un lieu sans bord ne garde que ce qu'on y a changé : le reste se refait de sa graine)
+		"ouvert": jeu.ouvert,
+		"objets": [] if jeu.ouvert else jeu.monde.photo_objets(),
+		"monde": jeu.monde.photo_ouvert() if jeu.ouvert else {},
 	}
 
 

@@ -8,9 +8,9 @@ shader_type canvas_item;
 // Ce shader ne tourne pas à chaque image : il peint des tuiles, une fois, quand la caméra en approche (scripts/decor_sol.gd).
 // (« fin » : les feuilles et les cailloux au pixel, qu'on peut éteindre.)
 
-uniform sampler2D plaques : filter_linear, repeat_disable;
-uniform sampler2D taches : filter_linear, repeat_disable;
-uniform sampler2D voiles : filter_linear, repeat_disable;
+uniform sampler2D plaques : filter_linear, repeat_enable;
+uniform sampler2D taches : filter_linear, repeat_enable;
+uniform sampler2D voiles : filter_linear, repeat_enable;
 uniform sampler2D motif_a : filter_linear, repeat_enable;
 uniform sampler2D motif_b : filter_linear, repeat_enable;
 uniform float etendue = 5400.0;
