@@ -157,7 +157,11 @@ func photo_objets() -> Array:
 	var out := []
 	for o in objets:
 		if is_instance_valid(o):
-			out.append([o._espece, o.genre, snappedf(o.position.x, 0.1), snappedf(o.position.y, 0.1), o.graine, o.reste, snappedf(o._repousse, 0.1)])
+			# (ce qui brûle au moment de garder aura brûlé : un arbre en feu est gardé en souche noire)
+			var feu: bool = o.brule > 0.0
+			var arbre: bool = o.genre == "arbre" or o.genre == "sapin"
+			out.append([o._espece, "souche" if (feu and arbre) else o.genre, snappedf(o.position.x, 0.1), snappedf(o.position.y, 0.1), o.graine,
+				0 if feu else o.reste, snappedf(o._repousse, 0.1), 1 if (o.calcine or feu) else 0])
 	return out
 
 
@@ -177,7 +181,7 @@ func _reposer(gardes: Array) -> void:
 			"touffe":
 				c = palette["herbe"]
 		_poser(espece, Vector2(float(g[2]), float(g[3])), c, int(g[4]))
-		objets.back().reprendre(str(g[1]), int(g[5]), float(g[6]))
+		objets.back().reprendre(str(g[1]), int(g[5]), float(g[6]), g.size() > 7 and int(g[7]) == 1)
 
 
 # des objets d'un genre, au hasard, plus serrés là où le bruit des bosquets est haut ; rien sur le lieu du réveil

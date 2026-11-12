@@ -78,6 +78,11 @@ const GESTES := {
 var sante := 100.0
 var faim := 100.0
 var peur := 0.0
+# le temps qu'il fait (principal.gd, _temps_du_corps) : la température de son corps (de 0, glacée, à 100, brûlante ; à l'aise
+# autour de 50), combien elle est trempée (de 0 à 100), les secondes pendant lesquelles elle brûle encore
+var temperature := 50.0
+var trempe := 0.0
+var en_feu := 0.0
 var inventaire := {"bois": 0, "pierre": 0, "fibre": 0, "baies": 0, "viande": 0, "viande_cuite": 0}
 var lance := 0
 var torche := 0.0
@@ -160,7 +165,10 @@ func deplacer(dir: Vector2, delta: float, monde) -> void:
 	if en_mouvement:
 		if absf(dir.x) > 0.1:
 			regard = signf(dir.x)
-		var allure: float = (0.7 if faim <= 0.0 else 1.0) * (float(monde.jeu.allure_temps) if monde.jeu != null else 1.0)   # (la neige au sol ralentit)
+		# (la faim ralentit ; la boue, l'eau, la neige aussi : scripts/climat.gd ; le froid engourdit)
+		var allure: float = (0.7 if faim <= 0.0 else 1.0) * (float(monde.jeu.allure_sol(position)) if monde.jeu != null else 1.0)
+		if temperature < 25.0:
+			allure *= lerpf(0.82, 1.0, temperature / 25.0)
 		var avant := position
 		position = monde.repousser(position + dir.limit_length(1.0) * R.VITESSE * allure * delta, 8.0)
 		_v_mesure = (position - avant) / maxf(delta, 0.0001)

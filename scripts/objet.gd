@@ -12,6 +12,8 @@ const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const P := preload("res://scripts/palette.gd")
 const SHADER := preload("res://shaders/vegetation_feuillage.gdshader")
 const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois"}
+const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
+const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
 const REPOUSSE := 240.0
 const CHUTE := 1.15            # secondes : un arbre abattu tombe
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
@@ -60,6 +62,9 @@ static func pinceau():
 		_pinceau = Pinceau.new()
 	return _pinceau
 
+# l'incendie (scripts/incendie.gd) : les secondes de feu qui lui restent (0 : il ne brûle pas) ; brûlé, il est calciné
+var brule := 0.0
+var calcine := false
 # (docs/49) la plante du monde d'Orvane qu'est cet objet, d'après l'herbier ("" : aucune) ; son port (un roseau…), ses épines
 var plante := ""
 var port := ""
@@ -187,9 +192,85 @@ func epuise() -> bool:
 	return reste <= 0
 
 
+# --- l'abri, le feu ---
+
+# le rayon de son feuillage, pour s'abriter de la pluie dessous (0 : ce n'est pas un arbre debout, ou il brûle, ou il a brûlé).
+# C'est aussi ce que la foudre cherche.
+func couvert() -> float:
+	if couronne == null or _chute >= 0.0 or brule > 0.0 or calcine or (genre != "arbre" and genre != "sapin"):
+		return 0.0
+	return maxf(_rx, 22.0) * 1.05
+
+
+# peut-il prendre feu ? (ce qui pousse, et pas deux fois)
+func combustible() -> bool:
+	return brule <= 0.0 and not calcine and R_INCENDIE.has(genre) and not ((genre == "buisson" or genre == "touffe") and reste <= 0)
+
+
+# il prend feu, pour cette durée (scripts/incendie.gd le suit, et le dessine)
+func enflammer(duree: float) -> void:
+	brule = duree
+	_secoue = 0.3
+	self_modulate = Color(1.0, 0.74, 0.52)
+	if couronne != null:
+		couronne.self_modulate = self_modulate
+	set_process(true)
+	queue_redraw()
+
+
+# la pluie l'a éteint avant la fin : il reste debout, roussi
+func eteindre() -> void:
+	brule = 0.0
+	self_modulate = Color(0.64, 0.57, 0.5)
+	if couronne != null:
+		couronne.self_modulate = self_modulate
+	queue_redraw()
+
+
+# il a brûlé jusqu'au bout : un arbre n'est plus qu'une souche noire, un buisson, une touffe sont rasés (ils repousseront)
+func calciner() -> void:
+	brule = 0.0
+	calcine = true
+	self_modulate = Color(0.3, 0.27, 0.25)
+	if genre == "arbre" or genre == "sapin":
+		genre = "souche"
+		reste = 0
+		rayon = 6.0
+		material = fixe
+		if couronne != null:
+			couronne.queue_free()
+			couronne = null
+		_chute = -1.0
+	else:
+		reste = 0
+		_repousse = REPOUSSE * 1.5
+		set_process(true)
+	queue_redraw()
+	_ombre_changee()
+
+
+# en feu, il éclaire comme un feu de camp : les chasseurs n'entrent pas dans sa lumière (les mêmes noms que scripts/feu.gd)
+func allume() -> bool:
+	return brule > 0.0
+
+
+func rayon_lueur() -> float:
+	return float(R_LUEUR.get(_espece if genre == "souche" else genre, 60.0)) if brule > 0.0 else 0.0
+
+
+func eclaire(p: Vector2) -> float:
+	var r := rayon_lueur()
+	if r <= 0.0:
+		return 0.0
+	return clampf((r - p.distance_to(position)) / (r * 0.4), 0.0, 1.0)
+
+
 # une partie reprise : l'objet tel qu'on l'avait laissé (entamé, abattu en souche, ou qui repousse), sans le geste qui l'y a mené
-func reprendre(g: String, r: int, repousse: float) -> void:
+func reprendre(g: String, r: int, repousse: float, brule_: bool = false) -> void:
 	reste = clampi(r, 0, plein)
+	if brule_:
+		calcine = true
+		self_modulate = Color(0.3, 0.27, 0.25)
 	if g == "souche" and genre != "souche":
 		genre = "souche"
 		rayon = 6.0
@@ -245,6 +326,9 @@ func _process(delta: float) -> void:
 		anime = true
 		if _repousse <= 0.0:
 			reste = plein
+			# (ce qui avait brûlé a repoussé)
+			calcine = false
+			self_modulate = Color.WHITE
 			queue_redraw()
 			_ombre_changee()
 	if not anime:
