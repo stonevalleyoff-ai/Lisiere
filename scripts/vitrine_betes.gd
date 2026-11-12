@@ -131,6 +131,8 @@ func _lancer() -> void:
 		if image != "":
 			await get_tree().create_timer(2.5).timeout
 			get_viewport().get_texture().get_image().save_png("%s_%s_%s_%d.png" % [image, lieu, heure, pg])
+			# (ce que coûte la page : les appels de dessin de l'image, bêtes, sol et veilleuse compris)
+			print("la vitrine du bestiaire : page %d, %d bêtes, %d appels de dessin" % [pg, _places.size(), int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
 		elif a_montrer.size() > 1:
 			await get_tree().create_timer(duree).timeout
 	print("la vitrine du bestiaire : %d lignées, %d page%s" % [liste.size(), pages, "s" if pages > 1 else ""])

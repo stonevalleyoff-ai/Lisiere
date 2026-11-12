@@ -290,7 +290,8 @@ func oeil(c: Vector2, rayon: float, opts := {}) -> void:
 # (autant que de points : elle s'effile) ; son côté (loin : celui qu'on ne voit pas, dessiné derrière le corps, dans l'ombre).
 # Trois points au moins : la cuisse, puis le reste, qui suit d'un seul tenant (la bête plie le genou : bete.gd, _ik).
 # opts : "teinte" (sinon la robe, ou le ton lointain), "pied" ("sabot", "coussinet", "griffes", "doigts", "pointe", "main",
-# "aucun"), "pied_taille" (en fois la largeur du bas de la patte), "pied_teinte", "poilu" (vrai : des hachures sur la cuisse)
+# "aucun"), "pied_taille" (en fois la largeur du bas de la patte), "pied_teinte", "poilu" (vrai : des hachures sur la cuisse),
+# "epines" (leur longueur, en pixels montrés : des crocs d'encre le long de la cuisse et de la jambe ; un insecte)
 func patte(pts: PackedVector2Array, largeurs: Array, loin: bool, opts := {}) -> void:
 	if pts.size() < 2:
 		return
@@ -306,7 +307,7 @@ func patte(pts: PackedVector2Array, largeurs: Array, loin: bool, opts := {}) -> 
 
 # le dessin d'un morceau de patte, couché : de (0, 0) à (lg, 0), large de w0 puis de w1. Le bout du début n'a pas de cerne : le
 # morceau d'avant passe dessous, et la patte se lit d'un seul tenant
-func _morceau(lg: float, w0: float, w1: float, teinte: Color, loin_: bool, poilu: bool) -> String:
+func _morceau(lg: float, w0: float, w1: float, teinte: Color, loin_: bool, poilu: bool, epines := 0.0) -> String:
 	var r0 := w0 * 0.5
 	var r1 := w1 * 0.5
 	var encre := coul(tons["encre"])
@@ -320,6 +321,16 @@ func _morceau(lg: float, w0: float, w1: float, teinte: Color, loin_: bool, poilu
 			for i in int(lg / 3.2):
 				var x := 2.0 + i * 3.2
 				s += "<path d=\"M%s l%s\" stroke=\"%s\" stroke-width=\"%s\" opacity=\"0.5\" fill=\"none\"/>" % [pt(Vector2(x, r0 * 0.15)), pt(Vector2(1.6, lerpf(r0, r1, x / lg) * 0.55)), encre, n(maxf(0.45, e * 0.4))]
+	if epines > 0.0 and lg > epines * 4.0:
+		# (des épines : de petits crocs d'encre, d'un côté puis de l'autre, penchés vers le pied)
+		var d := ""
+		var k := maxi(2, int(lg / (epines * 2.6)))
+		for i in k:
+			var x := lg * (0.22 + 0.66 * (float(i) + 0.5) / k)
+			var c := 1.0 if i % 2 == 0 else -1.0
+			var r := lerpf(r0, r1, x / lg) * c
+			d += "M%s L%s L%sZ" % [pt(Vector2(x - epines * 0.45, r)), pt(Vector2(x + epines * 0.55, r + epines * c)), pt(Vector2(x + epines * 0.4, r))]
+		s += "<path d=\"%s\" fill=\"%s\"/>" % [d, encre]
 	s += "<path d=\"%s\" fill=\"none\" stroke=\"%s\" stroke-width=\"%s\"/>" % [bord, encre, n(e * (0.85 if loin_ else 1.0))]
 	return s
 
@@ -465,10 +476,11 @@ func _morceaux(q: Dictionary) -> Dictionary:
 		var lg := g[s].distance_to(g[s + 1])
 		var w0 := float(w[s])
 		var w1 := float(w[s + 1])
-		var rm := maxf(w0, w1) * 0.5 + e
+		var ep := float(o.get("epines", 0.0)) if s < 2 else 0.0
+		var rm := maxf(w0, w1) * 0.5 + e + ep
 		var ancre := Vector2(pad + w0 * 0.5 + e, pad + rm)
 		segs.append({"taille": Vector2(lg + (w0 + w1) * 0.5 + 2.0 * e + 2.0 * pad, 2.0 * rm + 2.0 * pad), "ancre": ancre,
-			"svg": _morceau(lg, w0, w1, teinte, loin_, o.get("poilu", false) and s == 0)})
+			"svg": _morceau(lg, w0, w1, teinte, loin_, o.get("poilu", false) and s == 0, ep)})
 	var pied := {}
 	var genre := str(o.get("pied", "aucun"))
 	if genre != "aucun":
