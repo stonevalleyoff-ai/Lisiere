@@ -1111,7 +1111,9 @@ func _temps_du_corps(delta: float) -> void:
 				tout_pres = true
 	var brasier: float = incendie.chaleur(p)
 	# --- trempée ---
-	var mouille: float = R.TREMPE_PLUIE * climat.pluie * lerpf(1.0, R.TREMPE_ABRI, abri) + 2.0 * climat.neige * (1.0 - abri)
+	# (ce qui tombe sur elle : presque rien sous un feuillage. Tant qu'il lui pleut dessus, elle ne sèche guère)
+	var expose: float = climat.pluie * lerpf(1.0, R.TREMPE_ABRI, abri)
+	var mouille: float = R.TREMPE_PLUIE * expose + 2.0 * climat.neige * (1.0 - abri)
 	if eau > 0.15:
 		mouille += R.TREMPE_EAU * eau
 	var seche: float = R.SECHE + R.SECHE_FEU * maxf(feu, brasier)
@@ -1119,9 +1121,10 @@ func _temps_du_corps(delta: float) -> void:
 		seche += 3.0 * lumiere_du_jour() * climat.air + 2.0 * climat.vent
 	if j.en_feu > 0.0 and eau <= 0.3:
 		seche += 30.0
-	j.trempe = clampf(j.trempe + (mouille - (seche if mouille < 0.5 else seche * 0.25)) * delta, 0.0, 100.0)
+	seche *= 1.0 - 0.75 * clampf(maxf(expose * 2.0, eau * 3.0), 0.0, 1.0)
+	j.trempe = clampf(j.trempe + (mouille - seche) * delta, 0.0, 100.0)
 	# --- la température du corps : elle va vers ce que l'air, l'eau, le vent et les feux en font ---
-	var cible: float = 50.0 + (climat.air - 0.5) * 110.0
+	var cible: float = 50.0 + (climat.air - 0.5) * 100.0
 	cible -= 24.0 * j.trempe / 100.0
 	cible -= 9.0 * climat.vent * (0.4 + 0.6 * j.trempe / 100.0) * (1.0 - 0.6 * abri)
 	if eau > 0.15:

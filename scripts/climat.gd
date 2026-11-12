@@ -6,7 +6,8 @@ extends Node
 # en quelques secondes. De là :
 #  - la pluie trempe la veilleuse (moins sous un feuillage), détrempe le sol (la boue, qui freine), puis fait monter l'eau dans
 #    les creux du lieu (la crue : on y patauge, on y est trempée, un feu s'y noie) ;
-#  - l'orage jette la foudre : un présage (le sol pâlit), puis elle tombe, sur un arbre le plus souvent. Elle blesse autour
+#  - l'orage jette la foudre : un présage (le sol pâlit), puis elle tombe, sur un arbre le plus souvent (celui sous lequel on
+#    s'abrite, une fois sur quatre ; sur la veilleuse, si elle est seule debout loin de tout arbre). Elle blesse autour
 #    d'elle (plus loin, les pieds dans l'eau), et met le feu (scripts/incendie.gd) ;
 #  - l'air a une température (le lieu, la saison, la nuit, le temps) : le corps de la veilleuse la suit (principal.gd, _temps_du_corps).
 # Tout ce qui se règle est dans scripts/regles.gd. Le hasard du temps est semé par la graine du lieu : une partie reprise
@@ -99,7 +100,9 @@ func avancer(delta: float) -> void:
 	orage = lerpf(orage, _force if temps == "orage" else 0.0, k)
 	neige = lerpf(neige, _force if temps == "neige" else 0.0, k)
 	brouillard = lerpf(brouillard, _force if temps == "brouillard" else 0.0, k)
-	chaleur = lerpf(chaleur, 0.22 * _force if temps == "canicule" else 0.0, k)
+	# (la canicule est du jour : la nuit, elle retombe aux deux tiers)
+	var plein_jour: float = (0.35 + 0.65 * jeu.lumiere_du_jour()) if jeu != null else 1.0
+	chaleur = lerpf(chaleur, 0.3 * _force * plein_jour if temps == "canicule" else 0.0, k)
 	var vent_cible := 0.12
 	match temps:
 		"pluie":
@@ -116,14 +119,17 @@ func avancer(delta: float) -> void:
 
 # l'épisode suivant, tiré d'après le climat du lieu ; le temps du cycle dans le monde, s'il y en a un, revient le plus souvent
 func _suivant() -> void:
-	var froid := _air_de_fond() < 0.3
+	var ete: bool = jeu != null and str(jeu.saison) == "été"
+	var hiver: bool = jeu != null and str(jeu.saison) == "hiver"
+	var froid := _air_de_fond() < (0.36 if hiver else 0.3)
 	var poids := {
 		"clair": 0.75 - 0.4 * humide,
 		"couvert": 0.2,
-		"pluie": 0.08 + 0.3 * humide,
-		"orage": (0.02 + 0.14 * humide) * (0.5 + tiede),
+		"pluie": 0.05 + 0.22 * humide,
+		"orage": (0.065 + 0.15 * humide) * (0.5 + tiede) * (0.4 if hiver else 1.0),
 		"brouillard": 0.03 + 0.06 * humide,
-		"canicule": 0.2 if (tiede > 0.7 and humide < 0.4) else 0.0,
+		# (la canicule : l'été, là où il fait bon et pas trop humide)
+		"canicule": 0.14 if (ete and tiede > 0.48 and humide < 0.6) else 0.0,
 		"neige": 0.0,
 	}
 	if froid:
@@ -174,7 +180,7 @@ func forcer(nom: String, force: float = 1.0, duree: float = 60.0, d_un_coup: boo
 		orage = force if nom == "orage" else 0.0
 		neige = force if nom == "neige" else 0.0
 		brouillard = force if nom == "brouillard" else 0.0
-		chaleur = 0.22 * force if nom == "canicule" else 0.0
+		chaleur = 0.3 * force if nom == "canicule" else 0.0
 	_air(0.0)
 
 
@@ -182,21 +188,22 @@ func forcer(nom: String, force: float = 1.0, duree: float = 60.0, d_un_coup: boo
 
 # la température de l'air sans le temps qu'il fait : le lieu, la saison, la nuit
 func _air_de_fond() -> float:
-	var a := tiede
+	# (les lieux d'Orvane vont de 0,25, la taïga, à 0,56 : on resserre, pour qu'un lieu froid reste vivable près d'un feu)
+	var a := 0.5 + (tiede - 0.5) * 0.45
 	match str(jeu.saison) if jeu != null else "été":
 		"été":
-			a += 0.07
+			a += 0.04
 		"hiver":
-			a -= 0.14
+			a -= 0.1
 		"automne":
 			a -= 0.04
 	if jeu != null:
-		a -= 0.13 * (1.0 - jeu.lumiere_du_jour())
+		a -= 0.11 * (1.0 - jeu.lumiere_du_jour())
 	return a
 
 
 func _air(_delta: float) -> void:
-	air = clampf(_air_de_fond() - 0.07 * pluie - 0.05 * orage - 0.14 * neige - 0.05 * brouillard - 0.06 * neige_sol + chaleur, 0.0, 1.0)
+	air = clampf(_air_de_fond() - 0.07 * pluie - 0.05 * orage - 0.12 * neige - 0.05 * brouillard - 0.05 * neige_sol + chaleur, 0.0, 1.0)
 
 
 # --- le sol ---
@@ -280,6 +287,22 @@ func _ciel(delta: float) -> void:
 		return
 	_foudre_dans = lerpf(13.0, 5.0, orage) * _r.randf_range(0.7, 1.3)
 	var j: Vector2 = jeu.joueur.position
+	# (elle cherche ce qui dépasse. Sous un arbre, c'est lui, une fois sur quatre ; seule debout loin de tout arbre, c'est elle)
+	if jeu.monde != null and _r.randf() < R.FOUDRE_SUR_L_ABRI:
+		for o in jeu.monde.autour(j, 90.0):
+			var c: float = o.couvert()
+			if c > 0.0 and j.distance_to(o.position + Vector2(0.0, -4.0)) < c:
+				frapper(o.position, R.FOUDRE_ANNONCE, o)
+				return
+	if jeu.monde != null and _r.randf() < R.FOUDRE_A_DECOUVERT:
+		var seule := true
+		for o in jeu.monde.autour(j, 170.0):
+			if o.couvert() > 0.0:
+				seule = false
+				break
+		if seule:
+			frapper(j + Vector2.from_angle(_r.randf() * TAU) * _r.randf_range(0.0, 34.0), R.FOUDRE_ANNONCE)
+			return
 	var tirage := _r.randf()
 	if tirage < 0.6 and jeu.monde != null:
 		# (elle cherche ce qui dépasse : un arbre debout, près de la veilleuse)

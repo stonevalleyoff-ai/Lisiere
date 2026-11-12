@@ -57,11 +57,11 @@ const TEMPS_DIT := {"pluie": "Il pleut : le feu mange son bois plus vite.", "ora
 
 # le temps qu'il fait pendant la partie (scripts/climat.gd) : il change d'heure en heure, d'après le climat du lieu
 const TEMPS_REPIT := 45.0          # secondes de temps calme, au réveil : de quoi faire un premier feu
-const BOUE_MONTE := 0.03           # par seconde, sous une pluie battante : le sol est détrempé en une demi-minute
-const BOUE_SECHE := 0.006          # par seconde, sans pluie : trois minutes pour sécher
+const BOUE_MONTE := 0.016           # par seconde, sous une pluie battante : le sol est détrempé en une demi-minute
+const BOUE_SECHE := 0.009          # par seconde, sans pluie : trois minutes pour sécher
 const BOUE_FREIN := 0.38           # la part de la vitesse perdue dans la boue pleine
 const CRUE_MONTE := 0.014          # par seconde, sous la pluie, le sol une fois détrempé : l'eau monte
-const CRUE_BAISSE := 0.004         # par seconde, la pluie passée
+const CRUE_BAISSE := 0.006         # par seconde, la pluie passée
 const EAU_FREIN := 0.45            # la part de la vitesse perdue dans l'eau jusqu'aux genoux
 const NEIGE_FREIN := 0.25          # dans un manteau de neige épais
 const FOUDRE_ANNONCE := 0.9        # secondes entre le présage (le sol qui pâlit, l'air qui crépite) et la foudre
@@ -90,6 +90,9 @@ const INCENDIE_LUEUR := {"arbre": 125.0, "sapin": 120.0, "buisson": 75.0, "touff
 const INCENDIE_PORTEE := 64.0      # jusqu'où il saute d'un objet à l'autre (plus loin sous le vent)
 const INCENDIE_PRISE := 0.3        # la chance qu'il prenne sur un voisin, toutes les deux secondes, par temps sec
 const INCENDIE_CONTACT := 24.0     # à cette distance d'un objet en feu, on prend feu
+const INCENDIE_ESSOUFFLE := 0.55   # ce qu'un feu garde de force en sautant à un voisin : l'incendie s'essouffle, il ne rase pas le lieu
+const FOUDRE_SUR_L_ABRI := 0.25    # sous un arbre pendant l'orage : la part des éclairs qui tombent sur cet arbre-là
+const FOUDRE_A_DECOUVERT := 0.2    # seule debout loin de tout arbre : la part des éclairs qui tombent sur elle
 
 # les bêtes
 const PROIES_JOUR := 12       # autour du joueur, le jour

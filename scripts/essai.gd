@@ -309,15 +309,19 @@ func _lancer() -> void:
 	j.temperature = 50.0
 	# par temps sec, le feu saute aux voisins (jamais plus de INCENDIE_MAX à la fois) ; la pluie l'éteint
 	var plus := 1
+	var essouffle := 1.0
 	for k in 8:
 		I.avancer(2.1)
 		plus = maxi(plus, I.foyers.size())
+		for foyer in I.foyers:
+			essouffle = minf(essouffle, foyer.force)
 	C.forcer("pluie", 1.0, 9999.0)
 	for k in 240:
 		I.avancer(0.5)
 	var brules: int = jeu.monde.objets.filter(func(x): return x.calcine).size()
 	verif(voisins_max >= 1 and plus > 1 and plus <= RR.INCENDIE_MAX and I.foyers.is_empty(),
 		"par temps sec l'incendie gagne les voisins (jusqu'à %d objets en feu, %d au plus permis) ; la pluie l'éteint (%d objets calcinés)" % [plus, RR.INCENDIE_MAX, brules])
+	verif(essouffle < 1.0 and essouffle <= RR.INCENDIE_ESSOUFFLE + 0.001, "à chaque saut l'incendie s'essouffle (il ne rase pas le lieu) : un voisin n'a plus que %d %% de sa force" % int(RR.INCENDIE_ESSOUFFLE * 100.0))
 	# brûlé jusqu'au bout, un arbre n'est plus qu'une souche noire
 	C.forcer("clair", 0.0, 9999.0)
 	var debout = null
@@ -331,6 +335,57 @@ func _lancer() -> void:
 	I.avancer(0.2)
 	verif(abrite_en_feu == 0.0 and debout.calcine and debout.genre == "souche" and debout.couvert() == 0.0 and not debout.combustible() and I.foyers.is_empty(),
 		"brûlé jusqu'au bout, un arbre n'est plus qu'une souche noire : elle n'abrite plus de la pluie, et ne reprend pas feu")
+	# sous un arbre pendant l'orage, la foudre finit par choisir cet arbre-là ; seule debout à découvert, elle tombe sur elle
+	C.forcer("orage", 1.0, 9999.0)
+	var refuge = null
+	for x in jeu.monde.objets:
+		if x.couvert() > 0.0 and x.position.distance_to(f.position) > 500.0:
+			refuge = x
+			break
+	j.position = refuge.position + Vector2(3.0, 0.0)
+	var sur_l_abri := [0]
+	var sur_elle := [0]
+	var compter := func(p, _dans):
+		if p.distance_to(refuge.position) < 1.0:
+			sur_l_abri[0] += 1
+		if p.distance_to(j.position) < 36.0:
+			sur_elle[0] += 1
+	C.presage.connect(compter)
+	for k in 80:
+		C._foudre_dans = 0.0
+		C._ciel(0.0)
+	var a_l_abri: int = sur_l_abri[0]
+	var seule := Vector2.ZERO
+	for k in 3600:
+		var q3 := Vector2(-2400.0 + 80.0 * (k % 60), -2400.0 + 80.0 * (k / 60))
+		var libre := true
+		for y in jeu.monde.autour(q3, 175.0):
+			if y.couvert() > 0.0:
+				libre = false
+				break
+		if libre:
+			seule = q3
+			break
+	j.position = seule
+	sur_elle[0] = 0
+	for k in 80:
+		C._foudre_dans = 0.0
+		C._ciel(0.0)
+	C.presage.disconnect(compter)
+	C._presages.clear()
+	verif(a_l_abri >= 8 and a_l_abri <= 40, "sous un arbre pendant l'orage, la foudre choisit cet arbre-là une fois sur quatre (%d éclairs sur 80)" % a_l_abri)
+	verif(seule != Vector2.ZERO and sur_elle[0] >= 5, "seule debout loin de tout arbre, c'est sur elle qu'elle tombe (%d éclairs sur 80)" % sur_elle[0])
+	# la jauge du corps dit tout cela
+	j.temperature = 12.0
+	j.trempe = 80.0
+	jeu.ui.maj_hud(jeu)
+	var gelee: bool = jeu.ui._jauges.corps == 12.0 and jeu.ui._jauges.trempe == 80.0 and jeu.ui._jauges.nom_du_corps() == "Gelée"
+	j.temperature = 90.0
+	jeu.ui.maj_hud(jeu)
+	var brulante: bool = jeu.ui._jauges.nom_du_corps() == "Brûlante"
+	j.en_feu = 2.0
+	jeu.ui.maj_hud(jeu)
+	verif(gelee and brulante and jeu.ui._jauges.nom_du_corps() == "En feu", "la jauge du corps suit : « Gelée » à 12, « Brûlante » à 90, « En feu » quand elle brûle, et la goutte quand elle est trempée")
 	# (tout revient au calme pour la suite : le ciel, le sol, le corps)
 	C.forcer("clair", 0.0, 9999.0)
 	C.boue = 0.0
