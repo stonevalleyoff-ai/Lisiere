@@ -11,7 +11,7 @@ extends RefCounted
 const P := preload("res://scripts/palette.gd")
 const Trace := preload("res://scripts/interface_trace.gd")
 const NOMS := ["coeur", "baies", "oeil", "bois", "pierre", "fibre", "viande", "viande_cuite", "torche", "lance", "feu",
-	"soleil", "lune", "patte", "croix", "manger", "nourrir", "cuire", "pause"]
+	"soleil", "lune", "patte", "croix", "manger", "nourrir", "cuire", "pause", "thermometre", "goutte", "flamme"]
 
 const ROUGE := Color("a8321f")          # (les baies, la viande : entre le sang et la braise)
 const PIERRE := Color("9d968a")
@@ -27,7 +27,7 @@ static func icone(ci, nom: String, c: Vector2, s: float, m: Color = Color.WHITE,
 		return
 	# (l'encre ne descend pas sous un pixel et demi : les petites icônes restent nettes)
 	var w := snappedf(maxf(5.0, 150.0 / s), 0.5)
-	var kk := snappedf(clampf(k, 0.0, 1.0), 0.05) if nom == "oeil" else 1.0
+	var kk := snappedf(clampf(k, 0.0, 1.0), 0.05) if (nom == "oeil" or nom == "thermometre") else 1.0
 	if ci is CanvasItem:
 		var mesh := Trace.maillage("icone|%s|%.1f|%.2f" % [nom, w, kk], func(t): _icone(t, nom, w, Color.WHITE, kk))
 		ci.draw_set_transform_matrix(base * Transform2D(0.0, Vector2(s, s) / 100.0, 0.0, c))
@@ -81,6 +81,12 @@ static func _icone(ci, nom: String, w: float, m: Color, k: float) -> void:
 		"pause":
 			for x in [-13.0, 13.0]:
 				_forme(ci, _capsule(Vector2(x, -26), Vector2(x, 26), 8.0), P.IVOIRE * m, w, m)
+		"thermometre":
+			_thermometre(ci, w, m, k)
+		"goutte":
+			_goutte(ci, w, m)
+		"flamme":
+			_flamme(ci, w, m, Vector2(2, 40), 30.0, 84.0, -5.0)
 
 
 # --- les gestes de l'encre ---
@@ -422,6 +428,34 @@ static func _feu(ci, w: float, m: Color) -> void:
 	_flamme(ci, w, m, Vector2(0, 26), 26.0, 70.0, -4.0)
 	for p in [Vector2(-40, 40), Vector2(40, 40), Vector2(0, 44)]:
 		_forme(ci, _ellipse(p, 10, 7), PIERRE * m, w * 0.9, m)
+
+
+# un thermomètre : le verre, et ce qui monte dedans (k : de 0, glacée, à 1, brûlante), bleu, ambre, rouge
+static func _thermometre(ci, w: float, m: Color, k: float) -> void:
+	var verre := PackedVector2Array()
+	for i in 13:
+		verre.append(Vector2(0, -36) + Vector2.from_angle(PI + PI * i / 12.0) * 9.5)
+	for i in 21:
+		verre.append(Vector2(0, 26) + Vector2.from_angle(-PI * 0.32 + PI * 1.64 * i / 20.0) * 18.0)
+	_forme(ci, verre, Color("cfc6ad") * m, w, m)
+	var froid := Color("5f9fd2")
+	var ambre := Color("d99a3e")
+	var rouge := Color("cf3f26")
+	var c := froid.lerp(ambre, smoothstep(0.25, 0.5, k)) if k < 0.5 else ambre.lerp(rouge, smoothstep(0.5, 0.78, k))
+	ci.draw_colored_polygon(_ellipse(Vector2(0, 26), 12.0, 12.0), c * m)
+	ci.draw_colored_polygon(_capsule(Vector2(0, 24), Vector2(0, lerpf(12.0, -36.0, k)), 4.6), c * m)
+	_reflet(ci, Vector2(-1, 25), 7.5, PI * 1.05, PI * 1.55, w * 0.8, m, 0.7)
+	# (les graduations)
+	for y in [-30.0, -16.0, -2.0]:
+		ci.draw_line(Vector2(15, y), Vector2(24, y), P.IVOIRE * m, w * 0.8, true)
+
+
+static func _goutte(ci, w: float, m: Color) -> void:
+	var pts := PackedVector2Array([Vector2(0, -44)])
+	for i in 23:
+		pts.append(Vector2(0, 12) + Vector2.from_angle(-PI * 0.22 + PI * 1.44 * i / 22.0) * 27.0)
+	_forme(ci, pts, Color("6fa8d6") * m, w, m)
+	_reflet(ci, Vector2(-2, 12), 16.0, PI * 0.95, PI * 1.45, w * 0.9, m, 0.75)
 
 
 static func _soleil(ci, w: float, m: Color) -> void:

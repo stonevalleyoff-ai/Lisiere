@@ -395,7 +395,13 @@ static func _mesurer(p: Planche, u: float, dx: float, e: float) -> Mesures:
 	m.tortue = m.aquatique and not carap.is_empty() and float(carap["taille"]) >= 0.8
 
 	# --- la tête : sa taille (une petite bête a la tête grosse), son museau (un long museau est forcé), sa famille ---
-	m.hs = (0.092 + 0.125 * tete) * (1.1 - 0.16 * rob) * (1.2 if p.chasseur else 1.04) * u
+	# (dans le monde d'Orvane, la tête de plusieurs lignées est tombée à zéro, surtout chez de gros carnivores : dessinée telle
+	# quelle, elle se perdait sur leur corps. Elle garde ses écarts d'une lignée à l'autre, mais elle a un plancher : le champ
+	# « tete » se lit de 0,3 à 1, un chasseur lourd ne la perd plus avec sa masse, et elle fait au moins les deux tiers de
+	# l'épaisseur du corps chez un chasseur, un peu plus de la moitié chez les autres. Un chasseur se lit d'abord à sa tête.)
+	var tete_vue := 0.3 + 0.7 * tete
+	m.hs = (0.092 + 0.125 * tete_vue) * (1.1 - (0.07 if p.chasseur else 0.16) * rob) * (1.2 if p.chasseur else 1.04) * u
+	m.hs = maxf(m.hs, (0.148 + 0.105 * rob + 0.04 * (1.0 - long)) * u * (0.68 if p.chasseur else 0.56))
 	m.ml = (0.014 + 0.105 * museau * (1.15 if museau > 0.55 else 1.0)) * u
 	if m.aquatique and m.carn and museau >= 0.6 and m.oreilles < 0.12:
 		m.ml *= 1.3

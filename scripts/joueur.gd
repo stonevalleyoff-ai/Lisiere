@@ -5,6 +5,9 @@ extends Node2D
 # lui arrive ; elle, elle se tourne vers où elle va (de face, de profil, de dos), marche d'un pas qui suit son allure, respire,
 # a peur, récolte, frappe, se fait mordre, tombe. Son corps et son dessin : veilleuse_corps.gd ; la queue de son écharpe :
 # veilleuse_echarpe.gd ; la flamme de sa torche : veilleuse_flamme.gd.
+# Le temps qu'il fait se lit sur elle (_etat_du_temps) : trempée, elle est plus sombre, son écharpe pend, des gouttes tombent
+# d'elle ; dans l'eau, ses jambes disparaissent, un sillage la suit ; dans la boue, elle peine ; transie, elle grelotte, se voûte,
+# bleuit, son souffle fait de la buée ; accablée de chaleur, elle rougit ; en feu, des flammes courent sur elle et elle se débat.
 
 signal pas(position: Vector2)                    # un pied se pose (dans le monde) : le son des pas, la poussière
 signal impact(position: Vector2, genre: String)  # un geste touche ce qu'il visait (son genre : arbre…, lance, poing)
@@ -78,6 +81,11 @@ const GESTES := {
 var sante := 100.0
 var faim := 100.0
 var peur := 0.0
+# le temps qu'il fait (principal.gd, _temps_du_corps) : la température de son corps (de 0, glacée, à 100, brûlante ; à l'aise
+# autour de 50), combien elle est trempée (de 0 à 100), les secondes pendant lesquelles elle brûle encore
+var temperature := 50.0
+var trempe := 0.0
+var en_feu := 0.0
 var inventaire := {"bois": 0, "pierre": 0, "fibre": 0, "baies": 0, "viande": 0, "viande_cuite": 0}
 var lance := 0
 var torche := 0.0
@@ -121,6 +129,17 @@ var _mort := -1.0                   # depuis qu'elle tombe
 var _chute_faite := false
 var _torche_sol := {}               # la torche lâchée en tombant
 var _fumee := -1.0
+# ce que le temps lui fait, sans à-coup (de 0 à 1) : trempée, dans l'eau, dans la boue, transie, accablée de chaleur, en feu
+var _mouille_k := 0.0
+var _eau_k := 0.0
+var _boue_k := 0.0
+var _bottes := 0.0                  # la boue qui reste à ses bottes
+var _froid_k := 0.0
+var _chaud_k := 0.0
+var _feu_k := 0.0
+var _brulait := false
+var _brasier: Flamme                # les flammes sur elle
+var _halo: PointLight2D
 
 
 func _ready() -> void:
@@ -140,6 +159,7 @@ func _ready() -> void:
 	halo.texture_scale = 60.0 / 128.0
 	halo.position = Vector2(0, -16)
 	add_child(halo)
+	_halo = halo
 	# (l'éclair d'une morsure, le liseré de lune : dessinés par-dessus, sans l'ombre de la nuit)
 	_lueur = Lueur.new()
 	_lueur.joueur = self
@@ -147,6 +167,9 @@ func _ready() -> void:
 	_flamme = Flamme.new()
 	_flamme.visible = false
 	add_child(_flamme)
+	_brasier = Flamme.new()
+	_brasier.visible = false
+	add_child(_brasier)
 	_derniere = position
 
 
@@ -160,7 +183,10 @@ func deplacer(dir: Vector2, delta: float, monde) -> void:
 	if en_mouvement:
 		if absf(dir.x) > 0.1:
 			regard = signf(dir.x)
-		var allure: float = (0.7 if faim <= 0.0 else 1.0) * (float(monde.jeu.allure_temps) if monde.jeu != null else 1.0)   # (la neige au sol ralentit)
+		# (la faim ralentit ; la boue, l'eau, la neige aussi : scripts/climat.gd ; le froid engourdit)
+		var allure: float = (0.7 if faim <= 0.0 else 1.0) * (float(monde.jeu.allure_sol(position)) if monde.jeu != null else 1.0)
+		if temperature < 25.0:
+			allure *= lerpf(0.82, 1.0, temperature / 25.0)
 		var avant := position
 		position = monde.repousser(position + dir.limit_length(1.0) * R.VITESSE * allure * delta, 8.0)
 		_v_mesure = (position - avant) / maxf(delta, 0.0001)
@@ -276,11 +302,13 @@ func _process(delta: float) -> void:
 	_avancer_pas(dt, vitesse, va)
 	_tourner(dt)
 	_humeurs(dt)
-	# la cape et les pans de l'écharpe : des ressorts, en retard sur le corps
-	var cible_cape := Vector2(-_vit.x * 0.028, -_vit.y * 0.012).limit_length(5.5)
+	_etat_du_temps(dt, jeu)
+	# la cape et les pans de l'écharpe : des ressorts, en retard sur le corps (mouillée, l'étoffe pèse : le vent la soulève moins)
+	var leger := 1.0 - 0.7 * _mouille_k
+	var cible_cape := Vector2(-_vit.x * 0.028, -_vit.y * 0.012).limit_length(5.5) * (1.0 - 0.4 * _mouille_k)
 	_cape_v += ((cible_cape - _cape) * 110.0 - _cape_v * 11.0) * dt
 	_cape += _cape_v * dt
-	_pan_v += ((-_vit.x * 0.012 + _vent().x * 0.05 - _pan) * 80.0 - _pan_v * 6.0) * dt
+	_pan_v += (((-_vit.x * 0.012 + _vent().x * 0.05) * leger - _pan) * 80.0 - _pan_v * 6.0) * dt
 	_pan = clampf(_pan + _pan_v * dt, -3.0, 3.0)
 	# le geste en cours, la blessure, la chute
 	if _geste != "":
@@ -307,12 +335,13 @@ func _process(delta: float) -> void:
 	# l'écharpe, simulée dans le monde
 	var ancre := to_global(_corps.ancre_echarpe)
 	var couchee := _mort > 1.3
-	_echarpe.avancer(ancre, dt, _vent() * (0.35 if couchee else 1.0), 10.0 if couchee else 130.0, 9.0 if couchee else 3.0, 2 if mobile else 4)
+	_echarpe.avancer(ancre, dt, _vent() * (0.35 if couchee else 1.0) * leger, (10.0 if couchee else 130.0) + 190.0 * _mouille_k, 9.0 if couchee else 3.0, 2 if mobile else 4)
 	var e := PackedVector2Array()
 	for p in _echarpe.points:
 		e.append(to_local(p))
 	_corps.echarpe = e
 	_torche(dt, mobile)
+	_bruler(dt, mobile)
 	# l'éclair d'une morsure ; la nuit, le liseré de lune (là où rien ne l'éclaire)
 	_lueur.eclair = clampf(1.0 - _blesse / 0.16, 0.0, 1.0) if _blesse >= 0.0 else 0.0
 	var noir := 0.0
@@ -381,6 +410,62 @@ func _humeurs(dt: float) -> void:
 		_cligne = randf_range(2.5, 5.5)
 
 
+# ce que le temps lui fait (scripts/climat.gd ; principal.gd règle trempe, temperature, en_feu) : chaque état va vers sa
+# valeur sans à-coup ; sa teinte en suit (mouillée, plus sombre ; transie, bleuie ; au chaud, rougie ; en feu, éclairée)
+func _etat_du_temps(dt: float, jeu) -> void:
+	var climat = jeu.get("climat") if jeu != null else null
+	var eau := 0.0
+	var boue := 0.0
+	var pluie := 0.0
+	if climat != null:
+		eau = float(climat.eau(position))
+		pluie = float(climat.pluie)
+		if eau < 0.05 and float(climat.boue) > 0.15:
+			# (la boue : d'autant plus qu'elle freine là où elle marche)
+			boue = clampf((1.0 - float(climat.allure(position))) / 0.3, 0.0, 1.0)
+	_mouille_k = move_toward(_mouille_k, clampf(trempe / 100.0, 0.0, 1.0), dt * 0.9)
+	_eau_k = move_toward(_eau_k, eau, dt * 2.5)
+	_boue_k = move_toward(_boue_k, boue, dt * 1.5)
+	# (la boue reste aux bottes, sèche lentement ; l'eau les lave)
+	_bottes = clampf(maxf(_bottes - dt * (0.03 + 1.5 * eau), _boue_k), 0.0, 1.0)
+	_froid_k = move_toward(_froid_k, 0.0 if morte else smoothstep(31.0, 14.0, temperature), dt * 0.8)
+	_chaud_k = move_toward(_chaud_k, 0.0 if morte else smoothstep(72.0, 92.0, temperature), dt * 0.8)
+	var brule := en_feu > 0.0 and not morte
+	_feu_k = move_toward(_feu_k, 1.0 if brule else 0.0, dt * (7.0 if brule else 3.5))
+	if _brulait and not brule and jeu != null and jeu.get("effets") != null and jeu.effets.has_method("flammes_eteintes"):
+		# (ses flammes s'éteignent : dans l'eau, sous la pluie, une bouffée de vapeur ; sinon un peu de fumée)
+		jeu.effets.flammes_eteintes(position + Vector2(0.0, -20.0), eau > 0.3 or pluie > 0.25 or trempe > 45.0)
+	_brulait = brule
+	var ton := Color.WHITE.lerp(Color(0.7, 0.74, 0.85), _mouille_k)
+	ton *= Color.WHITE.lerp(Color(0.84, 0.93, 1.1), _froid_k)
+	ton *= Color.WHITE.lerp(Color(1.1, 0.9, 0.86), _chaud_k)
+	ton *= Color.WHITE.lerp(Color(1.3, 0.98, 0.72), _feu_k)
+	self_modulate = Color(ton.r, ton.g, ton.b, 1.0)
+
+
+# en feu : des langues à l'épaule, à la capuche, au dos, au bas du manteau ; sa lueur (le halo à ses pieds devient un brasier)
+func _bruler(dt: float, mobile: bool) -> void:
+	var k := _feu_k
+	_brasier.visible = k > 0.02 or not _brasier._braises.is_empty()
+	_brasier.mobile = mobile
+	_brasier.force = k * (0.9 + 0.1 * sin(_t * 23.0))
+	if k > 0.02:
+		var c := _corps
+		var ou := [[Vector3(-1.0, 5.6, 28.0 + c.epaules), c.buste, 1.2], [Vector3(-0.5, 0.0, 43.0 - c.tete_baisse), c.buste, 0.95], [Vector3(-1.0, -5.6, 28.0 + c.epaules), c.buste, 1.05],
+			[Vector3(-4.5, 1.0, 19.0), c.buste, 1.35], [Vector3(1.5, 7.5, 10.0), c.cap, 1.0], [Vector3(2.0, -7.0, 11.0), c.cap, 0.85]]
+		var foyers: Array = []
+		for i in (4 if mobile else ou.size()):
+			foyers.append([c.chute * c.pt(ou[i][0], ou[i][1]), ou[i][2]])
+		_brasier.corps = foyers
+		_brasier.couche = Vector2(clampf(-_vit.x * 0.03 + _vent().x * 0.05, -4.0, 4.0), 0.0)
+	if _brasier.visible:
+		_brasier.avancer(dt)
+	if k > 0.0 or _halo.energy != 0.32:
+		_halo.color = Color(0.55, 0.62, 0.85).lerp(Color(1.0, 0.68, 0.38), k)
+		_halo.energy = lerpf(0.32, 1.15 + 0.12 * _brasier.vie, k)
+		_halo.texture_scale = lerpf(60.0, 135.0, k) / 128.0
+
+
 # la pose de l'image : la marche ou l'attente, la peur et la faim, puis le geste, la morsure, la chute
 func _poser() -> void:
 	var c := _corps
@@ -401,11 +486,25 @@ func _poser() -> void:
 	c.tete_baisse = 1.1 * _faim_k + 1.3 * k
 	var tremble := Vector2(sin(_t * 41.0) + sin(_t * 23.0 + 1.0) * 0.6, sin(_t * 37.0 + 2.0) + sin(_t * 29.0) * 0.5) * 0.3 * k
 	c.decal = tremble + Vector2(sin(_t * 0.8) * 0.3 * (1.0 - m), 0.0)
-	c.pied_d = Vector3(sin(ph) * 4.6 * amp * m, 2.5, maxf(0.0, cos(ph)) * 2.6 * amp * m)
-	c.pied_g = Vector3(sin(ph + PI) * 4.6 * amp * m, -2.5, maxf(0.0, cos(ph + PI)) * 2.6 * amp * m)
-	# les bras balancent à l'envers des jambes ; la peur les ramène contre elle
-	var bal := sin(ph) * 4.2 * amp * m
-	var serre := k * 0.7 * (1.0 - m * 0.6)
+	# le froid : elle grelotte (par accès), se voûte, rentre la tête ; la chaleur : elle s'affaisse un peu
+	var fr := _froid_k
+	var acces := 0.55 + 0.45 * sin(_t * 1.3) * sin(_t * 0.7 + 1.0)
+	c.decal += Vector2(sin(_t * 53.0) + 0.5 * sin(_t * 31.0 + 1.0), 0.35 * sin(_t * 47.0 + 2.0)) * 0.55 * fr * acces
+	c.epaules += 1.7 * fr + 0.25 * fr * sin(_t * 49.0) * acces
+	c.penche += 1.1 * fr + 0.7 * _chaud_k
+	c.bas += 0.7 * fr
+	c.tete_baisse += 0.9 * fr + 0.8 * _chaud_k
+	# la boue : elle peine (le corps plonge à chaque pas, se penche, elle arrache ses bottes) ; dans l'eau, elle se penche
+	var lourd := _boue_k * m
+	c.bas += 1.5 * lourd * (0.4 + 0.6 * absf(sin(ph)))
+	c.penche += 1.3 * lourd + 0.7 * _eau_k * m
+	c.hanche *= 1.0 + 1.3 * lourd
+	var leve := 2.6 * (1.0 + 0.9 * lourd)
+	c.pied_d = Vector3(sin(ph) * 4.6 * amp * m, 2.5, maxf(0.0, cos(ph)) * leve * amp * m)
+	c.pied_g = Vector3(sin(ph + PI) * 4.6 * amp * m, -2.5, maxf(0.0, cos(ph + PI)) * leve * amp * m)
+	# les bras balancent à l'envers des jambes ; la peur les ramène contre elle (le froid aussi : elle se serre)
+	var bal := sin(ph) * 4.2 * amp * m * (1.0 + 0.5 * lourd)
+	var serre := maxf(k * 0.7 * (1.0 - m * 0.6), fr * 0.85 * (1.0 - m * 0.4))
 	c.main_d = (Corps.MAIN_D + Vector3(-bal, 0.0, absf(bal) * 0.2)).lerp(Vector3(5.0, 3.2, 21.5), serre)
 	c.main_g = (Corps.MAIN_G + Vector3(bal, 0.0, absf(bal) * 0.2)).lerp(Vector3(5.0, -3.0, 20.5), serre)
 	c.torche = tenue
@@ -430,8 +529,18 @@ func _poser() -> void:
 	c.yeux = 0.0 if _cligne < 0.0 else 1.0
 	c.chute = Transform2D.IDENTITY
 	c.allonge = 0.0
+	c.horloge = _t
+	c.mouille = _mouille_k
+	c.eau = _eau_k
+	c.enfonce = maxf(_eau_k * 7.0, _boue_k * 2.2)
+	c.sillage = (_vit / R.VITESSE).limit_length(1.0) * 1.8 if _eau_k > 0.04 else Vector2.ZERO
+	c.froid = fr
+	c.chaud = _chaud_k
+	c.boue = _bottes
 	if _geste != "":
 		_poser_geste(c, tenue)
+	if _feu_k > 0.0:
+		_poser_feu(c, tenue)
 	if _blesse >= 0.0:
 		_poser_blessure(c)
 	if morte:
@@ -499,6 +608,21 @@ func _poser_blessure(c) -> void:
 	c.epaules += 1.0 * r
 	if _geste == "":
 		c.main_d = c.main_d.lerp(Vector3(5.0, 2.8, 20.0), 0.6 * r)
+
+
+# en feu : elle se débat (les bras battent ses épaules, le buste se tord, elle se baisse et se relève)
+func _poser_feu(c, tenue: bool) -> void:
+	var k := _feu_k
+	var t := _t
+	c.buste += 0.55 * sin(t * 11.0) * k
+	c.tete = c.buste + 0.4 * sin(t * 7.0 + 1.0) * k
+	c.bas += (0.8 + 1.4 * absf(sin(t * 8.0))) * k
+	c.penche += 1.0 * k
+	c.epaules += 1.2 * k
+	c.decal += Vector2(sin(t * 31.0), cos(t * 27.0)) * 0.7 * k
+	c.main_d = c.main_d.lerp(Vector3(4.0 + 3.0 * sin(t * 15.0), 7.5, 29.0 + 6.0 * sin(t * 12.0 + 1.0)), k * 0.9)
+	if not tenue and not (c.lance and c.lance_main < 0.0):
+		c.main_g = c.main_g.lerp(Vector3(4.0 + 3.0 * sin(t * 14.0 + 2.0), -7.5, 29.0 + 6.0 * sin(t * 13.0 + 2.5)), k * 0.9)
 
 
 # elle tombe à genoux, puis s'effondre de côté, vers où elle regardait ; ensuite, plus rien ne bouge d'elle-même

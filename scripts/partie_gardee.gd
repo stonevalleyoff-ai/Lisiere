@@ -3,7 +3,8 @@ extends RefCounted
 # Une partie en cours s'écrit sur l'appareil (user://partie.json) : toutes les vingt secondes, à la pause, quand l'application
 # passe derrière une autre, quand on revient au titre (principal.gd, _garder). L'écran-titre propose de la reprendre. On garde
 # le lieu et sa graine, l'heure, les nuits tenues ; la veilleuse (où elle est, sa santé, sa faim, sa peur, son sac, sa lance, sa
-# torche) ; les feux et leur bois ; le lieu tel qu'on l'a laissé (les arbres abattus, les rochers entamés, les buissons qui
+# torche, sa température, si elle est trempée) ; le temps qu'il fait, la boue, l'eau montée ; les feux et leur bois ; le lieu tel qu'on
+# l'a laissé (les arbres abattus ou brûlés, les rochers entamés, les buissons qui
 # repoussent, les brindilles ramassées ou tombées) ; ce qu'on a croisé et chassé, et les bêtes tuées dont les échos reviennent ;
 # le numéro de la partie au tableau des scores. Les bêtes, elles, reviennent d'elles-mêmes. À la fin d'une partie, elle s'efface.
 
@@ -71,7 +72,9 @@ static func photo(jeu) -> Dictionary:
 			"x": snappedf(j.position.x, 0.1), "y": snappedf(j.position.y, 0.1), "regard": j.regard,
 			"sante": snappedf(j.sante, 0.01), "faim": snappedf(j.faim, 0.01), "peur": snappedf(j.peur, 0.01),
 			"inventaire": j.inventaire, "lance": j.lance, "torche": snappedf(j.torche, 0.01),
+			"temperature": snappedf(j.temperature, 0.1), "trempe": snappedf(j.trempe, 0.1),
 		},
+		"climat": jeu.climat.photo(),
 		"feux": feux,
 		"objets": jeu.monde.photo_objets(),
 	}
@@ -111,6 +114,9 @@ static func appliquer(jeu, d: Dictionary) -> void:
 		j.inventaire[k] = int(inv[k])
 	j.lance = int(g.get("lance", 0))
 	j.torche = float(g.get("torche", 0.0))
+	j.temperature = float(g.get("temperature", 50.0))
+	j.trempe = float(g.get("trempe", 0.0))
+	jeu.climat.reprendre(d.get("climat", {}))
 	if jeu.camera != null:
 		jeu.camera.reset_smoothing()
 	for x in d.get("feux", []):

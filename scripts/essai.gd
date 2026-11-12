@@ -155,38 +155,246 @@ func _lancer() -> void:
 	jeu.nourrir_feu()
 	verif(f.bois > avant + 20.0, "une bûche nourrit le feu (%d → %d secondes)" % [int(avant), int(f.bois)])
 
-	# (docs/45) le temps qu'il fait : sous la tempête, le feu mange son bois deux fois plus vite ; la neige au sol ralentit ; le ciel se dessine
-	var temps_du_lieu: float = jeu.feu_temps
-	jeu.feu_temps = 1.0
+	print("2 bis. Le temps qu'il fait")
+	# (scripts/climat.gd, scripts/incendie.gd : le temps de la partie pèse sur le feu, le sol, le corps ; tout est joué ici sans
+	# attendre, en appelant les mêmes fonctions que le jeu, image par image)
+	var C = jeu.climat
+	var I = jeu.incendie
+	var RR = jeu.R
+	C.forcer("clair", 0.0, 9999.0)
+	C.boue = 0.0
+	C.crue = 0.0
+	jeu._temps_du_corps(0.1)
 	var bois0: float = f.bois
 	await _attendre(2.0)
 	var calme: float = bois0 - f.bois
-	jeu.feu_temps = float(jeu.R.FEU_TEMPS["tempete"])
+	C.forcer("orage", 1.0, 9999.0)
+	jeu._temps_du_corps(0.1)
 	bois0 = f.bois
 	await _attendre(2.0)
 	var tempete: float = bois0 - f.bois
-	jeu.feu_temps = temps_du_lieu
-	verif(calme > 0.0 and tempete > calme * 1.6, "sous la tempête, le feu mange son bois plus vite (%.1f s de bois en deux secondes, contre %.1f)" % [tempete, calme])
-	jeu.meteo = {"temps": "pluie", "vent": 0.3}
-	jeu.ciel.regler("pluie", 0.3)
-	var pluie: bool = jeu.ciel.visible_du_ciel() and jeu.texte_horloge().contains("pluie")
-	jeu.ciel.regler("neige", 0.1)
-	var neige: bool = jeu.ciel.visible_du_ciel()
-	jeu.ciel.regler("clair", 0.0)
-	var clair: bool = not jeu.ciel.visible_du_ciel()
-	jeu.meteo = Orvane.meteo("foret")
-	jeu.ciel.regler(str(jeu.meteo.get("temps", "")), float(jeu.meteo.get("vent", 0.0)))
-	verif(pluie and neige and clair, "la pluie et la neige se dessinent et se disent à l'horloge ; un temps clair ne dessine rien")
-	var allure_du_lieu: float = jeu.allure_temps
-	j.position = Vector2(0, 0)
-	jeu.allure_temps = jeu.R.ALLURE_NEIGE
+	verif(calme > 0.0 and tempete > calme * 1.5 and jeu.texte_horloge().contains("orage"),
+		"sous l'orage, le feu mange son bois plus vite (%.1f s de bois en deux secondes, contre %.1f), et l'horloge le dit" % [tempete, calme])
+	# un coin à découvert et au sec, loin du feu ; un arbre debout, loin du feu aussi
+	var decouvert := Vector2.ZERO
+	for k in 40:
+		var q := Vector2(420.0 + 45.0 * k, 0.0)
+		if C.abri(q) == 0.0 and jeu.monde.repousser(q, 8.0).distance_to(q) < 1.0:
+			decouvert = q
+			break
+	var arbre_abri = null
+	var voisins_max := -1
+	for x in jeu.monde.objets:
+		if x.couvert() > 0.0 and x.position.distance_to(f.position) > 500.0:
+			var nv := 0
+			for y in jeu.monde.autour(x.position, 60.0):
+				if y != x and y.combustible():
+					nv += 1
+			if nv > voisins_max:
+				voisins_max = nv
+				arbre_abri = x
+	# la pluie trempe ; sous un feuillage, bien moins
+	C.forcer("pluie", 1.0, 9999.0)
+	j.position = decouvert
+	j.trempe = 0.0
+	j.temperature = 50.0
+	for k in 20:
+		jeu._temps_du_corps(0.5)
+	var trempee: float = j.trempe
+	var refroidie: float = j.temperature
+	for k in 80:
+		jeu._temps_du_corps(0.5)
+	var froid: float = j.temperature
+	var sante_froid: float = j.sante
+	j.sante = 100.0
+	j.position = arbre_abri.position + Vector2(3.0, 0.0)
+	j.trempe = 0.0
+	for k in 20:
+		jeu._temps_du_corps(0.5)
+	var abritee: float = j.trempe
+	verif(decouvert != Vector2.ZERO and trempee > 70.0 and abritee < trempee * 0.4 and C.abri(j.position) == 1.0,
+		"dix secondes sous une pluie battante trempent la veilleuse (%d sur 100) ; sous un feuillage, bien moins (%d)" % [int(trempee), int(abritee)])
+	verif(refroidie < 50.0 and froid < RR.FROID and sante_froid < 100.0,
+		"trempée, elle prend froid (sa température tombe de 50 à %d), et le froid lui coûte de la santé (%d sur 100)" % [int(froid), int(sante_froid)])
+	# près du feu, la pluie passée, elle sèche et se réchauffe
+	C.forcer("clair", 0.0, 9999.0)
+	j.position = f.position + Vector2(34.0, 6.0)
+	j.trempe = 100.0
+	j.temperature = 15.0
+	for k in 30:
+		jeu._temps_du_corps(0.5)
+	verif(j.trempe < 15.0 and j.temperature > 45.0, "près du feu, elle sèche et se réchauffe (trempée : %d ; température : %d)" % [int(j.trempe), int(j.temperature)])
+	j.sante = 100.0
+	# la boue freine
+	j.position = decouvert
+	j.temperature = 50.0
+	C.boue = 0.0
 	j.deplacer(Vector2(1, 0), 1.0, jeu.monde)
-	var dans_la_neige: float = j.position.x
-	j.position = Vector2(0, 0)
-	jeu.allure_temps = 1.0
+	var au_sec: float = j.position.x - decouvert.x
+	j.position = decouvert
+	C.boue = 1.0
 	j.deplacer(Vector2(1, 0), 1.0, jeu.monde)
-	jeu.allure_temps = allure_du_lieu
-	verif(dans_la_neige > 0.0 and dans_la_neige < j.position.x * 0.9, "dans la neige, on marche moins vite (%d pixels en une seconde, contre %d)" % [int(dans_la_neige), int(j.position.x)])
+	var dans_la_boue: float = j.position.x - decouvert.x
+	verif(dans_la_boue > 0.0 and dans_la_boue < au_sec * 0.86, "dans la boue, on marche moins vite (%d pixels en une seconde, contre %d au sec)" % [int(dans_la_boue), int(au_sec)])
+	# la crue : l'eau gagne les creux, pas la butte du réveil ; on y patauge, on y est trempée, un feu s'y noie, on n'en allume pas
+	C.crue = 1.0
+	var creux := Vector2.ZERO
+	for k in 400:
+		var q2 := Vector2(-1800.0 + 180.0 * (k % 20), -1800.0 + 180.0 * (k / 20))
+		if C.eau(q2) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0:
+			creux = q2
+			break
+	j.position = creux
+	j.trempe = 0.0
+	j.en_feu = 2.0
+	var feu_noye = jeu.Feu.new()
+	feu_noye.jeu = jeu
+	feu_noye.position = creux + Vector2(30, 0)
+	jeu.monde.add_child(feu_noye)
+	jeu.feux.append(feu_noye)
+	jeu._temps_du_corps(1.0)
+	var n_feux: int = jeu.feux.size()
+	j.inventaire["bois"] = 30
+	j.inventaire["pierre"] = 10
+	jeu.fabriquer("feu")
+	verif(creux != Vector2.ZERO and C.eau(Vector2.ZERO) == 0.0 and C.allure(creux) < 0.62 and j.trempe > 40.0 and j.en_feu == 0.0 and not feu_noye.allume() and jeu.feux.size() == n_feux,
+		"la crue : l'eau gagne les creux, pas la butte du réveil ; on y patauge (%d %% de l'allure), on y est trempée, les flammes s'y éteignent, un feu s'y noie et l'on n'en allume pas" % int(C.allure(creux) * 100.0))
+	jeu.feux.erase(feu_noye)
+	feu_noye.queue_free()
+	C.crue = 0.0
+	C.boue = 0.0
+	# la foudre : un présage, puis elle tombe ; elle blesse autour d'elle, met le feu à l'arbre qu'elle frappe
+	C.forcer("orage", 1.0, 9999.0, true)
+	C.pluie = 0.0
+	var presages := [0]
+	var tombees := [0]
+	var sur_presage := func(_p, _dans): presages[0] += 1
+	var sur_foudre := func(_p, _sur): tombees[0] += 1
+	C.presage.connect(sur_presage)
+	C.foudre.connect(sur_foudre)
+	j.position = arbre_abri.position + Vector2(44.0, 0.0)
+	j.sante = 100.0
+	j.trempe = 0.0
+	j.en_feu = 0.0
+	var proie_foudre = jeu._creer(F["proies_jour"][0], "proie", arbre_abri.position + Vector2(-20.0, 6.0))
+	var chassees0: int = jeu.chassees
+	var comptes0: int = Orvane.en_cours()
+	C.frapper(arbre_abri.position, 0.5, arbre_abri)
+	var avant_la_foudre: bool = presages[0] == 1 and tombees[0] == 0 and j.sante == 100.0
+	C._foudre_dans = 999.0
+	C.avancer(0.6)
+	C.presage.disconnect(sur_presage)
+	C.foudre.disconnect(sur_foudre)
+	verif(avant_la_foudre and tombees[0] == 1 and j.sante < 100.0 and j.sante > 60.0 and arbre_abri.brule > 0.0 and I.foyers.size() == 1,
+		"la foudre s'annonce, puis tombe sur un arbre : à 44 pixels, la veilleuse est blessée (%d sur 100), et l'arbre prend feu" % int(j.sante))
+	verif(not is_instance_valid(proie_foudre) or not proie_foudre.is_in_group("betes") or proie_foudre.pv < proie_foudre.pv_max,
+		"une bête au pied de l'arbre est foudroyée")
+	verif(jeu.chassees == chassees0 and Orvane.en_cours() == comptes0, "ce que la foudre tue n'est pas une chasse : rien n'est compté")
+	if is_instance_valid(proie_foudre):
+		proie_foudre.queue_free()
+	# un arbre en feu éclaire et protège comme un feu de camp ; à son contact, on prend feu
+	var lueur: float = I.foyers[0].eclaire(arbre_abri.position + Vector2(40.0, 0.0))
+	var protege: bool = jeu.feu_qui_protege(arbre_abri.position + Vector2(40.0, 0.0)) != null
+	j.position = arbre_abri.position + Vector2(12.0, 0.0)
+	j.en_feu = 0.0
+	j.sante = 100.0
+	jeu._temps_du_corps(0.5)
+	var en_feu: bool = j.en_feu > 0.0
+	jeu._temps_du_corps(1.0)
+	verif(lueur > 0.5 and protege and en_feu and j.sante < 100.0 and j.temperature > 60.0,
+		"un arbre en feu éclaire et tient les chasseurs à distance comme un feu de camp ; à son contact, la veilleuse prend feu et brûle (santé : %d)" % int(j.sante))
+	j.position = decouvert
+	j.en_feu = 0.0
+	j.sante = 100.0
+	j.temperature = 50.0
+	# par temps sec, le feu saute aux voisins (jamais plus de INCENDIE_MAX à la fois) ; la pluie l'éteint
+	var plus := 1
+	var essouffle := 1.0
+	for k in 8:
+		I.avancer(2.1)
+		plus = maxi(plus, I.foyers.size())
+		for foyer in I.foyers:
+			essouffle = minf(essouffle, foyer.force)
+	C.forcer("pluie", 1.0, 9999.0)
+	for k in 240:
+		I.avancer(0.5)
+	var brules: int = jeu.monde.objets.filter(func(x): return x.calcine).size()
+	verif(voisins_max >= 1 and plus > 1 and plus <= RR.INCENDIE_MAX and I.foyers.is_empty(),
+		"par temps sec l'incendie gagne les voisins (jusqu'à %d objets en feu, %d au plus permis) ; la pluie l'éteint (%d objets calcinés)" % [plus, RR.INCENDIE_MAX, brules])
+	verif(essouffle < 1.0 and essouffle <= RR.INCENDIE_ESSOUFFLE + 0.001, "à chaque saut l'incendie s'essouffle (il ne rase pas le lieu) : un voisin n'a plus que %d %% de sa force" % int(RR.INCENDIE_ESSOUFFLE * 100.0))
+	# brûlé jusqu'au bout, un arbre n'est plus qu'une souche noire
+	C.forcer("clair", 0.0, 9999.0)
+	var debout = null
+	for x in jeu.monde.objets:
+		if x.couvert() > 0.0 and x.combustible() and x.position.distance_to(f.position) > 500.0:
+			debout = x
+			break
+	I.enflammer(debout)
+	var abrite_en_feu: float = debout.couvert()
+	debout.brule = 0.1
+	I.avancer(0.2)
+	verif(abrite_en_feu == 0.0 and debout.calcine and debout.genre == "souche" and debout.couvert() == 0.0 and not debout.combustible() and I.foyers.is_empty(),
+		"brûlé jusqu'au bout, un arbre n'est plus qu'une souche noire : elle n'abrite plus de la pluie, et ne reprend pas feu")
+	# sous un arbre pendant l'orage, la foudre finit par choisir cet arbre-là ; seule debout à découvert, elle tombe sur elle
+	C.forcer("orage", 1.0, 9999.0)
+	var refuge = null
+	for x in jeu.monde.objets:
+		if x.couvert() > 0.0 and x.position.distance_to(f.position) > 500.0:
+			refuge = x
+			break
+	j.position = refuge.position + Vector2(3.0, 0.0)
+	var sur_l_abri := [0]
+	var sur_elle := [0]
+	var compter := func(p, _dans):
+		if p.distance_to(refuge.position) < 1.0:
+			sur_l_abri[0] += 1
+		if p.distance_to(j.position) < 36.0:
+			sur_elle[0] += 1
+	C.presage.connect(compter)
+	for k in 80:
+		C._foudre_dans = 0.0
+		C._ciel(0.0)
+	var a_l_abri: int = sur_l_abri[0]
+	var seule := Vector2.ZERO
+	for k in 3600:
+		var q3 := Vector2(-2400.0 + 80.0 * (k % 60), -2400.0 + 80.0 * (k / 60))
+		var libre := true
+		for y in jeu.monde.autour(q3, 175.0):
+			if y.couvert() > 0.0:
+				libre = false
+				break
+		if libre:
+			seule = q3
+			break
+	j.position = seule
+	sur_elle[0] = 0
+	for k in 80:
+		C._foudre_dans = 0.0
+		C._ciel(0.0)
+	C.presage.disconnect(compter)
+	C._presages.clear()
+	verif(a_l_abri >= 8 and a_l_abri <= 40, "sous un arbre pendant l'orage, la foudre choisit cet arbre-là une fois sur quatre (%d éclairs sur 80)" % a_l_abri)
+	verif(seule != Vector2.ZERO and sur_elle[0] >= 5, "seule debout loin de tout arbre, c'est sur elle qu'elle tombe (%d éclairs sur 80)" % sur_elle[0])
+	# la jauge du corps dit tout cela
+	j.temperature = 12.0
+	j.trempe = 80.0
+	jeu.ui.maj_hud(jeu)
+	var gelee: bool = jeu.ui._jauges.corps == 12.0 and jeu.ui._jauges.trempe == 80.0 and jeu.ui._jauges.nom_du_corps() == "Gelée"
+	j.temperature = 90.0
+	jeu.ui.maj_hud(jeu)
+	var brulante: bool = jeu.ui._jauges.nom_du_corps() == "Brûlante"
+	j.en_feu = 2.0
+	jeu.ui.maj_hud(jeu)
+	verif(gelee and brulante and jeu.ui._jauges.nom_du_corps() == "En feu", "la jauge du corps suit : « Gelée » à 12, « Brûlante » à 90, « En feu » quand elle brûle, et la goutte quand elle est trempée")
+	# (tout revient au calme pour la suite : le ciel, le sol, le corps)
+	C.forcer("clair", 0.0, 9999.0)
+	C.boue = 0.0
+	C.crue = 0.0
+	j.trempe = 0.0
+	j.temperature = 50.0
+	j.en_feu = 0.0
+	j.sante = 100.0
+	j.peur = 0.0
 	j.position = Vector2(0, 0)
 
 	print("3. Du doigt")
@@ -271,7 +479,13 @@ func _lancer() -> void:
 			for k in x.plein:
 				x.recolter()
 			break
+	jeu.climat.boue = 0.4
+	jeu.joueur.trempe = 30.0
+	jeu.joueur.temperature = 41.0
 	var gardee: Dictionary = load("res://scripts/partie_gardee.gd").photo(jeu)
+	jeu.climat.boue = 0.0
+	jeu.joueur.trempe = 0.0
+	jeu.joueur.temperature = 50.0
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -308,6 +522,8 @@ func _lancer() -> void:
 	verif(pareil, "reprise, elle revient pareille : %d objets dont %d souches, le sac (%d bois), %d feu, l'heure, %d nuit, %d bête tuée" % [
 		revenue["objets"].size(), souches.call(revenue), int(revenue["joueur"]["inventaire"].get("bois", 0)), revenue["feux"].size(),
 		int(revenue["nuits"]), revenue["tuees"].size()])
+	verif(absf(jeu.climat.boue - 0.4) < 0.02 and absf(jeu.joueur.trempe - 30.0) < 0.5 and absf(jeu.joueur.temperature - 41.0) < 0.5 and jeu.monde.objets.filter(func(x): return x.calcine).size() > 0,
+		"avec elle reviennent le sol détrempé, la veilleuse mouillée, sa température, et ce que l'incendie a brûlé")
 	verif(not FileAccess.file_exists("user://partie.json") or PG.lire() == lu, "l'essai ne réécrit pas la partie gardée")
 	PG.effacer()
 	jeu.ui.montrer_reprise({})

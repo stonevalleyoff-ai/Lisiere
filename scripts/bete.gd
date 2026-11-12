@@ -65,6 +65,7 @@ var _apparition := 0.0
 var _fuite_de := Vector2.ZERO
 var _retenu := false
 var _sens := 1.0
+var _du_ciel := false            # (le coup en cours vient de la foudre ou de l'incendie)
 
 # l'animation
 var _sq: Dictionary = {}
@@ -527,7 +528,11 @@ func blesser(n: float, depuis: Vector2) -> void:
 	if pv <= 0.0:
 		# (hors du groupe tout de suite, pour qu'un second coup ne la tue pas deux fois ; elle tombe, puis s'efface)
 		remove_from_group("betes")
-		jeu.bete_tuee(self)
+		if _du_ciel:
+			# (la foudre ou l'incendie : ce n'est pas une chasse, rien n'est compté)
+			jeu.bete_foudroyee(self)
+		else:
+			jeu.bete_tuee(self)
 		_mourir(depuis)
 		return
 	match role:
@@ -541,6 +546,20 @@ func blesser(n: float, depuis: Vector2) -> void:
 		"chasseur":
 			if pv < pv_max * 0.4 or randf() < 0.25:
 				_fuir(depuis, 2.5)
+
+
+# la foudre, l'incendie : elle est blessée, mais personne ne l'a chassée
+func foudroyer(n: float, depuis: Vector2) -> void:
+	_du_ciel = true
+	blesser(n, depuis)
+	_du_ciel = false
+
+
+# quelque chose l'effraie là-bas (la foudre qui tombe) : une proie s'enfuit, un chasseur recule un moment
+func effrayer(depuis: Vector2, duree: float) -> void:
+	if pv <= 0.0 or role == "echo":
+		return
+	_fuir(depuis, duree if role != "chasseur" else duree * 0.6)
 
 
 func _mourir(depuis: Vector2) -> void:
@@ -601,6 +620,9 @@ func _aller(vers: Vector2, v: float, delta: float) -> void:
 	var l := d.length()
 	if l < 1.5:
 		return
+	# (la boue, l'eau, la neige la freinent aussi : moins une bête légère)
+	if jeu != null and role != "echo":
+		v *= float(jeu.allure_sol(position, masse))
 	var pas := d / l * minf(l, v * delta)
 	position += pas
 	# (elle ne se retourne que si elle va vraiment de l'autre côté : pas à chaque pas de travers, quand elle monte ou descend)
@@ -628,6 +650,12 @@ func _loin_de(p: Vector2) -> Vector2:
 func _proie(delta: float) -> void:
 	var j = jeu.joueur
 	var dj := position.distance_to(j.position)
+	# (l'incendie : elle fuit ses flammes)
+	if etat != "fuit" and jeu.incendie != null and jeu.incendie.brule():
+		for f in jeu.incendie.foyers:
+			if position.distance_to(f.position) < f.rayon() * 0.9:
+				_fuir(f.position, 4.0)
+				break
 	if etat != "fuit" and dj < flair * (1.0 if j.en_mouvement else 0.55):
 		_fuir(j.position, randf_range(3.0, 5.0))
 	if etat == "fuit":
@@ -692,8 +720,8 @@ func _chasseur(delta: float) -> void:
 	_retenu = retenu
 	_aller(but, vitesse * (0.5 if retenu else 0.9), delta)
 	# (le feu a grandi sous elle : la bête recule hors de sa lumière)
-	for f in jeu.feux:
-		if is_instance_valid(f) and f.allume():
+	for f in jeu.feux_et_foyers():
+		if f.allume():
 			var ici2: Vector2 = position - f.position
 			var bord2: float = f.rayon() * 0.8
 			if ici2.length() < bord2:

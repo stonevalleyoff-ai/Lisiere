@@ -12,6 +12,15 @@ const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const P := preload("res://scripts/palette.gd")
 const SHADER := preload("res://shaders/vegetation_feuillage.gdshader")
 const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois"}
+const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
+const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
+# le feu : ce qui brûle se peint par shaders/incendie_objet.gdshader, qui lit dans les UV ce que le dessin lui dit
+const SHADER_FEU := preload("res://shaders/incendie_objet.gdshader")
+const FEU_FLAMMES := 23.0      # un pan de flammes
+const FEU_ENCRE := 27.0        # l'encre posée sur un feuillage : elle part avec lui
+const CHARBON := 35.0          # le charbon : il rougeoie tant qu'il est chaud
+const TIEDE := 14.0            # secondes : ce qui vient de brûler rougeoie encore
+const NOIR := Color("1d1915")  # le bois brûlé
 const REPOUSSE := 240.0
 const CHUTE := 1.15            # secondes : un arbre abattu tombe
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
@@ -19,6 +28,9 @@ const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
 # les deux matières, partagées par tous : la végétation (le vent la plie), et ce qui ne bouge pas (la même peinture)
 static var vegetation: ShaderMaterial
 static var fixe: ShaderMaterial
+# ce qui brûle (une matière pour tous ; scripts/incendie_flammes.gd lui donne les foyers, le vent, l'heure)
+static var incendie: ShaderMaterial
+static var _bruit_flammes: Texture2D
 # le climat du lieu, posé par le monde avant de semer (de 0 à 1) : la neige, la mousse
 static var climat := {"froid": 0.0, "humide": 0.5}
 static var _pinceau
@@ -52,7 +64,31 @@ static func matieres() -> void:
 		fixe = ShaderMaterial.new()
 		fixe.shader = SHADER
 		fixe.set_shader_parameter("souplesse", 0.0)
+	if incendie == null:
+		incendie = ShaderMaterial.new()
+		incendie.shader = SHADER_FEU
+		incendie.set_shader_parameter("bruit", bruit_des_flammes())
+		incendie.set_shader_parameter("rouge", P.BRAISE_ROUGE)
+		incendie.set_shader_parameter("braise", P.BRAISE)
+		incendie.set_shader_parameter("coeur", P.BRAISE_COEUR)
+		incendie.set_shader_parameter("charbon", NOIR)
+		incendie.set_shader_parameter("roux", P.TERRE.lerp(P.BRAISE_ROUGE, 0.3).darkened(0.25))
 
+
+
+# le bruit des flammes : doux, sans couture, sans grain fin (de grandes langues nettes, pas un fourmillement)
+static func bruit_des_flammes() -> Texture2D:
+	if _bruit_flammes == null:
+		var n := FastNoiseLite.new()
+		n.seed = 23
+		n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		n.frequency = 0.022
+		n.fractal_octaves = 2
+		n.fractal_gain = 0.4
+		var img := n.get_seamless_image(128, 128, false, false, 0.15, true)
+		img.convert(Image.FORMAT_L8)
+		_bruit_flammes = ImageTexture.create_from_image(img)
+	return _bruit_flammes
 
 
 static func pinceau():
@@ -60,6 +96,14 @@ static func pinceau():
 		_pinceau = Pinceau.new()
 	return _pinceau
 
+# l'incendie (scripts/incendie.gd) : les secondes de feu qui lui restent (0 : il ne brûle pas) ; brûlé, il est calciné
+var brule := 0.0
+var calcine := false
+# ce que le feu lui a pris avant que la pluie l'éteigne (de 0 à 1 : il reste debout, roussi d'autant)
+var roussi := 0.0
+var _brule_total := 0.0        # la durée de son feu, quand il a pris
+var _tiede := -1.0             # depuis qu'il a fini de brûler, tant qu'il rougeoie (-1 : froid)
+var _chicot := true            # calciné debout (un chicot), ou déjà abattu (une souche basse)
 # (docs/49) la plante du monde d'Orvane qu'est cet objet, d'après l'herbier ("" : aucune) ; son port (un roseau…), ses épines
 var plante := ""
 var port := ""
@@ -187,9 +231,111 @@ func epuise() -> bool:
 	return reste <= 0
 
 
+# --- l'abri, le feu ---
+
+# le rayon de son feuillage, pour s'abriter de la pluie dessous (0 : ce n'est pas un arbre debout, ou il brûle, ou il a brûlé).
+# C'est aussi ce que la foudre cherche.
+func couvert() -> float:
+	if couronne == null or _chute >= 0.0 or brule > 0.0 or calcine or (genre != "arbre" and genre != "sapin"):
+		return 0.0
+	return maxf(_rx, 22.0) * 1.05
+
+
+# peut-il prendre feu ? (ce qui pousse, et pas deux fois)
+func combustible() -> bool:
+	return brule <= 0.0 and not calcine and R_INCENDIE.has(genre) and not ((genre == "buisson" or genre == "touffe") and reste <= 0)
+
+
+# il prend feu, pour cette durée (scripts/incendie.gd le suit ; il se dessine en feu lui-même : ses flammes sont dans son dessin,
+# peintes par shaders/incendie_objet.gdshader)
+func enflammer(duree: float) -> void:
+	brule = duree
+	_brule_total = maxf(duree, 0.1)
+	_tiede = -1.0
+	_secoue = 0.3
+	matieres()
+	material = incendie
+	if couronne != null and _chute < 0.0:
+		couronne.material = incendie
+		couronne.queue_redraw()
+	set_process(true)
+	queue_redraw()
+
+
+# où en est son feu, de 0 (il prend) à 1 (il n'en reste rien)
+func feu_avance() -> float:
+	return clampf(1.0 - brule / _brule_total, 0.0, 1.0) if brule > 0.0 and _brule_total > 0.0 else 0.0
+
+
+# ce qui vient de brûler rougeoie encore : de 1 (à l'instant) à 0 (froid)
+func tiedeur() -> float:
+	return clampf(1.0 - _tiede / TIEDE, 0.0, 1.0) if _tiede >= 0.0 else 0.0
+
+
+func _matiere_au_repos() -> ShaderMaterial:
+	return vegetation if genre in ["arbre", "sapin", "buisson", "touffe"] else fixe
+
+
+# la pluie l'a éteint avant la fin : il reste debout, roussi (d'autant plus qu'il a brûlé longtemps)
+func eteindre() -> void:
+	roussi = maxf(roussi, clampf(0.3 + 0.7 * feu_avance(), 0.0, 1.0))
+	brule = 0.0
+	material = _matiere_au_repos()
+	if couronne != null:
+		couronne.material = vegetation
+		couronne.queue_redraw()
+	queue_redraw()
+
+
+# il a brûlé jusqu'au bout : un arbre n'est plus qu'une souche noire, un buisson, une touffe sont rasés (ils repousseront)
+func calciner() -> void:
+	# (ce qui vient de brûler rougeoie un moment : il garde la matière du feu, le temps de refroidir)
+	_tiede = 0.0 if brule > 0.0 or material == incendie else -1.0
+	brule = 0.0
+	calcine = true
+	roussi = 0.0
+	_chicot = genre == "arbre" or genre == "sapin"
+	if _chicot:
+		genre = "souche"
+		reste = 0
+		rayon = 6.0
+		if couronne != null:
+			couronne.queue_free()
+			couronne = null
+		_chute = -1.0
+	else:
+		reste = 0
+		_repousse = REPOUSSE * 1.5
+	if _tiede < 0.0:
+		material = _matiere_au_repos()
+	set_process(true)
+	queue_redraw()
+	_ombre_changee()
+
+
+# en feu, il éclaire comme un feu de camp : les chasseurs n'entrent pas dans sa lumière (les mêmes noms que scripts/feu.gd)
+func allume() -> bool:
+	return brule > 0.0
+
+
+func rayon_lueur() -> float:
+	return float(R_LUEUR.get(_espece if genre == "souche" else genre, 60.0)) if brule > 0.0 else 0.0
+
+
+func eclaire(p: Vector2) -> float:
+	var r := rayon_lueur()
+	if r <= 0.0:
+		return 0.0
+	return clampf((r - p.distance_to(position)) / (r * 0.4), 0.0, 1.0)
+
+
 # une partie reprise : l'objet tel qu'on l'avait laissé (entamé, abattu en souche, ou qui repousse), sans le geste qui l'y a mené
-func reprendre(g: String, r: int, repousse: float) -> void:
+func reprendre(g: String, r: int, repousse: float, brule_: bool = false) -> void:
 	reste = clampi(r, 0, plein)
+	if brule_:
+		# (ce qui avait brûlé : noir, et froid)
+		calcine = true
+		_tiede = -1.0
 	if g == "souche" and genre != "souche":
 		genre = "souche"
 		rayon = 6.0
@@ -240,11 +386,22 @@ func _process(delta: float) -> void:
 			couronne.queue_free()
 			couronne = null
 			_chute = -1.0
+	if _tiede >= 0.0:
+		# (ce qui vient de brûler refroidit, puis reprend sa matière : la lumière du lieu le touche de nouveau)
+		_tiede += delta
+		anime = true
+		if _tiede >= TIEDE:
+			_tiede = -1.0
+			if brule <= 0.0:
+				material = _matiere_au_repos()
 	if _repousse > 0.0:
 		_repousse -= delta
 		anime = true
 		if _repousse <= 0.0:
 			reste = plein
+			# (ce qui avait brûlé, ou roussi, a repoussé)
+			calcine = false
+			roussi = 0.0
 			queue_redraw()
 			_ombre_changee()
 	if not anime:
@@ -287,6 +444,22 @@ func _draw() -> void:
 		elif genre != "arbre" and genre != "sapin":
 			# (un buisson, une touffe : la tête frémit, le pied reste)
 			draw_set_transform_matrix(Transform2D(Vector2(1, 0), Vector2(-k * 0.35, 1), Vector2.ZERO))
+	# (brûlé jusqu'au bout : il n'en reste que du charbon et de la cendre)
+	if calcine:
+		if genre == "souche":
+			_souche_noire(p, r)
+		else:
+			_cendres(p, r)
+		p.finir()
+		return
+	var en_feu := brule > 0.0
+	var garde := teinte
+	if roussi > 0.0:
+		teinte = _teinte_roussie()
+	if en_feu:
+		# (le feu qui court au sol, derrière lui : on prend feu à vingt-quatre pixels de son pied)
+		_flammes(p, Vector2(0, -6), 19.0, 20.0, 1.0, 0.13)
+	var depuis: int = p.uvs.size()
 	match genre:
 		"arbre", "sapin":
 			_pied(p, r, false)
@@ -300,6 +473,9 @@ func _draw() -> void:
 			_touffe(p, r)
 		"brindille":
 			_brindille(p, r)
+	if en_feu:
+		_dessiner_feu(p, depuis)
+	teinte = garde
 	p.finir()
 
 
@@ -308,19 +484,209 @@ func _dessiner_couronne(c: CanvasItem) -> void:
 	p.commencer(c.get_canvas_item())
 	var r := RandomNumberGenerator.new()
 	r.seed = graine + 23
-	if _espece == "sapin":
+	var sapin := _espece == "sapin"
+	var en_feu: bool = brule > 0.0 and c.material == incendie
+	var garde := teinte
+	if roussi > 0.0:
+		teinte = _teinte_roussie()
+	if en_feu:
+		# (derrière la couronne : le grand corps de flammes, puis le bois nu qu'on verra quand les feuilles seront parties)
+		if sapin:
+			_flammes(p, Vector2(0, -_ht + 4.0), _rx * 1.6, _ry + 48.0, 0.0, 0.71)
+		else:
+			_flammes(p, _cc + Vector2(0, _ry * 0.8), _rx * 1.5, _ry * 2.0 + 52.0, 0.5, 0.71)
+		_bois_nu(p)
+	var depuis: int = p.uvs.size()
+	if sapin:
 		_sapin(p, r)
 	else:
 		_feuillu(p, r)
+	if en_feu:
+		# (devant : des flammes plus basses, qui laissent voir les feuilles roussir)
+		_marquer(p, depuis, false)
+		if sapin:
+			_flammes(p, Vector2(-_rx * 0.3, -_ht - 2.0), _rx * 0.85, _ry * 0.62 + 12.0, 0.2, 0.37)
+			_flammes(p, Vector2(_rx * 0.25, -_ht - _ry * 0.3), _rx * 0.75, _ry * 0.6 + 14.0, 0.2, 0.83)
+		else:
+			_flammes(p, _cc + Vector2(-_rx * 0.42, _ry * 0.8), _rx * 0.72, _ry * 1.25 + 14.0, 0.2, 0.37)
+			_flammes(p, _cc + Vector2(_rx * 0.4, _ry * 0.55), _rx * 0.66, _ry * 1.15 + 16.0, 0.2, 0.83)
+	elif roussi > 0.35:
+		_bois_nu(p, true)
+	teinte = garde
 	p.finir()
+
+
+# --- le feu : ce qui brûle, ce qui reste ---
+
+# les flammes d'un objet en feu, par-dessus son dessin (son feuillage est marqué : le feu l'emportera)
+func _dessiner_feu(p, depuis: int) -> void:
+	match genre:
+		"arbre", "sapin":
+			_flammes(p, Vector2(0, 9), 25.0, 26.0, 1.0, 0.57)
+		"souche":
+			_flammes(p, Vector2(0, -3), 15.0, 36.0, 0.0, 0.31)
+			_flammes(p, Vector2(0, 8), 24.0, 18.0, 1.0, 0.57)
+		"buisson":
+			_marquer(p, depuis, false)
+			_flammes(p, Vector2(0, 1), _rx * 1.75, _ry + 34.0, 0.5, 0.31)
+			_flammes(p, Vector2(0, 8), 25.0, 20.0, 1.0, 0.57)
+		"touffe":
+			_marquer(p, depuis, true)
+			_flammes(p, Vector2(0, 2), 14.0, 30.0, 0.0, 0.31)
+			_flammes(p, Vector2(0, 7), 24.0, 16.0, 1.0, 0.57)
+
+
+# un pan de flammes (shaders/incendie_objet.gdshader) : son pied (au milieu, en bas), sa demi-largeur, sa hauteur ; sa sorte
+# (0 : une langue ; 0,5 : un corps rond, une couronne qui flambe ; 1 : un feu qui court au sol) ; k le distingue des autres
+func _flammes(p, pied: Vector2, demi: float, haut: float, sorte: float, k: float) -> void:
+	var base: int = p.pts.size()
+	var c := Color(fposmod(float(graine % 997) * 0.0131 + k, 1.0), sorte, haut / 256.0, 1.0)
+	p.pts.append_array(PackedVector2Array([pied + Vector2(-demi, haut * 0.03), pied + Vector2(demi, haut * 0.03), pied + Vector2(demi, -haut), pied + Vector2(-demi, -haut)]))
+	p.cols.append_array(PackedColorArray([c, c, c, c]))
+	p.uvs.append_array(PackedVector2Array([Vector2(FEU_FLAMMES - 1.0, FEU_FLAMMES - 0.03), Vector2(FEU_FLAMMES + 1.0, FEU_FLAMMES - 0.03),
+		Vector2(FEU_FLAMMES + 1.0, FEU_FLAMMES + 1.0), Vector2(FEU_FLAMMES - 1.0, FEU_FLAMMES + 1.0)]))
+	p.idx.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))
+
+
+# ce que le feu emportera : dès le premier aplat de feuillage (ou tout : une touffe), l'encre et les baies posées dessus sont
+# marquées dans leurs UV (le shader les fait partir avec les feuilles ; le tronc et les branches, dessinés avant, restent)
+func _marquer(p, depuis: int, tout: bool) -> void:
+	var dedans := tout
+	for i in range(depuis, p.uvs.size()):
+		var uv: Vector2 = p.uvs[i]
+		if not dedans and ((uv.x > 1.5 and uv.x < 4.5) or (uv.x > 17.5 and uv.x < 20.5)):
+			dedans = true
+		if not dedans:
+			continue
+		if uv == Vector2.ZERO:
+			p.uvs[i] = Vector2(FEU_ENCRE, FEU_ENCRE)
+		elif uv.x > 13.5 and uv.x < 16.5:
+			p.uvs[i] = uv + Vector2(16.0, 16.0)
+
+
+# le bois nu d'un arbre : derrière ses feuilles en feu (on le voit quand elles partent), ou qui dépasse d'une couronne roussie
+func _bois_nu(p, dehors: bool = false) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = graine + 41
+	var bois := NOIR.lightened(0.06)
+	if _espece == "sapin":
+		var sommet := -(_ht + _ry * 0.93)
+		if dehors:
+			# (roussi : la flèche et quelques branches hautes sont nues)
+			p.tracer(PackedVector2Array([Vector2(_penche * -sommet, sommet + 9.0), Vector2(_penche * -sommet + 0.6, sommet - 5.0)]), 1.5, ENCRE, false)
+			return
+		var fut := PackedVector2Array()
+		for k in 6:
+			var y := lerpf(-_ht - 2.0, sommet, k / 5.0)
+			fut.append(Vector2(_penche * -y, y))
+		p.tracer(fut, 3.4, ENCRE, false, PackedFloat32Array([4.6, 4.2, 3.6, 3.0, 2.2, 1.2]))
+		p.tracer(fut, 2.0, bois, false, PackedFloat32Array([3.0, 2.7, 2.2, 1.7, 1.1, 0.5]))
+		for k in 7:
+			var u := (k + 0.6) / 7.5
+			var y := lerpf(-_ht - 4.0, sommet + 6.0, u)
+			var cote := -1.0 if k % 2 == 0 else 1.0
+			var l := _rx * (1.0 - u * 0.72) * r.randf_range(0.55, 0.85)
+			var a := Vector2(_penche * -y, y)
+			p.tracer(PackedVector2Array([a, a + Vector2(cote * l * 0.55, l * 0.1), a + Vector2(cote * l, l * 0.32 + 1.0)]), 1.5, ENCRE, false, PackedFloat32Array([2.0, 1.5, 0.8]))
+		return
+	var n := 3 if dehors else 6
+	for k in n:
+		# (des branches qui partent du haut du tronc ; roussi, seules leurs pointes dépassent des feuilles)
+		var ang := lerpf(-2.5, -0.65, (k + r.randf_range(0.2, 0.8)) / n)
+		var dir := Vector2(cos(ang), sin(ang))
+		var a := Vector2(_axe(_cc.y + _ry * 0.35), _cc.y + _ry * 0.35)
+		var bout := _cc + dir * Vector2(_rx, _ry) * (r.randf_range(1.02, 1.14) if dehors else r.randf_range(0.6, 0.92))
+		var mil := a.lerp(bout, 0.55) + Vector2(dir.y, -dir.x) * r.randf_range(-3.0, 3.0)
+		if dehors:
+			var depart := mil.lerp(bout, 0.55)
+			p.tracer(PackedVector2Array([depart, bout]), 1.3, ENCRE, false, PackedFloat32Array([1.5, 0.7]))
+			p.tracer(PackedVector2Array([depart.lerp(bout, 0.4), depart.lerp(bout, 0.75) + Vector2(dir.y, -dir.x) * 3.2]), 1.0, ENCRE, false, PackedFloat32Array([1.1, 0.5]))
+		else:
+			p.tracer(PackedVector2Array([a, mil, bout]), 2.4, ENCRE, false, PackedFloat32Array([3.4, 2.4, 1.0]))
+			p.tracer(PackedVector2Array([a, mil, bout]), 1.4, bois, false, PackedFloat32Array([2.0, 1.3, 0.4]))
+			var f := mil.lerp(bout, 0.3)
+			p.tracer(PackedVector2Array([f, f + Vector2(dir.y, -dir.x) * r.randf_range(4.0, 7.0) + dir * 4.0]), 1.2, ENCRE, false, PackedFloat32Array([1.5, 0.6]))
+
+
+# la teinte d'un feuillage que le feu a roussi, avant que la pluie l'éteigne
+func _teinte_roussie() -> Color:
+	return teinte.lerp(P.TERRE.lerp(P.BRAISE_ROUGE, 0.4), 0.45 + 0.35 * roussi).darkened(0.08 + 0.3 * roussi)
+
+
+# ce qui reste d'un arbre brûlé jusqu'au bout : un chicot noir, fendu, dans sa cendre (d'un arbre déjà abattu : sa souche)
+func _souche_noire(p, r: RandomNumberGenerator) -> void:
+	var cendre := P.CENDRE.lerp(P.IVOIRE, 0.3)
+	p.eventail(Vector2(0, 2), 22.0, 8.5, Color(P.CENDRE.darkened(0.3), 0.66), Color(P.CENDRE.darkened(0.3), 0.0), 16)
+	for i in 8:
+		var q := Vector2(r.randf_range(-17.0, 17.0), r.randf_range(-2.0, 7.0))
+		p.disque(q, r.randf_range(0.9, 1.9), r.randf_range(0.5, 0.9), Color(cendre, r.randf_range(0.35, 0.8)))
+	_racines(p, r, NOIR.lightened(0.04))
+	# le chicot : le bas du tronc, cassé en pointes
+	var h := (13.0 + float(graine % 9)) if _chicot else 8.5
+	var gauche := PackedVector2Array()
+	var droite := PackedVector2Array()
+	for i in 5:
+		var y := lerpf(0.5, -h, i / 4.0)
+		var w := _demi_largeur(y) * lerpf(1.0, 0.86, i / 4.0)
+		gauche.append(Vector2(_axe(y) - w, y))
+		droite.append(Vector2(_axe(y) + w, y))
+	var poly := PackedVector2Array()
+	poly.append_array(gauche)
+	if _chicot:
+		var x0: float = gauche[4].x
+		var x1: float = droite[4].x
+		var dents := 3 + graine % 2
+		for k in range(1, dents * 2):
+			var x := lerpf(x0, x1, float(k) / (dents * 2))
+			poly.append(Vector2(x + r.randf_range(-0.5, 0.5), -h + (-r.randf_range(2.5, 7.0) if k % 2 == 1 else r.randf_range(0.5, 2.5))))
+	droite.reverse()
+	poly.append_array(droite)
+	var centre := Vector2(_axe(-h * 0.5), -h * 0.5)
+	p.aplat(poly, NOIR, CHARBON, centre, Vector2(8.0, h))
+	# la lumière sur le charbon : des écailles grises, du côté du jour ; puis l'encre
+	for i in 3:
+		var y := lerpf(-2.0, -h + 1.0, (i + r.randf_range(0.1, 0.9)) / 3.0)
+		var x := _axe(y) - _demi_largeur(y) * r.randf_range(0.25, 0.7)
+		p.tracer(PackedVector2Array([Vector2(x, y), Vector2(x + 0.4, y - r.randf_range(2.0, 4.0))]), 1.0, Color(cendre.darkened(0.25), 0.7))
+	if not _chicot:
+		p.disque(Vector2(_axe(-h), -h), _demi_largeur(-h) * 0.86, 2.3, NOIR.lightened(0.07), CHARBON)
+	p.contour(poly, 1.4, ENCRE, r, 3)
+	# des branches tombées, noires
+	for i in 2:
+		var q := Vector2(r.randf_range(7.0, 16.0) * (1.0 if i == 0 else -1.0), r.randf_range(1.0, 6.0))
+		var d := Vector2.from_angle(r.randf_range(-0.5, 0.5)) * r.randf_range(4.0, 7.5)
+		p.tracer(PackedVector2Array([q - d, q + Vector2(0, -0.6), q + d]), 2.6, ENCRE)
+		p.tracer(PackedVector2Array([q - d, q + Vector2(0, -0.6), q + d]), 1.5, NOIR.lightened(0.08))
+
+
+# ce qui reste d'un buisson, d'une touffe : une tache de cendre, quelques tiges noires (ils repousseront)
+func _cendres(p, r: RandomNumberGenerator) -> void:
+	var buisson := genre == "buisson"
+	var large := 15.0 if buisson else 9.5
+	var cendre := P.CENDRE.lerp(P.IVOIRE, 0.3)
+	p.eventail(Vector2(0, 1), large * 1.35, large * 0.52, Color(P.CENDRE.darkened(0.3), 0.72), Color(P.CENDRE.darkened(0.3), 0.0), 14)
+	p.eventail(Vector2(r.randf_range(-2.0, 2.0), 1.5), large * 0.7, large * 0.24, Color(cendre, 0.5), Color(cendre, 0.0), 12)
+	for i in (7 if buisson else 4):
+		var q := Vector2(r.randf_range(-large, large), r.randf_range(-2.0, 5.0))
+		p.disque(q, r.randf_range(0.8, 1.6), r.randf_range(0.45, 0.8), Color(cendre, r.randf_range(0.35, 0.8)))
+	# des braises dans la cendre (du charbon : elles rougeoient tant qu'il est chaud)
+	for i in (5 if buisson else 3):
+		var q := Vector2(r.randf_range(-large * 0.7, large * 0.7), r.randf_range(-1.5, 3.5))
+		p.disque(q, r.randf_range(1.0, 1.7), r.randf_range(0.7, 1.0), NOIR, CHARBON)
+	for i in (5 if buisson else 3):
+		var x := r.randf_range(-large * 0.55, large * 0.55)
+		var bout := Vector2(x + r.randf_range(-2.5, 2.5), -r.randf_range(3.0, 8.5 if buisson else 5.0))
+		var tige := PackedVector2Array([Vector2(x, 1.5), Vector2(x, 1.5).lerp(bout, 0.5) + Vector2(r.randf_range(-0.8, 0.8), 0), bout])
+		p.tracer(tige, 2.2, ENCRE, false, PackedFloat32Array([2.4, 1.9, 1.0]))
+		p.tracer(tige, 1.1, NOIR.lightened(0.1), false, PackedFloat32Array([1.2, 0.9, 0.3]))
 
 
 # --- les arbres ---
 
 func _ecorce() -> Color:
-	if _espece == "sapin":
-		return P.TERRE.lerp(P.BRAISE_ROUGE, 0.12).darkened(0.32)
-	return P.TERRE.lerp(P.ENCRE_DOUCE, 0.42).lerp(P.CENDRE, 0.15)
+	var c := P.TERRE.lerp(P.BRAISE_ROUGE, 0.12).darkened(0.32) if _espece == "sapin" else P.TERRE.lerp(P.ENCRE_DOUCE, 0.42).lerp(P.CENDRE, 0.15)
+	# (le feu a léché le tronc)
+	return c.lerp(NOIR, 0.3 + 0.45 * roussi) if roussi > 0.0 else c
 
 
 # l'axe du tronc, à la hauteur y (négative), et sa demi-largeur

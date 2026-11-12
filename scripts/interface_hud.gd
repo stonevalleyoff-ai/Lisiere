@@ -61,13 +61,24 @@ class Jauges extends Allege:
 	var _secousse := 0.0
 	var _eclair := 0.0
 	var _t := 0.0
+	# le corps, la quatrième jauge : sa température (0 glacée, 50 bien, 100 brûlante ; le froid blesse sous R.FROID, la chaleur
+	# au-dessus de R.CHAUD), si elle est trempée (de 0 à 100 : une goutte, au coin du jeton), si elle est en feu
+	const FROID := Color("86b6dc")
+	const TIEDE := Color("d9cfb4")
+	const CHAUD := Color("e8743c")
+	const EAU := Color("6fa8d6")
+	var corps := 50.0
+	var trempe := 0.0
+	var en_feu := false
+	var _corps_vu := 50.0
+	var _trempe_vue := 0.0
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_taille()
 
 	func _taille() -> void:
-		custom_minimum_size = Vector2(3 * _ecart() + 8, _rayon() * 2.0 + (26 if not compact else 22))
+		custom_minimum_size = Vector2(4 * _ecart() + 8, _rayon() * 2.0 + (26 if not compact else 22))
 		size = custom_minimum_size
 
 	func mettre_compact(oui: bool) -> void:
@@ -90,6 +101,11 @@ class Jauges extends Allege:
 		_vu = v.duplicate()
 		_trace = v.duplicate()
 		_cible = v.duplicate()
+		corps = 50.0
+		trempe = 0.0
+		en_feu = false
+		_corps_vu = 50.0
+		_trempe_vue = 0.0
 
 	func _process(d: float) -> void:
 		if not is_visible_in_tree():
@@ -108,6 +124,8 @@ class Jauges extends Allege:
 				_trace[i] = move_toward(float(_trace[i]), float(_vu[i]), d * 40.0)
 			if float(_trace[i]) < float(_vu[i]):
 				_trace[i] = _vu[i]
+		_corps_vu = lerpf(_corps_vu, corps, 1.0 - exp(-d * 6.0))
+		_trempe_vue = lerpf(_trempe_vue, trempe, 1.0 - exp(-d * 6.0))
 		_secousse = maxf(0.0, _secousse - d * 2.2)
 		_eclair = maxf(0.0, _eclair - d * 1.8)
 		_redessiner(d)
@@ -179,6 +197,77 @@ class Jauges extends Allege:
 			var p := Vector2(c.x - lw * 0.5, c.y + r + fs + 2.0)
 			draw_string_outline(police, p, nom, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 4, Color(P.ENCRE, 0.7))
 			draw_string(police, p, nom, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(P.IVOIRE, 0.82).lerp(col.lerp(Color.WHITE, 0.3), alerte))
+		_dessiner_corps(Vector2(r + 4.0 + 3 * _ecart(), r + 3.0), r, police)
+
+	# ce que dit la jauge du corps, sous son jeton
+	func nom_du_corps() -> String:
+		if en_feu:
+			return "En feu"
+		if corps < R.FROID:
+			return "Gelée"
+		if corps < 38.0:
+			return "Froid"
+		if corps > R.CHAUD:
+			return "Brûlante"
+		if corps > 66.0:
+			return "Chaud"
+		return "Trempée" if trempe > 60.0 else "Chaleur"
+
+	# le corps : un anneau à deux branches, depuis le haut (bien) ; vers la gauche le froid, vers la droite la chaleur, et
+	# au bout de chaque branche la zone où l'on y laisse de la santé. Au centre, un thermomètre (une flamme, si elle brûle).
+	func _dessiner_corps(c: Vector2, r: float, police: Font) -> void:
+		var t := clampf(_corps_vu, 0.0, 100.0)
+		var u := (t - 50.0) / 50.0
+		var a_froid := clampf((36.0 - t) / 22.0, 0.0, 1.0)
+		var a_chaud := 1.0 if en_feu else clampf((t - 68.0) / 20.0, 0.0, 1.0)
+		var alerte := maxf(a_froid, a_chaud)
+		var col := TIEDE.lerp(FROID, minf(1.0, -u * 2.2)) if u < 0.0 else TIEDE.lerp(CHAUD, minf(1.0, u * 2.2))
+		if en_feu:
+			col = P.BRAISE_ROUGE.lerp(CHAUD, 0.5)
+		var pouls := 0.0
+		if en_feu:
+			pouls = 0.5 + 0.5 * sin(_t * 14.0)
+		elif a_chaud > 0.0:
+			pouls = (0.5 + 0.5 * sin(_t * 7.0)) * a_chaud
+		elif a_froid > 0.0:
+			pouls = (0.5 + 0.5 * sin(_t * 3.2)) * a_froid
+		if pouls > 0.01:
+			var h := r * (2.3 + 0.5 * pouls)
+			draw_texture_rect(T.halo(), Rect2(c - Vector2(h, h), Vector2(h, h) * 2.0), false, Color(col, 0.42 * pouls))
+		I.jeton(self, c, r)
+		var rr := r - 4.5
+		I.anneau(self, c, rr, 4.5, Color(P.IVOIRE, 0.09), 56)
+		var a0 := -PI * 0.5
+		# (les deux zones qui blessent, en fond : on voit où l'on va)
+		I.arc_encre(self, c, rr, a0 - PI, a0 + PI * (R.FROID - 50.0) / 50.0, 4.0, Color(FROID, 0.3), false)
+		I.arc_encre(self, c, rr, a0 + PI * (R.CHAUD - 50.0) / 50.0, a0 + PI, 4.0, Color(CHAUD, 0.3), false)
+		var vive := col.lerp(Color.WHITE, 0.25 * pouls)
+		if u > 0.012:
+			I.arc_encre(self, c, rr, a0, a0 + PI * u, 5.5, vive)
+		elif u < -0.012:
+			I.arc_encre(self, c, rr, a0 + PI * u, a0, 5.5, vive)
+		I.disque(self, c + Vector2.from_angle(a0 + PI * u) * rr, 3.0, col.lerp(Color.WHITE, 0.55))
+		# (elle grelotte : le thermomètre aussi)
+		var trem := Vector2(sin(_t * 47.0), 0.0) * 1.1 * a_froid
+		var k := 1.0 + 0.13 * pouls
+		if en_feu:
+			I.icone(self, "flamme", c, r * 1.08 * k)
+		else:
+			I.icone(self, "thermometre", c + trem, r * 1.08 * k, Color.WHITE, t / 100.0)
+		# (trempée : une goutte au coin, et ce qu'il reste à sécher)
+		if _trempe_vue > 2.0:
+			var a := clampf(_trempe_vue / 12.0, 0.0, 1.0)
+			var cb := c + Vector2(r * 0.82, r * 0.64)
+			var rb := r * 0.47
+			I.jeton(self, cb, rb, a)
+			I.arc_encre(self, cb, rb - 2.0, a0, a0 + TAU * clampf(_trempe_vue / 100.0, 0.0, 1.0), 2.6, Color(EAU, a), false)
+			I.icone(self, "goutte", cb, rb * 1.3, Color(1, 1, 1, a))
+		var fs := 12 if compact else 14
+		var nom := nom_du_corps()
+		var lw := police.get_string_size(nom, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var p := Vector2(c.x - lw * 0.5, c.y + r + fs + 2.0)
+		draw_string_outline(police, p, nom, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 4, Color(P.ENCRE, 0.7))
+		draw_string(police, p, nom, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(P.IVOIRE, 0.82).lerp(col.lerp(Color.WHITE, 0.3), alerte))
 
 
 # --- l'heure : le cadran ---

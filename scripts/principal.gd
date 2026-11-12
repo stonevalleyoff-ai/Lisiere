@@ -25,6 +25,10 @@ const Ciel := preload("res://scripts/ciel.gd")
 const Session := preload("res://scripts/session.gd")
 const PartieGardee := preload("res://scripts/partie_gardee.gd")
 const Bestiaire := preload("res://scripts/bestiaire.gd")
+const Climat := preload("res://scripts/climat.gd")
+const Incendie := preload("res://scripts/incendie.gd")
+const TempsSol := preload("res://scripts/temps_sol.gd")
+const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -46,7 +50,9 @@ var ciel
 # le temps qu'il fait dans le lieu, ce cycle du monde d'Orvane (docs/45) ; {} : un monde sans météo
 var meteo: Dictionary = {}
 var feu_temps := 1.0
-var allure_temps := 1.0
+# le temps qu'il fait pendant la partie (scripts/climat.gd), et l'incendie qu'allume la foudre (scripts/incendie.gd)
+var climat
+var incendie
 var yeux
 var feux: Array = []
 var en_partie := false
@@ -84,7 +90,8 @@ var _deja: Dictionary = {}
 var ips := false
 var _ips_label: Label
 # l'image d'un téléphone qui traîne : mesurée une fois, au début de la première partie (_regler_image)
-var _image_t := 0.0
+var _image_ms := 0
+var _image_vue := 0
 var _image_n := 0
 var _image_fait := false
 var _mort := -1.0
@@ -105,6 +112,14 @@ func _ready() -> void:
 	sons = Sons.new()
 	sons.mobile = qualite == "mobile"
 	add_child(sons)
+	climat = Climat.new()
+	climat.jeu = self
+	add_child(climat)
+	climat.change.connect(_temps_change)
+	incendie = Incendie.new()
+	incendie.jeu = self
+	add_child(incendie)
+	incendie.pris.connect(_incendie_pris)
 	# le compte, le même que celui de Stone Valley (scripts/session.gd) : facultatif, la partie se joue pareil
 	session = Session.new()
 	add_child(session)
@@ -181,19 +196,30 @@ func _compteur_ips() -> void:
 
 # sur un téléphone, dans un navigateur, l'image se calcule à 1,5 fois la résolution CSS (export_presets.cfg, head_include). Si
 # elle traîne (moins de 24 images par seconde, six secondes durant, une fois le lieu installé), elle passe à 1 : 2,25 fois moins
-# de pixels à peindre. Une fois, à la première partie ; ?dpr= au bout de l'adresse décide à sa place.
-func _regler_image(delta: float) -> void:
+# de pixels à peindre. Elle y reste ; on la surveille tant que la partie dure (le temps qu'il fait peut peser plus tard) ; ?dpr= au
+# bout de l'adresse décide à sa place.
+func _regler_image(_delta: float) -> void:
 	if _image_fait or qualite != "mobile" or not OS.has_feature("web"):
 		return
-	_image_t += delta
-	if _image_t < 5.0:
+	# (à l'horloge de l'appareil, par fenêtres de six secondes, tant que la partie dure : un orage, une crue peuvent peser
+	# plus tard que les premières secondes. Une pause, un onglet caché : on recommence à compter)
+	var ms := Time.get_ticks_msec()
+	if _image_ms == 0 or ms - _image_vue > 700:
+		_image_ms = ms + (5000 if _image_ms == 0 else 1500)
+		_image_n = 0
+	_image_vue = ms
+	if ms < _image_ms:
 		return
 	_image_n += 1
-	if _image_t < 11.0:
+	if ms - _image_ms < 6000:
 		return
-	_image_fait = true
-	if _image_n / (_image_t - 5.0) < 24.0 and DisplayServer.screen_get_scale() > 1.05:
-		JavaScriptBridge.eval("window.lisiere_dpr && !window.lisiere_dpr.force && window.lisiere_dpr.set(1.0)", true)
+	var par_seconde := _image_n * 1000.0 / (ms - _image_ms)
+	_image_ms = ms
+	_image_n = 0
+	if par_seconde < 24.0:
+		_image_fait = true
+		if DisplayServer.screen_get_scale() > 1.05:
+			JavaScriptBridge.eval("window.lisiere_dpr && !window.lisiere_dpr.force && window.lisiere_dpr.set(1.0)", true)
 
 
 # la pause : afficher ou masquer le compteur ; il le reste d'une partie à l'autre
@@ -275,8 +301,7 @@ func _commencer(b: String, gardee: Dictionary = {}) -> void:
 	saison = str(inst.get("cycle", {}).get("saison", {}).get("nom", "été"))
 	part_nuit = float(R.NUIT.get(saison, 0.4))
 	meteo = Orvane.meteo(b)
-	feu_temps = float(R.FEU_TEMPS.get(str(meteo.get("temps", "")), 1.0))
-	allure_temps = R.ALLURE_NEIGE if float(meteo.get("neige", 0.0)) >= R.NEIGE_AU_SOL else 1.0
+	feu_temps = 1.0
 	if qualite == "mobile":
 		await _attendre_sons()
 	await _dessiner_la_faune()
@@ -363,8 +388,15 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	couche_ciel.layer = 2
 	add_child(couche_ciel)
 	ciel = Ciel.new()
+	ciel.climat = climat
 	couche_ciel.add_child(ciel)
-	ciel.regler(str(meteo.get("temps", "")), float(meteo.get("vent", 0.0)))
+	incendie.vider()
+	climat.preparer(graine, biome_info.get("axes", {}), meteo)
+	# (ce que le temps dessine dans le lieu : le sol détrempé, l'eau, la foudre ; les flammes de l'incendie)
+	for dessin in [TempsSol.new(), IncendieFlammes.new()]:
+		dessin.jeu = self
+		scene.add_child(dessin)
+		dessin.poser(scene, monde)
 	horloge = R.TRANSITION + 2.0
 	jour = 1
 	nuits = 0
@@ -385,6 +417,9 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	en_partie = true
 	_garde_ms = Time.get_ticks_msec()
 	ui.montrer_hud()
+	joueur.temperature = 50.0
+	joueur.trempe = 0.0
+	joueur.en_feu = 0.0
 	if reprise:
 		PartieGardee.appliquer(self, gardee)
 		ui.message("La partie reprend : %s, jour %d, %d nuit%s tenue%s." % [str(biome_info.get("nom", biome)), jour, nuits,
@@ -396,11 +431,10 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		PartieGardee.effacer()
 		_ouvrir_au_tableau()
 	ui.message("Tu t'éveilles à la lisière : %s, %s. Le jour baisse vite." % [str(biome_info.get("nom", biome)), saison])
-	var dit := str(R.TEMPS_DIT.get(str(meteo.get("temps", "")), ""))
-	if allure_temps < 1.0:
-		dit = (dit + " " if dit != "" else "") + "La neige tient au sol : on y marche moins vite."
-	if dit != "":
-		ui.message(dit, Color(0.72, 0.82, 0.92))
+	if climat.neige_sol >= R.NEIGE_AU_SOL:
+		ui.message("La neige tient au sol : on y marche moins vite.", Color(0.72, 0.82, 0.92))
+	elif climat.boue_fond > 0.1:
+		ui.message("Le sol est gorgé d'eau : on s'y enfonce.", Color(0.72, 0.82, 0.92))
 	ui.message("Ramasse des brindilles et des pierres (Espace). Avec 4 bois et 2 pierres : un feu (1).", Color(0.95, 0.75, 0.45))
 
 
@@ -419,6 +453,8 @@ func _vider() -> void:
 		couche_ciel = null
 		ciel = null
 	feux.clear()
+	if incendie != null:
+		incendie.vider()
 	joueur = null
 	monde = null
 	yeux = null
@@ -462,7 +498,7 @@ func texte_horloge() -> String:
 
 # le temps qu'il fait, pour l'horloge (« , pluie ») ; rien sous un temps clair, ou dans un monde sans météo
 func _texte_temps() -> String:
-	var t := str(meteo.get("temps", ""))
+	var t: String = climat.temps if climat != null else ""
 	return ", " + str(R.TEMPS.get(t, t)) if t != "" and t != "clair" else ""
 
 
@@ -477,6 +513,9 @@ func eclairage(p: Vector2) -> float:
 	for f in feux:
 		if is_instance_valid(f):
 			l = maxf(l, f.eclaire(p))
+	if incendie != null:
+		for f in incendie.foyers:
+			l = maxf(l, f.eclaire(p))
 	if joueur != null and joueur.torche > 0.0:
 		var d: float = p.distance_to(joueur.position)
 		l = maxf(l, clampf((R.RAYON_TORCHE - d) / (R.RAYON_TORCHE * 0.4), 0.0, 1.0))
@@ -487,13 +526,24 @@ func eclairage(p: Vector2) -> float:
 func feu_qui_protege(p: Vector2):
 	var meilleur = null
 	var d0 := INF
-	for f in feux:
-		if is_instance_valid(f) and f.allume():
+	for f in feux_et_foyers():
+		if f.allume():
 			var d: float = p.distance_to(f.position)
 			if d < f.rayon() * 0.85 and d < d0:
 				d0 = d
 				meilleur = f
 	return meilleur
+
+
+# tout ce qui fait une lumière de feu dans le lieu : les feux de camp, et ce que l'incendie a pris (scripts/incendie.gd, Foyer)
+func feux_et_foyers() -> Array:
+	var tous := []
+	for f in feux:
+		if is_instance_valid(f):
+			tous.append(f)
+	if incendie != null:
+		tous.append_array(incendie.foyers)
+	return tous
 
 
 func _feu_proche(p: Vector2, allume: bool):
@@ -558,6 +608,7 @@ func _process(delta: float) -> void:
 	if essai == null:
 		_gestes(delta)
 	_corps(delta)
+	_temps_du_corps(delta)
 	_directeur_passe(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
@@ -686,6 +737,9 @@ func fabriquer(quoi: String) -> void:
 				manque.append("%d %s" % [m, R.nom(k, m)])
 		ui.message("%s : il te manque %s." % [rec["nom"], ", ".join(PackedStringArray(manque))], Color(0.75, 0.7, 0.66))
 		return
+	if quoi == "feu" and climat.eau(joueur.position + Vector2(joueur.regard * 34.0, 4.0)) > 0.25:
+		ui.message("Le sol est sous l'eau : un feu n'y prendra pas. Gagne une butte.", Color(0.72, 0.82, 0.92))
+		return
 	for k in rec["cout"]:
 		joueur.inventaire[k] = int(joueur.inventaire[k]) - int(rec["cout"][k])
 	match quoi:
@@ -764,7 +818,8 @@ func _corps(delta: float) -> void:
 	var nuit := 1.0 - lumiere_du_jour()
 	var lumiere := eclairage(joueur.position)
 	# (la torche brûle : DUREE_TORCHE secondes de lumière, comme le message le promet)
-	joueur.torche = maxf(0.0, joueur.torche - delta)
+	# (sous la pluie, et trempée, elle brûle plus vite)
+	joueur.torche = maxf(0.0, joueur.torche - delta * (1.0 + 0.6 * climat.pluie + (0.7 if joueur.trempe > 60.0 else 0.0)))
 	joueur.faim = maxf(0.0, joueur.faim - R.FAIM * delta)
 	if joueur.faim <= 0.0:
 		joueur.sante -= R.FAMINE * delta
@@ -814,6 +869,13 @@ func bete_tuee(b) -> void:
 	if not deja:
 		tuees.append({"lignee": b.lignee, "id": b.id, "nom": b.nom, "masse": b.masse, "effectif": 1.0, "poids": 1.0, "sociable": 0.0, "activite": "nocturne"})
 	_conseil("echo", true, "Ce qu'on tue ici ne s'oublie pas tout à fait.")
+
+
+# une bête tuée par la foudre ou par l'incendie : ce n'est pas une chasse (rien n'est compté, ni pour la partie ni pour Orvane)
+func bete_foudroyee(b) -> void:
+	effets.mort(b.position, b.robe, b.largeur)
+	if joueur != null and joueur.position.distance_to(b.position) < 420.0:
+		ui.message("%s : la foudre l'a prise." % b.nom, Color(0.98, 0.9, 0.6))
 
 
 func mordre(b) -> void:
@@ -1034,6 +1096,148 @@ func _fin() -> void:
 		nr, "s" if nr > 1 else "", np, "s" if np > 1 else "", biome, depot, " · ".join(PackedStringArray(noms))]
 	ui.montrer_fin(titre, resume, lot)
 	_inscrire_au_tableau()
+
+
+# --- le temps qu'il fait : ce qu'il fait au corps, au feu, aux bêtes (scripts/climat.gd, scripts/incendie.gd) ---
+
+# ce que le sol fait à la marche là où est quelqu'un (la boue, l'eau, la neige) ; le froid engourdit la veilleuse
+func allure_sol(p: Vector2, masse: float = 60.0) -> float:
+	return climat.allure(p, masse) if climat != null else 1.0
+
+
+# chaque image : la veilleuse se mouille et sèche, son corps suit la température, elle brûle si elle a pris feu ; le feu de camp
+# peine sous la pluie et se noie dans l'eau
+func _temps_du_corps(delta: float) -> void:
+	var j = joueur
+	var p: Vector2 = j.position
+	var eau: float = climat.eau(p)
+	var abri: float = climat.abri(p)
+	# la chaleur des feux : un feu de camp (jusqu'au bord de sa lumière), une torche, un incendie
+	var feu := 0.0
+	var tout_pres := false
+	for f in feux:
+		if is_instance_valid(f) and f.allume():
+			var d: float = p.distance_to(f.position)
+			feu = maxf(feu, clampf(1.0 - d / (f.rayon() * 0.8), 0.0, 1.0))
+			if d < 18.0:
+				tout_pres = true
+	var brasier: float = incendie.chaleur(p)
+	# --- trempée ---
+	# (ce qui tombe sur elle : presque rien sous un feuillage. Tant qu'il lui pleut dessus, elle ne sèche guère)
+	var expose: float = climat.pluie * lerpf(1.0, R.TREMPE_ABRI, abri)
+	var mouille: float = R.TREMPE_PLUIE * expose + 2.0 * climat.neige * (1.0 - abri)
+	if eau > 0.15:
+		mouille += R.TREMPE_EAU * eau
+	var seche: float = R.SECHE + R.SECHE_FEU * maxf(feu, brasier)
+	if climat.pluie < 0.05 and eau < 0.15:
+		seche += 3.0 * lumiere_du_jour() * climat.air + 2.0 * climat.vent
+	if j.en_feu > 0.0 and eau <= 0.3:
+		seche += 30.0
+	seche *= 1.0 - 0.75 * clampf(maxf(expose * 2.0, eau * 3.0), 0.0, 1.0)
+	j.trempe = clampf(j.trempe + (mouille - seche) * delta, 0.0, 100.0)
+	# --- la température du corps : elle va vers ce que l'air, l'eau, le vent et les feux en font ---
+	var cible: float = 50.0 + (climat.air - 0.5) * 100.0
+	cible -= 24.0 * j.trempe / 100.0
+	cible -= 9.0 * climat.vent * (0.4 + 0.6 * j.trempe / 100.0) * (1.0 - 0.6 * abri)
+	if eau > 0.15:
+		cible -= 10.0 * eau
+	# (à l'ombre d'un arbre, la canicule pèse moins)
+	if climat.air > 0.62:
+		cible -= 12.0 * abri
+	cible += 34.0 * feu + (22.0 if tout_pres else 0.0)
+	cible += 6.0 if j.torche > 0.0 else 0.0
+	cible += 70.0 * brasier
+	if j.en_feu > 0.0:
+		cible = 110.0
+	var k := 1.0 - exp(-delta * R.TEMPERATURE_ALLURE * (3.0 if (j.en_feu > 0.0 or brasier > 0.5) else 1.0))
+	j.temperature = clampf(lerpf(j.temperature, cible, k), 0.0, 100.0)
+	if j.temperature < R.FROID:
+		j.sante -= R.FROID_DEGATS * (R.FROID - j.temperature) / R.FROID * delta
+		_conseil("froid", true, "Tu as froid. Trempée, c'est pire : réchauffe-toi près d'un feu." if j.trempe > 40.0 else "Tu as froid. Réchauffe-toi près d'un feu.", Color(0.72, 0.82, 0.92))
+	elif j.temperature > R.CHAUD:
+		j.sante -= R.CHAUD_DEGATS * (j.temperature - R.CHAUD) / (100.0 - R.CHAUD) * delta
+		_conseil("chaud", j.en_feu <= 0.0, "La chaleur t'accable. Éloigne-toi des flammes." if (brasier > 0.2 or feu > 0.8) else "La chaleur t'accable. Cherche l'ombre d'un arbre, ou l'eau.")
+	# --- en feu : au contact des flammes ; la pluie, l'eau l'éteignent ---
+	if j.en_feu <= 0.0 and incendie.contact(p) and eau < 0.3:
+		enflammer_joueur()
+	if j.en_feu > 0.0:
+		j.sante -= R.EN_FEU_DEGATS * delta
+		j.en_feu -= delta * (1.0 + 1.5 * climat.pluie + (1.0 if j.trempe > 50.0 else 0.0))
+		if eau > 0.3:
+			j.en_feu = 0.0
+			ui.message("L'eau éteint les flammes.", Color(0.72, 0.82, 0.92))
+	# --- ce que le temps apprend, une fois ---
+	_conseil("pluie", climat.pluie > 0.4 and j.trempe > 25.0 and abri < 0.5, "Il pleut : tu te mouilles. Sous un arbre, on reste au sec. Mais la foudre aime les arbres.", Color(0.72, 0.82, 0.92))
+	_conseil("boue", climat.boue > 0.6, "Le sol est détrempé : la boue colle aux pieds.", Color(0.72, 0.82, 0.92))
+	_conseil("crue", climat.crue > climat.crue_fond + 0.25, "L'eau monte dans les creux. Un feu s'y noie : gagne les hauteurs.", Color(0.72, 0.82, 0.92))
+	_conseil("trempee", j.trempe > 85.0 and climat.pluie < 0.2, "Tu es trempée. Un feu te sèche vite.", Color(0.72, 0.82, 0.92))
+	# --- le feu de camp : son bois part plus vite sous la pluie et le vent ; dans l'eau, il se noie ---
+	feu_temps = 1.0 + 0.55 * climat.pluie + 0.35 * climat.orage + 0.3 * climat.neige + 0.25 * climat.vent
+	for f in feux:
+		if is_instance_valid(f) and f.allume() and climat.eau(f.position) > 0.3:
+			f.bois = 0.0
+			effets.flammes_eteintes(f.position + Vector2(0.0, -8.0), true)
+			ui.message("L'eau a noyé le feu.", Color(0.72, 0.82, 0.92))
+
+
+func enflammer_joueur() -> void:
+	if joueur.en_feu > 0.0 or joueur.morte:
+		return
+	joueur.en_feu = R.EN_FEU
+	joueur.peur = minf(100.0, joueur.peur + 12.0)
+	effets.blessure()
+	ui.message("Tu brûles ! La pluie ou l'eau éteignent les flammes.", Color(0.98, 0.6, 0.4))
+
+
+# le temps change : on le dit
+func _temps_change(nom: String) -> void:
+	if not en_partie or essai != null:
+		return
+	var dit := {"pluie": "La pluie arrive.", "orage": "L'orage gronde. La foudre cherche ce qui dépasse.", "neige": "Il se met à neiger.",
+		"brouillard": "Le brouillard tombe.", "canicule": "La chaleur écrase le lieu.", "clair": "Le ciel se dégage.", "couvert": ""}
+	var t := str(dit.get(nom, ""))
+	if t != "":
+		ui.message(t, Color(0.72, 0.82, 0.92))
+
+
+# la foudre est tombée en p (scripts/climat.gd) : elle blesse autour d'elle (plus loin, les pieds dans l'eau), fait peur, met le
+# feu à ce qu'elle frappe ; les bêtes proches s'enfuient
+func foudre_tombee(p: Vector2, sur) -> void:
+	if not en_partie or joueur == null:
+		return
+	var d: float = joueur.position.distance_to(p)
+	effets.secousse(clampf(1.2 - d / 500.0, 0.0, 1.0))
+	var dans_l_eau: bool = climat.eau(joueur.position) > 0.2 and climat.eau(p) > 0.05
+	var rayon: float = R.FOUDRE_RAYON * (1.9 if dans_l_eau else 1.0)
+	if d < rayon and _mort < 0.0:
+		var n: float = R.FOUDRE_DEGATS * (1.0 - d / rayon) * (1.25 if joueur.trempe > 60.0 else 1.0)
+		joueur.blesser(n)
+		ui.blessure()
+		ui.message("La foudre !" if not dans_l_eau else "La foudre court dans l'eau !", Color(0.98, 0.9, 0.6))
+		if d < R.FOUDRE_RAYON * 0.45:
+			enflammer_joueur()
+	if d < 420.0:
+		joueur.peur = minf(100.0, joueur.peur + R.FOUDRE_PEUR * (1.0 - d / 420.0))
+	# ce qu'elle frappe prend feu ; sur la terre nue, ce qui pousse tout près
+	if sur != null:
+		incendie.enflammer(sur)
+	elif monde != null:
+		for o in monde.autour(p, 36.0):
+			incendie.enflammer(o)
+	# les bêtes : celles qu'elle touche sont blessées (ce n'est pas une chasse), les autres s'enfuient
+	for b in get_tree().get_nodes_in_group("betes"):
+		var db: float = b.position.distance_to(p)
+		if db < R.FOUDRE_RAYON and b.role != "echo":
+			b.foudroyer(R.FOUDRE_DEGATS * 1.5 * (1.0 - db / R.FOUDRE_RAYON), p)
+		elif db < 360.0 and b.role != "echo":
+			b.effrayer(p, 3.0)
+
+
+func _incendie_pris(o) -> void:
+	if not en_partie or essai != null:
+		return
+	if joueur != null and joueur.position.distance_to(o.position) < 600.0:
+		_conseil("incendie", true, "La foudre a mis le feu. Les bêtes n'entrent pas dans sa lumière. Mais il brûle, et il court sous le vent.", Color(0.98, 0.75, 0.45))
 
 
 # --- la partie gardée, le tableau des scores ---

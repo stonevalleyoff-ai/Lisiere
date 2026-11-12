@@ -55,6 +55,45 @@ const TEMPS := {"clair": "temps clair", "couvert": "ciel couvert", "pluie": "plu
 const TEMPS_DIT := {"pluie": "Il pleut : le feu mange son bois plus vite.", "orage": "L'orage gronde : le feu mange son bois bien plus vite.", "tempete": "La tempête passe : un feu ne tiendra pas longtemps.",
 	"neige": "Il neige : le feu mange son bois plus vite.", "brouillard": "Le brouillard est tombé.", "gel": "Il gèle.", "canicule": "La chaleur écrase le lieu."}
 
+# le temps qu'il fait pendant la partie (scripts/climat.gd) : il change d'heure en heure, d'après le climat du lieu
+const TEMPS_REPIT := 45.0          # secondes de temps calme, au réveil : de quoi faire un premier feu
+const BOUE_MONTE := 0.016           # par seconde, sous une pluie battante : le sol est détrempé en une demi-minute
+const BOUE_SECHE := 0.009          # par seconde, sans pluie : trois minutes pour sécher
+const BOUE_FREIN := 0.38           # la part de la vitesse perdue dans la boue pleine
+const CRUE_MONTE := 0.014          # par seconde, sous la pluie, le sol une fois détrempé : l'eau monte
+const CRUE_BAISSE := 0.006         # par seconde, la pluie passée
+const EAU_FREIN := 0.45            # la part de la vitesse perdue dans l'eau jusqu'aux genoux
+const NEIGE_FREIN := 0.25          # dans un manteau de neige épais
+const FOUDRE_ANNONCE := 0.9        # secondes entre le présage (le sol qui pâlit, l'air qui crépite) et la foudre
+const FOUDRE_RAYON := 70.0         # jusqu'où elle blesse (près de deux fois plus loin, les pieds dans l'eau)
+const FOUDRE_DEGATS := 40.0        # au point d'impact
+const FOUDRE_PEUR := 22.0
+
+# le corps et le temps : trempée, la veilleuse prend froid ; trop près des flammes, elle brûle
+const TREMPE_PLUIE := 9.0          # points par seconde sous une pluie battante (de sèche à trempée en onze secondes)
+const TREMPE_ABRI := 0.15          # la part de la pluie qui passe sous un feuillage
+const TREMPE_EAU := 45.0           # par seconde, dans l'eau
+const SECHE := 1.6                 # points perdus par seconde, au sec
+const SECHE_FEU := 11.0            # près d'un feu
+const TEMPERATURE_ALLURE := 0.085  # la part de l'écart que le corps rattrape par seconde
+const FROID := 25.0                # en dessous, le froid mord
+const CHAUD := 78.0                # au-dessus, la chaleur accable
+const FROID_DEGATS := 1.1          # la santé perdue par seconde, à zéro
+const CHAUD_DEGATS := 1.4          # à cent
+const EN_FEU := 4.0                # secondes : le temps que ses vêtements brûlent
+const EN_FEU_DEGATS := 6.0         # la santé perdue par seconde, en feu
+
+# l'incendie (scripts/incendie.gd) : la foudre l'allume, le vent le pousse, la pluie l'éteint
+const INCENDIE_MAX := 24           # objets en feu à la fois
+const INCENDIE_DUREE := {"arbre": 28.0, "sapin": 24.0, "buisson": 12.0, "touffe": 6.0, "souche": 9.0}
+const INCENDIE_LUEUR := {"arbre": 125.0, "sapin": 120.0, "buisson": 75.0, "touffe": 45.0, "souche": 55.0}
+const INCENDIE_PORTEE := 64.0      # jusqu'où il saute d'un objet à l'autre (plus loin sous le vent)
+const INCENDIE_PRISE := 0.3        # la chance qu'il prenne sur un voisin, toutes les deux secondes, par temps sec
+const INCENDIE_CONTACT := 24.0     # à cette distance d'un objet en feu, on prend feu
+const INCENDIE_ESSOUFFLE := 0.55   # ce qu'un feu garde de force en sautant à un voisin : l'incendie s'essouffle, il ne rase pas le lieu
+const FOUDRE_SUR_L_ABRI := 0.25    # sous un arbre pendant l'orage : la part des éclairs qui tombent sur cet arbre-là
+const FOUDRE_A_DECOUVERT := 0.2    # seule debout loin de tout arbre : la part des éclairs qui tombent sur elle
+
 # les bêtes
 const PROIES_JOUR := 12       # autour du joueur, le jour
 const CHASSEURS_MAX := 10

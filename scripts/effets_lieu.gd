@@ -54,17 +54,36 @@ func vider() -> void:
 	_neige = null
 
 
-# chaque image : e = {nuit, peur, vent, centre, vue, lucioles, brume_matin, obscur, lumieres}
+# chaque image : e = {nuit, peur, vent, centre, vue, lucioles, brume_matin, obscur, lumieres, climat}
+# (climat : le temps qu'il fait, scripts/climat.gd ; l'air du lieu s'y accorde)
 func maj(delta: float, e: Dictionary) -> void:
 	if sol == null or not is_instance_valid(sol):
 		return
 	var nuit: float = e["nuit"]
 	var peur: float = e["peur"]
 	var vent: float = e["vent"]
-	_derive += Vector2(8.0 + vent * 30.0, 2.5) * delta
+	# le temps qu'il fait : son vent (sa force, son sens), ce qui tombe, la brume, la chaleur
+	var c = e.get("climat")
+	var souffle := 0.0
+	var sens := Vector2.RIGHT
+	var pluie := 0.0
+	var neige := -1.0
+	var brouillard := 0.0
+	var chaleur := 0.0
+	if c != null:
+		souffle = c.vent
+		sens = c.vent_dir
+		pluie = c.pluie
+		neige = c.neige
+		brouillard = c.brouillard
+		chaleur = clampf(float(c.chaleur) / 0.3, 0.0, 1.0)
+	_derive += (Vector2(8.0 + vent * 30.0, 2.5) + sens * souffle * 70.0) * delta
 	# (une brume presque blanche : elle prend la couleur de ce qui l'éclaire, bleue dans le noir, chaude près d'un feu)
-	var c := P.PAPIER.lerp(P.IVOIRE.lerp(P.LUNE, 0.3).darkened(0.2), clampf(nuit * 1.3, 0.0, 1.0))
-	_regler(_brume_sol, lerpf(0.025, 0.2, nuit) + 0.2 * peur * nuit + float(e["brume_matin"]) * 0.06, c, 1.0)
+	var col := P.PAPIER.lerp(P.IVOIRE.lerp(P.LUNE, 0.3).darkened(0.2), clampf(nuit * 1.3, 0.0, 1.0))
+	# (le brouillard l'épaissit ; la pluie la couche, le grand vent la chasse, la chaleur la boit)
+	var brume := lerpf(0.025, 0.2, nuit) + 0.2 * peur * nuit + float(e["brume_matin"]) * 0.06
+	brume = brume * (1.0 - 0.6 * pluie) * (1.0 - 0.5 * smoothstep(0.4, 0.9, souffle)) * (1.0 - 0.9 * chaleur) + 0.22 * brouillard
+	_regler(_brume_sol, brume, col, 1.0)
 	var m: ShaderMaterial = _brume_sol.material
 	var lu: Array = e["lumieres"]
 	m.set_shader_parameter("obscur", e["obscur"])
@@ -79,13 +98,24 @@ func maj(delta: float, e: Dictionary) -> void:
 			p.position = centre + Vector2(0, -vue.y * (0.1 if p == _feuilles or p == _neige else 0.0))
 			p.emission_rect_extents = vue * 0.5 + Vector2(60, 60)
 	if _lucioles != null:
-		var l: float = e["lucioles"]
+		# (elles ne sortent ni sous la pluie, ni sous la neige, ni par grand vent)
+		var l: float = float(e["lucioles"]) * (1.0 - smoothstep(0.05, 0.3, pluie + maxf(neige, 0.0))) * (1.0 - smoothstep(0.45, 0.8, souffle))
 		_lucioles.emitting = l > 0.02
 		_lucioles.self_modulate = Color(1, 1, 1, l)
 	if _feuilles != null:
-		_feuilles.gravity = Vector2(vent * 40.0, 26.0)
+		# les feuilles : elles tombent, et filent quand le vent se lève
+		var file := smoothstep(0.2, 0.9, souffle)
+		_feuilles.gravity = Vector2(vent * 40.0, 26.0) + sens * souffle * 230.0
+		_feuilles.direction = (Vector2(0.3, 1.0) + sens * file * 2.5).normalized()
+		_feuilles.initial_velocity_max = 16.0 + 150.0 * file
+		_feuilles.angular_velocity_max = 90.0 + 400.0 * file
+		_feuilles.speed_scale = 1.0 + 0.8 * file
 	if _neige != null:
-		_neige.gravity = Vector2(vent * 34.0, 20.0)
+		# la neige d'un lieu froid : seulement quand il neige (elle double celle du ciel, dans le lieu : scripts/ciel.gd)
+		var n := 1.0 if neige < 0.0 else clampf(neige * 2.0, 0.0, 1.0)
+		_neige.emitting = n > 0.1
+		_neige.self_modulate = Color(1, 1, 1, n)
+		_neige.gravity = Vector2(vent * 34.0, 20.0) + sens * souffle * 90.0
 
 
 func _regler(n: Node2D, densite: float, couleur: Color, decale: float) -> void:
