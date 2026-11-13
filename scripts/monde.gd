@@ -284,6 +284,10 @@ func lieu_de(type: String) -> Dictionary:
 		return _lieux[type]
 	var info: Dictionary = jeu.donnees.biome(type) if jeu != null and jeu.get("donnees") != null else {}
 	var axes: Dictionary = info.get("axes", {})
+	if type == "riviere":
+		# (une vallée de rivière : pour Orvane c'est de l'eau ; ici, ses berges sont une prairie humide, pas un marécage)
+		axes = axes.duplicate()
+		axes["humidite"] = 0.68
 	var pal := couleurs(axes)
 	var parts := Decor.parts(axes)
 	var sol := {}
@@ -596,7 +600,7 @@ func _fabriquer_(k: Vector2i) -> void:
 		if c == null:
 			continue
 		var ici: Dictionary = lieu_de(str(e[4])) if carte != null else {}
-		if carte != null and carte.regions[carte.region_en(e[1])]["eau"]:
+		if carte != null and carte.mouille(e[1]):
 			continue
 		var tons: Dictionary = ici["palette"] if carte != null else palette
 		var o = _poser(str(e[0]), e[1], tons[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), ici)
@@ -630,7 +634,10 @@ func _fabriquer_(k: Vector2i) -> void:
 				var L := lieu_de(str(reg["type"]))
 				if L["outils"].is_empty():
 					L["outils"] = Decor.outils(L["parts"], L["palette"], _graine)
+				# (dans une vallée de rivière, rien dans le lit)
+				Decor.exclure = Callable(carte, "mouille") if reg["riviere"] else Callable()
 				noeuds.append_array(Decor.semer_dans(self, _calques, _terrain, L["parts"], L["palette"], hash(Vector3i(_graine + 7 + qx * 2 + qy, k.x, k.y)), _mobile, quart, L["outils"], liste))
+		Decor.exclure = Callable()
 	elif _racine != null and not _outils.is_empty():
 		noeuds = Decor.semer_dans(self, _calques, _terrain, _parts, palette, hash(Vector3i(_graine + 7, k.x, k.y)), _mobile, rect, _outils, liste)
 	_morceaux[k] = {"objets": liste, "noeuds": noeuds}

@@ -386,6 +386,8 @@ func _disposer() -> void:
 		_compteurs.position = Vector2(_cadran.position.x - 34.0, m - 4.0)
 		var y: float = _cadran.position.y + _cadran.size.y - 2.0
 		for r in _recettes:
+			if not r[1].visible:
+				continue
 			r[1].position = Vector2(s.x - m - r[1].size.x, y)
 			y += r[1].size.y + 2.0
 	else:
@@ -393,8 +395,11 @@ func _disposer() -> void:
 		_compteurs.size = Vector2(420, 18)
 		_compteurs.position = Vector2(s.x - m - 420.0, _cadran.position.y + _cadran.size.y + 2.0)
 		var lw: float = _recettes[0][1].size.x
-		var x := s.x - m - lw * 3.0 - 24.0
+		var montrees: int = _recettes.filter(func(r): return r[1].visible).size()
+		var x := s.x - m - lw * montrees - 12.0 * (montrees - 1)
 		for r in _recettes:
+			if not r[1].visible:
+				continue
 			r[1].position = Vector2(x, s.y - m - r[1].size.y)
 			x += lw + 12.0
 		_aide.position = Vector2(s.x - m - 700.0, s.y - m - _recettes[0][1].size.y - 22.0)
@@ -424,6 +429,10 @@ func _vider_hud() -> void:
 func maj_hud(jeu) -> void:
 	var j = jeu.joueur
 	_jauges.valeurs = [j.sante, j.faim, j.peur]
+	# (le pont de fortune : sa recette ne se montre qu'au bord d'une rivière, là où il peut se poser)
+	for r in _recettes:
+		if r[0] == "pont":
+			r[1].visible = bool(jeu.pont_possible)
 	_jauges.corps = j.temperature
 	_jauges.trempe = j.trempe
 	_jauges.en_feu = j.en_feu > 0.0

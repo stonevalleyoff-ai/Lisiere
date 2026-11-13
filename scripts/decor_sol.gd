@@ -68,16 +68,21 @@ func _regler(vp: SubViewport, rect: Rect2) -> void:
 		var autres: Array = []
 		var rive := false
 		var crete := Vector3.ZERO
+		var eaux := Vector3.ZERO
 		for o in regs:
 			if o != regs[n]:
 				if C.ferme(regs[n], o):
 					crete[autres.size()] = 1.0
+				if C.regions[o]["eau"] or C.regions[o]["riviere"]:
+					eaux[autres.size()] = 1.0
 				autres.append(C.regions[o]["pos"])
 				if bool(C.regions[o]["eau"]) != bool(reg["eau"]):
 					rive = true
 		while autres.size() < 3:
 			autres.append(Vector2(1.0e7, 1.0e7))
 		m.set_shader_parameter("crete", crete)
+		m.set_shader_parameter("eaux", eaux)
+		m.set_shader_parameter("lit_ici", 1.0 if reg["riviere"] else 0.0)
 		m.set_shader_parameter("couche", 0 if n == 0 else 1)
 		m.set_shader_parameter("site_moi", reg["pos"])
 		m.set_shader_parameter("site_a", autres[0])

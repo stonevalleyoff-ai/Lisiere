@@ -335,6 +335,16 @@ func _process(delta: float) -> void:
 		jeu.ui.visible = false
 	_le_temps_passe(u)
 	_mesurer()
+	# (--pont : au bord d'une rivière, elle pose un pont de fortune et le passe)
+	if jeu.ouvert and jeu.pont_possible and not _fait.has("pont") and OS.get_cmdline_user_args().has("--pont"):
+		_fait["pont"] = true
+		j.inventaire["bois"] = 40
+		j.inventaire["fibre"] = 12
+		jeu.fabriquer("pont")
+		if not jeu.ponts.is_empty():
+			var pt = jeu.ponts[0]
+			_but = pt.b + (pt.b - pt.a).normalized() * 140.0
+			_plan = [[0.0, 1.0, "aller"]]
 	if _regles.has("--corps"):
 		j.temperature = float(_regles["--corps"])
 	if u >= 1.0:

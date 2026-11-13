@@ -11,7 +11,7 @@ extends RefCounted
 const P := preload("res://scripts/palette.gd")
 const Trace := preload("res://scripts/interface_trace.gd")
 const NOMS := ["coeur", "baies", "oeil", "bois", "pierre", "fibre", "viande", "viande_cuite", "torche", "lance", "feu",
-	"soleil", "lune", "patte", "croix", "manger", "nourrir", "cuire", "pause", "thermometre", "goutte", "flamme"]
+	"soleil", "lune", "patte", "croix", "manger", "nourrir", "cuire", "pause", "thermometre", "goutte", "flamme", "pont"]
 
 const ROUGE := Color("a8321f")          # (les baies, la viande : entre le sang et la braise)
 const PIERRE := Color("9d968a")
@@ -85,6 +85,8 @@ static func _icone(ci, nom: String, w: float, m: Color, k: float) -> void:
 			_thermometre(ci, w, m, k)
 		"goutte":
 			_goutte(ci, w, m)
+		"pont":
+			_pont(ci, w, m)
 		"flamme":
 			_flamme(ci, w, m, Vector2(2, 40), 30.0, 84.0, -5.0)
 
@@ -448,6 +450,18 @@ static func _thermometre(ci, w: float, m: Color, k: float) -> void:
 	# (les graduations)
 	for y in [-30.0, -16.0, -2.0]:
 		ci.draw_line(Vector2(15, y), Vector2(24, y), P.IVOIRE * m, w * 0.8, true)
+
+
+# un pont de fortune : deux pieux, un tablier de planches, l'eau dessous
+static func _pont(ci, w: float, m: Color) -> void:
+	for y in [26.0, 36.0]:
+		ci.draw_line(Vector2(-36, y), Vector2(-14, y), Color("6fa8d6") * m, w * 1.4, true)
+		ci.draw_line(Vector2(6, y + 3.0), Vector2(34, y + 3.0), Color("6fa8d6") * m, w * 1.4, true)
+	_forme(ci, PackedVector2Array([Vector2(-44, -6), Vector2(44, -6), Vector2(44, 8), Vector2(-44, 8)]), ECORCE.lightened(0.2) * m, w, m)
+	for x in [-26.0, -9.0, 9.0, 26.0]:
+		ci.draw_line(Vector2(x, -6), Vector2(x, 8), P.ENCRE * m, w * 0.7, true)
+	for x in [-38.0, 38.0]:
+		_forme(ci, _capsule(Vector2(x, -26), Vector2(x, 22), 5.5), ECORCE * m, w, m)
 
 
 static func _goutte(ci, w: float, m: Color) -> void:

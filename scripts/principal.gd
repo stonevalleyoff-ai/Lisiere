@@ -28,6 +28,7 @@ const Bestiaire := preload("res://scripts/bestiaire.gd")
 const Climat := preload("res://scripts/climat.gd")
 const Incendie := preload("res://scripts/incendie.gd")
 const Carte := preload("res://scripts/carte.gd")
+const Pont := preload("res://scripts/pont.gd")
 const TempsSol := preload("res://scripts/temps_sol.gd")
 const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
 const SAUVEGARDE := "user://lisiere.json"
@@ -70,6 +71,9 @@ var _faunes := {}             # ce qui vit dans chaque biome déjà lu (le monde
 var _meteos := {}
 var _lecture := ""            # le biome qu'on est en train de lire
 var _illisibles := {}         # ceux qui ne se lisent pas (hors ligne, hors de la copie gardée)
+var ponts: Array = []         # les ponts de fortune qui tiennent encore (scripts/pont.gd)
+var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
+var _pont_vu := 0.0
 var part_nuit := 0.33
 var horloge := 0.0
 var jour := 1
@@ -242,7 +246,7 @@ func basculer_ips() -> bool:
 func _actions() -> void:
 	var touches := {
 		"haut": [KEY_W, KEY_UP], "bas": [KEY_S, KEY_DOWN], "gauche": [KEY_A, KEY_LEFT], "droite": [KEY_D, KEY_RIGHT],
-		"agir": [KEY_SPACE], "feu": [KEY_1, KEY_KP_1], "torche": [KEY_2, KEY_KP_2], "lance": [KEY_3, KEY_KP_3],
+		"agir": [KEY_SPACE], "feu": [KEY_1, KEY_KP_1], "torche": [KEY_2, KEY_KP_2], "lance": [KEY_3, KEY_KP_3], "pont": [KEY_4, KEY_KP_4],
 		"manger": [KEY_E], "nourrir": [KEY_F], "cuire": [KEY_C], "pause": [KEY_ESCAPE, KEY_P], "valider": [KEY_ENTER, KEY_KP_ENTER],
 	}
 	for a in touches:
@@ -509,6 +513,8 @@ func _vider() -> void:
 		couche_ciel = null
 		ciel = null
 	feux.clear()
+	ponts.clear()
+	pont_possible = false
 	if incendie != null:
 		incendie.vider()
 	joueur = null
@@ -667,6 +673,7 @@ func _process(delta: float) -> void:
 	_temps_du_corps(delta)
 	if carte != null:
 		_regions()
+		_voir_les_ponts(delta)
 	_directeur_passe(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
@@ -778,6 +785,9 @@ func _sur_chute(p: Vector2) -> void:
 func peut_fabriquer(quoi: String) -> bool:
 	if joueur == null:
 		return false
+	# (un pont ne se fait qu'au bord d'une rivière, là où il peut se poser)
+	if quoi == "pont" and not pont_possible:
+		return false
 	var cout: Dictionary = R.RECETTES[quoi]["cout"]
 	for k in cout:
 		if int(joueur.inventaire.get(k, 0)) < int(cout[k]):
@@ -787,6 +797,13 @@ func peut_fabriquer(quoi: String) -> bool:
 
 func fabriquer(quoi: String) -> void:
 	var rec: Dictionary = R.RECETTES[quoi]
+	var berges: Array = []
+	if quoi == "pont":
+		berges = carte.pont_depuis(joueur.position) if carte != null else []
+		pont_possible = not berges.is_empty()
+		if berges.is_empty():
+			ui.message("Un pont se pose au bord d'une rivière, là où elle n'est pas trop large.", Color(0.75, 0.7, 0.66))
+			return
 	if not peut_fabriquer(quoi):
 		var manque := []
 		for k in rec["cout"]:
@@ -817,6 +834,45 @@ func fabriquer(quoi: String) -> void:
 		"lance":
 			joueur.lance = R.USURE_LANCE
 			ui.message("Une lance : elle frappe trois fois plus fort.", Color(0.95, 0.75, 0.45))
+		"pont":
+			poser_pont(berges[0], berges[1], R.PONT_DUREE)
+			sons.jouer("bois", -3.0, 0.8)
+			ui.message("Un pont de fortune : il ne tiendra pas longtemps. Les bêtes y passent aussi.", Color(0.95, 0.75, 0.45))
+
+
+# --- les ponts de fortune (scripts/pont.gd) ---
+
+func poser_pont(a: Vector2, b: Vector2, tenue: float):
+	var p = Pont.new()
+	p.jeu = self
+	p.a = a
+	p.b = b
+	p.tenue = tenue
+	# (posé à plat, sous tout ce qui se tient debout)
+	monde._calques[2].add_child(p)
+	ponts.append(p)
+	if carte != null:
+		carte.ponts.append([a, b])
+	return p
+
+
+func pont_tombe(p, pourquoi: String) -> void:
+	ponts.erase(p)
+	if carte != null:
+		carte.ponts = carte.ponts.filter(func(e): return e[0] != p.a or e[1] != p.b)
+	if joueur != null and joueur.position.distance_to((p.a + p.b) * 0.5) < 900.0:
+		ui.message(pourquoi, Color(0.72, 0.82, 0.92))
+		sons.jouer("bois", -6.0, 0.6)
+	p.queue_free()
+
+
+# la veilleuse est-elle là où un pont peut se poser ? (regardé trois fois par seconde : c'est ce qui allume sa recette)
+func _voir_les_ponts(delta: float) -> void:
+	_pont_vu -= delta
+	if _pont_vu > 0.0:
+		return
+	_pont_vu = 0.33
+	pont_possible = carte != null and _region >= 0 and bool(carte.regions[_region]["riviere"]) and not carte.pont_depuis(joueur.position).is_empty()
 
 
 func manger() -> void:
@@ -1329,7 +1385,7 @@ func _entrer_dans(reg: Dictionary, le_dire: bool) -> void:
 	var type := str(reg["type"])
 	biome = type
 	biome_info = donnees.biome(type)
-	var axes: Dictionary = biome_info.get("axes", {})
+	var axes: Dictionary = monde.lieu_de(type)["axes"]
 	if _faunes.has(type):
 		faune = _faunes[type]
 	meteo = _meteos.get(type, {})

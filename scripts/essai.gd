@@ -704,6 +704,47 @@ func _les_regions() -> void:
 	var rochers: int = W.autour(au_pied, 500.0).filter(func(x): return x.genre == "rocher").size()
 	verif(C.region_en(vers_la_crete) != cb and vers_la_crete.distance_to(p_b) < p_a.distance_to(p_b) * 0.8 and rochers >= 8,
 		"une crête ferme la frontière entre %s et %s : on ne passe pas, des rochers la marquent (%d au pied)" % [C.regions[ca]["type"], C.regions[cb]["type"], rochers])
+	# une rivière traverse sa vallée : son lit arrête ; à gué on passe à pied ; ailleurs, un pont de fortune
+	var riv := -1
+	for k in C.regions.size():
+		if C.regions[k]["riviere"] and (riv < 0 or C.regions[k]["pos"].length() < C.regions[riv]["pos"].length()):
+			riv = k
+	var fond := Vector2.INF
+	var gue := Vector2.INF
+	for ix in range(-40, 41):
+		for iy in range(-40, 41):
+			var q: Vector2 = C.regions[riv]["pos"] + Vector2(ix, iy) * 220.0
+			if C.region_en(q) != riv or C.lit(q) < 0.5:
+				continue
+			if C.champ_gue(q) > 0.62 and gue == Vector2.INF:
+				gue = q
+			elif C.champ_gue(q) < 0.3 and fond == Vector2.INF and not C.pont_depuis(C.retenir(q)).is_empty():
+				fond = q
+	var berge: Vector2 = C.retenir(fond)
+	jo.position = berge
+	W.suivre(berge, true)
+	jeu._regions()
+	verif(riv >= 0 and fond != Vector2.INF and C.lit(fond) > 0.5 and C.lit(berge) == 0.0 and berge.distance_to(fond) > 20.0 and jeu.biome == "riviere"
+		and W.objets.filter(func(x): return C.mouille(x.position)).is_empty(),
+		"une rivière traverse sa vallée (%s) : son lit arrête la veilleuse sur la berge, rien n'y pousse" % C.regions[riv]["id"])
+	verif(gue != Vector2.INF and C.retenir(gue) == gue and jeu.climat.eau(gue) > 0.3 and jeu.climat.allure(gue) < 0.9,
+		"à gué, on passe à pied : de l'eau jusqu'aux genoux (%.2f), on y marche à %d %% de l'allure" % [jeu.climat.eau(gue), int(jeu.climat.allure(gue) * 100.0)])
+	jo.inventaire["bois"] = 20
+	jo.inventaire["fibre"] = 10
+	jeu._pont_vu = 0.0
+	jeu._voir_les_ponts(1.0)
+	var possible: bool = jeu.pont_possible
+	jeu.fabriquer("pont")
+	var pont = jeu.ponts[0] if not jeu.ponts.is_empty() else null
+	var milieu: Vector2 = (pont.a + pont.b) * 0.5 if pont != null else Vector2.ZERO
+	verif(possible and pont != null and int(jo.inventaire["bois"]) == 14 and int(jo.inventaire["fibre"]) == 7 and C.lit(milieu) > 0.0 and C.retenir(milieu) == milieu
+		and jeu.climat.eau(milieu) == 0.0 and C.lit(pont.b) == 0.0,
+		"au bord, un pont de fortune se pose jusqu'à l'autre berge (%d pixels ; 6 bois, 3 fibres) : on y passe au sec" % int(pont.a.distance_to(pont.b)))
+	var gardee_p: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
+	pont.tenue = 0.5
+	pont._process(1.0)
+	verif(gardee_p["ponts"].size() == 1 and jeu.ponts.is_empty() and C.retenir(milieu).distance_to(milieu) > 5.0,
+		"il se garde avec la partie, mais ne dure pas : usé, il cède, et le lit arrête de nouveau")
 	jo.position = Vector2.ZERO
 	W.suivre(Vector2.ZERO, true)
 	jeu._regions()

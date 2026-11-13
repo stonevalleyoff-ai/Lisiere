@@ -245,10 +245,14 @@ func relief(p: Vector2) -> float:
 
 # la profondeur de l'eau en p, de 0 (au sec) à 1 (jusqu'aux genoux) : elle gagne d'abord les creux
 func eau(p: Vector2) -> float:
+	# (le monde ouvert : le gué d'une rivière, où l'on a de l'eau jusqu'aux genoux ; scripts/carte.gd)
+	var gue := 0.0
+	if jeu != null and jeu.get("carte") != null:
+		gue = jeu.carte.gue_en(p)
 	if crue <= 0.01:
-		return 0.0
+		return gue
 	var seuil := lerpf(0.26, 0.5, crue)
-	return clampf((seuil - relief(p)) / 0.07, 0.0, 1.0) * minf(1.0, crue * 6.0)
+	return maxf(gue, clampf((seuil - relief(p)) / 0.07, 0.0, 1.0) * minf(1.0, crue * 6.0))
 
 
 # ce que le sol fait à la marche en p (1 : rien ; 0,4 au pire) : la boue (plus épaisse dans ses flaques), l'eau, la neige.
