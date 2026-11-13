@@ -432,7 +432,8 @@ func maj_hud(jeu) -> void:
 	# (le pont de fortune : sa recette ne se montre qu'au bord d'une rivière, là où il peut se poser)
 	for r in _recettes:
 		if r[0] == "pont":
-			r[1].visible = bool(jeu.pont_possible)
+			# (au doigt, son bouton suffit : sa carte passerait sous les boutons)
+			r[1].visible = bool(jeu.pont_possible) and not tactile
 	_jauges.corps = j.temperature
 	_jauges.trempe = j.trempe
 	_jauges.en_feu = j.en_feu > 0.0

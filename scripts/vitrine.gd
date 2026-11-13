@@ -9,6 +9,8 @@ extends Node
 # attend, tourne, puis va là où ça se passe (sous un arbre, dans l'eau, près de l'arbre frappé, contre les flammes).
 #   --image <chemin> --a 0.3,0.6,0.9   écrit <chemin>_1.png, _2.png… à ces moments (en fractions de la durée)
 #   --ouvert   le lieu sans bord (MONDE-OUVERT.md) : la veilleuse marche droit devant elle
+#   --doigt    les boutons tactiles, comme sur un téléphone ; --carte : à la fin, la pause et la carte du carnet ;
+#   --depuis x,y : d'où elle part ; --pont : au bord d'une rivière, elle pose un pont de fortune et le passe
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -106,6 +108,9 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	# (--doigt : comme sur un téléphone, les boutons à l'écran)
+	if OS.get_cmdline_user_args().has("--doigt"):
+		jeu.tactile.activer()
 	if temps != "":
 		_poser_le_temps()
 	if jeu.ouvert:
