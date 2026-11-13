@@ -1316,6 +1316,36 @@ func _les_grottes() -> void:
 	verif(champi != null and luisait and int(cueilli.get("baies", 0)) == 1 and champi.epuise() and champi._repousse > 0.0
 		and champignons.filter(func(x): return C.sous_terre(x.position) < 0.6).is_empty(),
 		"sous terre poussent des champignons qui luisent (%d autour) : on les cueille pour manger, ils s'éteignent, ils repousseront" % champignons.size())
+	# avec l'herbier d'Orvane (en ligne), la flore de la grotte est la sienne : chaque forme de champignon a son dessin et sa règle
+	Orvane.ajouter_herbier("grotte", {"plantes": {
+		"flore-grotte-champignon": {"nom": "Febel champignon", "forme": "champignon", "port": "champignon", "hauteur_m": 0.1, "part": 0.3, "defense": ["epineux"]},
+		"flore-grotte-moisissure": {"nom": "Déon moisissure", "forme": "moisissure", "port": "champignon", "hauteur_m": 0.008, "part": 0.24, "defense": ["epineux"]},
+		"flore-grotte-champignon-lumineux": {"nom": "Taon champignon lumineux", "forme": "champignon_lumineux", "port": "champignon", "hauteur_m": 0.16, "part": 0.23, "defense": []},
+		"flore-grotte-champignon-geant": {"nom": "Vinfe champignon géant", "forme": "champignon_geant", "port": "champignon", "hauteur_m": 2.0, "part": 0.23, "defense": []}}})
+	W.flore_arrivee("grotte")
+	var par_forme := {}
+	var poses: Array = []
+	for k in 60:
+		# (des graines étalées, comme celles du semis : la plante se tire d'après elle)
+		var o = W._poser("champignon", dedans + Vector2(4000.0 + 30.0 * k, 0.0), Color.WHITE, (k * 7919 + 13) * 104729 % 1000003, W.lieu_de("grotte"))
+		poses.append(o)
+		if not par_forme.has(o.forme):
+			par_forme[o.forme] = o
+	var lumineux = par_forme.get("champignon_lumineux")
+	var ocre = par_forme.get("champignon")
+	var geant = par_forme.get("champignon_geant")
+	var moisi = par_forme.get("moisissure")
+	var toutes: bool = lumineux != null and ocre != null and geant != null and moisi != null
+	verif(toutes and par_forme.size() == 4 and lumineux.lueur != null and str(lumineux.plante) == "flore-grotte-champignon-lumineux" and ocre.lueur == null and ocre.plein == 2
+		and geant.lueur == null and geant.plein == 3 and geant.rayon > 0.0 and geant.hauteur > ocre.hauteur * 2.0 and moisi.epuise() and moisi.lueur == null
+		and int(geant.recolter().get("baies", 0)) == 1,
+		"en ligne, la flore d'une grotte est celle de l'herbier d'Orvane : le champignon, le lumineux (lui seul luit), le géant (trois parts, on bute dessus), la moisissure (rien à cueillir)")
+	if not toutes or par_forme.size() != 4:
+		print("    (formes : %s ; la flore du lieu : %s)" % [par_forme.keys(), W.lieu_de("grotte")["flore"].keys()])
+	for o in poses:
+		W.retirer(o)
+	Orvane.ajouter_herbier("grotte", {})
+	W.flore_arrivee("grotte")
 	# le noir est celui de la roche, plus profond que la nuit ; on entend des gouttes, la roche qui résonne, rien du dehors
 	jeu.camera.reset_smoothing()
 	jeu.camera.force_update_scroll()

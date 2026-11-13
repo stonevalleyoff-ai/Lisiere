@@ -153,15 +153,22 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
 - **les sons** : sous terre, ni grillons, ni grenouilles, ni oiseaux, ni chouette ; du vent, il ne reste qu'un souffle
   grave ; tout résonne (les pas, les coups) ; des gouttes tombent, une à une, avec leur écho (`goutte0` à `goutte3`). Entrer
   n'est pas une tombée de la nuit pour la musique ;
-- **les champignons luisants** (`Objet`, genre « champignon ») : en bouquets, d'un vert d'eau, leur lueur dessinée hors de
-  l'ombre — des repères dans le noir. On les cueille comme des baies (deux fois), ils s'éteignent et repoussent ;
+- **la flore est celle d'Orvane** (`Objet`, genre « champignon » ; `monde.PORTS`) : l'herbier de la grotte ne porte que
+  des champignons, et chacun a ici son dessin et sa règle, d'après sa forme — le **champignon** (un bouquet ocre, deux
+  parts), le **champignon lumineux** (vert d'eau, sa lueur dessinée hors de l'ombre : un repère dans le noir), le
+  **champignon géant** (deux mètres, un seul pied, trois parts, on bute dessus), la **moisissure** (une plaque pâle sur la
+  pierre, rien à cueillir). Leurs parts sont celles de l'herbier. On les cueille comme des baies ; ils repoussent. Hors
+  ligne (pas d'herbier pour la grotte), tous sont lumineux ;
+- **la faune est celle d'Orvane** : le biome « grotte » se lit en approchant, comme les autres. Comme il y fait nuit à toute
+  heure, ce sont ses bêtes du soir et de la nuit qu'on y croise ;
 - **l'abri** : `climat.toit` — ni pluie, ni orage, ni neige, ni brouillard, ni vent, ni canicule (ils s'effacent en entrant
   et reviennent en sortant, en une seconde ou deux) ; ni boue, ni crue, ni neige au sol ; un air frais et constant (0,44) ;
 - **le sol** : de la pierre nue, fendue, des cailloux ; ni herbe, ni arbre, ni buisson, ni bois mort — on y vient avec ce
   qu'il faut pour le feu et la torche. Des rochers (de la pierre) ;
 - vérifié : l'essai (81 vérifications, 5 pour les grottes) ; la vitrine (`--ouvert --depuis -53733,8744 --vers -55300,8500
   --torche`, et `--reste --recul 0.4` pour voir la bouche de haut) ;
-- **reste à faire** : une faune propre aux grottes (étape 6).
+- la vitrine : `--herbier fichier.json` donne l'herbier d'un biome à la main (le jeu de l'essai n'a pas le réseau) ;
+- **reste à faire** : hors ligne, la grotte n'a ni ses bêtes ni son herbier (la copie gardée n'a que cinq biomes).
 
 **Étape 5, faite** (`scripts/interface_carte_monde.gd`, la page de pause de `scripts/interface_carnet.gd`) :
 - chaque région où l'on entre est notée (`jeu.decouvertes`), et gardée avec la partie (par le nom de la région) ;

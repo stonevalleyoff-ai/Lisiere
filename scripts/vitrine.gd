@@ -13,6 +13,7 @@ extends Node
 #   --depuis x,y : d'où elle part ; --pont : au bord d'une rivière, elle pose un pont de fortune et le passe
 #   --reste : elle ne bouge pas ; --vers x,y : elle marche vers ce point ; --recul 0.4 : la caméra recule d'autant (voir le
 #   relief d'un pays, le plan d'une grotte) ; --torche : elle part une torche à la main
+#   --herbier fichier.json : l'herbier d'un biome d'Orvane, donné à la main (voir sa flore sans le réseau)
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -119,6 +120,17 @@ func _lancer() -> void:
 		# (le monde ouvert : elle marche droit devant elle, pour voir le monde se faire et se défaire ; --depuis x,y : d'où elle part)
 		_plan = [[0.0, 0.06, "attendre"], [0.06, 1.0, "est"]]
 		var ar := OS.get_cmdline_user_args()
+		# (--herbier fichier.json : l'herbier d'un biome d'Orvane, donné à la main — pour voir sa flore sans le réseau)
+		var i_h := ar.find("--herbier")
+		if i_h >= 0 and i_h + 1 < ar.size() and FileAccess.file_exists(ar[i_h + 1]):
+			var herbier = JSON.parse_string(FileAccess.get_file_as_string(ar[i_h + 1]))
+			if typeof(herbier) == TYPE_DICTIONARY and typeof(herbier.get("plantes")) == TYPE_DICTIONARY:
+				var b = herbier.get("biome", "")
+				var quel := str(b.get("id", "")) if typeof(b) == TYPE_DICTIONARY else str(b)
+				Orvane.ajouter_herbier(quel, herbier)
+				jeu.monde.lieu_de(quel)
+				jeu.monde.flore_arrivee(quel)
+				print("vitrine : herbier de « %s », %d plantes" % [quel, herbier["plantes"].size()])
 		var i_d := ar.find("--depuis")
 		if i_d >= 0 and i_d + 1 < ar.size():
 			var xy := ar[i_d + 1].split(",")

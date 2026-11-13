@@ -13,7 +13,8 @@ const P := preload("res://scripts/palette.gd")
 const SHADER := preload("res://shaders/vegetation_feuillage.gdshader")
 const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois",
 	"champignon": "baies"}
-const LUISANT := Color(0.42, 0.95, 0.82)    # la lueur des champignons d'une grotte
+const LUISANT := Color(0.42, 0.95, 0.82)    # la lueur des champignons lumineux d'une grotte (le vert d'eau de l'herbier d'Orvane)
+const OCRE := Color(0.65, 0.48, 0.19)       # le chapeau des autres champignons (l'ocre de l'herbier)
 const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
 const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
 # le feu : ce qui brûle se peint par shaders/incendie_objet.gdshader, qui lit dans les UV ce que le dessin lui dit
@@ -46,7 +47,10 @@ var teinte := Color(0.2, 0.3, 0.18)
 var graine := 0
 var hauteur := 10.0            # en pixels, au-dessus du pied : pour son ombre portée
 var couronne: Node2D = null    # le feuillage d'un arbre, sur son propre nœud
-var lueur: Node2D = null       # la lueur d'un champignon de grotte, sur son propre nœud (rien ne l'assombrit)
+var lueur: Node2D = null       # la lueur d'un champignon lumineux, sur son propre nœud (rien ne l'assombrit)
+# (un champignon : ce qu'il est dans l'herbier d'Orvane — « champignon », « champignon_lumineux », « champignon_geant »,
+# « moisissure » ; sans herbier (hors ligne), il est lumineux)
+var forme := ""
 var _chapeaux: Array = []      # où sont ses chapeaux, et leur taille : [centre, rayon]
 var couronne_rect := Rect2()   # où est ce feuillage, autour du pied
 var _espece := "arbre"
@@ -159,6 +163,9 @@ func porter_plante(e: Dictionary) -> void:
 	port = str(e.get("port", ""))
 	var defense = e.get("defense", [])
 	epineux = typeof(defense) == TYPE_ARRAY and defense.has("epineux")
+	if genre == "champignon":
+		_etre_champignon(str(e.get("forme", "")))
+		return
 	var c = e.get("couleur")
 	if typeof(c) == TYPE_COLOR and c.s > 0.08:
 		teinte = Color.from_hsv(c.h, lerpf(teinte.s, c.s, 0.35), teinte.v)
@@ -168,6 +175,24 @@ func porter_plante(e: Dictionary) -> void:
 		_echelle(k)
 	if couronne != null:
 		couronne.queue_redraw()
+	queue_redraw()
+
+
+# un champignon de l'herbier d'Orvane : le lumineux garde sa lueur ; le géant est seul, haut comme un buisson, on en tire
+# trois parts et on bute dessus ; une moisissure n'est qu'une plaque sur la pierre, on n'y cueille rien
+func _etre_champignon(f: String) -> void:
+	forme = f
+	if forme != "champignon_lumineux" and lueur != null:
+		lueur.queue_free()
+		lueur = null
+	match forme:
+		"champignon_geant":
+			plein = 3
+			rayon = 6.0
+		"moisissure":
+			plein = 0
+	reste = plein
+	_mesurer()
 	queue_redraw()
 
 
@@ -216,6 +241,15 @@ func _mesurer() -> void:
 			_rx = r.randf_range(10.0, 15.0)
 			_ry = r.randf_range(8.0, 12.0)
 			hauteur = _ry
+			if forme == "champignon_geant":
+				# (deux mètres : la taille d'un buisson, un seul pied, un large chapeau)
+				_rx = r.randf_range(15.0, 19.0)
+				_ry = r.randf_range(27.0, 33.0)
+				hauteur = _ry + 8.0
+			elif forme == "moisissure":
+				_rx = r.randf_range(12.0, 17.0)
+				_ry = r.randf_range(4.5, 6.0)
+				hauteur = 1.0
 		"touffe":
 			hauteur = 16.0
 		_:
@@ -1044,13 +1078,21 @@ func _buisson(p, r: RandomNumberGenerator) -> void:
 			p.disque(b + Vector2(-0.6, -0.7), 0.6, 0.55, Color(1.0, 0.96, 0.9, 0.95))
 
 
-# des champignons de grotte, en bouquet : un pied pâle, un chapeau en dôme, d'un vert d'eau qui luit (la lueur : Luisant).
-# Cueillis, il n'en reste que les plus petits
+# les champignons d'une grotte, tels que l'herbier d'Orvane les donne (forme) : en bouquet, un pied pâle et un chapeau en dôme —
+# ocre, ou d'un vert d'eau qui luit (la lueur : Luisant) ; le géant ; la moisissure. Cueillis, il n'en reste que les plus petits
 func _champignon(p, r: RandomNumberGenerator) -> void:
 	var n := 3 + graine % 3
 	var pale := Color(0.84, 0.82, 0.72)
-	var chapeau := LUISANT.darkened(0.25)
 	_chapeaux.clear()
+	if forme == "moisissure":
+		_moisissure(p, r)
+		return
+	if forme == "champignon_geant":
+		_champignon_geant(p, r, pale)
+		return
+	# (lumineux : le vert d'eau de l'herbier ; sinon, son ocre)
+	var luit := forme == "" or forme == "champignon_lumineux"
+	var chapeau := LUISANT.darkened(0.25) if luit else OCRE
 	for i in n:
 		var x := (float(i) - float(n - 1) * 0.5) * _rx * 0.5 + r.randf_range(-1.5, 1.5)
 		var h := r.randf_range(5.0, _ry)
@@ -1065,15 +1107,54 @@ func _champignon(p, r: RandomNumberGenerator) -> void:
 			p.tracer(PackedVector2Array([pied, pied + Vector2(penche * 0.2, -1.8)]), 1.6, Color(pale.darkened(0.25), 0.9))
 			continue
 		var tete := pied + Vector2(penche, -h)
-		p.tracer(PackedVector2Array([pied, tete]), 2.4, ENCRE)
-		p.tracer(PackedVector2Array([pied, tete]), 1.4, pale)
+		p.tracer(PackedVector2Array([pied, tete]), 3.3, ENCRE, false)
+		p.tracer(PackedVector2Array([pied, tete]), 2.0, pale, false)
 		var rc := h * 0.42 + 1.6
 		p.disque(tete, rc + 0.75, rc * 0.62 + 0.75, ENCRE)
 		p.disque(tete, rc, rc * 0.62, chapeau, Pinceau.DOME)
-		p.disque(tete + Vector2(-rc * 0.3, -rc * 0.22), rc * 0.24, rc * 0.16, Color(1.0, 1.0, 0.95, 0.8))
-		_chapeaux.append([tete, rc])
+		p.disque(tete + Vector2(-rc * 0.3, -rc * 0.22), rc * 0.24, rc * 0.16, Color(1.0, 1.0, 0.95, 0.8 if luit else 0.35))
+		if luit:
+			_chapeaux.append([tete, rc])
 	if lueur != null:
 		lueur.queue_redraw()
+
+
+# un champignon géant : un pied épais, un large chapeau ocre piqueté de crème. Cueilli, le chapeau s'entame, puis il n'en reste
+# que le pied
+func _champignon_geant(p, r: RandomNumberGenerator, pale: Color) -> void:
+	var h := _ry
+	var penche := r.randf_range(-2.5, 2.5)
+	var tete := Vector2(penche, -h)
+	var pied := PackedVector2Array([Vector2(-4.6, 1.0), Vector2(4.6, 1.0), Vector2(penche + 3.0, -h + 2.0), Vector2(penche - 3.0, -h + 2.0)])
+	p.aplat(pied, pale)
+	p.contour(pied, 1.3, ENCRE, r, 2)
+	p.tracer(PackedVector2Array([Vector2(1.6, -1.0), Vector2(penche + 1.2, -h + 4.0)]), 1.0, Color(pale.darkened(0.3), 0.7))
+	if reste <= 0:
+		return
+	# (le chapeau : un dôme, plat dessous ; il rétrécit à mesure qu'on le cueille)
+	var k := 0.62 + 0.38 * float(reste) / maxf(float(plein), 1.0)
+	var rx := _rx * k
+	var ry := _rx * 0.6 * k
+	var dome := PackedVector2Array()
+	for i in 15:
+		var a := PI + PI * float(i) / 14.0
+		dome.append(tete + Vector2(cos(a) * rx, sin(a) * ry + 2.0))
+	p.aplat(dome, OCRE.darkened(0.06), Pinceau.DOME, tete + Vector2(0.0, -ry * 0.4), Vector2(rx, ry))
+	p.contour(dome, 1.5, ENCRE, r, 3)
+	for i in 7:
+		var q := tete + Vector2(r.randf_range(-0.7, 0.7) * rx, 2.0 - r.randf_range(0.2, 0.8) * ry)
+		if (q - tete - Vector2(0.0, 2.0)).length() < rx * 0.86 and absf(q.x - tete.x) < rx * sqrt(maxf(0.0, 1.0 - pow((tete.y + 2.0 - q.y) / ry, 2.0))) - 1.5:
+			p.disque(q, r.randf_range(1.0, 1.9), r.randf_range(0.8, 1.4), Color(0.95, 0.9, 0.81))
+
+
+# une moisissure : une plaque pâle sur la pierre, piquetée de vert
+func _moisissure(p, r: RandomNumberGenerator) -> void:
+	var plaque := festons(Vector2.ZERO, _rx, _ry, r.randi_range(6, 8), 0.22, r, 30, 0.2)
+	p.aplat(plaque, Color(0.81, 0.83, 0.78))
+	p.contour(plaque, 0.9, Color(ENCRE, 0.55), r, 4)
+	for i in 9:
+		var q := Vector2(r.randf_range(-0.75, 0.75) * _rx, r.randf_range(-0.6, 0.6) * _ry)
+		p.disque(q, r.randf_range(0.7, 1.3), r.randf_range(0.6, 1.0), Color(0.62, 0.71, 0.6))
 
 
 func _touffe(p, r: RandomNumberGenerator) -> void:
