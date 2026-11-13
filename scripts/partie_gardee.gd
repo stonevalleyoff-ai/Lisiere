@@ -66,6 +66,7 @@ static func photo(jeu) -> Dictionary:
 		"vues": jeu.vues,
 		"rencontres": jeu.rencontres,
 		"prelevements": jeu.prelevements,
+		"appris": jeu.appris,
 		"deja": jeu._deja.keys(),
 		"partie": jeu.partie_id,
 		"joueur": {
@@ -97,6 +98,9 @@ static func appliquer(jeu, d: Dictionary) -> void:
 		jeu.rencontres[k] = int(d["rencontres"][k])
 	for k in d.get("prelevements", {}):
 		jeu.prelevements[k] = int(d["prelevements"][k])
+	# (ce que la partie a déjà appris aux bêtes : la mémoire d'Orvane, principal.gd, _raconter)
+	for k in d.get("appris", {}):
+		jeu.appris[k] = int(d["appris"][k])
 	for k in d.get("deja", []):
 		jeu._deja[str(k)] = true
 	# (les bêtes tuées, retrouvées dans la faune du lieu : leurs échos reviendront)

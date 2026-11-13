@@ -3,14 +3,30 @@ extends RefCounted
 # Le monde d'Orvane en ligne, par morceaux, avec le kit (Orvane.lire_lieux, Orvane.lire_silhouettes) ; sans réseau, la copie
 # gardée dans donnees/ (outils/secours.js). Puis la faune d'un lieu, rangée comme le jeu la joue : les proies du jour et de la
 # nuit, les rôdeurs (des chasseurs qui vivent le jour), les chasseurs de la nuit. Rien n'est inventé : chaque bête est une
-# lignée du monde, avec sa masse, sa vitesse, son caractère et son effectif dans ce lieu.
+# lignée du monde, avec sa masse, sa vitesse, son caractère, son effectif dans ce lieu, et ce que sa population y a appris des
+# joueurs (la mémoire d'Orvane, docs/12 : Orvane.dispositions).
 
 const SECOURS := "res://donnees/"
 const TERRE := ["marche", "course", "saut", "fouissage", "grimpe", "reptation"]
+# la mémoire forcée, pour essayer à la main tant que le monde publié n'en porte pas (-- --memoire <nom>, ?memoire=<nom>) : ce
+# que chaque population du lieu aurait appris. Elle ne touche que ce qu'on lit ; une partie jouée ainsi n'envoie rien.
+const MEMOIRES := {
+	"crainte": {"mefiance": 0.9, "attitude": "fuyante"},
+	"confiance": {"habituation": 0.9, "attitude": "familiere"},
+	"traque": {"traque": 0.9, "attitude": "traqueuse"},
+	"feu": {"neophobie": 0.95},
+	"accoutumance": {"neophobie": 0.05},
+}
+# ce que le carnet dit d'une attitude (le mot que publie Orvane), ou à défaut de la disposition qui domine
+const ATTITUDES := {"traqueuse": "elle traque les veilleuses", "rodeuse": "elle rôde autour des camps", "quemandeuse": "elle vient quémander",
+	"defensive": "elle se défend de près", "fuyante": "elle fuit les veilleuses", "familiere": "familière des veilleuses"}
+const SEUIL_DIT := 0.35
 
 var index: Dictionary = {}
 var en_ligne := false
 var hors_ligne_force := false
+# "" : la mémoire du monde, telle qu'il la publie ; sinon un nom de MEMOIRES
+var memoire_forcee := ""
 var _secours: Dictionary = {}
 
 
@@ -109,7 +125,8 @@ func charger_lieu(id: String) -> Dictionary:
 	return inst2
 
 
-# la faune d'un lieu, comme le jeu la joue. Chaque entrée : { lignee, id, nom, masse, effectif, poids, sociable, activite }
+# la faune d'un lieu, comme le jeu la joue. Chaque entrée : { lignee, id, nom, masse, effectif, poids, sociable, activite, memoire }
+# (memoire : { mefiance, habituation, attrait, traque, neophobie, attitude }, ce que sa population a appris des joueurs)
 func faune(inst: Dictionary, id: String) -> Dictionary:
 	var F := {"proies_jour": [], "proies_nuit": [], "rodeurs": [], "chasseurs_nuit": []}
 	var chasseurs := []
@@ -139,7 +156,8 @@ func faune(inst: Dictionary, id: String) -> Dictionary:
 			continue
 		var act := str(p.get("activite", "diurne"))
 		var e := {"lignee": t, "id": str(t.get("id", "")), "nom": nom_court(t), "masse": masse, "effectif": effectif,
-			"poids": log(effectif + 1.0) / log(10.0) + 0.5, "sociable": float(p.get("sociabilite", 0.3)), "activite": act}
+			"poids": log(effectif + 1.0) / log(10.0) + 0.5, "sociable": float(p.get("sociabilite", 0.3)), "activite": act,
+			"memoire": memoire_de(t, id)}
 		var chasseur := regime == "carnivore" or (regime == "omnivore" and masse >= 15.0)
 		if chasseur:
 			chasseurs.append(e)
@@ -156,6 +174,33 @@ func faune(inst: Dictionary, id: String) -> Dictionary:
 		# (aucun chasseur de nuit ici : la faim fait sortir ceux du jour)
 		F["chasseurs_nuit"] = chasseurs.filter(func(x): return float(x["masse"]) >= 1.0)
 	return F
+
+
+# ce qu'une population a appris des joueurs : la mémoire du monde, ou celle qu'on force pour essayer
+func memoire_de(t: Dictionary, id: String) -> Dictionary:
+	if MEMOIRES.has(memoire_forcee):
+		var m: Dictionary = Orvane.DISPOSITIONS_NEUTRES.duplicate()
+		m.merge(MEMOIRES[memoire_forcee], true)
+		return m
+	return Orvane.dispositions(t, id)
+
+
+# ce que le carnet en dit, en quelques mots ("" : rien à dire, une population que les joueurs n'ont pas marquée)
+static func dire_memoire(m: Dictionary) -> String:
+	var a := str(m.get("attitude", ""))
+	if ATTITUDES.has(a):
+		return ATTITUDES[a]
+	var feu := (float(m.get("neophobie", 0.5)) - 0.5) * 2.0
+	var dits := [[float(m.get("traque", 0.0)), "pour elle, tu es une proie"], [float(m.get("mefiance", 0.0)), "méfiante : on la chasse ici"],
+		[feu, "elle craint le feu"], [-feu, "le feu ne l'effraie plus"], [float(m.get("habituation", 0.0)), "habituée aux veilleuses"],
+		[float(m.get("attrait", 0.0)), "attirée par les camps"]]
+	var mieux := SEUIL_DIT
+	var dit := ""
+	for d in dits:
+		if float(d[0]) > mieux:
+			mieux = float(d[0])
+			dit = str(d[1])
+	return dit
 
 
 static func nom_de(t: Dictionary) -> String:

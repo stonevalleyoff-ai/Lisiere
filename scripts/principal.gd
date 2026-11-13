@@ -5,8 +5,12 @@ extends Node
 # lisière de la lumière, mordent dans le noir. La peur monte dans l'obscurité ; au comble, ce qu'on a tué revient, en échos.
 # Chaque bête croisée est comptée (« rencontre »), chaque bête tuée aussi (« prélèvement »), dans le lieu d'Orvane où c'est
 # arrivé : à la fin de la partie, le kit en fait un lot (docs/4), déposé dans le monde d'Orvane (scripts/regles.gd : sa clé, son monde) ; l'essai et la vitrine n'envoient rien.
+# La mémoire d'Orvane (docs/12) : chaque bête se conduit d'après ce que sa population a appris des joueurs (scripts/bete.gd), et la
+# partie raconte ce qu'elle lui apprendra (_raconter) : une bête blessée qui s'en va, un chasseur tenu par un feu ou par la torche,
+# un assaut, une morsure qui tue. Le kit ne garde ces comptes que si le monde lu tient la mémoire.
 #   outils/godot.sh --path .                       jouer
 #   outils/godot.sh --headless --path . -- --essai l'essai sans écran (scripts/essai.gd)
+#   outils/godot.sh --path . -- --memoire traque   essayer une mémoire à la main (scripts/donnees.gd, MEMOIRES) : rien n'est envoyé
 
 const R := preload("res://scripts/regles.gd")
 const Donnees := preload("res://scripts/donnees.gd")
@@ -73,6 +77,8 @@ var tuees: Array = []
 var vues: Dictionary = {}
 var rencontres: Dictionary = {}
 var prelevements: Dictionary = {}
+# ce que la partie apprend aux bêtes, et qui part vers Orvane (_raconter) : { blessure, effarouchement, attaque, joueur_tombe }
+var appris: Dictionary = {}
 var compte := ""
 var record := 0
 var essai = null
@@ -144,6 +150,7 @@ func _ready() -> void:
 	Orvane.jeu = "lisiere"
 	Orvane.monde = R.MONDE_DES_LOTS
 	Orvane.cle_jeu = R.CLE_JEU
+	_memoire_forcee()
 	if "--essai" in OS.get_cmdline_user_args():
 		essai = Essai.new()
 		add_child(essai)
@@ -158,6 +165,27 @@ func _ready() -> void:
 		add_child(essai)
 		return
 	_titre()
+
+
+# une mémoire forcée, pour essayer à la main tant que le monde publié n'en porte pas : -- --memoire <nom> (crainte, confiance,
+# traque, feu, accoutumance : scripts/donnees.gd, MEMOIRES), ou ?memoire=<nom> au bout de l'adresse du jeu web. Elle ne change que
+# ce que le jeu lit des populations du lieu ; une partie jouée ainsi n'envoie rien à Orvane. L'essai pose les siennes lui-même.
+func _memoire_forcee() -> void:
+	var nom := ""
+	var args := OS.get_cmdline_user_args()
+	var i := args.find("--memoire")
+	if i >= 0 and i + 1 < args.size():
+		nom = str(args[i + 1])
+	if OS.has_feature("web"):
+		var q = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('memoire') || ''", true)
+		if typeof(q) == TYPE_STRING and str(q) != "":
+			nom = str(q)
+	if nom == "" or "--essai" in args:
+		return
+	if Donnees.MEMOIRES.has(nom):
+		donnees.memoire_forcee = nom
+	else:
+		print("--memoire : « %s » n'est pas une mémoire connue (%s) ; rien n'est forcé." % [nom, ", ".join(PackedStringArray(Donnees.MEMOIRES.keys()))])
 
 
 # le compteur d'images par seconde, discret, en haut au milieu. Il s'allume et s'éteint à la pause (basculer_ips), et le choix
@@ -254,6 +282,8 @@ func _actions() -> void:
 
 func _titre() -> void:
 	if en_partie and _mort < 0.0:
+		# (les bêtes ne sont pas gardées : celles qu'on a frappées en réchappent, et la partie gardée le sait)
+		_blessees_en_vie()
 		_garder()
 	_vider()
 	ui.montrer_chargement("Le monde d'Orvane s'éveille…")
@@ -432,6 +462,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	vues.clear()
 	rencontres.clear()
 	prelevements.clear()
+	appris.clear()
 	_deja.clear()
 	_directeur = 0.5
 	_vague = 0.0
@@ -460,6 +491,8 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		PartieGardee.effacer()
 		_ouvrir_au_tableau()
 	ui.message("Tu t'éveilles à la lisière : %s, %s. Le jour baisse vite." % [str(biome_info.get("nom", biome)), saison])
+	if donnees.memoire_forcee != "":
+		ui.message("Mémoire forcée, pour essayer : « %s ». Cette partie n'envoie rien à Orvane." % donnees.memoire_forcee, Color(0.75, 0.88, 1.0))
 	if climat.neige_sol >= R.NEIGE_AU_SOL:
 		ui.message("La neige tient au sol : on y marche moins vite.", Color(0.72, 0.82, 0.92))
 	elif climat.boue_fond > 0.1:
@@ -472,6 +505,7 @@ func _vider() -> void:
 	en_pause = false
 	ui.montrer_pause(false)
 	if scene != null:
+		_blessees_en_vie()
 		scene.queue_free()
 		scene = null
 	if couche_yeux != null:
@@ -825,6 +859,9 @@ func nourrir_feu() -> void:
 	joueur.inventaire["bois"] = int(joueur.inventaire["bois"]) - 1
 	f.ajouter(1)
 	sons.jouer("allume", -8.0, 1.2)
+	# (la gerbe d'une bûche : les bêtes qui craignent le feu reculent un moment)
+	for b in get_tree().get_nodes_in_group("betes"):
+		b.gerbe(f)
 
 
 func cuire() -> void:
@@ -879,7 +916,8 @@ func _chasseur_le_plus_proche() -> float:
 
 func bete_tuee(b) -> void:
 	chassees += 1
-	Orvane.compter(b.id, biome, "prelevement")
+	# (la veilleuse n'a que ses poings et sa lance : au corps à corps)
+	Orvane.compter(b.id, biome, "prelevement", 1.0, "", "", "", "melee")
 	prelevements[b.id] = int(prelevements.get(b.id, 0)) + 1
 	var viande := clampi(int(round(pow(b.masse, 0.4))), 1, 6)
 	joueur.inventaire["viande"] = int(joueur.inventaire["viande"]) + viande
@@ -900,6 +938,37 @@ func bete_tuee(b) -> void:
 	_conseil("echo", true, "Ce qu'on tue ici ne s'oublie pas tout à fait.")
 
 
+# ce que la mémoire d'Orvane retiendra de cette partie (docs/12), compté pour la lignée, dans le lieu où c'est arrivé. Le kit ne
+# garde ces actions que si le monde lu tient la mémoire (Orvane.memoire_eveillee) ; la fin ne dit que ce qui part.
+func _raconter(b, action: String, moyen: String = "") -> void:
+	Orvane.compter(b.id, biome, action, 1.0, "", "", "", moyen)
+	if Orvane.memoire_eveillee():
+		appris[action] = int(appris.get(action, 0)) + 1
+
+
+# une bête frappée par la veilleuse s'en va en vie (trop loin, à l'aube, à la fin de la partie) : une blessure, une par bête
+func bete_echappee(b) -> void:
+	_raconter(b, "blessure", "melee")
+
+
+# une bête arrêtée sans mal, par un feu de camp (« feu ») ou par la torche (« lumiere ») : une fois par bête et par nuit, vue ou non
+func bete_effarouchee(b, moyen: String) -> void:
+	_raconter(b, "effarouchement", moyen)
+
+
+# un assaut sur la veilleuse : une série de morsures, la charge d'un rôdeur (bete.gd, _assaillir)
+func bete_attaque(b) -> void:
+	_raconter(b, "attaque")
+
+
+# les bêtes frappées et encore en vie quand le lieu s'en va (la fin, le retour au titre) : elles en réchappent
+func _blessees_en_vie() -> void:
+	for b in get_tree().get_nodes_in_group("betes"):
+		if b.touchee and b.pv > 0.0:
+			b.touchee = false
+			bete_echappee(b)
+
+
 # une bête tuée par la foudre ou par l'incendie : ce n'est pas une chasse (rien n'est compté, ni pour la partie ni pour Orvane)
 func bete_foudroyee(b) -> void:
 	effets.mort(b.position, b.robe, b.largeur)
@@ -911,7 +980,11 @@ func mordre(b) -> void:
 	if _mort >= 0.0:
 		return
 	var d := 4.0 + 7.0 * log(float(b.masse) + 1.0) / log(10.0)
+	var en_vie: bool = joueur.sante > 0.0
 	joueur.blesser(d)
+	if en_vie and joueur.sante <= 0.0:
+		# (la morsure qui la fait tomber : sa population apprend qu'une veilleuse est une proie)
+		_raconter(b, "joueur_tombe")
 	sons.jouer("mord", -1.0, randf_range(0.85, 1.1))
 	ui.blessure()
 	effets.blessure()
@@ -919,8 +992,9 @@ func mordre(b) -> void:
 	_conseil("morsure-" + str(b.id), true, "%s te mord." % b.nom, Color(0.95, 0.5, 0.42))
 
 
-func grognement(b) -> void:
-	if _grogne > 0.0:
+# (presage : une bête qui annonce ce qu'elle va faire se fait toujours entendre)
+func grognement(b, presage: bool = false) -> void:
+	if _grogne > 0.0 and not presage:
 		return
 	_grogne = 4.0
 	var d: float = joueur.position.distance_to(b.position)
@@ -1100,10 +1174,15 @@ func _fin() -> void:
 		nr += int(rencontres[k])
 	for k in prelevements:
 		np += int(prelevements[k])
+	_blessees_en_vie()
 	var depot := "Le jeu n'a pas encore sa clé : le lot reste ici, rien n'est envoyé."
 	if essai != null:
 		# (une partie jouée toute seule, l'essai ou la vitrine : rien de vrai, rien ne part)
 		depot = "Une partie d'essai : rien n'est envoyé."
+		Orvane.oublier()
+	elif donnees.memoire_forcee != "":
+		# (des bêtes conduites par une mémoire qui n'est pas celle du monde : ce qu'elles ont fait n'apprendrait rien de vrai)
+		depot = "Une partie à la mémoire forcée (« %s ») : rien n'est envoyé." % donnees.memoire_forcee
 		Orvane.oublier()
 	elif Orvane.cle_jeu != "":
 		Orvane.clore(compte)
@@ -1122,10 +1201,23 @@ func _fin() -> void:
 	var resume := "Tu as tenu %d nuit%s dans ce lieu : %s. Ton record : %d.\nTu as croisé %d bête%s de %d lignée%s, et tu en as chassé %d." % [
 		nuits, "s" if nuits > 1 else "", str(biome_info.get("nom", biome)), record, croisees, "s" if croisees > 1 else "",
 		vues.size(), "s" if vues.size() > 1 else "", chassees]
-	var lot := "Ce que ta partie renvoie au monde d'Orvane : %d rencontre%s, %d prélèvement%s, dans le lieu « %s ». %s\n%s" % [
-		nr, "s" if nr > 1 else "", np, "s" if np > 1 else "", biome, depot, " · ".join(PackedStringArray(noms))]
+	var lot := "Ce que ta partie renvoie au monde d'Orvane : %d rencontre%s, %d prélèvement%s%s, dans le lieu « %s ». %s\n%s" % [
+		nr, "s" if nr > 1 else "", np, "s" if np > 1 else "", _texte_appris(), biome, depot, " · ".join(PackedStringArray(noms))]
 	ui.montrer_fin(titre, resume, lot)
 	_inscrire_au_tableau()
+
+
+# ce que la partie apprend aux bêtes, pour le texte du lot (« , 2 bêtes blessées, 3 tenues à distance, 1 assaut ») ; "" si le
+# monde ne tient pas la mémoire, ou s'il n'y a rien à dire
+func _texte_appris() -> String:
+	var mots := {"blessure": ["bête blessée", "bêtes blessées"], "effarouchement": ["tenue à distance", "tenues à distance"],
+		"attaque": ["assaut", "assauts"], "joueur_tombe": ["morsure qui t'a prise", "morsures qui t'ont prise"]}
+	var t := ""
+	for k in mots:
+		var n := int(appris.get(k, 0))
+		if n > 0:
+			t += ", %d %s" % [n, mots[k][0] if n == 1 else mots[k][1]]
+	return t
 
 
 # --- le temps qu'il fait : ce qu'il fait au corps, au feu, aux bêtes (scripts/climat.gd, scripts/incendie.gd) ---
