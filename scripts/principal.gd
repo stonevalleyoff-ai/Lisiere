@@ -73,6 +73,8 @@ var _meteos := {}
 var _lecture := ""            # le biome qu'on est en train de lire
 var _illisibles := {}         # ceux qui ne se lisent pas (hors ligne, hors de la copie gardée)
 var ponts: Array = []         # les ponts de fortune qui tiennent encore (scripts/pont.gd)
+var altitude := 0.0           # l'étage du relief où est la veilleuse (0 : en bas ; scripts/carte.gd, palier), lissé
+var sous_terre := 0.0         # de 0 (à l'air libre) à 1 (dans une grotte : ni jour, ni temps qu'il fait), lissé
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
 var _pont_vu := 0.0
 var part_nuit := 0.33
@@ -346,6 +348,8 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 	_lecture = ""
 	_region = -1
 	decouvertes = {}
+	altitude = 0.0
+	sous_terre = 0.0
 	biome_info = donnees.biome(b)
 	saison = str(inst.get("cycle", {}).get("saison", {}).get("nom", "été"))
 	part_nuit = float(R.NUIT.get(saison, 0.4))
@@ -466,6 +470,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		dessin.jeu = self
 		scene.add_child(dessin)
 		dessin.poser(scene, monde)
+	monde.relief_au_dessus(scene)
 	horloge = R.TRANSITION + 2.0
 	jour = 1
 	nuits = 0
@@ -546,7 +551,12 @@ func vent() -> float:
 	return Sons.rafale(horloge)
 
 
+# le jour là où est la veilleuse : celui du ciel, qui n'entre pas sous terre (une grotte du monde ouvert)
 func lumiere_du_jour() -> float:
+	return jour_du_ciel() * (1.0 - sous_terre)
+
+
+func jour_du_ciel() -> float:
 	var t := fmod(horloge, R.DUREE)
 	var soir := R.DUREE * (1.0 - part_nuit)
 	if t < R.TRANSITION:
@@ -674,7 +684,7 @@ func _process(delta: float) -> void:
 	if j != jour:
 		jour = j
 		_aube()
-	var nuit := lumiere_du_jour() <= 0.0
+	var nuit := jour_du_ciel() <= 0.0
 	if nuit and not _etait_nuit:
 		_tombee_de_la_nuit()
 	_etait_nuit = nuit
@@ -686,6 +696,11 @@ func _process(delta: float) -> void:
 	if carte != null:
 		_regions()
 		_voir_les_ponts(delta)
+		# (l'étage du relief où elle est, lissé : plus haut, il fait plus froid et l'on voit plus loin)
+		altitude = move_toward(altitude, float(carte.palier(joueur.position)), delta * 0.7)
+		# (sous terre : le noir d'une grotte, son abri ; scripts/carte.gd)
+		sous_terre = move_toward(sous_terre, float(carte.sous_terre(joueur.position)), delta * 0.9)
+		climat.toit = sous_terre
 	_directeur_passe(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)

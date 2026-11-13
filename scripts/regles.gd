@@ -110,6 +110,10 @@ const RECETTES := {
 const ORDRE_RECETTES := ["feu", "torche", "lance", "pont"]
 const PONT_DUREE := 360.0     # ce qu'un pont tient, en secondes (une journée et demie)
 const PONT_PASSAGE := 25.0    # ce que chaque passage de la veilleuse lui retire
+# le relief (scripts/carte.gd) : plus haut, l'air est plus froid et la vue plus large
+const FROID_PAR_PALIER := 0.03   # ce que chaque étage retire à la température de l'air
+const VUE_PAR_PALIER := 0.05     # et de combien la caméra recule
+const AIR_SOUS_TERRE := 0.44     # l'air d'une grotte : frais, constant
 const NOMS := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "baies": "baies", "viande": "viande crue", "viande_cuite": "viande cuite"}
 const ORDRE_INVENTAIRE := ["bois", "pierre", "fibre", "baies", "viande", "viande_cuite"]
 

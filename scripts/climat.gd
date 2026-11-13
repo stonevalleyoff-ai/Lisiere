@@ -35,6 +35,8 @@ var chaleur := 0.0            # ce que l'épisode ajoute à l'air (la canicule),
 var air := 0.5
 var boue := 0.0
 var crue := 0.0
+var toit := 0.0               # sous terre (une grotte du monde ouvert : scripts/carte.gd) : de 0 (dehors) à 1 ; le temps n'y entre pas
+var _toit_vu := 0.0
 var neige_sol := 0.0
 # le climat du lieu : son humidité, sa température (les axes du biome), et ce que le monde dit du temps du cycle
 var humide := 0.5
@@ -107,13 +109,18 @@ func avancer(delta: float) -> void:
 		_suivant()
 	# chaque force rejoint celle de l'épisode, en une douzaine de secondes
 	var k := 1.0 - exp(-delta / 5.0)
-	pluie = lerpf(pluie, _force * (1.0 if temps == "pluie" else (0.9 if temps == "orage" else 0.0)), k)
-	orage = lerpf(orage, _force if temps == "orage" else 0.0, k)
-	neige = lerpf(neige, _force if temps == "neige" else 0.0, k)
-	brouillard = lerpf(brouillard, _force if temps == "brouillard" else 0.0, k)
+	# (sous terre, le temps du dehors n'entre pas : il s'efface en entrant, revient en sortant, en une seconde ou deux)
+	var dehors := 1.0 - toit
+	if toit > 0.0 or _toit_vu > 0.0:
+		k = 1.0 - exp(-delta / 0.5)
+	_toit_vu = maxf(toit, _toit_vu - delta * 0.5)
+	pluie = lerpf(pluie, _force * (1.0 if temps == "pluie" else (0.9 if temps == "orage" else 0.0)) * dehors, k)
+	orage = lerpf(orage, (_force if temps == "orage" else 0.0) * dehors, k)
+	neige = lerpf(neige, (_force if temps == "neige" else 0.0) * dehors, k)
+	brouillard = lerpf(brouillard, (_force if temps == "brouillard" else 0.0) * dehors, k)
 	# (la canicule est du jour : la nuit, elle retombe aux deux tiers)
 	var plein_jour: float = (0.35 + 0.65 * jeu.lumiere_du_jour()) if jeu != null else 1.0
-	chaleur = lerpf(chaleur, 0.3 * _force * plein_jour if temps == "canicule" else 0.0, k)
+	chaleur = lerpf(chaleur, (0.3 * _force * plein_jour if temps == "canicule" else 0.0) * dehors, k)
 	var vent_cible := 0.12
 	match temps:
 		"pluie":
@@ -122,7 +129,7 @@ func avancer(delta: float) -> void:
 			vent_cible = 0.5 + 0.4 * _force
 		"neige":
 			vent_cible = 0.25 + 0.3 * _force
-	vent = lerpf(vent, vent_cible, k * 0.5)
+	vent = lerpf(vent, vent_cible * dehors, k * 0.5)
 	_air(delta)
 	_sol(delta)
 	_ciel(delta)
@@ -210,7 +217,10 @@ func _air_de_fond() -> float:
 			a -= 0.04
 	if jeu != null:
 		a -= 0.11 * (1.0 - jeu.lumiere_du_jour())
-	return a
+		# (sur les hauteurs du relief : scripts/carte.gd)
+		a -= R.FROID_PAR_PALIER * float(jeu.get("altitude")) if jeu.get("altitude") != null else 0.0
+	# (sous terre : un air frais, le même en toute saison, de jour comme de nuit)
+	return lerpf(a, R.AIR_SOUS_TERRE, toit)
 
 
 func _air(_delta: float) -> void:
@@ -249,7 +259,7 @@ func eau(p: Vector2) -> float:
 	var gue := 0.0
 	if jeu != null and jeu.get("carte") != null:
 		gue = jeu.carte.gue_en(p)
-	if crue <= 0.01:
+	if crue * (1.0 - toit) <= 0.01:
 		return gue
 	var seuil := lerpf(0.26, 0.5, crue)
 	return maxf(gue, clampf((seuil - relief(p)) / 0.07, 0.0, 1.0) * minf(1.0, crue * 6.0))
@@ -260,14 +270,19 @@ func eau(p: Vector2) -> float:
 func allure(p: Vector2, masse: float = 60.0) -> float:
 	var poids := clampf(0.55 + 0.45 * masse / 40.0, 0.55, 1.0)
 	var a := 1.0
-	if boue > 0.02:
+	# (sous terre, ni boue ni neige du dehors)
+	var dehors := 1.0 - toit
+	if boue * dehors > 0.02:
 		var flaque := clampf(_flaques.get_noise_2d(p.x, p.y) * 0.5 + 0.5, 0.0, 1.0)
-		a *= 1.0 - R.BOUE_FREIN * boue * (0.55 + 0.45 * flaque) * poids
+		a *= 1.0 - R.BOUE_FREIN * boue * dehors * (0.55 + 0.45 * flaque) * poids
 	var e := eau(p)
 	if e > 0.0:
 		a *= 1.0 - R.EAU_FREIN * e
-	if neige_sol > 0.2:
-		a *= 1.0 - R.NEIGE_FREIN * smoothstep(0.2, 0.6, neige_sol) * poids
+	if neige_sol * dehors > 0.2:
+		a *= 1.0 - R.NEIGE_FREIN * smoothstep(0.2, 0.6, neige_sol * dehors) * poids
+	# (le monde ouvert : un col se monte lentement ; scripts/carte.gd)
+	if jeu != null and jeu.get("carte") != null:
+		a *= float(jeu.carte.allure(p))
 	return maxf(a, 0.4)
 
 
@@ -275,6 +290,8 @@ func allure(p: Vector2, masse: float = 60.0) -> float:
 func abri(p: Vector2) -> float:
 	if jeu == null or jeu.monde == null:
 		return 0.0
+	if toit > 0.5:
+		return 1.0
 	for o in jeu.monde.autour(p, 90.0):
 		var c: float = o.couvert()
 		if c > 0.0 and p.distance_to(o.position + Vector2(0.0, -4.0)) < c:

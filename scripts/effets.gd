@@ -36,6 +36,7 @@ var _jour := 1.0
 # la caméra
 var _trauma := 0.0
 var _zoom := 1.0
+var recul := 1.0               # (la vitrine : regarder de plus haut)
 # le temps : ce qu'on rend à Engine.time_scale, ce qu'on y a mis (-1 : rien), l'arrêt en cours (secondes réelles), le ralenti
 var _base_temps := 1.0
 var _pose := -1.0
@@ -264,8 +265,11 @@ func _camera(delta: float, nuit: float, fin: float) -> void:
 	camera.rotation = _bruit.get_noise_2d(t, 40.0) * 0.03 * s
 	# la nuit, elle se rapproche un peu (le monde se resserre autour du feu) ; la peur la fait reculer ; la fin, s'approcher
 	var cible := 1.0 + 0.045 * nuit - 0.035 * smoothstep(0.6, 1.0, _peur) + 0.14 * fin
+	# (sur les hauteurs, elle recule : on voit plus loin, d'un palier à l'autre)
+	if jeu != null:
+		cible -= R.VUE_PAR_PALIER * float(jeu.altitude)
 	_zoom = lerpf(_zoom, cible, clampf(delta * 0.8, 0.0, 1.0))
-	camera.zoom = Vector2(R.ZOOM, R.ZOOM) * _zoom
+	camera.zoom = Vector2(R.ZOOM, R.ZOOM) * _zoom * recul
 
 
 func _vue() -> Vector2:
