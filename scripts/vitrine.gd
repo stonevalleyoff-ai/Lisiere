@@ -12,7 +12,7 @@ extends Node
 #   --doigt    les boutons tactiles, comme sur un téléphone ; --carte : à la fin, la pause et la carte du carnet ;
 #   --depuis x,y : d'où elle part ; --pont : au bord d'une rivière, elle pose un pont de fortune et le passe
 #   --reste : elle ne bouge pas ; --vers x,y : elle marche vers ce point ; --recul 0.4 : la caméra recule d'autant (voir le
-#   relief d'un pays, le plan d'une grotte)
+#   relief d'un pays, le plan d'une grotte) ; --torche : elle part une torche à la main
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -134,6 +134,9 @@ func _lancer() -> void:
 			var but := ar[i_v + 1].split(",")
 			_but = Vector2(float(but[0]), float(but[1]))
 			_plan = [[0.0, 0.06, "attendre"], [0.06, 1.0, "aller"]]
+		# (--torche : elle allume une torche en partant)
+		if ar.has("--torche"):
+			jeu.fabriquer("torche")
 		var i_r := ar.find("--recul")
 		if i_r >= 0 and i_r + 1 < ar.size():
 			jeu.effets.recul = float(ar[i_r + 1])

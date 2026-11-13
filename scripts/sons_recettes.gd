@@ -37,7 +37,7 @@ const TAUX := {
 	# le temps qu'il fait
 	"pluie_fine": LENT, "pluie_drue": LENT, "pluie_feuilles": SOURD, "pluie_eau": LENT, "vent_hurle": GRAVE,
 	"tonnerre": GRAVE, "foudre": VIF, "presage": VIF, "brasier": GRAVE, "craque": VIF, "vapeur": VIF, "effondre": SOURD,
-	"pas_boue": VIF, "pas_eau": VIF, "frisson": SOURD, "cri": SOURD, "crache": VIF,
+	"pas_boue": VIF, "pas_eau": VIF, "frisson": SOURD, "cri": SOURD, "crache": VIF, "goutte": VIF,
 }
 
 
@@ -150,6 +150,8 @@ static func fabriquer(nom: String, r: RandomNumberGenerator) -> Array:
 			return [_frisson(r), TAUX[base]]
 		"cri":
 			return [_cri(r), TAUX[base]]
+		"goutte":
+			return [_goutte(k, r), TAUX[base]]
 		"crache":
 			return [_crache(r), TAUX[base]]
 	return []
@@ -1388,5 +1390,28 @@ static func _crache(r: RandomNumberGenerator) -> PackedFloat32Array:
 	O.eclat(c, 0.0005, 0.0005, 0.8, r, VIF)
 	O.bande(c, r.randf_range(1400.0, 2200.0), 2.0, VIF)
 	O.poser(s, c, 0, 1.0)
+	O.normaliser(s, 0.8)
+	return O.bords(s, VIF)
+
+
+# sous terre (une grotte du monde ouvert) : une goutte tombe dans une flaque — un « plic » dont la note monte (la bulle se
+# referme), puis la roche qui le renvoie, de plus en plus sourd, de plus en plus tard
+static func _goutte(k: int, r: RandomNumberGenerator) -> PackedFloat32Array:
+	var notes := [1050.0, 1380.0, 860.0, 1690.0]
+	var f: float = float(notes[k % 4]) * r.randf_range(0.95, 1.05)
+	var g := O.vide(0.16, VIF)
+	O.mode(g, 0.001, f, 0.02, 1.0, VIF, 1.25)
+	O.mode(g, 0.0, f * 2.4, 0.004, 0.22, VIF, 1.1)
+	O.eclat(g, 0.0, 0.0005, 0.1, r, VIF)
+	var s := O.vide(1.2, VIF)
+	O.poser(s, g, 0, 1.0)
+	var e := g.duplicate()
+	var t := 0.0
+	var part := 0.4
+	for i in 5:
+		O.bas(e, 2600.0 - 380.0 * i, VIF)
+		t += r.randf_range(0.07, 0.13) * (1.0 + 0.25 * i)
+		O.poser(s, e, int(t * VIF), part)
+		part *= 0.6
 	O.normaliser(s, 0.8)
 	return O.bords(s, VIF)

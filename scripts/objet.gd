@@ -11,7 +11,9 @@ extends Node2D
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const P := preload("res://scripts/palette.gd")
 const SHADER := preload("res://shaders/vegetation_feuillage.gdshader")
-const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois"}
+const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois",
+	"champignon": "baies"}
+const LUISANT := Color(0.42, 0.95, 0.82)    # la lueur des champignons d'une grotte
 const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
 const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
 # le feu : ce qui brûle se peint par shaders/incendie_objet.gdshader, qui lit dans les UV ce que le dessin lui dit
@@ -44,6 +46,8 @@ var teinte := Color(0.2, 0.3, 0.18)
 var graine := 0
 var hauteur := 10.0            # en pixels, au-dessus du pied : pour son ombre portée
 var couronne: Node2D = null    # le feuillage d'un arbre, sur son propre nœud
+var lueur: Node2D = null       # la lueur d'un champignon de grotte, sur son propre nœud (rien ne l'assombrit)
+var _chapeaux: Array = []      # où sont ses chapeaux, et leur taille : [centre, rayon]
 var couronne_rect := Rect2()   # où est ce feuillage, autour du pied
 var _espece := "arbre"
 var _repousse := 0.0
@@ -126,7 +130,7 @@ func preparer(g: String, couleur: Color, s: int) -> void:
 			rayon = 15.0
 		"buisson":
 			plein = 3
-		"touffe":
+		"touffe", "champignon":
 			plein = 2
 		_:
 			plein = 1
@@ -134,6 +138,12 @@ func preparer(g: String, couleur: Color, s: int) -> void:
 	matieres()
 	_mesurer()
 	material = vegetation if g in ["arbre", "sapin", "buisson", "touffe"] else fixe
+	if g == "champignon":
+		# (des champignons luisants, sous terre : leur lueur se dessine à part, sans l'ombre de la roche)
+		lueur = Luisant.new()
+		lueur.objet = self
+		lueur.material = preload("res://scripts/effets_textures.gd").materiau(true, false)
+		add_child(lueur)
 	if g == "arbre" or g == "sapin":
 		couronne = Couronne.new()
 		couronne.objet = self
@@ -202,6 +212,10 @@ func _mesurer() -> void:
 			_rx = r.randf_range(12.0, 15.5)
 			_ry = r.randf_range(16.0, 21.0)
 			hauteur = _ry
+		"champignon":
+			_rx = r.randf_range(10.0, 15.0)
+			_ry = r.randf_range(8.0, 12.0)
+			hauteur = _ry
 		"touffe":
 			hauteur = 16.0
 		_:
@@ -220,7 +234,7 @@ func recolter() -> Dictionary:
 		_chute = 0.0
 		_sens = 1.0 if graine % 2 == 0 else -1.0
 		material = fixe
-	elif (genre == "buisson" or genre == "touffe") and reste <= 0:
+	elif (genre == "buisson" or genre == "touffe" or genre == "champignon") and reste <= 0:
 		_repousse = REPOUSSE
 	_secoue = 0.35
 	set_process(true)
@@ -478,6 +492,8 @@ func _draw() -> void:
 			_buisson(p, r)
 		"touffe":
 			_touffe(p, r)
+		"champignon":
+			_champignon(p, r)
 		"brindille":
 			_brindille(p, r)
 	if en_feu:
@@ -1028,6 +1044,38 @@ func _buisson(p, r: RandomNumberGenerator) -> void:
 			p.disque(b + Vector2(-0.6, -0.7), 0.6, 0.55, Color(1.0, 0.96, 0.9, 0.95))
 
 
+# des champignons de grotte, en bouquet : un pied pâle, un chapeau en dôme, d'un vert d'eau qui luit (la lueur : Luisant).
+# Cueillis, il n'en reste que les plus petits
+func _champignon(p, r: RandomNumberGenerator) -> void:
+	var n := 3 + graine % 3
+	var pale := Color(0.84, 0.82, 0.72)
+	var chapeau := LUISANT.darkened(0.25)
+	_chapeaux.clear()
+	for i in n:
+		var x := (float(i) - float(n - 1) * 0.5) * _rx * 0.5 + r.randf_range(-1.5, 1.5)
+		var h := r.randf_range(5.0, _ry)
+		var petit := i % 2 == 1
+		if petit:
+			h *= 0.6
+		var pied := Vector2(x, r.randf_range(-1.0, 2.0))
+		var penche := r.randf_range(-1.8, 1.8)
+		# (cueilli une fois : les grands sont partis ; deux fois : tous)
+		var la := reste >= 2 or (reste == 1 and petit)
+		if not la:
+			p.tracer(PackedVector2Array([pied, pied + Vector2(penche * 0.2, -1.8)]), 1.6, Color(pale.darkened(0.25), 0.9))
+			continue
+		var tete := pied + Vector2(penche, -h)
+		p.tracer(PackedVector2Array([pied, tete]), 2.4, ENCRE)
+		p.tracer(PackedVector2Array([pied, tete]), 1.4, pale)
+		var rc := h * 0.42 + 1.6
+		p.disque(tete, rc + 0.75, rc * 0.62 + 0.75, ENCRE)
+		p.disque(tete, rc, rc * 0.62, chapeau, Pinceau.DOME)
+		p.disque(tete + Vector2(-rc * 0.3, -rc * 0.22), rc * 0.24, rc * 0.16, Color(1.0, 1.0, 0.95, 0.8))
+		_chapeaux.append([tete, rc])
+	if lueur != null:
+		lueur.queue_redraw()
+
+
 func _touffe(p, r: RandomNumberGenerator) -> void:
 	var paille := teinte.lerp(P.IVOIRE, 0.35)
 	var vert := teinte.lightened(0.08)
@@ -1108,3 +1156,22 @@ class Couronne extends Node2D:
 
 	func _draw() -> void:
 		objet._dessiner_couronne(self)
+
+
+# la lueur d'un champignon de grotte : un halo doux sur la pierre, ses chapeaux qui brillent (additif, hors de l'ombre)
+class Luisant extends Node2D:
+	var objet
+
+	func _draw() -> void:
+		if objet == null or objet.reste <= 0 or objet._chapeaux.is_empty():
+			return
+		var k: float = float(objet.reste) / float(objet.plein)
+		var halo: Texture2D = preload("res://scripts/effets_textures.gd").lueur()
+		var doux: Texture2D = preload("res://scripts/effets_textures.gd").point_doux()
+		var r0: float = 46.0 + 14.0 * k
+		draw_texture_rect(halo, Rect2(-r0, -r0 * 0.62 - 3.0, r0 * 2.0, r0 * 1.24), false, Color(LUISANT, 0.2 + 0.16 * k))
+		for c in objet._chapeaux:
+			var q: Vector2 = c[0]
+			var rc: float = float(c[1])
+			draw_texture_rect(doux, Rect2(q.x - rc * 2.6, q.y - rc * 2.2, rc * 5.2, rc * 4.4), false, Color(LUISANT, 0.5))
+			draw_circle(q + Vector2(0.0, -rc * 0.12), rc * 0.5, Color(LUISANT.lightened(0.5), 0.55))

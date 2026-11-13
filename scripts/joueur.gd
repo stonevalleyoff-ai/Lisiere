@@ -216,6 +216,9 @@ func frapper() -> void:
 func geste(genre: String, vers: Vector2) -> void:
 	if genre == "sapin":
 		genre = "arbre"
+	elif genre == "champignon":
+		# (on cueille un champignon comme une baie)
+		genre = "buisson"
 	_commencer(genre if GESTES.has(genre) else "brindille", vers - position)
 
 

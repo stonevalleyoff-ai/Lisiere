@@ -151,7 +151,8 @@ func _nuit_maj(dt: float, c: Dictionary) -> void:
 	if n < 0.5 or c["comble"] > 0.5:
 		return
 	_chouette -= dt
-	if _chouette <= 0.0:
+	# (sous terre, pas de chouette)
+	if _chouette <= 0.0 and float(c.get("sous", 0.0)) < 0.5:
 		_chouette = _r.randf_range(40.0, 95.0)
 		var pan := _r.randf_range(-0.8, 0.8)
 		s.evenement("chouette", _r.randf_range(-19.0, -14.0), _r.randf_range(0.97, 1.03), pan)

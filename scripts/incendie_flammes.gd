@@ -204,7 +204,7 @@ func _process(delta: float) -> void:
 	if vivants == 0 and _t > _bref_fin:
 		_cacher()
 		return
-	var obscur: Color = jeu.obscurite.color if jeu.get("obscurite") != null and is_instance_valid(jeu.obscurite) else Color.WHITE
+	var obscur: Color = jeu.effets.teinte if jeu.get("obscurite") != null and is_instance_valid(jeu.obscurite) else Color.WHITE
 	var jour: float = jeu.lumiere_du_jour()
 	var pluie: float = jeu.climat.pluie if jeu.get("climat") != null else 0.0
 	var feu: ShaderMaterial = Objet.incendie

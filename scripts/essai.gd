@@ -955,13 +955,54 @@ func _les_grottes() -> void:
 	if arbres > 0 or dans_la_roche > 0 or jeu.lumiere_du_jour() != 0.0 or jeu.climat.pluie >= 0.02:
 		print("    (jour du ciel %.2f, lumière %.2f, pluie dehors %.2f, pluie %.3f, orage %.3f, abri %.1f ; dans la roche : %s)" % [jeu.jour_du_ciel(), jeu.lumiere_du_jour(), pluie_dehors,
 			jeu.climat.pluie, jeu.climat.orage, jeu.climat.abri(dedans), W.objets.filter(func(x): return C.roche_en(x.position)).map(func(x): return [x.genre, x.position, C.plein(x.position)])])
+	# des champignons luisants : on les cueille (de quoi manger), ils s'éteignent, ils repousseront
+	var champignons: Array = W.objets.filter(func(x): return x.genre == "champignon")
+	var champi = champignons[0] if not champignons.is_empty() else null
+	var cueilli := {}
+	var luisait := false
+	if champi != null:
+		luisait = champi.lueur != null and champi.reste == champi.plein
+		cueilli = champi.recolter()
+		champi.recolter()
+	verif(champi != null and luisait and int(cueilli.get("baies", 0)) == 1 and champi.epuise() and champi._repousse > 0.0
+		and champignons.filter(func(x): return C.sous_terre(x.position) < 0.6).is_empty(),
+		"sous terre poussent des champignons qui luisent (%d autour) : on les cueille pour manger, ils s'éteignent, ils repousseront" % champignons.size())
+	# le noir est celui de la roche, plus profond que la nuit ; on entend des gouttes, la roche qui résonne, rien du dehors
+	jeu.camera.reset_smoothing()
+	jeu.camera.force_update_scroll()
+	jeu._lumieres()
+	var teinte_dedans: Color = jeu.effets.teinte
+	var ecran_dedans: Color = jeu.obscurite.color
+	var journal_avant = jeu.sons.journal
+	jeu.sons.journal = []
+	for i in 40:
+		jeu.sons.maj(jeu, 0.25)
+	var entendus: Array = jeu.sons.journal.map(func(x): return str(x[1]).rstrip("0123456789"))
+	var echo: float = jeu.sons._espace
+	jeu.sons.journal = journal_avant
+	var roche: Color = jeu.effets.nuit_roche
+	verif(teinte_dedans.is_equal_approx(roche) and ecran_dedans.is_equal_approx(roche) and roche.v < jeu.effets.nuit_monde.v * 0.7
+		and entendus.has("goutte") and not entendus.has("grillon") and not entendus.has("oiseau") and not entendus.has("chouette") and echo > 1.0,
+		"le noir de la roche est plus profond que la nuit ; on y entend des gouttes (%d en dix secondes) et tout y résonne, ni grillons ni oiseaux" % entendus.count("goutte"))
+	# du dehors, devant la bouche : il fait jour où l'on est, et la grotte reste sombre (le jour du dehors est une lumière masquée)
 	jeu.sous_terre = 0.0
 	jeu.climat.toit = 0.0
+	jo.position = dehors
+	jeu.camera.reset_smoothing()
+	jeu.camera.force_update_scroll()
+	jeu._lumieres()
+	var lum = jeu.effets._lum_dehors
+	verif(jeu.effets.teinte.v > 0.8 and jeu.effets._dehors_etat == 1 and jeu.obscurite.color.is_equal_approx(roche) and lum != null and lum.enabled
+		and lum.color.v > 0.5 and jeu.lumiere_du_jour() > 0.9,
+		"devant la bouche, il fait jour là où l'on est et la grotte reste noire : le jour du dehors s'arrête à la roche")
 	jeu.climat.forcer("clair", 1.0, 600.0)
 	jeu.climat.boue = 0.0
 	jeu.climat.crue = 0.0
 	jo.position = Vector2.ZERO
 	W.suivre(Vector2.ZERO, true)
+	jeu.camera.reset_smoothing()
+	jeu.camera.force_update_scroll()
+	jeu._lumieres()
 	jeu._regions()
 
 

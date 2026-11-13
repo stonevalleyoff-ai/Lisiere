@@ -602,8 +602,10 @@ func _plan_m(k: Vector2i) -> Array:
 func _prevoir_lieu(r: RandomNumberGenerator, plan: Array, rect: Rect2, arbre: String, mesures: Array, type: String) -> void:
 	var ka := rect.get_area() / (4.0 * R.DEMI * R.DEMI)
 	if type != "" and bool(lieu_de(type).get("sous_terre", false)):
-		# (une grotte : ni arbres, ni buissons, ni herbe, ni bois mort — on y vient avec ce qu'il faut ; de la pierre)
+		# (une grotte : ni arbres, ni buissons, ni herbe, ni bois mort — on y vient avec ce qu'il faut pour le feu ; de la pierre)
 		_prevoir(r, plan, rect, "rocher", 240.0 * ka, "pierre", null, 1.0, type)
+		# (et des champignons qui luisent : de quoi manger, et des repères dans le noir)
+		_prevoir(r, plan, rect, "champignon", 110.0 * ka, "", null, 1.0, type)
 		return
 	var couvert: float = mesures[0]
 	_prevoir(r, plan, rect, arbre, (70.0 + 430.0 * couvert) * ka, "feuilles", _bosquets, 0.25 + couvert, type)
@@ -651,6 +653,9 @@ func _fabriquer_(k: Vector2i) -> void:
 			continue
 		var ici: Dictionary = lieu_de(str(e[4])) if carte != null else {}
 		if carte != null and carte.nu(e[1]):
+			continue
+		# (un champignon de grotte ne pousse pas au jour d'une bouche)
+		if carte != null and str(e[0]) == "champignon" and carte.sous_terre(e[1]) < 0.6:
 			continue
 		var tons: Dictionary = ici["palette"] if carte != null else palette
 		var o = _poser(str(e[0]), e[1], tons[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), ici)
