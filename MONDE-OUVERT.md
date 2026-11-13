@@ -109,8 +109,10 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
 - la faune d'un biome qu'on approche se dessine une bête toutes les 0,25 seconde, pas à la file ;
 - vérifié : l'essai (70 vérifications, 17 pour le monde ouvert) ; la vitrine (`--ouvert --depuis 20420,-11060 --pont`) ;
   l'export web dans un téléphone émulé : aucune erreur de shader.
+- sous une neige épaisse, le lit d'une rivière reste visible : il est repeint sur le calque posé par-dessus ce que le temps
+  fait au sol (le même que celui des parois du relief) ;
 - **reste à faire** : les rivières ne coulent que dans leurs vallées (pas à travers la forêt ou le marais voisins) ; l'eau
-  ne bouge pas (elle est peinte avec le sol) ; sous une neige épaisse, le lit d'une rivière ne se voit plus.
+  ne bouge pas (elle est peinte avec le sol).
 
 **Étape 4, le relief** (`scripts/carte.gd`, `shaders/sol_peint.gdshader`, `scripts/decor_sol.gd`) — le jeu est vu de dessus :
 la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans la marche.
@@ -132,7 +134,8 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
 - vérifié : l'essai (4 vérifications pour le relief) ; la vitrine (`--ouvert --depuis -28480,23100 --reste`, et
   `--recul 0.4` pour voir un pays de haut ; `--temps neige`, `--temps pluie`) ; en rendu logiciel, marcher dans les sommets
   coûte un dixième d'images par seconde de plus que dans la prairie (18 à 19 contre 20 à 21) ;
-- **reste à faire** : le relief sur la carte du carnet.
+- **sur la carte du carnet** : les parois d'une région connue, en pointillé d'encre brune (là où l'étage change, sauf aux
+  cols) ; les bouches d'une grotte, un rond de papier cerclé d'encre. Calculés une région par image, puis retenus.
 
 **Étape 4, les grottes** (`scripts/carte.gd`, `shaders/sol_peint.gdshader`, `scripts/climat.gd`) — les quatre régions
 « grotte » d'Orvane (un seul massif, entre la montagne, le volcan, la forêt et la mer) sont sous terre :

@@ -32,8 +32,9 @@ uniform vec3 c_eau = vec3(0.13, 0.19, 0.24);
 uniform vec3 reliefs[6];
 uniform float creuses[6];              // pour chacune : 1 si c'est une grotte (de la roche pleine, des salles : scripts/carte.gd)
 uniform int n_reliefs = 0;
-// (vrai : on ne peint que les parois, transparent ailleurs — le calque posé par-dessus ce que le temps fait au sol, pour que
-// la neige ou la crue ne cachent pas un mur : scripts/monde.gd, relief_au_dessus)
+// (vrai : on ne peint que les parois, la roche des grottes, le lit des rivières, transparent ailleurs — le calque posé
+// par-dessus ce que le temps fait au sol, pour que la neige ou la crue ne cachent pas ce qui arrête : scripts/monde.gd,
+// relief_au_dessus)
 uniform bool que_relief = false;
 
 uniform vec3 terre = vec3(0.35, 0.27, 0.19);
@@ -300,6 +301,8 @@ void fragment() {
 		col = mix(c_eau, c_eau * 1.4 + 0.03, rides * 0.32) * (0.86 + 0.28 * d1);
 		col *= 0.965 + 0.05 * g1;
 	}
+	// (le calque posé par-dessus le temps qu'il fait : ce qui doit rester visible sous la neige, la boue, une crue)
+	vec4 dessus = vec4(0.0);
 	if (lit_ici > 0.5) {
 		// une rivière : son lit, qui s'amincit vers les terres voisines ; plus claire à ses berges et à ses gués
 		vec2 ql = monde + tordre(monde);
@@ -325,8 +328,11 @@ void fragment() {
 		// la berge : un trait d'encre, un liseré clair juste dedans
 		col = mix(col, encre, (1.0 - smoothstep(0.8, 3.6, abs(berge))) * 0.72 * step(1.0e-4, w));
 		col = mix(col, vec3(0.86, 0.9, 0.92), (1.0 - smoothstep(0.0, 3.0, abs(berge - 7.0 - 3.0 * d2))) * 0.3 * dans);
+		// (sur le calque : le lit, dans sa seule vallée — là où sa région est la plus proche)
+		vec2 qd = monde + tordre(monde);
+		float chez_elle = smoothstep(-5.0, 5.0, min(distance(qd, site_a), min(distance(qd, site_b), distance(qd, site_c))) - distance(qd, site_moi));
+		dessus = vec4(col, max(dans, (1.0 - smoothstep(0.8, 3.6, abs(berge))) * 0.72 * step(1.0e-4, w)) * chez_elle);
 	}
-	vec4 dessus = vec4(0.0);
 	if (n_reliefs > 0 && etendue_eau < 0.5) {
 		// le relief : la force de la région, mêlée à celles de ses voisines ; la hauteur, ses paliers
 		vec2 qr = monde + tordre(monde);
@@ -392,7 +398,8 @@ void fragment() {
 			rampe = mix(rampe, caillou * 1.08, eboulis * 0.8);
 			vec3 avec = mix(col, mix(paroi_c, rampe, passe), bande);
 			// (par-dessus la neige, la boue, l'eau d'une crue : la paroi entière ; d'un col, ses barbules et un voile)
-			dessus = vec4(mix(paroi_c, mix(rampe, encre, courte * 0.5), passe), bande * mix(1.0, 0.3 + 0.5 * courte, passe));
+			float sur = bande * mix(1.0, 0.3 + 0.5 * courte, passe);
+			dessus = vec4(mix(dessus.rgb, mix(paroi_c, mix(rampe, encre, courte * 0.5), passe), sur), max(dessus.a, sur));
 			// (le plateau, juste au bord : un liseré clair du côté du jour)
 			avec = mix(avec, avec * 1.2 + 0.03, (1.0 - smoothstep(0.0, 3.0, abs(dp - 30.0))) * clamp(eclat, 0.0, 1.0) * 0.55 * (1.0 - passe));
 			col = avec;
@@ -429,7 +436,7 @@ void fragment() {
 			vec3 plein_g = mix(bord_g, encre * (0.55 + 0.25 * d2), smoothstep(6.0, 24.0, eg));
 			plein_g = mix(plein_g, encre, (1.0 - smoothstep(0.0, 2.4, abs(eg - 1.5))) * 0.85);
 			col = mix(col, plein_g, roc);
-			dessus = mix(dessus, vec4(plein_g, 1.0), roc);
+			dessus = vec4(mix(dessus.rgb, plein_g, roc), max(dessus.a, roc));
 		}
 	}
 	if (crete.x + crete.y + crete.z > 0.5) {

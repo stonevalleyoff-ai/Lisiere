@@ -11,6 +11,8 @@ const T := preload("res://scripts/interface_theme.gd")
 var jeu
 var loin := false
 var _tons := {}
+var _parois := {}             # par région connue : les points de ses parois (le relief), calculés une fois
+var _bouches := {}            # par grotte connue : ses bouches
 
 
 func _init() -> void:
@@ -20,8 +22,82 @@ func _init() -> void:
 
 
 func ouvrir(j) -> void:
+	if j != jeu:
+		_parois.clear()
+		_bouches.clear()
 	jeu = j
 	queue_redraw()
+
+
+# le relief d'une région, pour la carte : là où l'étage change d'un point de la grille à son voisin passe une paroi (sauf à
+# un col, qu'on laisse en blanc : on y passe)
+func _relief_de(i: int) -> PackedVector2Array:
+	var C = jeu.carte
+	var reg: Dictionary = C.regions[i]
+	var pts := PackedVector2Array()
+	if reg["eau"]:
+		return pts
+	var contour: PackedVector2Array = C.contour(i)[0]
+	var s: Vector2 = reg["pos"] - C.tordre(reg["pos"])
+	if C.force(s) <= 0.0 and C.force(contour[0]) <= 0.0 and C.force(contour[contour.size() / 2]) <= 0.0:
+		return pts
+	var pas := 240.0
+	var n := int(float(C.cote) * 1.3 / pas)
+	var au_dessus := {}
+	for iy in range(-n, n + 1):
+		var a_gauche := -1
+		for ix in range(-n, n + 1):
+			var p := s + Vector2(ix, iy) * pas
+			var e: int = C.palier(p) if Geometry2D.is_point_in_polygon(p, contour) else -1
+			if e >= 0 and a_gauche >= 0 and e != a_gauche and C.champ_col(p - Vector2(pas * 0.5, 0.0)) <= C.COL:
+				pts.append(p - Vector2(pas * 0.5, 0.0))
+			var en_haut := int(au_dessus.get(ix, -1))
+			if e >= 0 and en_haut >= 0 and e != en_haut and C.champ_col(p - Vector2(0.0, pas * 0.5)) <= C.COL:
+				pts.append(p - Vector2(0.0, pas * 0.5))
+			a_gauche = e
+			au_dessus[ix] = e
+	return pts
+
+
+# les bouches d'une grotte, pour la carte : le long de ses frontières ouvertes, là où la muraille est percée de part en part
+func _bouches_de(i: int) -> PackedVector2Array:
+	var C = jeu.carte
+	var reg: Dictionary = C.regions[i]
+	var out := PackedVector2Array()
+	if not reg["grotte"]:
+		return out
+	var s: Vector2 = reg["pos"] - C.tordre(reg["pos"])
+	for bord in C.contour(i)[1]:
+		var j: int = bord[0]
+		if j < 0 or C.regions[j]["grotte"] or C.regions[j]["eau"] or C.ferme(i, j):
+			continue
+		var ligne: PackedVector2Array = bord[1]
+		var somme := Vector2.ZERO
+		var compte := 0
+		for u in ligne.size() - 1:
+			var a: Vector2 = ligne[u]
+			var b: Vector2 = ligne[u + 1]
+			var vers_dedans := (b - a).orthogonal().normalized()
+			if vers_dedans.dot(s - a) < 0.0:
+				vers_dedans = -vers_dedans
+			var pas := maxi(1, int(a.distance_to(b) / 70.0))
+			for t in pas:
+				var q: Vector2 = a.lerp(b, float(t) / pas)
+				var perce := true
+				for d in [130.0, 250.0, 370.0, 480.0]:
+					if C.plein(q + vers_dedans * d) > 0.0:
+						perce = false
+						break
+				if perce:
+					somme += q + vers_dedans * 200.0
+					compte += 1
+				elif compte > 0:
+					out.append(somme / compte)
+					somme = Vector2.ZERO
+					compte = 0
+		if compte > 0:
+			out.append(somme / compte)
+	return out
 
 
 func _gui_input(e: InputEvent) -> void:
@@ -115,6 +191,27 @@ func _draw() -> void:
 					var p: Vector2 = reg["pos"] + Vector2(ix, iy) * pas
 					if absf(C.champ(p)) < C.LIT * 1.3 and C.region_en(p) == i and C.lit(p) > 0.0:
 						draw_rect(Rect2(vers.call(p) - Vector2(1.3, 1.3), Vector2(2.6, 2.6)), Color(0.3, 0.45, 0.6, 0.85))
+	# le relief : ses parois, en pointillé d'encre brune ; les bouches d'une grotte, un rond de papier cerclé d'encre.
+	# (Calculés une région à la fois, une par image : la carte s'ouvre sans attendre, et se complète.)
+	var a_faire := -1
+	for i in connues:
+		var reg: Dictionary = C.regions[i]
+		if not _parois.has(i):
+			if a_faire < 0:
+				a_faire = i
+			continue
+		if not vue.has_point(reg["pos"]):
+			continue
+		for p in _parois[i]:
+			draw_rect(Rect2(vers.call(p) - Vector2(0.9, 0.9), Vector2(1.8, 1.8)), Color("3a2c20", 0.62))
+		for p in _bouches[i]:
+			var q: Vector2 = vers.call(p)
+			draw_circle(q, 3.6, encre)
+			draw_circle(q, 2.3, P.PAPIER)
+	if a_faire >= 0:
+		_parois[a_faire] = _relief_de(a_faire)
+		_bouches[a_faire] = _bouches_de(a_faire)
+		queue_redraw.call_deferred()
 	# les noms
 	for e in noms:
 		var t: String = e[1]

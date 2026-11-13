@@ -22,6 +22,7 @@ var _tuiles := {}              # tuile → [Sprite2D, ImageTexture, quand elle a
 var _peintres: Array = []      # les SubViewports, hors de l'arbre quand elles ne peignent pas
 var _en_cours: Array = []      # [peintre, tuile], peints à l'image d'avant : à copier
 var _tour := 0
+var _dessus := {}              # (le calque du relief) tuile → y a-t-il quelque chose à y peindre
 
 
 func preparer(m: ShaderMaterial, d: float) -> void:
@@ -58,10 +59,13 @@ func _regler(vp: SubViewport, rect: Rect2) -> void:
 		return
 	var C = monde_.carte
 	var regs: Array = C.dans(rect.grow(float(BORD) + 2.0)).slice(0, 3)
+	# (ce qu'on peint : chaque région, une couche ; sur le calque du relief, une seule — une vallée de rivière s'il y en a une
+	# (son lit), sinon la terre la plus présente : le relief est le même pour toutes)
+	var qui: Array = regs
 	if que_relief:
-		# (une seule couche : la terre la plus présente ; le relief est le même pour toutes)
+		var rivieres: Array = regs.filter(func(r): return C.regions[r]["riviere"])
 		var terres: Array = regs.filter(func(r): return not C.regions[r]["eau"])
-		regs = [terres[0] if not terres.is_empty() else regs[0]]
+		qui = [rivieres[0] if not rivieres.is_empty() else (terres[0] if not terres.is_empty() else regs[0])]
 	# (le relief : les régions dont la force compte ici, les mêmes pour chaque couche)
 	var pres: Array = C.reliefs(rect)
 	var n_reliefs := pres.size()
@@ -72,10 +76,10 @@ func _regler(vp: SubViewport, rect: Rect2) -> void:
 		creuses.append(float(pres[i].w) if i < n_reliefs else 0.0)
 	for n in vp.get_child_count():
 		var quad: Node2D = vp.get_child(n)
-		quad.visible = n < regs.size()
+		quad.visible = n < qui.size()
 		if not quad.visible:
 			continue
-		var reg: Dictionary = C.regions[regs[n]]
+		var reg: Dictionary = C.regions[qui[n]]
 		var m: ShaderMaterial = quad.material
 		var sol: Dictionary = monde_.lieu_de(str(reg["type"]))["sol"]
 		for k in sol:
@@ -85,8 +89,8 @@ func _regler(vp: SubViewport, rect: Rect2) -> void:
 		var crete := Vector3.ZERO
 		var eaux := Vector3.ZERO
 		for o in regs:
-			if o != regs[n]:
-				if C.ferme(regs[n], o):
+			if o != qui[n]:
+				if C.ferme(qui[n], o):
 					crete[autres.size()] = 1.0
 				if C.regions[o]["eau"] or C.regions[o]["riviere"]:
 					eaux[autres.size()] = 1.0
@@ -138,7 +142,7 @@ func suivre(vue: Rect2) -> void:
 			var k := Vector2i(x, y)
 			if _tuiles.has(k):
 				_tuiles[k][2] = _tour
-			elif not que_relief or not monde_.carte.reliefs(Rect2(Vector2(k) * TUILE, Vector2(TUILE, TUILE))).is_empty():
+			elif not que_relief or _a_un_dessus(k):
 				manque.append(k)
 	if manque.is_empty():
 		return
@@ -162,6 +166,24 @@ func suivre(vue: Rect2) -> void:
 		place[0].position = origine
 		place[2] = _tour
 		_tuiles[k] = place
+
+
+# (le calque du relief) cette tuile a-t-elle quelque chose à montrer : du relief, une grotte, le lit d'une rivière ? On retient
+# la réponse : la plupart des tuiles du monde n'ont rien
+func _a_un_dessus(k: Vector2i) -> bool:
+	var v = _dessus.get(k)
+	if v == null:
+		if _dessus.size() > 4000:
+			_dessus.clear()
+		var C = monde_.carte
+		var rect := Rect2(Vector2(k) * TUILE, Vector2(TUILE, TUILE))
+		v = not C.reliefs(rect).is_empty()
+		if not v:
+			for r in C.dans(rect.grow(float(BORD) + 2.0)).slice(0, 3):
+				if C.regions[r]["riviere"]:
+					v = true
+		_dessus[k] = v
+	return v
 
 
 # une place pour une tuile : neuve, ou reprise à celle qui a servi le moins récemment (et ne se peint pas)

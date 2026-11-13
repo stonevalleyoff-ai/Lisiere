@@ -295,10 +295,12 @@ func _lancer() -> void:
 	for k in 400:
 		var q2 := Vector2(-1800.0 + 180.0 * (k % 20), -1800.0 + 180.0 * (k / 20))
 		# (un creux franc : l'eau y est profonde là où elle sera, et là où sera le feu qu'on y noie)
-		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0:
+		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and C.eau(q2 + Vector2(34, 4)) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0:
 			creux = q2
 			break
 	j.position = creux
+	# (elle regarde vers la droite : c'est là, dans l'eau profonde, qu'elle voudra poser son feu)
+	j.regard = 1.0
 	j.trempe = 0.0
 	j.en_feu = 2.0
 	var feu_noye = jeu.Feu.new()
