@@ -63,10 +63,13 @@ func _regler(vp: SubViewport, rect: Rect2) -> void:
 		var terres: Array = regs.filter(func(r): return not C.regions[r]["eau"])
 		regs = [terres[0] if not terres.is_empty() else regs[0]]
 	# (le relief : les régions dont la force compte ici, les mêmes pour chaque couche)
-	var reliefs: Array = C.reliefs(rect)
-	var n_reliefs := reliefs.size()
-	while reliefs.size() < 6:
-		reliefs.append(Vector3(1.0e7, 1.0e7, 0.0))
+	var pres: Array = C.reliefs(rect)
+	var n_reliefs := pres.size()
+	var reliefs := PackedVector3Array()
+	var creuses := PackedFloat32Array()
+	for i in 6:
+		reliefs.append(Vector3(pres[i].x, pres[i].y, pres[i].z) if i < n_reliefs else Vector3(1.0e7, 1.0e7, 0.0))
+		creuses.append(float(pres[i].w) if i < n_reliefs else 0.0)
 	for n in vp.get_child_count():
 		var quad: Node2D = vp.get_child(n)
 		quad.visible = n < regs.size()
@@ -93,6 +96,7 @@ func _regler(vp: SubViewport, rect: Rect2) -> void:
 		while autres.size() < 3:
 			autres.append(Vector2(1.0e7, 1.0e7))
 		m.set_shader_parameter("reliefs", reliefs)
+		m.set_shader_parameter("creuses", creuses)
 		m.set_shader_parameter("n_reliefs", n_reliefs)
 		m.set_shader_parameter("crete", crete)
 		m.set_shader_parameter("eaux", eaux)

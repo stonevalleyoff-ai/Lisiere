@@ -34,6 +34,15 @@ const MAILLE := 256.0         # la force du relief se retient aux nœuds d'une g
 const MONTEE := 3000.0        # sur cet écart de distances aux points, la force d'une région se mêle à celle de sa voisine
 const COL := 0.4              # au-dessus : un col
 const COL_FREIN := 0.72       # ce que la pente d'un col fait à la marche
+# les grottes : une région « grotte » est sous terre. De la roche pleine, où s'ouvrent des salles et des couloirs (là où le
+# champ cavites est bas) ; à sa frontière avec le dehors, une muraille que seuls ses creux les plus profonds percent : les
+# bouches. Le jour n'y entre pas, ni le temps qu'il fait (sous_terre).
+const BOUCHES := 0.24         # dans la muraille, le vide n'est que là où cavites est en dessous (une bouche tous les 2 000 pixels)
+# (sur cet écart de distances aux points, on passe de la frontière au cœur de la grotte : cent pixels de dehors, trois cents de
+# muraille, puis les salles s'ouvrent — leur seuil : salles)
+const MURAILLE := 1600.0
+const MAILLE_CREUX := 64.0    # (le creux se retient aux nœuds d'une grille fine : la muraille en dépend de près)
+const ROCHE_BORD := 24.0      # la roche se voit sur cette épaisseur à partir de son bord (le shader du sol)
 
 # le ton de chaque biome sur une carte (les mêmes que outils/carte.js)
 const TONS := {"banquise": "e6edf0", "toundra": "c7ccb9", "taiga": "5f7a5c", "steppe": "cdbf8a", "prairie": "a9b86b", "foret": "55733f", "jungle": "2f6a3c",
@@ -51,6 +60,8 @@ var ponts: Array = []         # les ponts posés : [un bout, l'autre] (le jeu le
 var _contours := {}           # le contour de chaque région déjà demandé (la carte du carnet les dessine)
 var _hautes := {}             # les cases près desquelles une région a du relief (ailleurs, on ne le cherche pas)
 var _forces := {}             # la force du relief aux nœuds de la grille déjà demandés
+var _creuses := {}            # les cases près desquelles une région est une grotte
+var _creux := {}              # le creux aux nœuds de sa grille déjà demandés
 
 
 # lit la carte ; biomes : ceux de l'index du monde (leur milieu dit ce qui est de l'eau, leur nom se dit en entrant). null si
@@ -76,7 +87,8 @@ static func lire(biomes: Array):
 		var type := str(p["type"])
 		c.regions.append({"id": str(p["id"]), "type": type, "nom": str(noms.get(type, type)), "pos": Vector2(float(p["x"]), float(p["y"])),
 			"eau": type != "riviere" and (bool(p.get("bord", false)) or ["marin", "aquatique"].has(str(milieux.get(type, "terrestre")))),
-			"riviere": type == "riviere", "bord": bool(p.get("bord", false)), "voisines": [], "murs": {}, "haut": 0.0})
+			"riviere": type == "riviere", "bord": bool(p.get("bord", false)), "voisines": [], "murs": {}, "haut": 0.0,
+			"grotte": str(milieux.get(type, "terrestre")) == "souterrain"})
 		var reg: Dictionary = c.regions[-1]
 		if not reg["eau"] and not reg["riviere"] and str(milieux.get(type, "terrestre")) == "terrestre":
 			# (un canyon est bas, pour Orvane ; mais c'est un pays de parois)
@@ -113,11 +125,13 @@ static func lire(biomes: Array):
 			c._cases[cle] = []
 		c._cases[cle].append(k)
 	for k in c.regions.size():
-		if float(c.regions[k]["haut"]) > 0.0:
-			var cle := Vector2i((c.regions[k]["pos"] / c.cote).floor())
-			for x in range(cle.x - 2, cle.x + 3):
-				for y in range(cle.y - 2, cle.y + 3):
+		var cle := Vector2i((c.regions[k]["pos"] / c.cote).floor())
+		for x in range(cle.x - 2, cle.x + 3):
+			for y in range(cle.y - 2, cle.y + 3):
+				if float(c.regions[k]["haut"]) > 0.0:
 					c._hautes[Vector2i(x, y)] = true
+				if c.regions[k]["grotte"]:
+					c._creuses[Vector2i(x, y)] = true
 	return c
 
 
@@ -212,6 +226,11 @@ func retenir(p: Vector2) -> Vector2:
 			vers = (q - sj).normalized() - (q - si).normalized()
 			manque = 2.0 * CRETE - (float(pr[3]) - float(pr[2])) + 1.0
 		else:
+			# (la roche d'une grotte : vers le vide le plus proche)
+			var roc := _roche(p)
+			if not roc.is_empty():
+				p += roc[1] * float(roc[2])
+				continue
 			# (une paroi du relief : du côté où l'on est)
 			var e := _paroi(p)
 			if e.is_empty() or bool(e[2]):
@@ -465,18 +484,18 @@ func allure(p: Vector2) -> float:
 	return COL_FREIN if col_en(p) else 1.0
 
 
-# rien ne pousse là : l'eau, le lit d'une rivière, une paroi, un col
+# rien ne pousse là : l'eau, le lit d'une rivière, une paroi, un col, la roche d'une grotte
 func nu(p: Vector2) -> bool:
-	return mouille(p) or not _paroi(p, 10.0).is_empty()
+	return mouille(p) or not _paroi(p, 10.0).is_empty() or plein(p, 8.0) > 0.0
 
 
-# les régions dont le relief compte sur un rectangle : [x, y, force] chacune (au plus 6 ; [] si tout y est plat). Le shader du
-# sol en refait la force, comme force()
+# les régions dont le relief ou la roche comptent sur un rectangle : [x, y, force, 1 si c'est une grotte] chacune (au plus 6 ;
+# [] si tout y est plat et à l'air libre). Le shader du sol en refait la force et le creux, comme force() et creux()
 func reliefs(rect: Rect2) -> Array:
 	var p := rect.get_center()
 	var q := p + tordre(p)
 	var c := Vector2i((q / cote).floor())
-	if not _hautes.has(c):
+	if not _hautes.has(c) and not _creuses.has(c):
 		return []
 	var marge := MONTEE + 2.0 * rect.size.length() + 1400.0
 	var pres: Array = []
@@ -489,14 +508,109 @@ func reliefs(rect: Rect2) -> Array:
 				d0 = minf(d0, d)
 	pres.sort_custom(func(a, b): return a[0] < b[0])
 	var out: Array = []
-	var du_relief := false
+	var compte := false
 	for e in pres:
 		if float(e[0]) - d0 > marge or out.size() >= 6:
 			break
 		var r: Dictionary = regions[e[1]]
-		out.append(Vector3(r["pos"].x, r["pos"].y, float(r["haut"])))
-		du_relief = du_relief or float(r["haut"]) > 0.0
-	return out if du_relief else []
+		out.append(Vector4(r["pos"].x, r["pos"].y, float(r["haut"]), 1.0 if r["grotte"] else 0.0))
+		compte = compte or float(r["haut"]) > 0.0 or bool(r["grotte"])
+	return out if compte else []
+
+
+# --- les grottes ---
+
+# le champ des cavités, de 0 à 1 : bas dans les salles, haut dans la roche (le même calcul que le shader du sol)
+static func cavites(p: Vector2) -> float:
+	var f := sin((p.x * 0.891 + p.y * 0.454) / 190.0 + 2.2 * sin((p.y * 0.891 - p.x * 0.454) / 600.0 + 0.9))
+	f += sin((p.y * 0.966 - p.x * 0.259) / 230.0 + 1.9 * sin((-p.x * 0.966 - p.y * 0.259) / 750.0 + 2.6) + 0.8)
+	f += 0.6 * sin((p.x * 0.574 - p.y * 0.819) / 120.0 + 1.6 * sin((p.x * 0.819 + p.y * 0.574) / 480.0 + 3.3) + 2.2)
+	f += 0.2 * sin(p.x / 45.0 + 1.1 * sin(p.y / 110.0) + 1.4) * sin(p.y / 52.0 + 2.0)
+	return 0.5 + f / 5.6
+
+
+# le seuil des salles : par endroits de grandes salles à piliers (il est haut), ailleurs des boyaux serrés (il est bas)
+static func salles(p: Vector2) -> float:
+	return 0.55 + 0.09 * sin(p.x / 700.0 + 1.3 * sin(p.y / 900.0)) * sin(p.y / 650.0 + 0.7)
+
+
+# le creux en p : 0 dehors, 0,5 à la frontière d'une grotte, 1 en son cœur (retenu aux nœuds d'une grille fine)
+func creux(p: Vector2) -> float:
+	var u := p / MAILLE_CREUX
+	var k := Vector2i(u.floor())
+	var t := u - Vector2(k)
+	var a := lerpf(_creux_au_noeud(k), _creux_au_noeud(k + Vector2i(1, 0)), t.x)
+	var b := lerpf(_creux_au_noeud(k + Vector2i(0, 1)), _creux_au_noeud(k + Vector2i(1, 1)), t.x)
+	return lerpf(a, b, t.y)
+
+
+func _creux_au_noeud(k: Vector2i) -> float:
+	var c = _creux.get(k)
+	if c == null:
+		if _creux.size() > 60000:
+			_creux.clear()
+		c = _creux_en(Vector2(k) * MAILLE_CREUX)
+		_creux[k] = c
+	return c
+
+
+func _creux_en(p: Vector2) -> float:
+	var q := p + tordre(p)
+	var c := Vector2i((q / cote).floor())
+	if not _creuses.has(c):
+		return 0.0
+	var pres: Array = []
+	var d0 := INF
+	for x in range(c.x - 2, c.x + 3):
+		for y in range(c.y - 2, c.y + 3):
+			for k in _cases.get(Vector2i(x, y), []):
+				var d: float = q.distance_to(regions[k]["pos"])
+				pres.append(k)
+				pres.append(d)
+				d0 = minf(d0, d)
+	var somme := 0.0
+	var poids := 0.0
+	for n in range(0, pres.size(), 2):
+		var w := maxf(0.0, 1.0 - (float(pres[n + 1]) - d0) / MURAILLE)
+		if w > 0.0:
+			w *= w
+			poids += w
+			if regions[pres[n]]["grotte"]:
+				somme += w
+	return somme / poids if poids > 0.0 else 0.0
+
+
+# de combien p est dans la roche (positif) ou dans le vide (négatif), dans l'unité de cavites. Dehors, tout est vide ; passé
+# la frontière, la muraille se lève (seules les bouches la percent), puis s'ouvrent les salles. (large : la roche élargie
+# d'à peu près tant de pixels, pour ce qui ne doit pas pousser tout contre.)
+func plein(p: Vector2, large: float = 0.0) -> float:
+	var c := creux(p)
+	if c <= 0.5:
+		return -1.0
+	var seuil := lerpf(BOUCHES, salles(p), smoothstep(0.8, 0.985, c)) + 1.0 - smoothstep(0.5, 0.566, c)
+	return cavites(p) - seuil + large * 0.002
+
+
+# la roche où est p : [de combien il y est enfoncé, en pixels ; la direction du vide le plus proche ; le pas qui en sort] ;
+# [] s'il est dans le vide
+func _roche(p: Vector2) -> Array:
+	var s := plein(p)
+	if s <= 0.0:
+		return []
+	var g := Vector2(plein(p + Vector2(4, 0)) - plein(p - Vector2(4, 0)), plein(p + Vector2(0, 4)) - plein(p - Vector2(0, 4))) / 8.0
+	var l := g.length()
+	var d := s / maxf(l, 0.0004)
+	return [d, -g / maxf(l, 1.0e-7), minf(d + 1.0, 60.0)]
+
+
+# de la roche pleine, en p ?
+func roche_en(p: Vector2) -> bool:
+	return plein(p) > 0.0
+
+
+# sous terre : de 0 (dehors, et sous la voûte d'une bouche) à 1 (dans la grotte : ni jour, ni pluie, ni vent)
+func sous_terre(p: Vector2) -> float:
+	return smoothstep(0.566, 0.8, creux(p))
 
 
 # --- le contour d'une région, pour la dessiner (la carte du carnet : scripts/interface_carte_monde.gd) ---

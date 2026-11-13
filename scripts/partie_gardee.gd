@@ -143,7 +143,7 @@ static func appliquer(jeu, d: Dictionary) -> void:
 	for x in d.get("ponts", []):
 		if typeof(x) == TYPE_ARRAY and x.size() >= 5:
 			jeu.poser_pont(Vector2(float(x[0]), float(x[1])), Vector2(float(x[2]), float(x[3])), float(x[4]))
-	jeu._etait_nuit = jeu.lumiere_du_jour() <= 0.0
+	jeu._etait_nuit = jeu.jour_du_ciel() <= 0.0
 
 
 static func _dans_la_faune(F: Dictionary, id: String) -> Dictionary:

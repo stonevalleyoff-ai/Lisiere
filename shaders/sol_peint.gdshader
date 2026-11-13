@@ -30,6 +30,7 @@ uniform vec3 eaux = vec3(0.0);         // pour site_a, site_b, site_c : 1 si c'e
 uniform vec3 c_eau = vec3(0.13, 0.19, 0.24);
 // le relief (scripts/carte.gd) : les régions qui comptent autour de la tuile (leur point, la force de leur relief)
 uniform vec3 reliefs[6];
+uniform float creuses[6];              // pour chacune : 1 si c'est une grotte (de la roche pleine, des salles : scripts/carte.gd)
 uniform int n_reliefs = 0;
 // (vrai : on ne peint que les parois, transparent ailleurs — le calque posé par-dessus ce que le temps fait au sol, pour que
 // la neige ou la crue ne cachent pas un mur : scripts/monde.gd, relief_au_dessus)
@@ -110,6 +111,19 @@ float bosses(vec2 p) {
 
 float champ_col(vec2 p) {
 	return sin(p.x / 150.0 + 0.9 * sin(p.y / 900.0)) * sin(p.y / 170.0 + 1.7 + 0.8 * sin(p.x / 1100.0));
+}
+
+// les grottes : le même calcul que scripts/carte.gd (cavites)
+float cavites(vec2 p) {
+	float f = sin((p.x * 0.891 + p.y * 0.454) / 190.0 + 2.2 * sin((p.y * 0.891 - p.x * 0.454) / 600.0 + 0.9));
+	f += sin((p.y * 0.966 - p.x * 0.259) / 230.0 + 1.9 * sin((-p.x * 0.966 - p.y * 0.259) / 750.0 + 2.6) + 0.8);
+	f += 0.6 * sin((p.x * 0.574 - p.y * 0.819) / 120.0 + 1.6 * sin((p.x * 0.819 + p.y * 0.574) / 480.0 + 3.3) + 2.2);
+	f += 0.2 * sin(p.x / 45.0 + 1.1 * sin(p.y / 110.0) + 1.4) * sin(p.y / 52.0 + 2.0);
+	return 0.5 + f / 5.6;
+}
+
+float salles(vec2 p) {
+	return 0.55 + 0.09 * sin(p.x / 700.0 + 1.3 * sin(p.y / 900.0)) * sin(p.y / 650.0 + 0.7);
 }
 
 void fragment() {
@@ -382,6 +396,40 @@ void fragment() {
 			// (le plateau, juste au bord : un liseré clair du côté du jour)
 			avec = mix(avec, avec * 1.2 + 0.03, (1.0 - smoothstep(0.0, 3.0, abs(dp - 30.0))) * clamp(eclat, 0.0, 1.0) * 0.55 * (1.0 - passe));
 			col = avec;
+		}
+	}
+	if (n_reliefs > 0) {
+		// une grotte : le creux (0 dehors, 1 au cœur), la roche pleine là où le champ des cavités passe son seuil
+		vec2 qg = monde + tordre(monde);
+		float dg = 1.0e9;
+		for (int k = 0; k < n_reliefs; k++) {
+			dg = min(dg, distance(qg, reliefs[k].xy));
+		}
+		float somme_g = 0.0;
+		float poids_g = 0.0;
+		for (int k = 0; k < n_reliefs; k++) {
+			float w = max(0.0, 1.0 - (distance(qg, reliefs[k].xy) - dg) / 1600.0);
+			w *= w;
+			poids_g += w;
+			somme_g += w * creuses[k];
+		}
+		float creux = somme_g / max(poids_g, 1.0e-6);
+		if (creux > 0.5) {
+			float seuil_g = mix(0.24, salles(monde), smoothstep(0.8, 0.985, creux)) + 1.0 - smoothstep(0.5, 0.566, creux);
+			float sg = cavites(monde) - seuil_g;
+			// (l'enfoncement dans la roche, en pixels du lieu : positif dedans)
+			float pente_g = max(length(vec2(dFdx(sg), dFdy(sg))) / px, 0.0004);
+			float eg = sg / pente_g;
+			float roc = smoothstep(-1.0, 1.0, eg);
+			// le sol d'une grotte s'assombrit vers ses parois ; la roche : un bord éclairé par endroits, fendu, puis le noir du plein
+			col = mix(col, col * 0.55, (1.0 - smoothstep(0.0, 46.0, -eg)) * (1.0 - roc) * 0.6);
+			vec3 bord_g = mix(caillou * 0.5, caillou * 0.95, smoothstep(0.3, 0.7, d3)) * (0.8 + 0.3 * d1);
+			float fentes_g = 1.0 - smoothstep(0.0, 0.07, abs(fract(d1 * 5.0 + d2 * 2.5) - 0.5));
+			bord_g = mix(bord_g, encre, fentes_g * 0.5);
+			vec3 plein_g = mix(bord_g, encre * (0.55 + 0.25 * d2), smoothstep(6.0, 24.0, eg));
+			plein_g = mix(plein_g, encre, (1.0 - smoothstep(0.0, 2.4, abs(eg - 1.5))) * 0.85);
+			col = mix(col, plein_g, roc);
+			dessus = mix(dessus, vec4(plein_g, 1.0), roc);
 		}
 	}
 	if (crete.x + crete.y + crete.z > 0.5) {

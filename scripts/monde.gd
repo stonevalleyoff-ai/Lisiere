@@ -133,6 +133,7 @@ func creer_sol(biome: Dictionary, graine: int) -> Node2D:
 			# que le temps fait au sol, pour que la neige ou une crue ne cachent pas un mur)
 			var mat_relief: ShaderMaterial = _mat_sol.duplicate()
 			mat_relief.set_shader_parameter("que_relief", true)
+			mat_relief.set_shader_parameter("fin", false)
 			_sol_relief = SolCuit.new()
 			_sol_relief.name = "SolRelief"
 			_sol_relief.que_relief = true
@@ -302,8 +303,25 @@ func lieu_de(type: String) -> Dictionary:
 		# (une vallée de rivière : pour Orvane c'est de l'eau ; ici, ses berges sont une prairie humide, pas un marécage)
 		axes = axes.duplicate()
 		axes["humidite"] = 0.68
+	var sous_terre := str(info.get("milieu", "terrestre")) == "souterrain"
+	if sous_terre:
+		# (une grotte : pour Orvane un lieu couvert et humide — sa voûte ; ici, de la roche nue, sans herbe ni arbres)
+		axes = axes.duplicate()
+		axes["couvert"] = 0.0
+		axes["humidite"] = 0.5
+		axes["altitude"] = 0.9
 	var pal := couleurs(axes)
 	var parts := Decor.parts(axes)
+	if sous_terre:
+		for k in ["herbe", "litiere", "neige", "lande"]:
+			parts[k] = 0.0
+		parts["mousse"] = 0.08
+		parts["cailloux"] = 0.5
+		parts["fentes"] = 0.3
+		pal = pal.duplicate()
+		pal["terre"] = pal["terre"].lerp(Color(0.33, 0.32, 0.31), 0.75)
+		pal["terre_claire"] = pal["terre_claire"].lerp(Color(0.43, 0.42, 0.4), 0.75)
+		pal["terre_sombre"] = pal["terre_sombre"].lerp(Color(0.21, 0.21, 0.21), 0.75)
 	var sol := {}
 	for k in TONS_DU_SOL:
 		var c: Color = pal[k]
@@ -317,7 +335,8 @@ func lieu_de(type: String) -> Dictionary:
 	var arbre := "sapin" if pal.get("froid", false) else "arbre"
 	var L := {"type": type, "axes": axes, "palette": pal, "parts": parts, "sol": sol, "arbre": arbre,
 		"mesures": [float(axes.get("couvert", 0.4)), float(axes.get("humidite", 0.5)), float(axes.get("altitude", 0.3))],
-		"flore": _flore_de(type, arbre), "outils": {}, "climat": {"froid": float(parts["froid"]), "humide": float(parts["humide"])}}
+		"flore": _flore_de(type, arbre), "outils": {}, "climat": {"froid": float(parts["froid"]), "humide": float(parts["humide"])},
+		"sous_terre": sous_terre}
 	_lieux[type] = L
 	return L
 
@@ -582,6 +601,10 @@ func _plan_m(k: Vector2i) -> Array:
 # ce qu'un rectangle d'un biome contient : les mêmes densités qu'un lieu fermé, rapportées à sa surface
 func _prevoir_lieu(r: RandomNumberGenerator, plan: Array, rect: Rect2, arbre: String, mesures: Array, type: String) -> void:
 	var ka := rect.get_area() / (4.0 * R.DEMI * R.DEMI)
+	if type != "" and bool(lieu_de(type).get("sous_terre", false)):
+		# (une grotte : ni arbres, ni buissons, ni herbe, ni bois mort — on y vient avec ce qu'il faut ; de la pierre)
+		_prevoir(r, plan, rect, "rocher", 240.0 * ka, "pierre", null, 1.0, type)
+		return
 	var couvert: float = mesures[0]
 	_prevoir(r, plan, rect, arbre, (70.0 + 430.0 * couvert) * ka, "feuilles", _bosquets, 0.25 + couvert, type)
 	_prevoir(r, plan, rect, "rocher", (40.0 + 140.0 * float(mesures[2])) * ka, "pierre", null, 1.0, type)
@@ -659,10 +682,13 @@ func _fabriquer_(k: Vector2i) -> void:
 				if reg["eau"]:
 					continue
 				var L := lieu_de(str(reg["type"]))
+				if L["sous_terre"]:
+					# (sous terre : ni herbe, ni fleurs)
+					continue
 				if L["outils"].is_empty():
 					L["outils"] = Decor.outils(L["parts"], L["palette"], _graine)
 				# (dans une vallée de rivière, rien dans le lit ; dans un pays de relief, rien sur une paroi, sur un col)
-				Decor.exclure = Callable(carte, "nu") if reg["riviere"] or carte.force(quart.get_center()) > 0.0 else Callable()
+				Decor.exclure = Callable(carte, "nu") if reg["riviere"] or carte.force(quart.get_center()) > 0.0 or carte.creux(quart.get_center()) > 0.3 else Callable()
 				noeuds.append_array(Decor.semer_dans(self, _calques, _terrain, L["parts"], L["palette"], hash(Vector3i(_graine + 7 + qx * 2 + qy, k.x, k.y)), _mobile, quart, L["outils"], liste))
 		Decor.exclure = Callable()
 	elif _racine != null and not _outils.is_empty():

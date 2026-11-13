@@ -675,6 +675,7 @@ func _lieu_sans_bord() -> void:
 	verif(buisson_plein != null and buisson_plein.intact() and a_cet_endroit.call(p_arbre).genre == "souche", "deux minutes plus tard, le buisson a repoussé sans elle ; la souche est toujours une souche")
 	await _les_regions()
 	_le_relief()
+	_les_grottes()
 	jo.position = ici
 	W.suivre(ici, true)
 	# gardée, la partie ne retient que ce qui a changé
@@ -877,6 +878,88 @@ func _le_relief() -> void:
 	jeu.altitude = 0.0
 	verif(dessus == 0 and W.objets.size() > 20 and air_haut < air_bas - 0.04,
 		"rien ne pousse sur une paroi, sur un col (%d objets autour) ; deux étages plus haut, l'air est plus froid (%.2f contre %.2f)" % [W.objets.size(), air_haut, air_bas])
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	jeu._regions()
+
+
+# le monde ouvert : les grottes (scripts/carte.gd, MONDE-OUVERT.md, étape 4)
+func _les_grottes() -> void:
+	var C = jeu.carte
+	var W = jeu.monde
+	var jo = jeu.joueur
+	var grotte := -1
+	for k in C.regions.size():
+		if C.regions[k]["grotte"] and (grotte < 0 or C.regions[k]["pos"].length() < C.regions[grotte]["pos"].length()):
+			grotte = k
+	# une bouche : du vide au milieu de la muraille, d'où l'on va tout droit du dehors jusqu'aux salles
+	var centre: Vector2 = C.regions[grotte]["pos"] - C.tordre(C.regions[grotte]["pos"])
+	var bouche := Vector2.INF
+	var vers := Vector2.ZERO
+	var muraille := 0
+	var percee := 0
+	for ix in range(-110, 111):
+		if bouche != Vector2.INF:
+			break
+		for iy in range(-110, 111):
+			var q: Vector2 = centre + Vector2(ix, iy) * 90.0
+			var cr: float = C.creux(q)
+			if cr < 0.66 or cr > 0.7:
+				continue
+			muraille += 1
+			if C.plein(q) > -0.05:
+				continue
+			percee += 1
+			var g := Vector2(C.creux(q + Vector2(20, 0)) - C.creux(q - Vector2(20, 0)), C.creux(q + Vector2(0, 20)) - C.creux(q - Vector2(0, 20))).normalized()
+			var libre: bool = not C.regions[C.region_en(q - g * 400.0)]["eau"] and C.crete_en(q - g * 330.0) >= 1.0
+			for t in range(-320, 520, 20):
+				if C.plein(q + g * float(t)) > 0.0 or not C._paroi(q + g * float(t)).is_empty():
+					libre = false
+					break
+			if libre:
+				bouche = q
+				vers = g
+				break
+	var dehors: Vector2 = bouche - vers * 330.0
+	var dedans := _marcher(dehors, vers, 600)
+	# (la roche : le point de muraille pleine le plus proche de la bouche, le long de la frontière)
+	var roc := Vector2.INF
+	for t in range(60, 1500, 30):
+		for cote in [-1.0, 1.0]:
+			var q2: Vector2 = bouche + vers.orthogonal() * cote * float(t)
+			if roc == Vector2.INF and C.plein(q2) > 0.08:
+				roc = q2
+	var hors_roc: Vector2 = C.retenir(roc)
+	verif(bouche != Vector2.INF and roc != Vector2.INF and percee * 3 < muraille and C.sous_terre(dehors) == 0.0 and C.sous_terre(dedans) > 0.95 and not C.roche_en(dedans)
+		and C.roche_en(roc) and not C.roche_en(hors_roc) and hors_roc.distance_to(roc) > 2.0,
+		"une grotte est fermée d'une muraille de roche (%d %% de vide) qu'on ne traverse pas ; par une bouche, on entre à pied jusqu'aux salles (%d pixels)" % [
+			int(100.0 * percee / maxf(muraille, 1)), int(dehors.distance_to(dedans))])
+	# dedans : ni le jour, ni le temps qu'il fait ; de la pierre, pas un arbre
+	jeu.horloge = floorf(jeu.horloge / jeu.R.DUREE) * jeu.R.DUREE + jeu.R.DUREE * 0.3
+	jo.position = dedans
+	W.suivre(dedans, true)
+	jeu.climat.forcer("orage", 1.0, 60.0)
+	var pluie_dehors: float = jeu.climat.pluie
+	jeu.sous_terre = C.sous_terre(dedans)
+	jeu.climat.toit = jeu.sous_terre
+	for i in 40:
+		jeu.climat.avancer(0.1)
+	# (à 600 pixels à la ronde : plus loin, on retrouverait les arbres du dehors)
+	var arbres: int = W.autour(dedans, 600.0).filter(func(x): return x.couvert() > 0.0 and C.sous_terre(x.position) > 0.5).size()
+	var rochers: int = W.autour(dedans, 900.0).filter(func(x): return x.genre == "rocher" and C.sous_terre(x.position) > 0.5).size()
+	var dans_la_roche: int = W.objets.filter(func(x): return C.roche_en(x.position)).size()
+	verif(jeu.jour_du_ciel() > 0.9 and jeu.lumiere_du_jour() == 0.0 and not jeu.est_jour() and pluie_dehors > 0.8 and jeu.climat.pluie < 0.02 and jeu.climat.orage < 0.02
+		and jeu.climat.abri(dedans) == 1.0 and absf(jeu.climat._air_de_fond() - jeu.R.AIR_SOUS_TERRE) < 0.001 and arbres == 0 and rochers >= 1 and dans_la_roche == 0,
+		"dedans, en plein jour et sous l'orage : il fait noir, il ne pleut pas, l'air est frais (%.2f) ; de la pierre (%d rochers), pas un arbre (%d), rien dans la roche (%d)" % [
+			jeu.climat._air_de_fond(), rochers, arbres, dans_la_roche])
+	if arbres > 0 or dans_la_roche > 0 or jeu.lumiere_du_jour() != 0.0 or jeu.climat.pluie >= 0.02:
+		print("    (jour du ciel %.2f, lumière %.2f, pluie dehors %.2f, pluie %.3f, orage %.3f, abri %.1f ; dans la roche : %s)" % [jeu.jour_du_ciel(), jeu.lumiere_du_jour(), pluie_dehors,
+			jeu.climat.pluie, jeu.climat.orage, jeu.climat.abri(dedans), W.objets.filter(func(x): return C.roche_en(x.position)).map(func(x): return [x.genre, x.position, C.plein(x.position)])])
+	jeu.sous_terre = 0.0
+	jeu.climat.toit = 0.0
+	jeu.climat.forcer("clair", 1.0, 600.0)
+	jeu.climat.boue = 0.0
+	jeu.climat.crue = 0.0
 	jo.position = Vector2.ZERO
 	W.suivre(Vector2.ZERO, true)
 	jeu._regions()

@@ -40,7 +40,7 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
    (quelques centaines de pixels où les plantes se mêlent), le sol qui passe d'une palette à l'autre, la faune par biome, le
    temps par région, les lots avec leur parcelle. Les frontières fermées sont des crêtes. À l'écran-titre : « Le monde
    d'Orvane ».
-4. **L'eau et le relief.** *Fait : les rivières, les gués, le pont ; le relief (paliers, parois, cols). Restent les grottes.* Les mers, les lacs, les
+4. **L'eau et le relief.** *Fait : les rivières, les gués, le pont ; le relief (paliers, parois, cols) ; les grottes.* Les mers, les lacs, les
    rivières (un vrai cours d'eau, pas une région), les côtes. Les gués, où l'on passe à pied. **Le pont éphémère** : une fabrication (du bois, de la fibre) qu'on pose au bord de l'eau vers l'autre rive, sur
    une largeur limitée (une rivière, un bras de mer étroit, pas un lac). Il ne dure pas : il s'use à chaque passage et avec le
    temps, la crue l'emporte, le feu le brûle. Les bêtes le prennent aussi, les chasseurs compris. Un pont gardé avec la partie.
@@ -129,9 +129,29 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
 - **sous la neige, la boue, une crue**, les parois restent visibles : elles sont peintes une seconde fois sur un calque
   posé par-dessus ce que le temps fait au sol (`monde.relief_au_dessus`), seulement là où il y a du relief ;
 - la force se calcule aux nœuds d'une grille de 256 pixels et se retient : retenir un pas coûte 18 µs en montagne ;
-- vérifié : l'essai (76 vérifications, 4 pour le relief) ; la vitrine (`--ouvert --depuis -28480,23100 --reste`, et
-  `--recul 0.4` pour voir un pays de haut ; `--temps neige`, `--temps pluie`) ;
-- **reste à faire** : les grottes ; le relief sur la carte du carnet ; pas encore regardé dans un téléphone émulé.
+- vérifié : l'essai (4 vérifications pour le relief) ; la vitrine (`--ouvert --depuis -28480,23100 --reste`, et
+  `--recul 0.4` pour voir un pays de haut ; `--temps neige`, `--temps pluie`) ; en rendu logiciel, marcher dans les sommets
+  coûte un dixième d'images par seconde de plus que dans la prairie (18 à 19 contre 20 à 21) ;
+- **reste à faire** : le relief sur la carte du carnet.
+
+**Étape 4, les grottes** (`scripts/carte.gd`, `shaders/sol_peint.gdshader`, `scripts/climat.gd`) — les quatre régions
+« grotte » d'Orvane (un seul massif, entre la montagne, le volcan, la forêt et la mer) sont sous terre :
+- **la roche** : dans une grotte, tout est plein sauf là où le champ `Carte.cavites` est bas. Au cœur, quatre dixièmes de
+  roche : par endroits de grandes salles à piliers, ailleurs des boyaux serrés (`Carte.salles`) ; 99,9 % du vide se rejoint ;
+- **la muraille** : passé la frontière (cent pixels de dehors), trois cents pixels de roche que seuls les creux les plus
+  profonds percent — **les bouches**, une tous les 2 000 pixels à peu près, larges de 100 à 500 pixels. La roche arrête la
+  veilleuse et les bêtes (`Carte.plein`, `retenir`) ; elle se dessine noire, son bord fendu, par-dessus la neige aussi ;
+- **le noir** : `jeu.sous_terre` (de 0 dehors à 1 passé la muraille) éteint le jour là où est la veilleuse
+  (`lumiere_du_jour` ; `jour_du_ciel` garde l'heure vraie). Il fait donc nuit dedans à toute heure : la peur monte hors de
+  la lumière, les chasseurs de nuit restent, leurs yeux se voient ;
+- **l'abri** : `climat.toit` — ni pluie, ni orage, ni neige, ni brouillard, ni vent, ni canicule (ils s'effacent en entrant
+  et reviennent en sortant, en une seconde ou deux) ; ni boue, ni crue, ni neige au sol ; un air frais et constant (0,44) ;
+- **le sol** : de la pierre nue, fendue, des cailloux ; ni herbe, ni arbre, ni buisson, ni bois mort — on y vient avec ce
+  qu'il faut pour le feu et la torche. Des rochers (de la pierre) ;
+- vérifié : l'essai (78 vérifications, 2 pour les grottes) ; la vitrine (`--ouvert --depuis -53733,8744 --vers -54645,8562`,
+  et `--reste --recul 0.4` pour voir la bouche de haut) ;
+- **reste à faire** : une faune et des ressources propres aux grottes (étape 6) ; les sons (dedans, on entend la nuit du
+  dehors) ; le noir est celui de l'écran entier, pas celui de la bouche vue du dehors.
 
 **Étape 5, faite** (`scripts/interface_carte_monde.gd`, la page de pause de `scripts/interface_carnet.gd`) :
 - chaque région où l'on entre est notée (`jeu.decouvertes`), et gardée avec la partie (par le nom de la région) ;
