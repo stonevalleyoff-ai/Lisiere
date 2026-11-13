@@ -577,7 +577,7 @@ func passer_au_tactile() -> void:
 func montrer_pause(oui: bool) -> void:
 	if oui:
 		_pause.dire_compteur(get_parent() != null and get_parent().get("ips") == true)
-		_pause.ouvrir()
+		_pause.ouvrir(get_parent())
 	else:
 		_pause.visible = false
 

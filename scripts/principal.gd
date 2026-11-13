@@ -67,6 +67,7 @@ var saison := "été"
 var ouvert := false           # le monde ouvert (MONDE-OUVERT.md)
 var carte                     # sa carte (scripts/carte.gd) ; null : un lieu fermé, ou la carte manque
 var _region := -1             # la région où est la veilleuse
+var decouvertes := {}         # les régions où elle est entrée (leur rang sur la carte) : la carte du carnet les montre
 var _faunes := {}             # ce qui vit dans chaque biome déjà lu (le monde ouvert les lit en approchant)
 var _meteos := {}
 var _lecture := ""            # le biome qu'on est en train de lire
@@ -344,6 +345,7 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 	_illisibles = {}
 	_lecture = ""
 	_region = -1
+	decouvertes = {}
 	biome_info = donnees.biome(b)
 	saison = str(inst.get("cycle", {}).get("saison", {}).get("nom", "été"))
 	part_nuit = float(R.NUIT.get(saison, 0.4))
@@ -1378,6 +1380,7 @@ func _regions() -> void:
 	if i != _region:
 		var avant := _region
 		_region = i
+		decouvertes[i] = true
 		if avant < 0 or str(carte.regions[avant]["type"]) != str(carte.regions[i]["type"]):
 			_entrer_dans(carte.regions[i], avant >= 0)
 	if _lecture != "":

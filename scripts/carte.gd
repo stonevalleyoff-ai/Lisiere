@@ -20,11 +20,20 @@ const SOURCE := 2400.0        # sur cette distance (en écart de distances aux p
 const PONT_MAX := 400.0       # la plus longue portée d'un pont
 const PONT_LARGE := 15.0      # sa demi-largeur
 
+# le ton de chaque biome sur une carte (les mêmes que outils/carte.js)
+const TONS := {"banquise": "e6edf0", "toundra": "c7ccb9", "taiga": "5f7a5c", "steppe": "cdbf8a", "prairie": "a9b86b", "foret": "55733f", "jungle": "2f6a3c",
+	"savane": "cfae62", "desert": "e3c98a", "desert-froid": "cfc8b4", "maquis": "9aa05c", "montagne": "9a9488", "sommets": "dcdcd8", "volcan": "6b4a40",
+	"grotte": "4a4540", "marais": "6f7a4a", "mangrove": "4f7a5a", "cote": "d8cfa6", "lac": "7fa3b5", "riviere": "9dbb8f", "recif": "7fc0b8", "large": "5f8fa8",
+	"mer-froide": "86a4b8", "abysses": "3f5f7a", "rivage": "d9d2b0", "bois": "6a8548", "lande": "a59a6a", "falaise": "b0a898", "pierre": "a8a49a", "neige": "eef0f0",
+	"tourbiere": "7a6f4a", "canyon": "c98a55", "sylve": "7a5f8a", "cristal": "a9c7d6", "caldeira": "7a5a50", "braises": "a04a30", "ossuaire": "d9d0bc",
+	"terres-creuses": "8a7f6a", "cerisaie": "d79aa5"}
+
 var regions: Array = []       # { id, type, nom, pos, eau, bord, voisines : [rangs], murs : { rang : true } }
 var cote := 16000.0
 var depart := 0
 var _cases := {}              # la case d'un point (de côté « cote ») → les rangs des régions dont le point y est
 var ponts: Array = []         # les ponts posés : [un bout, l'autre] (le jeu les tient à jour)
+var _contours := {}           # le contour de chaque région déjà demandé (la carte du carnet les dessine)
 
 
 # lit la carte ; biomes : ceux de l'index du monde (leur milieu dit ce qui est de l'eau, leur nom se dit en entrant). null si
@@ -298,3 +307,52 @@ func pont_depuis(p: Vector2) -> Array:
 			return [p + dir * (entree - 12.0), p + dir * (d + 12.0)]
 		d += 6.0
 	return []
+
+
+# --- le contour d'une région, pour la dessiner (la carte du carnet : scripts/interface_carte_monde.gd) ---
+
+# [ses points, dans le lieu (les frontières ondulent comme dans le jeu) ; ses bords : [la voisine, les points de ce bord]]
+func contour(i: int) -> Array:
+	if _contours.has(i):
+		return _contours[i]
+	var s: Vector2 = regions[i]["pos"]
+	var d := cote * 3.0
+	var poly: Array = [s + Vector2(-d, -d), s + Vector2(d, -d), s + Vector2(d, d), s + Vector2(-d, d)]
+	var qui: Array = [-1, -1, -1, -1]
+	# (sur le plan tordu, la région est ce qui reste quand chaque voisine a coupé sa part)
+	for j in regions[i]["voisines"]:
+		var t: Vector2 = regions[j]["pos"]
+		var m := (s + t) * 0.5
+		var nrm := t - s
+		var out: Array = []
+		var oq: Array = []
+		for k in poly.size():
+			var a: Vector2 = poly[k]
+			var b: Vector2 = poly[(k + 1) % poly.size()]
+			var da := (a - m).dot(nrm)
+			var db := (b - m).dot(nrm)
+			if da <= 0.0:
+				out.append(a)
+				oq.append(qui[k])
+			if (da <= 0.0) != (db <= 0.0):
+				out.append(a + (b - a) * (da / (da - db)))
+				oq.append(j if da <= 0.0 else qui[k])
+		poly = out
+		qui = oq
+	# chaque bord, coupé en petits pas et ramené du plan tordu au lieu
+	var pts := PackedVector2Array()
+	var bords: Array = []
+	for k in poly.size():
+		var a: Vector2 = poly[k]
+		var b: Vector2 = poly[(k + 1) % poly.size()]
+		var pas := maxi(1, int(ceil(a.distance_to(b) / 700.0)))
+		var bord := PackedVector2Array()
+		for u in pas + 1:
+			var q: Vector2 = a.lerp(b, float(u) / pas)
+			var p := q - tordre(q - tordre(q))
+			bord.append(p)
+			if u < pas:
+				pts.append(p)
+		bords.append([int(qui[k]), bord])
+	_contours[i] = [pts, bords]
+	return _contours[i]

@@ -674,6 +674,7 @@ func _les_regions() -> void:
 	var C = jeu.carte
 	var W = jeu.monde
 	var jo = jeu.joueur
+	jeu._regions()
 	var terres := 0
 	for reg in C.regions:
 		if not reg["eau"]:
@@ -743,6 +744,18 @@ func _les_regions() -> void:
 	var rochers: int = W.autour(au_pied, 500.0).filter(func(x): return x.genre == "rocher").size()
 	verif(C.region_en(vers_la_crete) != cb and vers_la_crete.distance_to(p_b) < p_a.distance_to(p_b) * 0.8 and rochers >= 8,
 		"une crête ferme la frontière entre %s et %s : on ne passe pas, des rochers la marquent (%d au pied)" % [C.regions[ca]["type"], C.regions[cb]["type"], rochers])
+	# ce qu'on découvre se note, et la carte du carnet le montre
+	var co: Array = C.contour(foret)
+	var aire_ := 0.0
+	for k in co[0].size():
+		aire_ += co[0][k].cross(co[0][(k + 1) % co[0].size()])
+	jeu.ui.montrer_pause(true)
+	var page_carte: bool = jeu.ui._pause.carte_monde.visible and not jeu.ui._pause._commandes.visible and str(jeu.ui._pause._sous.text).contains("découverte")
+	jeu.ui.montrer_pause(false)
+	var gardee_d: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
+	verif(jeu.decouvertes.has(foret) and jeu.decouvertes.size() >= 2 and absf(aire_) * 0.5 > 0.3 * C.cote * C.cote and absf(aire_) * 0.5 < 3.0 * C.cote * C.cote
+		and page_carte and gardee_d["decouvertes"].has(str(C.regions[foret]["id"])),
+		"ce qu'on découvre se note (%d régions) et se garde ; à la pause, le carnet en montre la carte (« %s »)" % [jeu.decouvertes.size(), jeu.ui._pause._sous.text])
 	# une rivière traverse sa vallée : son lit arrête ; à gué on passe à pied ; ailleurs, un pont de fortune
 	var riv := -1
 	for k in C.regions.size():

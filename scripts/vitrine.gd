@@ -335,6 +335,18 @@ func _process(delta: float) -> void:
 		jeu.ui.visible = false
 	_le_temps_passe(u)
 	_mesurer()
+	# (--carte : à la fin, la pause, et la carte du carnet ; les régions à deux pas de là sont découvertes, pour la voir pleine)
+	if jeu.ouvert and u > 0.8 and not _fait.has("carte") and OS.get_cmdline_user_args().has("--carte") and jeu.carte != null:
+		_fait["carte"] = true
+		for i in jeu.decouvertes.keys():
+			for v in jeu.carte.regions[i]["voisines"]:
+				if not jeu.carte.regions[v]["eau"]:
+					jeu.decouvertes[v] = true
+					for w in jeu.carte.regions[v]["voisines"]:
+						if not jeu.carte.regions[w]["eau"] and (w % 3) != 0:
+							jeu.decouvertes[w] = true
+		jeu.en_pause = true
+		jeu.ui.montrer_pause(true)
 	# (--pont : au bord d'une rivière, elle pose un pont de fortune et le passe)
 	if jeu.ouvert and jeu.pont_possible and not _fait.has("pont") and OS.get_cmdline_user_args().has("--pont"):
 		_fait["pont"] = true

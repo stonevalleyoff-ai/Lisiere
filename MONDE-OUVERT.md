@@ -44,8 +44,8 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
    rivières (un vrai cours d'eau, pas une région), les côtes. Les gués, où l'on passe à pied. **Le pont éphémère** : une fabrication (du bois, de la fibre) qu'on pose au bord de l'eau vers l'autre rive, sur
    une largeur limitée (une rivière, un bras de mer étroit, pas un lac). Il ne dure pas : il s'use à chaque passage et avec le
    temps, la crue l'emporte, le feu le brûle. Les bêtes le prennent aussi, les chasseurs compris. Un pont gardé avec la partie.
-5. **Se repérer.** Une carte dans le carnet, qui se dessine à mesure qu'on explore ; le nom de la région quand on y entre ;
-   les régions découvertes au tableau des scores.
+5. **Se repérer.** *Fait, sauf le tableau des scores.* Une carte dans le carnet, qui se dessine à mesure qu'on explore ; le
+   nom de la région quand on y entre ; les régions découvertes au tableau des scores.
 6. **Des raisons de voyager.** Des ressources qui changent avec le biome, des repères, des camps.
 
 ## Où on en est
@@ -112,10 +112,19 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
 - **reste à faire** : le relief (montagnes, cols) ; les rivières ne coulent que dans leurs vallées (pas à travers la forêt
   ou le marais voisins) ; l'eau ne bouge pas (elle est peinte avec le sol).
 
+**Étape 5, faite** (`scripts/interface_carte_monde.gd`, la page de pause de `scripts/interface_carnet.gd`) :
+- chaque région où l'on entre est notée (`jeu.decouvertes`), et gardée avec la partie (par le nom de la région) ;
+- **à la pause**, dans le monde ouvert, le carnet montre la carte à la place des commandes (un bouton passe de l'une aux
+  autres) : les régions découvertes au ton de leur biome, avec leur nom ; celles qui les touchent esquissées d'un « ? »
+  (l'eau en bleu) ; les crêtes d'un trait double ; le lit des rivières ; les feux, les ponts ; où est la veilleuse. Un appui
+  sur la carte change d'échelle : les environs (six régions de large), ou tout ce qu'on connaît ;
+- le contour d'une région (`Carte.contour`) ondule comme sa frontière dans le jeu ;
+- **reste à faire** : les régions découvertes au tableau des scores (il faut une colonne de plus dans la base de Stone
+  Valley).
+
 **Ce que l'étape 3 ne fait pas encore** :
 - hors ligne, seuls les cinq biomes de la copie gardée ont leurs bêtes ; ailleurs, celles du biome d'avant restent ;
 - la faune est celle du biome, pas encore celle de la parcelle (la copie gardée ne dit pas la répartition par parcelle) ;
-- on n'a pas de carte en jouant (étape 5) : on se repère au nom du biome, quand on y entre ;
 - **pas mesuré sur un vrai téléphone** : la lecture d'un biome en marchant (le réseau, puis une vingtaine de bêtes à dessiner).
 
 ## Ce qui reste incertain

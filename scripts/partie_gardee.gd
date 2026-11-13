@@ -75,6 +75,7 @@ static func photo(jeu) -> Dictionary:
 			"temperature": snappedf(j.temperature, 0.1), "trempe": snappedf(j.trempe, 0.1),
 		},
 		"climat": jeu.climat.photo(),
+		"decouvertes": jeu.decouvertes.keys().map(func(k): return str(jeu.carte.regions[k]["id"])) if jeu.carte != null else [],
 		"feux": feux,
 		"ponts": jeu.ponts.filter(func(x): return is_instance_valid(x)).map(func(x): return [snappedf(x.a.x, 0.1), snappedf(x.a.y, 0.1), snappedf(x.b.x, 0.1), snappedf(x.b.y, 0.1), snappedf(x.tenue, 0.1)]),
 		# (un lieu sans bord ne garde que ce qu'on y a changé : le reste se refait de sa graine)
@@ -133,6 +134,12 @@ static func appliquer(jeu, d: Dictionary) -> void:
 		jeu.monde.add_child(f)
 		f._eteint = float(x[3])
 		jeu.feux.append(f)
+	if jeu.carte != null:
+		# (ce qu'on avait découvert du monde ouvert, par le nom des régions)
+		var noms: Array = d.get("decouvertes", [])
+		for k in jeu.carte.regions.size():
+			if noms.has(str(jeu.carte.regions[k]["id"])):
+				jeu.decouvertes[k] = true
 	for x in d.get("ponts", []):
 		if typeof(x) == TYPE_ARRAY and x.size() >= 5:
 			jeu.poser_pont(Vector2(float(x[0]), float(x[1])), Vector2(float(x[2]), float(x[3])), float(x[4]))
