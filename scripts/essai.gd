@@ -588,6 +588,7 @@ func _lancer() -> void:
 	PG.effacer()
 	jeu.ui.montrer_reprise({})
 	verif(not jeu.ui._reprise.visible and jeu.ui._entrer.principal, "effacée, l'écran-titre ne propose plus que d'entrer dans la nuit")
+	_les_pattes()
 	await _lieu_sans_bord()
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
@@ -1478,4 +1479,57 @@ func _marcher(de: Vector2, vers: Vector2, pas: int) -> Vector2:
 	for i in pas:
 		p = jeu.carte.retenir(p + vers.normalized() * 1.5)
 	return p
+
+
+
+
+# les pattes à trois os (scripts/bete.gd, _ik3) : la cuisse bouge peu, c'est le jarret qui plie
+func _les_pattes() -> void:
+	var F: Dictionary = jeu.faune
+	var bete = null
+	var patte := -1
+	for k in ["proies_jour", "proies_nuit", "rodeurs", "chasseurs_nuit"]:
+		for e in F[k]:
+			if bete != null:
+				break
+			var b = jeu._creer(e, "proie", jeu.joueur.position + Vector2(300.0, 200.0))
+			# (une patte de derrière à trois os : sa hanche est en arrière du milieu)
+			for i in b._p_trois.size():
+				if b._p_trois[i] and not b._p_devant[i]:
+					bete = b
+					patte = i
+					break
+			if bete == null:
+				b.queue_free()
+	if bete == null:
+		verif(false, "une bête à quatre pattes a des pattes arrière à trois os")
+		return
+	var pts: PackedVector2Array = bete._p_pts[patte]
+	var seg: PackedFloat32Array = bete._p_seg[patte]
+	var jambe: float = seg[0] + seg[1] + seg[2]
+	# au repos : elle retrouve sa pose
+	var repos: PackedVector2Array = bete._ik3(patte, pts[0], pts[3], 0.0)
+	var ecart := 0.0
+	for k in 4:
+		ecart = maxf(ecart, repos[k].distance_to(pts[k]))
+	# le pli du jarret, compté du côté où il plie au repos (plus grand : plus fermé ; négatif : retourné)
+	var sens: float = signf(wrapf((pts[3] - pts[2]).angle() - (pts[2] - pts[1]).angle(), -PI, PI))
+	var pli := func(j: PackedVector2Array) -> float: return wrapf((j[3] - j[2]).angle() - (j[2] - j[1]).angle(), -PI, PI) * sens
+	var pli_repos: float = pli.call(repos)
+	# le pied levé derrière elle (le pas qui se lève) : la cuisse suit peu, le jarret se ferme, rien ne s'arrache
+	var derriere: Vector2 = pts[3] + Vector2(-jambe * 0.2, -jambe * 0.16)
+	var leve: PackedVector2Array = bete._ik3(patte, pts[0], derriere, 1.0)
+	var cuisse := absf(wrapf((leve[1] - leve[0]).angle() - (pts[1] - pts[0]).angle(), -PI, PI))
+	var tient := true
+	for k in 3:
+		var r: float = leve[k].distance_to(leve[k + 1]) / seg[k]
+		tient = tient and r > 0.8 and r < 1.2
+	# le pied porté en avant, encore levé (le pas qui va se poser) : le jarret ne se retourne pas
+	var devant: Vector2 = pts[3] + Vector2(jambe * 0.28, -jambe * 0.12)
+	var porte: PackedVector2Array = bete._ik3(patte, pts[0], devant, 0.8)
+	verif(ecart < 1.0 and cuisse < 0.65 and float(pli.call(leve)) > pli_repos + 0.15 and tient and leve[3].distance_to(derriere) < jambe * 0.12
+		and float(pli.call(porte)) > 0.05 and porte[3].distance_to(devant) < jambe * 0.15,
+		"une patte arrière a trois os : au repos elle garde sa pose ; levée derrière, la cuisse suit peu (%.2f rad) et le jarret se ferme (%.2f → %.2f) ; portée en avant, il ne se retourne pas (%.2f)" % [
+			cuisse, pli_repos, float(pli.call(leve)), float(pli.call(porte))])
+	bete.queue_free()
 

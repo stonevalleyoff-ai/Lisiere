@@ -62,6 +62,7 @@ var audace := 0.3
 var largeur := 30.0
 var vue := false
 var regard := 1.0
+var conduite := true            # (la vitrine du bestiaire : faux, elle la mène à la main pour la regarder marcher)
 var etat := "repos"
 var maison := Vector2.ZERO
 var oeil := Vector3(150.0, 40.0, 2.0)
@@ -199,6 +200,14 @@ var _p_dep := PackedFloat32Array()       # d'où il s'est levé
 var _p_lev := PackedFloat32Array()       # de combien il est levé (pixels)
 var _p_pose := PackedByteArray()         # 1 : posé
 var _p_etire := PackedFloat32Array()     # l'allongement du bas de la patte (pour le dessin)
+# (une patte à trois os — la cuisse, la jambe, le canon ou le pied : celles d'une bête à quatre pattes, d'un oiseau)
+var _p_trois: Array[bool] = []
+var _p_seg: Array[PackedFloat32Array] = []   # la longueur de chaque morceau, au repos
+var _p_ang3 := PackedFloat32Array()      # l'angle de son dernier os, au repos
+var _p_ang_hp := PackedFloat32Array()    # l'angle de la hanche au pied, au repos
+var _p_plie2 := PackedFloat32Array()     # de quel côté plie le genou, entre la cuisse et la jambe
+var _p_suit3 := PackedFloat32Array()     # ce que le dernier os suit du balancement de la patte
+var _p_tour3 := PackedFloat32Array()     # de quel côté son jarret plie (le signe du pli entre la jambe et le dernier os ; 0 : droit)
 # le galop (une proie qui fuit bondit haut ; un chasseur lancé galope bas et long)
 var _g_foulee := 1.0
 var _g_appui := 0.27
@@ -386,6 +395,21 @@ func _monter() -> void:
 		_p_lev.append(0.0)
 		_p_pose.append(1)
 		_p_etire.append(1.0)
+		# (ses morceaux ; à trois os, ce qu'il faut pour que le jarret plie : voir _ik3)
+		var seg := PackedFloat32Array()
+		for k in n:
+			seg.append(maxf(pts[k].distance_to(pts[k + 1]), 0.01))
+		_p_seg.append(seg)
+		var trois: bool = pts.size() == 4 and int(p.get("n_cote", 2)) <= 2
+		_p_trois.append(trois)
+		var dernier := pts[n] - pts[n - 1]
+		_p_ang3.append(dernier.angle())
+		_p_ang_hp.append((pts[n] - pts[0]).angle())
+		_p_plie2.append(signf((pts[1] - pts[0]).cross(pts[2] - pts[0])) if trois else 0.0)
+		# (un long pied posé à plat — un sauteur — reste à plat tant qu'il porte ; un canon dressé suit la patte à moitié)
+		_p_suit3.append(0.12 if absf(dernier.y) < absf(dernier.x) * 0.7 else 0.5)
+		var tour := wrapf(dernier.angle() - (pts[n - 1] - pts[n - 2]).angle(), -PI, PI) if trois else 0.0
+		_p_tour3.append(signf(tour) if absf(tour) > 0.12 else 0.0)
 	_s_max = maxf(_H * 0.5, s_max) if s_max < INF else _H
 	if avec_pattes:
 		_loin = Calque.new()
@@ -714,7 +738,8 @@ func _process(delta: float) -> void:
 		# (morte, ou un écho qui se défait : plus rien qu'elle-même)
 		_finir(delta)
 		return
-	_conduire(delta)
+	if conduite:
+		_conduire(delta)
 	_animer(delta)
 	_redessiner()
 
@@ -1526,7 +1551,13 @@ func _pas_des_pattes() -> void:
 				replie += Vector2(v.x * 0.4 + portee * (0.4 if devant else -0.3), portee * 0.62)
 			pied = pied.lerp(_t_corps * replie, plie)
 			lev = plie
-		var j := _ik(i, hanche, pied, plie > 0.0 or role == "echo")
+		var libre := plie > 0.0 or role == "echo"
+		if _p_trois[i] and not libre:
+			var j3 := _ik3(i, hanche, pied, lev)
+			_pieds[i] = j3
+			_rot_pieds[i] = wrapf((j3[n] - j3[n - 1]).angle() - _p_ang3[i], -PI, PI) * clampf(lev * 1.4, 0.0, 1.0)
+			continue
+		var j := _ik(i, hanche, pied, libre)
 		_pieds[i] = j
 		var bas: Vector2 = j[n] - j[1]
 		_rot_pieds[i] = wrapf(bas.angle() - _p_ang[i], -PI, PI) * clampf(lev * 1.4, 0.0, 1.0)
@@ -1564,6 +1595,58 @@ func _ik(i: int, h: Vector2, f: Vector2, libre: bool) -> PackedVector2Array:
 			out.append(genou + r.rotated(ang_b) * etire)
 	out.append(pied)
 	return out
+
+
+# trois os : la cuisse, la jambe, et le canon (ou le long pied d'un sauteur). Posé, le dernier os suit à moitié le balancement
+# de la patte ; levé, il pend sous le jarret (un peu en arrière quand le pied vient de quitter le sol). La cuisse et la jambe
+# vont de la hanche au jarret : quand le pied se lève, c'est la jambe qui remonte et le jarret qui se ferme. La cuisse bouge
+# peu, et le jarret ne plie que d'un côté, celui de sa pose : la patte arrière ne part plus sous le ventre d'un bloc
+func _ik3(i: int, h: Vector2, f: Vector2, lev: float) -> PackedVector2Array:
+	var c := _p_seg[i][2]
+	var phi := wrapf((f - h).angle() - _p_ang_hp[i], -PI, PI)
+	# (derrière : la patte a tourné vers l'arrière de sa pose)
+	var derriere := smoothstep(-0.3, 0.3, phi)
+	# (levé, le dernier os pend sous le jarret plutôt qu'il ne suit la patte : c'est la jambe qui remonte, et le jarret se ferme)
+	var a3 := _p_ang3[i] + _p_suit3[i] * clampf(phi, -0.9, 0.9) * (1.0 - 0.6 * lev) + lev * lerpf(-0.08, 0.2, derriere)
+	var haut: Array = _ik3_haut(i, h, f - Vector2.from_angle(a3) * c)
+	# le jarret ne se retourne pas : sinon le dernier os revient presque dans le prolongement de la jambe, et l'on refait le haut
+	var sens := _p_tour3[i]
+	if sens != 0.0:
+		var jambe: float = (Vector2(haut[1]) - Vector2(haut[0])).angle()
+		if wrapf(a3 - jambe, -PI, PI) * sens < 0.12:
+			a3 = jambe + 0.12 * sens
+			haut = _ik3_haut(i, h, f - Vector2.from_angle(a3) * c)
+	var genou: Vector2 = haut[0]
+	var jarret: Vector2 = haut[1]
+	# (le dernier os revient vers le pied posé, s'allonge ou se tasse un peu : le pied tient au sol)
+	var fin: Vector2 = f - jarret
+	var lf: float = fin.length()
+	var e3: float = clampf(lf / c, 0.88, 1.0 + _etire + 0.06)
+	var pied: Vector2 = jarret + (fin / lf if lf > 0.0001 else Vector2.DOWN) * c * e3
+	return PackedVector2Array([h, genou, jarret, pied])
+
+
+# la cuisse et la jambe, de la hanche h jusqu'au jarret voulu : [le genou, le jarret atteint]. Le genou du côté où la planche
+# le plie ; la cuisse ne s'écarte pas trop de son repos ; la jambe s'allonge ou se tasse un peu si le jarret est hors de portée
+func _ik3_haut(i: int, h: Vector2, voulu: Vector2) -> Array:
+	var a := _p_seg[i][0]
+	var b := _p_seg[i][1]
+	var dj := voulu - h
+	var lj := dj.length()
+	var dist := clampf(lj, absf(a - b) + 0.01, a + b - 0.001)
+	var vers_j := dj / lj if lj > 0.0001 else Vector2.DOWN
+	var ouvre := acos(clampf((a * a + dist * dist - b * b) / (2.0 * a * dist), -1.0, 1.0))
+	var ang := vers_j.angle() - ouvre * _p_plie2[i]
+	var da := wrapf(ang - _p_ang0[i], -PI, PI)
+	var lim := minf(_p_lim[i], 0.62)
+	if absf(da) > lim:
+		ang = _p_ang0[i] + clampf(da, -lim, lim)
+	var genou := h + Vector2.from_angle(ang) * a
+	var bas := voulu - genou
+	var lb := bas.length()
+	var e2 := clampf(lb / b, 0.86, 1.0 + _etire + 0.06)
+	_p_etire[i] = e2
+	return [genou, genou + (bas / lb if lb > 0.0001 else Vector2.DOWN) * b * e2]
 
 
 # --- la queue ---
@@ -1771,10 +1854,12 @@ func _peindre_pattes(c: CanvasItem, loin: bool) -> void:
 		var p: Dictionary = pattes[i]
 		var j: PackedVector2Array = _pieds[i]
 		var cel: Array = p["cellules"]
-		# (le bas de la patte, un peu allongé ou tassé pour que le pied tienne au sol)
-		var bas := Vector2(0.5 * _p_etire[i], 0.5)
+		# (le bas de la patte, un peu allongé ou tassé pour que le pied tienne au sol : chaque morceau à la longueur qu'il a
+		# entre ses deux articulations)
+		var seg := _p_seg[i]
 		for s in cel.size():
 			var a := j[s]
+			var bas := Vector2(0.5 * clampf(a.distance_to(j[s + 1]) / seg[s], 0.8, 1.2), 0.5)
 			c.draw_set_transform(a, (j[s + 1] - a).angle(), demi if s == 0 else bas)
 			c.draw_texture_rect_region(atlas, Rect2(-cel[s]["debut"], cel[s]["region"].size), cel[s]["region"])
 		var pied: Dictionary = p["pied"]

@@ -78,6 +78,8 @@ const FORMES := {"cornes": "recourbees", "defenses": "recourbees", "crete": "lis
 	"ailes": "plumes", "nageoires": "courtes", "carapace": "bombee", "plaques": "triangles", "epines": "fines", "massue": "ronde",
 	"aiguillon": "droit", "panache": "touffe", "pinces": "fines", "mains": "agiles"}
 const NOMBRES := {"cornes": 2, "plaques": 5, "epines": 7}
+# la largeur du cou là où il rejoint la tête, au moins (en tailles de crâne)
+const COU_A_LA_TETE := 0.7
 
 
 # tout ce qu'on mesure d'une bête avant de la dessiner (pixels montrés)
@@ -1487,6 +1489,14 @@ static func _cou_et_tete(p: Planche, m: Mesures, sil: PackedVector2Array) -> voi
 	var nb := sil[m.i_nb]
 	var nuque := P[NUQUE]
 	var gorge := P[GORGE]
+	# (un cou dressé arrive par-dessous la tête : la nuque et la gorge, presque l'une au-dessus de l'autre, le serreraient en
+	# une tige sous un gros crâne. On l'attache alors plus large : la gorge avance sous la mâchoire, la nuque recule un peu
+	# derrière le crâne)
+	var large := (nuque - gorge).dot(m.nrm)
+	var voulu := m.hs * COU_A_LA_TETE
+	if large < voulu:
+		gorge -= m.nrm * (voulu - large) * 0.7
+		nuque += m.nrm * (voulu - large) * 0.3
 	var gras := 0.06 if (m.carn or m.chasseur) else -0.03
 	if m.famille == "lezard" or m.famille == "croco" or m.famille == "loutre":
 		gras = 0.04
