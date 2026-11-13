@@ -4,7 +4,7 @@ extends RefCounted
 # gardée dans donnees/ (outils/secours.js). Puis la faune d'un lieu, rangée comme le jeu la joue : les proies du jour et de la
 # nuit, les rôdeurs (des chasseurs qui vivent le jour), les chasseurs de la nuit. Rien n'est inventé : chaque bête est une
 # lignée du monde, avec sa masse, sa vitesse, son caractère, son effectif dans ce lieu, et ce que sa population y a appris des
-# joueurs (la mémoire d'Orvane, docs/12 : Orvane.dispositions).
+# joueurs (la mémoire d'Orvane, docs/12 et docs/50 : Orvane.dispositions).
 
 const SECOURS := "res://donnees/"
 const TERRE := ["marche", "course", "saut", "fouissage", "grimpe", "reptation"]

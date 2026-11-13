@@ -543,7 +543,7 @@ func _lancer() -> void:
 	get_tree().quit(0 if ok else 1)
 
 
-# --- la mémoire d'Orvane (docs/12) : deux mondes pareils sauf ce que les bêtes ont appris des joueurs donnent deux conduites ---
+# --- la mémoire d'Orvane (docs/50) : deux mondes pareils sauf ce que les bêtes ont appris des joueurs donnent deux conduites ---
 # La copie gardée dans le jeu n'en porte pas : chaque bête est faite ici avec la mémoire qu'aurait sa population, et jouée sans
 # attendre, image par image, par les fonctions du jeu (bete.gd, _conduire).
 

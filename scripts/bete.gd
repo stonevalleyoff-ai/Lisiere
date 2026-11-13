@@ -7,7 +7,7 @@ extends Node2D
 #  - chasseur : la nuit, il vient vers la veilleuse ; il n'entre pas dans la lumière d'un feu, tourne à sa lisière, et garde
 #    ses distances avec une torche (sauf les plus audacieux) ; dans le noir, il mord. À l'aube, il repart ;
 #  - echo : une bête qu'on a tuée, revenue la nuit quand la peur est haute ; pâle, lente, elle ne mord pas : elle traverse.
-# Et ce que sa population a appris des joueurs (la mémoire d'Orvane, docs/12 : _apprendre) : craintive, elle fuit de plus loin et
+# Et ce que sa population a appris des joueurs (la mémoire d'Orvane, docs/50 : _apprendre) : craintive, elle fuit de plus loin et
 # guette ; habituée, elle se laisse approcher ; traqueuse, elle suit la veilleuse, revient après un coup, passe la torche (en
 # s'annonçant) ; selon qu'elle craint le feu ou s'y est faite, elle s'en tient plus ou moins loin. Sans mémoire, rien ne change.
 # Elle dit aussi au jeu ce qu'Orvane en retiendra : un feu ou une torche qui l'arrêtent, un assaut, une blessure dont elle réchappe.

@@ -5,7 +5,7 @@ extends Node
 # lisière de la lumière, mordent dans le noir. La peur monte dans l'obscurité ; au comble, ce qu'on a tué revient, en échos.
 # Chaque bête croisée est comptée (« rencontre »), chaque bête tuée aussi (« prélèvement »), dans le lieu d'Orvane où c'est
 # arrivé : à la fin de la partie, le kit en fait un lot (docs/4), déposé dans le monde d'Orvane (scripts/regles.gd : sa clé, son monde) ; l'essai et la vitrine n'envoient rien.
-# La mémoire d'Orvane (docs/12) : chaque bête se conduit d'après ce que sa population a appris des joueurs (scripts/bete.gd), et la
+# La mémoire d'Orvane (docs/50) : chaque bête se conduit d'après ce que sa population a appris des joueurs (scripts/bete.gd), et la
 # partie raconte ce qu'elle lui apprendra (_raconter) : une bête blessée qui s'en va, un chasseur tenu par un feu ou par la torche,
 # un assaut, une morsure qui tue. Le kit ne garde ces comptes que si le monde lu tient la mémoire.
 #   outils/godot.sh --path .                       jouer
@@ -938,7 +938,7 @@ func bete_tuee(b) -> void:
 	_conseil("echo", true, "Ce qu'on tue ici ne s'oublie pas tout à fait.")
 
 
-# ce que la mémoire d'Orvane retiendra de cette partie (docs/12), compté pour la lignée, dans le lieu où c'est arrivé. Le kit ne
+# ce que la mémoire d'Orvane retiendra de cette partie (docs/50), compté pour la lignée, dans le lieu où c'est arrivé. Le kit ne
 # garde ces actions que si le monde lu tient la mémoire (Orvane.memoire_eveillee) ; la fin ne dit que ce qui part.
 func _raconter(b, action: String, moyen: String = "") -> void:
 	Orvane.compter(b.id, biome, action, 1.0, "", "", "", moyen)
