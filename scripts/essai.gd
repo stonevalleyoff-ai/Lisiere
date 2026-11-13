@@ -10,17 +10,54 @@ extends Node
 var jeu
 var ok := true
 var n := 0
+# le garde-fou : un fil à part regarde si l'essai avance. S'il ne dit plus rien pendant cent secondes, il dit où il en était
+# (la dernière vérification, si les images passent encore, l'allure du temps) et arrête tout : un essai qui se fige est un échec
+var _garde: Thread
+var _dit_ms := 0
+var _dernier := ""
+var _images := 0
+var _fini := false
 
 
 func _ready() -> void:
 	jeu = get_parent()
+	_dit_ms = Time.get_ticks_msec()
+	_garde = Thread.new()
+	_garde.start(_garder)
 	_lancer.call_deferred()
+
+
+func _process(_delta: float) -> void:
+	_images += 1
+
+
+func _garder() -> void:
+	var images_avant := 0
+	while not _fini:
+		OS.delay_msec(2000)
+		if _fini:
+			return
+		var passent: bool = _images != images_avant
+		images_avant = _images
+		if Time.get_ticks_msec() - _dit_ms > 100000:
+			print("\nÉCHEC : l'essai n'avance plus depuis cent secondes, après « %s ». Les images %s ; l'allure du temps : %s." % [
+				_dernier, "passent encore (une attente qui ne finit pas)" if passent else "sont figées (un calcul qui ne finit pas)", str(Engine.time_scale)])
+			OS.kill(OS.get_process_id())
+			return
+
+
+func _exit_tree() -> void:
+	_fini = true
+	if _garde != null and _garde.is_started():
+		_garde.wait_to_finish()
 
 
 func verif(c: bool, m: String) -> void:
 	n += 1
 	if not c:
 		ok = false
+	_dit_ms = Time.get_ticks_msec()
+	_dernier = m.substr(0, 90)
 	print(("  ✓ " if c else "  ✗ ") + m)
 
 
@@ -133,9 +170,10 @@ func _lancer() -> void:
 
 	print("2. Les gestes")
 	var j = jeu.joueur
+	# (un arbre sans rien d'autre à prendre à son pied : les trois coups sont pour lui)
 	var o = null
 	for x in jeu.monde.objets:
-		if x.genre == "arbre" or x.genre == "sapin":
+		if (x.genre == "arbre" or x.genre == "sapin") and jeu.monde.autour(x.position + Vector2(0, 20), 70.0).filter(func(y): return y != x and not y.epuise()).is_empty():
 			o = x
 			break
 	j.position = o.position + Vector2(0, 20)
@@ -536,6 +574,7 @@ func _lancer() -> void:
 	jeu.sons.arreter_brefs()
 	for p in jeu.sons.find_children("*", "AudioStreamPlayer", false, false):
 		p.stop()
+	_fini = true
 	await get_tree().create_timer(0.3, true, false, true).timeout
 	get_tree().quit(0 if ok else 1)
 
