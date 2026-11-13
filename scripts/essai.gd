@@ -2,7 +2,8 @@ extends Node
 # Lisière — l'essai sans écran (scripts/essai.gd)
 # Une partie jouée toute seule, en accéléré, sur la copie du monde gardée dans le jeu (sans réseau), qui vérifie que tout tient :
 # le lieu, ses bêtes dessinées d'après leurs planches, la récolte, les fabrications, le jeu du doigt, la nuit, les chasseurs qui n'entrent pas
-# dans la lumière du feu, la peur dans le noir, les échos, l'aube, la fin, et ce qui est compté pour Orvane.
+# dans la lumière du feu, la peur dans le noir, les échos, la mémoire d'Orvane (ce que les bêtes ont appris des joueurs, et ce
+# que la partie leur apprend), l'aube, la fin, et ce qui est compté pour Orvane.
 #   outils/godot.sh --headless --path . -- --essai              (sur la copie gardée dans le jeu)
 #   outils/godot.sh --headless --path . -- --essai --en-ligne   (sur le monde publié)
 # Il sort avec le code 0 si tout passe, 1 sinon.
@@ -528,6 +529,8 @@ func _lancer() -> void:
 	verif(echo, "la peur haute, ce qu'on a tué revient en écho")
 	verif(perdu > 0.0, "le noir coûte de la santé (%d points perdus en quarante secondes)" % int(perdu))
 
+	await _la_memoire(F, f)
+
 	# (la partie telle qu'elle est, avant l'aube, un arbre abattu en plus : elle sera reprise à la fin, et doit revenir pareille)
 	for x in jeu.monde.objets:
 		if (x.genre == "arbre" or x.genre == "sapin") and x.reste == x.plein:
@@ -593,6 +596,350 @@ func _lancer() -> void:
 	_fini = true
 	await get_tree().create_timer(0.3, true, false, true).timeout
 	get_tree().quit(0 if ok else 1)
+
+
+# --- la mémoire d'Orvane (docs/50) : deux mondes pareils sauf ce que les bêtes ont appris des joueurs donnent deux conduites ---
+# La copie gardée dans le jeu n'en porte pas : chaque bête est faite ici avec la mémoire qu'aurait sa population, et jouée sans
+# attendre, image par image, par les fonctions du jeu (bete.gd, _conduire).
+
+# une bête de cette lignée, dont la population aurait appris cela (les autres dispositions à leur valeur neutre)
+func _bete(e: Dictionary, role: String, p: Vector2, memoire: Dictionary):
+	var x: Dictionary = e.duplicate()
+	var m: Dictionary = Orvane.DISPOSITIONS_NEUTRES.duplicate()
+	m.merge(memoire, true)
+	x["memoire"] = m
+	return jeu._creer(x, role, p)
+
+
+func _oter(b) -> void:
+	if is_instance_valid(b):
+		b.remove_from_group("betes")
+		b.queue_free()
+
+
+# à quelle distance de la veilleuse une proie s'enfuit : on la rapproche, deux pixels à la fois, jusqu'à ce qu'elle parte
+func _fuite(e: Dictionary, memoire: Dictionary, en_marche: bool) -> float:
+	var j = jeu.joueur
+	j.en_mouvement = en_marche
+	var b = _bete(e, "proie", j.position + Vector2(700.0, 0.0), memoire)
+	var d := 700.0
+	while d > 0.0 and b.etat != "fuit":
+		d -= 2.0
+		b.position = j.position + Vector2(d, 0.0)
+		b._proie(0.0)
+	_oter(b)
+	return d
+
+
+# un chasseur devant un feu où la veilleuse se tient, tant de secondes : au plus près et en moyenne (en parts du rayon), le
+# chemin qu'il fait autour (en radians), la seconde moitié du temps ; et la bête, encore là (à ôter)
+func _siege(e: Dictionary, memoire: Dictionary, feu, secondes: float) -> Dictionary:
+	var b = _bete(e, "chasseur", feu.position + Vector2(feu.rayon() + 260.0, 40.0), memoire)
+	var r: float = feu.rayon()
+	var pres := INF
+	var somme := 0.0
+	var tours := 0.0
+	var k := 0
+	var avant := 0.0
+	var pas := int(secondes / 0.05)
+	for i in pas:
+		b._conduire(0.05)
+		var ici: Vector2 = b.position - feu.position
+		pres = minf(pres, ici.length() / r)
+		if i >= pas / 2:
+			if k > 0:
+				tours += absf(wrapf(ici.angle() - avant, -PI, PI))
+			avant = ici.angle()
+			somme += ici.length() / r
+			k += 1
+	return {"pres": pres, "moyenne": somme / maxf(k, 1), "tours": tours, "bete": b}
+
+
+# un chasseur d'audace 0,5 dans le noir, face à la torche, tant de secondes : au plus près (pixels), où il se tient la seconde
+# moitié du temps, quand il s'annonce, quand il mord (-1 : jamais), ses morsures ; et la bête
+func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> Dictionary:
+	var j = jeu.joueur
+	j.torche = 75.0
+	j.sante = 100.0
+	var b = _bete(e, "chasseur", j.position + Vector2(380.0, 0.0), {})
+	# (la même audace de plan pour tous, puis ce que la population a appris : bete.gd, _apprendre)
+	b.audace = 0.5
+	var m: Dictionary = Orvane.DISPOSITIONS_NEUTRES.duplicate()
+	m.merge(memoire, true)
+	b._apprendre(m)
+	var pres := INF
+	var somme := 0.0
+	var k := 0
+	var annonce := -1.0
+	var morsure := -1.0
+	var morsures := 0
+	var pas := int(secondes / 0.05)
+	for i in pas:
+		var sante: float = j.sante
+		b._conduire(0.05)
+		var d: float = b.position.distance_to(j.position)
+		pres = minf(pres, d)
+		if i >= pas / 2:
+			somme += d
+			k += 1
+		if annonce < 0.0 and b._presage > 0.0:
+			annonce = i * 0.05
+		if j.sante < sante:
+			morsures += 1
+			if morsure < 0.0:
+				morsure = i * 0.05
+			j.sante = 100.0
+	j.torche = 0.0
+	return {"pres": pres, "moyenne": somme / maxf(k, 1), "annonce": annonce, "morsure": morsure, "morsures": morsures, "bete": b}
+
+
+# un rôdeur d'audace 0,5 tenu à cette distance de la veilleuse, une minute au plus : quand il s'arrête pour guetter, quand il
+# charge (-1 : jamais), et combien de temps sa charge doit durer
+func _charge(e: Dictionary, memoire: Dictionary, distance: float) -> Dictionary:
+	var out := {"guet": -1.0, "charge": -1.0, "duree": 0.0}
+	if e.is_empty():
+		return out
+	var j = jeu.joueur
+	var b = _bete(e, "rodeur", j.position + Vector2(distance, 0.0), {})
+	b.audace = 0.5
+	var m: Dictionary = Orvane.DISPOSITIONS_NEUTRES.duplicate()
+	m.merge(memoire, true)
+	b._apprendre(m)
+	for i in 1200:
+		b.position = j.position + Vector2(distance, 0.0)
+		b._conduire(0.05)
+		if out["guet"] < 0.0 and b.etat == "guet":
+			out["guet"] = i * 0.05
+		if b.etat == "attaque":
+			out["charge"] = i * 0.05
+			out["duree"] = b._duree
+			break
+	_oter(b)
+	return out
+
+
+# combien de fois cette action est comptée pour Orvane, pour cette lignée (et ce moyen, s'il est dit)
+func _compte(id: String, action: String, moyen: String = "") -> float:
+	var n := 0.0
+	for e in Orvane._evenements.values():
+		if str(e.get("taxon", "")) == id and str(e.get("action", "")) == action and (moyen == "" or str(e.get("moyen", "")) == moyen):
+			n += float(e["n"])
+	return n
+
+
+func _la_memoire(F: Dictionary, f) -> void:
+	print("5 bis. La mémoire")
+	var j = jeu.joueur
+	var D := load("res://scripts/donnees.gd")
+	# (la partie telle qu'elle est : tout revient à sa place après)
+	var garde := {"p": j.position, "torche": j.torche, "peur": j.peur, "lance": j.lance, "marche": j.en_mouvement, "bois": f.bois,
+		"sac": int(j.inventaire["bois"]), "horloge": jeu.horloge, "nuits": jeu.nuits, "monde": Orvane.instantane.get("monde", {}),
+		"appris": jeu.appris.duplicate()}
+	for b in jeu.get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	jeu.horloge = jeu.jour * 240.0 - 240.0 * jeu.part_nuit + 2.0
+	# (la première nuit passée : les dispositions comptent en entier)
+	jeu.nuits = 1
+	var sans: Dictionary = garde["monde"].duplicate()
+	sans.erase("memoire")
+	var avec: Dictionary = sans.duplicate()
+	avec["memoire"] = true
+
+	# --- le kit : lire les dispositions, ne compter les actions de la mémoire que si le monde la tient
+	var t_essai := {"id": "essai-memoire", "populations": [
+		{"biome": "foret", "effectif": 300, "mefiance": 0.6, "memoire": {"traque": 0.61, "neophobie": 0.31}, "attitude": "traqueuse"},
+		{"biome": "lande", "effectif": 10}]}
+	var lu: Dictionary = Orvane.dispositions(t_essai, "foret")
+	var neutre: Dictionary = Orvane.dispositions(t_essai, "lande")
+	verif(is_equal_approx(lu["mefiance"], 0.6) and lu["habituation"] == 0.0 and lu["attrait"] == 0.0 and is_equal_approx(lu["traque"], 0.61)
+		and is_equal_approx(lu["neophobie"], 0.31) and lu["attitude"] == "traqueuse" and neutre == Orvane.DISPOSITIONS_NEUTRES and neutre["neophobie"] == 0.5
+		and Orvane.dispositions("inconnue", "foret") == Orvane.DISPOSITIONS_NEUTRES,
+		"le kit lit ce qu'une population a appris (méfiance %.2f, traque %.2f, néophobie %.2f, « %s ») ; ce qu'elle ne porte pas vaut sa valeur neutre (néophobie 0,5)" % [
+			lu["mefiance"], lu["traque"], lu["neophobie"], lu["attitude"]])
+	Orvane.instantane["monde"] = sans
+	var c0: int = Orvane.en_cours()
+	for a in Orvane.ACTIONS_MEMOIRE:
+		Orvane.compter("essai-memoire", "foret", a)
+	var endormi: bool = not Orvane.memoire_eveillee() and Orvane.en_cours() == c0
+	Orvane.compter("essai-memoire", "foret", "rencontre", 1.0, "", "", "", "feu")
+	Orvane.compter("essai-memoire", "foret", "rencontre", 1.0, "", "", "", "lumiere")
+	Orvane.compter("essai-memoire", "foret", "rencontre", 1.0, "", "", "", "n-importe-quoi")
+	var moyens: bool = Orvane.en_cours() == c0 + 3 and _compte("essai-memoire", "rencontre", "feu") == 1.0 and _compte("essai-memoire", "rencontre") == 3.0
+	Orvane.instantane["monde"] = avec
+	for a in Orvane.ACTIONS_MEMOIRE:
+		Orvane.compter("essai-memoire", "foret", a)
+	verif(endormi and moyens and Orvane.memoire_eveillee() and Orvane.en_cours() == c0 + 3 + Orvane.ACTIONS_MEMOIRE.size(),
+		"un monde qui ne tient pas la mémoire : ses %d actions ne sont pas comptées (le lot serait refusé), le moyen passe toujours ; un monde qui l'annonce : elles le sont" % Orvane.ACTIONS_MEMOIRE.size())
+	for cle in Orvane._evenements.keys():
+		if cle.begins_with("essai-memoire|"):
+			Orvane._evenements.erase(cle)
+
+	# --- la crainte, la confiance : la distance de fuite d'une proie
+	var proie_e: Dictionary = F["proies_jour"][0]
+	for e in F["proies_jour"]:
+		# (un flair moyen : la fuite d'une craintive tient dans l'écran sans toucher son plafond)
+		if absf(float(e["lignee"]["plan"].get("perception", 0.5)) - 0.45) < absf(float(proie_e["lignee"]["plan"].get("perception", 0.5)) - 0.45):
+			proie_e = e
+	var flair := 90.0 + 230.0 * float(proie_e["lignee"]["plan"].get("perception", 0.5))
+	var d0 := _fuite(proie_e, {}, true)
+	var i0 := _fuite(proie_e, {}, false)
+	verif(absf(d0 - flair) <= 2.0 and absf(i0 - flair * 0.55) <= 2.0,
+		"sans mémoire, une proie fuit comme avant : à son flair si l'on marche (%d pixels pour %d), à 55 %% si l'on ne bouge pas (%d)" % [int(d0), int(flair), int(i0)])
+	var d1 := _fuite(proie_e, {"mefiance": 0.9}, true)
+	var d2 := _fuite(proie_e, {"habituation": 0.9}, true)
+	var i2 := _fuite(proie_e, {"habituation": 0.9}, false)
+	var d3 := _fuite(proie_e, {"mefiance": 1.0}, true)
+	verif(d1 > d0 * 1.4 and d3 <= 420.0 and d2 < d0 * 0.7 and d2 >= 58.0 and i2 < i0 * 0.3,
+		"la même lignée fuit de %d pixels sans mémoire, de %d craintive (%d au comble, jamais hors de l'écran), de %d habituée ; et qui ne bouge pas la laisse venir à %d pixels (contre %d)" % [
+			int(d0), int(d1), int(d3), int(d2), int(i2), int(i0)])
+
+	# --- le feu reste une loi ; la traque, la peur du feu, l'accoutumance autour de lui
+	Orvane.instantane["monde"] = avec
+	var ch_e: Dictionary = F["chasseurs_nuit"][0]
+	f.bois = 100.0
+	j.position = f.position + Vector2(0, 30)
+	j.torche = 0.0
+	var s0 := _siege(ch_e, {}, f, 40.0)
+	var st := _siege(ch_e, {"traque": 1.0}, f, 40.0)
+	var sa := _siege(ch_e, {"neophobie": 0.0}, f, 40.0)
+	var sp := _siege(ch_e, {"neophobie": 0.95}, f, 40.0)
+	var sc := _siege(ch_e, {"mefiance": 0.9}, f, 40.0)
+	verif(s0["pres"] >= 0.78 and st["pres"] >= 0.78 and sa["pres"] >= 0.78 and st["tours"] > s0["tours"] * 1.2,
+		"le feu reste une loi : traqueur ou fait au feu, aucun chasseur n'entre dans sa lumière (au plus près : %.2f, %.2f et %.2f du rayon, sans mémoire, traqueur, accoutumé) ; le traqueur arpente la lisière plus vite (%.1f radians en vingt secondes, contre %.1f)" % [
+			s0["pres"], st["pres"], sa["pres"], st["tours"], s0["tours"]])
+	# une bûche : celui qui craint le feu recule, pas l'autre
+	j.inventaire["bois"] = int(j.inventaire["bois"]) + 1
+	jeu.nourrir_feu()
+	verif(sp["moyenne"] > s0["moyenne"] + 0.15 and sc["moyenne"] > s0["moyenne"] + 0.08 and sp["bete"].etat == "fuit" and s0["bete"].etat != "fuit",
+		"une population qui craint le feu se tient à %.2f du rayon (contre %.2f ; %.2f pour une population craintive), hors de sa lumière ; et une bûche la fait reculer" % [
+			sp["moyenne"], s0["moyenne"], sc["moyenne"]])
+	var tenus: float = _compte(str(ch_e["id"]), "effarouchement", "feu")
+	for x in [s0, st, sa, sp, sc]:
+		_oter(x["bete"])
+
+	# --- la torche : tenu, ou traqueur (il s'annonce, puis passe) ; la première nuit, à moitié
+	j.position = f.position + Vector2(f.rayon() + 700.0, 0)
+	var t0 := _face_a_la_torche(ch_e, {}, 14.0)
+	var tt := _face_a_la_torche(ch_e, {"traque": 1.0}, 14.0)
+	var ta := _face_a_la_torche(ch_e, {"neophobie": 0.05}, 14.0)
+	var tp := _face_a_la_torche(ch_e, {"neophobie": 0.95}, 14.0)
+	jeu.nuits = 0
+	var t1 := _face_a_la_torche(ch_e, {"traque": 1.0}, 14.0)
+	jeu.nuits = 1
+	# (il passe la ligne des 140 pixels d'un pas avant d'être tenu : au plus près, un peu moins de 140 ; mesuré, 133)
+	verif(t0["pres"] >= 125.0 and t0["morsure"] < 0.0 and tt["morsure"] > 0.0 and tt["annonce"] >= 0.0 and tt["morsure"] - tt["annonce"] >= 0.8,
+		"la torche tient un chasseur d'audace 0,5 à %d pixels ; le même, d'une population qui traque, s'aplatit et gronde, puis la franchit et mord %.1f s plus tard" % [
+			int(t0["pres"]), tt["morsure"] - tt["annonce"]])
+	verif(t1["morsure"] < 0.0 and t1["pres"] >= 125.0 and is_equal_approx(t1["bete"].traque, 0.5),
+		"la première nuit, ce qui rend une population dangereuse compte pour moitié : le même traqueur ne passe pas encore la torche (au plus près : %d pixels)" % int(t1["pres"]))
+	var portee_morsure: float = 24.0 + ta["bete"].largeur * 0.3
+	verif(ta["moyenne"] < t0["moyenne"] - 25.0 and ta["pres"] >= 80.0 and ta["pres"] > portee_morsure + 10.0 and ta["morsure"] < 0.0 and tp["moyenne"] > t0["moyenne"] + 40.0,
+		"fait au feu, il se tient plus près de la torche (%d pixels contre %d ; au plus près %d, hors de portée de morsure : %d), sans mordre ; s'il le craint, plus loin (%d)" % [
+			int(ta["moyenne"]), int(t0["moyenne"]), int(ta["pres"]), int(portee_morsure), int(tp["moyenne"])])
+
+	# --- ce que la partie raconte à Orvane (le monde tenant la mémoire)
+	var id_ch := str(ch_e["id"])
+	var lumiere: float = _compte(id_ch, "effarouchement", "lumiere")
+	var assauts: float = _compte(id_ch, "attaque")
+	# la morsure qui la ferait tomber (elle est relevée aussitôt : la partie continue)
+	j.sante = 1.0
+	jeu.mordre(tt["bete"])
+	j.sante = 100.0
+	var tombee: float = _compte(id_ch, "joueur_tombe")
+	for x in [t0, tt, ta, tp, t1]:
+		_oter(x["bete"])
+	# une proie frappée du poing qui s'en va : une blessure ; frappée puis tuée, ou frappée par la foudre : aucune
+	j.lance = 0
+	var id_p := str(proie_e["id"])
+	var tuees0: float = _compte(id_p, "prelevement", "melee")
+	var blessee = _bete(proie_e, "proie", j.position + Vector2(20, 0), {})
+	jeu.agir()
+	var touchee: bool = blessee.touchee and blessee.pv > 0.0
+	_oter(blessee)
+	var achevee = _bete(proie_e, "proie", j.position + Vector2(-20, 0), {})
+	for i in 12:
+		if is_instance_valid(achevee) and achevee.is_in_group("betes"):
+			achevee.position = j.position + Vector2(-20, 0)
+			jeu.agir()
+	var foudroyee = _bete(proie_e, "proie", j.position + Vector2(0, 300), {})
+	foudroyee.foudroyer(1.0, j.position)
+	_oter(foudroyee)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	verif(tenus == 5.0 and lumiere == 4.0 and assauts == 1.0 and tt["morsures"] >= 2 and tombee == 1.0 and touchee
+		and _compte(id_p, "blessure", "melee") == 1.0 and _compte(id_p, "prelevement", "melee") == tuees0 + 1.0 and _compte(id_p, "prelevement") == _compte(id_p, "prelevement", "melee"),
+		"ce que la partie apprend aux bêtes est compté pour Orvane : chaque chasseur tenu, une fois (%d par le feu, %d par la torche) ; %d morsures, un seul assaut ; la morsure qui tue ; une proie frappée qui s'en va, une blessure ; tuée, un prélèvement, au corps à corps ; la foudre, rien" % [
+			int(tenus), int(lumiere), int(tt["morsures"])])
+
+	# (ce que le lot en dira, à ce moment de la partie)
+	var dit: String = jeu._texte_appris()
+
+	# --- le rôdeur : sa charge apprise s'annonce ; celle qui suit la veilleuse
+	var rod_e: Dictionary = {}
+	for e in F["rodeurs"] + F["chasseurs_nuit"]:
+		if float(e["masse"]) >= 4.0:
+			rod_e = e
+			break
+	var id_r := str(rod_e.get("id", ""))
+	var charges0: float = _compte(id_r, "attaque")
+	var c_sans := _charge(rod_e, {}, 60.0)
+	var c_traque := _charge(rod_e, {"traque": 1.0}, 60.0)
+	var loin_sans := _charge(rod_e, {}, 125.0)
+	var loin_traque := _charge(rod_e, {"traque": 1.0}, 125.0)
+	verif(not rod_e.is_empty() and c_sans["charge"] >= 0.0 and c_sans["guet"] < 0.0 and c_sans["duree"] == 6.0
+		and c_traque["guet"] >= 0.0 and c_traque["charge"] - c_traque["guet"] >= 0.55 and c_traque["duree"] == 10.0
+		and loin_sans["charge"] < 0.0 and loin_traque["charge"] >= 0.0 and _compte(id_r, "attaque") == charges0 + 3.0,
+		"un rôdeur d'une population qui traque s'arrête et guette %.1f s avant de charger, et charge de plus loin (à 125 pixels, où l'autre laisse passer) ; sans mémoire il charge sans présage, comme avant ; chaque charge est un assaut" % (c_traque["charge"] - c_traque["guet"]))
+	var suit_sans = _bete(rod_e, "rodeur", j.position + Vector2(500, 0), {})
+	var suit_1 = _bete(rod_e, "rodeur", j.position + Vector2(500, 0), {"traque": 1.0})
+	var suit_2 = _bete(proie_e, "proie", j.position + Vector2(-500, 0), {"attrait": 1.0})
+	var suit_3 = _bete(proie_e, "proie", j.position + Vector2(0, 500), {"attrait": 1.0})
+	for i in 60:
+		suit_sans._suivre()
+		if not suit_1._suit:
+			suit_1._suivre()
+		if not suit_2._suit:
+			suit_2._suivre()
+	var jamais: bool = not suit_sans._suit
+	for i in 60:
+		suit_3._suivre()
+	var a_distance: float = suit_1._cible.distance_to(j.position)
+	var hors_fuite: float = suit_2._cible.distance_to(j.position) - suit_2._distance_fuite(true)
+	verif(jamais and suit_1._suit and a_distance >= 179.0 and a_distance <= 261.0 and suit_2._suit and hors_fuite >= 29.0 and hors_fuite <= 81.0 and not suit_3._suit,
+		"un rôdeur qui traque suit la veilleuse de loin (à %d pixels, hors de portée de sa charge) ; une proie que les joueurs attirent vient voir, %d pixels au-delà de sa distance de fuite ; deux à la fois, pas plus ; sans mémoire, aucune" % [int(a_distance), int(hors_fuite)])
+	for x in [suit_sans, suit_1, suit_2, suit_3]:
+		_oter(x)
+
+	# --- le carnet, le texte du lot, la mémoire qu'on force pour essayer
+	var comptes: int = Orvane.en_cours()
+	jeu.donnees.memoire_forcee = "traque"
+	var forcee: Dictionary = jeu.donnees.faune(Orvane.instantane, jeu.biome)
+	jeu.donnees.memoire_forcee = ""
+	var libre: Dictionary = jeu.donnees.faune(Orvane.instantane, jeu.biome)
+	var du_monde := true
+	for i in libre["chasseurs_nuit"].size():
+		if libre["chasseurs_nuit"][i]["memoire"] != jeu.faune["chasseurs_nuit"][i]["memoire"]:
+			du_monde = false
+	verif(D.dire_memoire({"mefiance": 0.9}) == "méfiante : on la chasse ici" and D.dire_memoire({"neophobie": 0.95, "attitude": "traqueuse"}) == "elle traque les veilleuses"
+		and D.dire_memoire(Orvane.DISPOSITIONS_NEUTRES) == "" and dit.contains("tenues à distance") and dit.contains("1 assaut") and dit.contains("bête blessée"),
+		"le carnet le dit : « %s » sous une bête craintive, rien sous une bête sans mémoire ; et le lot : « …%s »" % [D.dire_memoire({"mefiance": 0.9}), dit])
+	verif(forcee["chasseurs_nuit"].all(func(e): return e["memoire"]["traque"] == 0.9 and e["memoire"]["attitude"] == "traqueuse")
+		and du_monde and Orvane.en_cours() == comptes,
+		"« --memoire traque » pose la traque sur les %d populations de chasseurs du lieu, sans rien compter ; sans l'argument, la mémoire est celle du monde" % forcee["chasseurs_nuit"].size())
+
+	# (tout revient à sa place : le monde lu, l'heure, la veilleuse, le feu)
+	Orvane.instantane["monde"] = garde["monde"]
+	jeu.horloge = garde["horloge"]
+	jeu.nuits = garde["nuits"]
+	jeu.appris = garde["appris"]
+	f.bois = garde["bois"]
+	j.inventaire["bois"] = garde["sac"]
+	j.position = garde["p"]
+	j.torche = garde["torche"]
+	j.peur = garde["peur"]
+	j.lance = garde["lance"]
+	j.en_mouvement = garde["marche"]
+	j.sante = 100.0
 
 
 # le lieu sans bord, à part : ses noms ne se mêlent pas à ceux de la partie d'avant

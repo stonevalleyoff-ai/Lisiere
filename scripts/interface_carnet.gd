@@ -1,7 +1,8 @@
 extends RefCounted
 # Lisière — le carnet (scripts/interface_carnet.gd)
 # Les pages de papier de l'interface : la fin (« La nuit t'a prise. », les nuits tenues et le record, les bêtes croisées dessinées
-# d'après leurs planches, celles qu'on a chassées marquées d'une croix de sang, ce que la partie renvoie au monde) et la pause
+# d'après leurs planches, celles qu'on a chassées marquées d'une croix de sang, ce que leur population a appris des joueurs (la
+# mémoire d'Orvane, en quelques mots sous chaque bête), ce que la partie renvoie au monde) et la pause
 # (les commandes, au clavier ou au doigt). Le papier est un shader (shaders/interface_papier.gdshader) : un grain, des fibres,
 # un bord déchiré et roussi.
 
@@ -11,6 +12,7 @@ const I := preload("res://scripts/interface_icones.gd")
 const Bouton := preload("res://scripts/interface_bouton.gd")
 const CarteMonde := preload("res://scripts/interface_carte_monde.gd")
 const Bestiaire := preload("res://scripts/bestiaire.gd")
+const Donnees := preload("res://scripts/donnees.gd")
 const PAPIER := preload("res://shaders/interface_papier.gdshader")
 
 
@@ -213,14 +215,17 @@ class Fin extends Control:
 			var info: Dictionary = jeu.biome_info if "biome_info" in jeu else {}
 			_lieu.text = "%s, en %s — à la lisière d'un lieu vrai du monde d'Orvane" % [str(info.get("nom", jeu.biome)), str(jeu.saison)]
 			# (chaque bête croisée, et sa lignée dans la faune du lieu : elle est dessinée comme dans la partie)
+			# (et ce que sa population a appris des joueurs, dit en quelques mots : scripts/donnees.gd, dire_memoire)
 			var lignees := {}
+			var memoires := {}
 			if "faune" in jeu:
 				for k in jeu.faune:
 					for e in jeu.faune[k]:
 						lignees[str(e["id"])] = e["lignee"]
+						memoires[str(e["id"])] = e.get("memoire", {})
 			for id in jeu.vues:
 				liste.append({"id": id, "nom": str(jeu.vues[id]), "n": int(jeu.rencontres.get(id, 0)), "chasse": int(jeu.prelevements.get(id, 0)),
-					"lignee": lignees.get(str(id), {})})
+					"lignee": lignees.get(str(id), {}), "dit": Donnees.dire_memoire(memoires.get(str(id), {}))})
 			_planches.remplir(liste, str(jeu.biome))
 		else:
 			_lieu.text = ""
@@ -293,6 +298,8 @@ class Planches extends Control:
 		cw = minf(cw * 1.15, size.x / cols)
 		var fs := 15 if compact else 18
 		var gs := 12 if compact else 13
+		# (une ligne de plus sous les bêtes, si l'une d'elles a appris quelque chose des joueurs)
+		var ligne_dit := (gs + 3.0) if _betes.any(func(x): return str(x.get("dit", "")) != "") else 0.0
 		var x0 := (size.x - cw * cols) * 0.5
 		for i in n:
 			var b: Dictionary = _betes[i]
@@ -305,7 +312,7 @@ class Planches extends Control:
 			if u <= 0.0:
 				continue
 			var a := u
-			var haut_dessin := maxf(20.0, ch - fs - gs - 16.0)
+			var haut_dessin := maxf(20.0, ch - fs - gs - 16.0 - ligne_dit)
 			var lw := minf(cw - 18.0, haut_dessin * 170.0 / 90.0)
 			var lh := lw * 90.0 / 170.0
 			var c := o + Vector2(cw * 0.5, 4.0 + lh * 0.5 + 6.0 * (1.0 - u))
@@ -335,6 +342,14 @@ class Planches extends Control:
 				t2 += " · %d chassée%s" % [chasse, "s" if chasse > 1 else ""]
 			var tw := g.get_string_size(t2, HORIZONTAL_ALIGNMENT_LEFT, -1, gs).x
 			draw_string(g, Vector2(c.x - tw * 0.5, y + gs + 3.0), t2, HORIZONTAL_ALIGNMENT_LEFT, -1, gs, Color(P.SANG if chasse > 0 else P.ENCRE_DOUCE, a))
+			# (la mémoire : « méfiante : on la chasse ici », en italique, à la taille qui tient dans la case)
+			var dit := str(b.get("dit", ""))
+			if dit != "":
+				var ds := gs + 1
+				while ds > 9 and f.get_string_size(dit, HORIZONTAL_ALIGNMENT_LEFT, -1, ds).x > cw - 6.0:
+					ds -= 1
+				var dw := f.get_string_size(dit, HORIZONTAL_ALIGNMENT_LEFT, -1, ds).x
+				draw_string(f, Vector2(c.x - dw * 0.5, y + 2.0 * (gs + 3.0)), dit, HORIZONTAL_ALIGNMENT_LEFT, -1, ds, Color(P.ENCRE, 0.85 * a))
 			# (chassée : une croix de sang en travers du coin de la planche)
 			if chasse > 0:
 				var u2 := smoothstep(1.0 + 0.12 * i, 1.35 + 0.12 * i, _t)
