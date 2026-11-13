@@ -791,7 +791,7 @@ func agir() -> void:
 	var son := "bois"
 	if genre == "rocher":
 		son = "pierre"
-	elif genre == "buisson" or genre == "touffe":
+	elif genre == "buisson" or genre == "touffe" or genre == "champignon":
 		son = "herbe"
 	_viser({"son": son, "db": -4.0, "p": o.position, "genre": genre})
 	for k in g:

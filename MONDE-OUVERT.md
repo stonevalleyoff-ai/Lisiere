@@ -109,8 +109,10 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
 - la faune d'un biome qu'on approche se dessine une bête toutes les 0,25 seconde, pas à la file ;
 - vérifié : l'essai (70 vérifications, 17 pour le monde ouvert) ; la vitrine (`--ouvert --depuis 20420,-11060 --pont`) ;
   l'export web dans un téléphone émulé : aucune erreur de shader.
+- sous une neige épaisse, le lit d'une rivière reste visible : il est repeint sur le calque posé par-dessus ce que le temps
+  fait au sol (le même que celui des parois du relief) ;
 - **reste à faire** : les rivières ne coulent que dans leurs vallées (pas à travers la forêt ou le marais voisins) ; l'eau
-  ne bouge pas (elle est peinte avec le sol) ; sous une neige épaisse, le lit d'une rivière ne se voit plus.
+  ne bouge pas (elle est peinte avec le sol).
 
 **Étape 4, le relief** (`scripts/carte.gd`, `shaders/sol_peint.gdshader`, `scripts/decor_sol.gd`) — le jeu est vu de dessus :
 la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans la marche.
@@ -132,7 +134,8 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
 - vérifié : l'essai (4 vérifications pour le relief) ; la vitrine (`--ouvert --depuis -28480,23100 --reste`, et
   `--recul 0.4` pour voir un pays de haut ; `--temps neige`, `--temps pluie`) ; en rendu logiciel, marcher dans les sommets
   coûte un dixième d'images par seconde de plus que dans la prairie (18 à 19 contre 20 à 21) ;
-- **reste à faire** : le relief sur la carte du carnet.
+- **sur la carte du carnet** : les parois d'une région connue, en pointillé d'encre brune (là où l'étage change, sauf aux
+  cols) ; les bouches d'une grotte, un rond de papier cerclé d'encre. Calculés une région par image, puis retenus.
 
 **Étape 4, les grottes** (`scripts/carte.gd`, `shaders/sol_peint.gdshader`, `scripts/climat.gd`) — les quatre régions
 « grotte » d'Orvane (un seul massif, entre la montagne, le volcan, la forêt et la mer) sont sous terre :
@@ -143,15 +146,22 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
   veilleuse et les bêtes (`Carte.plein`, `retenir`) ; elle se dessine noire, son bord fendu, par-dessus la neige aussi ;
 - **le noir** : `jeu.sous_terre` (de 0 dehors à 1 passé la muraille) éteint le jour là où est la veilleuse
   (`lumiere_du_jour` ; `jour_du_ciel` garde l'heure vraie). Il fait donc nuit dedans à toute heure : la peur monte hors de
-  la lumière, les chasseurs de nuit restent, leurs yeux se voient ;
+  la lumière, les chasseurs de nuit restent, leurs yeux se voient. À l'écran, ce noir est celui de la roche, plus profond
+  que la nuit (`effets.nuit_roche`), et il ne tombe que sous la roche : près d'une grotte, tout l'écran prend cette nuit et
+  le jour du dehors lui est rendu par une lumière dont la texture est le masque de l'air libre (`effets._jour_dehors`, 32 × 20
+  points autour de la caméra). Du dehors, la bouche est sombre ; du dedans, on voit le jour au bout du boyau ;
+- **les sons** : sous terre, ni grillons, ni grenouilles, ni oiseaux, ni chouette ; du vent, il ne reste qu'un souffle
+  grave ; tout résonne (les pas, les coups) ; des gouttes tombent, une à une, avec leur écho (`goutte0` à `goutte3`). Entrer
+  n'est pas une tombée de la nuit pour la musique ;
+- **les champignons luisants** (`Objet`, genre « champignon ») : en bouquets, d'un vert d'eau, leur lueur dessinée hors de
+  l'ombre — des repères dans le noir. On les cueille comme des baies (deux fois), ils s'éteignent et repoussent ;
 - **l'abri** : `climat.toit` — ni pluie, ni orage, ni neige, ni brouillard, ni vent, ni canicule (ils s'effacent en entrant
   et reviennent en sortant, en une seconde ou deux) ; ni boue, ni crue, ni neige au sol ; un air frais et constant (0,44) ;
 - **le sol** : de la pierre nue, fendue, des cailloux ; ni herbe, ni arbre, ni buisson, ni bois mort — on y vient avec ce
   qu'il faut pour le feu et la torche. Des rochers (de la pierre) ;
-- vérifié : l'essai (78 vérifications, 2 pour les grottes) ; la vitrine (`--ouvert --depuis -53733,8744 --vers -54645,8562`,
-  et `--reste --recul 0.4` pour voir la bouche de haut) ;
-- **reste à faire** : une faune et des ressources propres aux grottes (étape 6) ; les sons (dedans, on entend la nuit du
-  dehors) ; le noir est celui de l'écran entier, pas celui de la bouche vue du dehors.
+- vérifié : l'essai (81 vérifications, 5 pour les grottes) ; la vitrine (`--ouvert --depuis -53733,8744 --vers -55300,8500
+  --torche`, et `--reste --recul 0.4` pour voir la bouche de haut) ;
+- **reste à faire** : une faune propre aux grottes (étape 6).
 
 **Étape 5, faite** (`scripts/interface_carte_monde.gd`, la page de pause de `scripts/interface_carnet.gd`) :
 - chaque région où l'on entre est notée (`jeu.decouvertes`), et gardée avec la partie (par le nom de la région) ;

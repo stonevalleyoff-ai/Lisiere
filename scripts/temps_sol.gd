@@ -234,7 +234,7 @@ func _process(delta: float) -> void:
 	m.set_shader_parameter("neige_sol", c.neige_sol * dehors)
 	m.set_shader_parameter("pluie", pluie)
 	m.set_shader_parameter("nuit", 1.0 - jour)
-	m.set_shader_parameter("obscur", jeu.obscurite.color if jeu.obscurite != null else Color.WHITE)
+	m.set_shader_parameter("obscur", jeu.effets.teinte if jeu.obscurite != null else Color.WHITE)
 	var l := lumieres(jeu, 1.0 - jour)
 	m.set_shader_parameter("feu0", l[0])
 	m.set_shader_parameter("feu1", l[1])

@@ -608,6 +608,11 @@ func roche_en(p: Vector2) -> bool:
 	return plein(p) > 0.0
 
 
+# y a-t-il une grotte dans les parages de p ? (sinon, inutile d'y chercher du creux)
+func pres_d_une_grotte(p: Vector2) -> bool:
+	return _creuses.has(Vector2i(((p + tordre(p)) / cote).floor()))
+
+
 # sous terre : de 0 (dehors, et sous la voûte d'une bouche) à 1 (dans la grotte : ni jour, ni pluie, ni vent)
 func sous_terre(p: Vector2) -> float:
 	return smoothstep(0.566, 0.8, creux(p))

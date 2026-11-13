@@ -59,7 +59,9 @@ const FILE := ["bois", "pierre", "herbe", "coup", "manger", "allume", "coeur", "
 	"pluie_drue0", "pluie_fine0", "pluie_feuilles0", "foudre0", "tonnerre0", "presage", "brasier0", "craque0", "vapeur",
 	"pas_boue0", "pas_boue1", "pas_boue2", "pas_boue3", "pas_eau0", "pas_eau1", "pas_eau2", "tonnerre1", "tonnerre2", "foudre1",
 	"pluie_fine1", "pluie_feuilles1", "pluie_eau0", "vent_hurle0", "craque1", "effondre", "crache0", "crache1", "crache2",
-	"frisson", "cri"]
+	"frisson", "cri",
+	# sous terre (les grottes du monde ouvert)
+	"goutte0", "goutte1", "goutte2", "goutte3"]
 const VOIX := 14
 const VOIX_2D := 18
 
@@ -114,6 +116,7 @@ var _flamme := 0.0
 var _nuit_entiere := false
 var _nuits := 0
 var _mort := -1.0
+var _goutte_t := 2.0
 var _espace := 0.0
 var _traits := {}
 var _titre := false
@@ -415,6 +418,9 @@ func maj(jeu, delta: float) -> void:
 			_bus_cible[B_PEUR] = -40.0
 	# la nuit, l'espace s'ouvre : un réverbère (plus en forêt, où les troncs renvoient le son)
 	_espace = (1.0 - l) * (0.6 + 0.4 * float(_traits["couvert"]))
+	# sous terre (une grotte du monde ouvert), la roche renvoie tout, et rien de ce qui chante dehors ne s'entend
+	var sous: float = clampf(float(jeu.get("sous_terre")), 0.0, 1.0) if jeu.get("sous_terre") != null else 0.0
+	_espace = lerpf(_espace, 1.4, sous)
 	# ce qui est clair (les aigus du lieu) se retire quand la peur monte : un passe-bas fait à la main, partout
 	var clair := 1.0 - 0.85 * smoothstep(0.2, 0.75, peur)
 	# le temps qu'il fait (sons_temps.gd) : la pluie, la foudre, l'incendie, le corps ; et ce qu'il fait taire : les bêtes sous la
@@ -434,6 +440,15 @@ func maj(jeu, delta: float) -> void:
 	# (la canicule : les grillons chantent en plein jour)
 	if not _traits["froid"]:
 		c["grillons"] = maxf(c["grillons"], 0.55 * float(_temps.chaleur) * clair * sec)
+	c["sous"] = sous
+	for qui in ["grillons", "grenouilles", "oiseaux"]:
+		c[qui] = float(c[qui]) * (1.0 - sous)
+	# (des gouttes, une à une, quelque part dans le noir)
+	if sous > 0.5 and not morte:
+		_goutte_t -= dt
+		if _goutte_t <= 0.0:
+			_goutte_t = _r.randf_range(0.9, 4.5)
+			evenement("goutte%d" % (_r.randi() % 4), _r.randf_range(-17.0, -9.0), _r.randf_range(0.9, 1.12), _r.randf_range(-0.85, 0.85))
 	if _temps.eclaircie() and not morte:
 		_ambiance.eclaircie()
 	_vent(jeu, l, clair, morte)
@@ -444,7 +459,8 @@ func maj(jeu, delta: float) -> void:
 	_couches["choeur"].cible = 0.0 if morte else c["grillons"] * 0.9
 	_ambiance.maj(dt, c)
 	# la nuit qui tombe, l'aube
-	var nuit_entiere := l <= 0.0
+	# (la nuit du ciel : entrer sous terre n'est pas une tombée de la nuit)
+	var nuit_entiere: bool = (float(jeu.jour_du_ciel()) if jeu.has_method("jour_du_ciel") else l) <= 0.0
 	if nuit_entiere and not _nuit_entiere and not morte:
 		_musique.tombee()
 	_nuit_entiere = nuit_entiere
@@ -573,6 +589,11 @@ func _vent(jeu, l: float, clair: float, morte: bool) -> void:
 	var enfle := lerpf(0.9, 1.7, smoothstep(0.1, 0.9, force))
 	var base := (1.0 - 0.3 * couvert) * (1.15 if froid else 1.0) * (0.9 + 0.1 * l)
 	var k := 0.0 if morte else 1.0
+	# (sous terre : le souffle grave de la roche, sans ses aigus ni ses rafales)
+	var sous: float = clampf(float(jeu.get("sous_terre")), 0.0, 1.0) if jeu.get("sous_terre") != null else 0.0
+	clair *= 1.0 - 0.85 * sous
+	g *= 1.0 - 0.7 * sous
+	base *= 1.0 - 0.3 * sous
 	_couches["vent_grave"].cible = (0.5 + 0.5 * g) * base * k * enfle
 	_couches["vent_grave"].hauteur = 0.9 + 0.2 * g + 0.15 * force
 	_couches["vent_clair"].cible = (0.12 + 0.88 * pow(g, 1.6)) * (0.55 + 0.45 * couvert) * clair * k * (0.75 + 0.25 * l) * enfle

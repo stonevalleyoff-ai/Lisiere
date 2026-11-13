@@ -27,6 +27,7 @@ var _givre := 0.0
 var _fournaise := 0.0
 # la couleur du monde la nuit (l'obscurité y multiplie tout) : un bleu d'encre, assez clair pour qu'on devine les formes
 var nuit_monde := P.NUIT_BLEUE.lerp(P.LUNE, 0.06)
+var nuit_roche := nuit_monde * Color(0.5, 0.5, 0.52)      # sous terre : plus noir que la nuit (ni lune, ni étoiles)
 var _lieu
 var _ecran
 var _bruit := FastNoiseLite.new()
@@ -37,6 +38,16 @@ var _jour := 1.0
 var _trauma := 0.0
 var _zoom := 1.0
 var recul := 1.0               # (la vitrine : regarder de plus haut)
+var teinte := Color.WHITE      # la teinte de l'heure là où est la veilleuse (ce qui se teint soi-même la lit : le sol mouillé, les
+# flammes, la brume) ; sous terre, celle de la nuit
+const DEHORS_N := Vector2i(32, 20)   # le masque du jour du dehors : tant de points…
+const DEHORS_PAS := 64.0             # … tous les tant de pixels (2 048 × 1 280 autour de la caméra)
+var _lum_dehors: PointLight2D
+var _dehors_img: Image
+var _dehors_tex: ImageTexture
+var _dehors_centre := Vector2.INF
+var _dehors_pas := 0.0
+var _dehors_etat := 0
 # le temps : ce qu'on rend à Engine.time_scale, ce qu'on y a mis (-1 : rien), l'arrêt en cours (secondes réelles), le ralenti
 var _base_temps := 1.0
 var _pose := -1.0
@@ -69,6 +80,9 @@ func nouvelle_partie(s: Node2D, c: Camera2D, o: CanvasModulate) -> void:
 	scene = s
 	camera = c
 	obscurite = o
+	_lum_dehors = null
+	_dehors_centre = Vector2.INF
+	_dehors_etat = 0
 	_q = 1.0 if jeu == null or jeu.qualite == "haute" else 0.45
 	_trauma = 0.0
 	_zoom = 1.0
@@ -137,7 +151,7 @@ func maj(delta: float) -> void:
 	var vue := _vue()
 	if _lieu != null and camera != null:
 		_lieu.maj(delta, {"nuit": nuit, "peur": _peur, "vent": vent(), "centre": camera.get_screen_center_position(), "vue": vue,
-			"lucioles": _crepuscule(), "brume_matin": _brume_matin(), "obscur": obscurite.color if obscurite != null else Color.WHITE,
+			"lucioles": _crepuscule(), "brume_matin": _brume_matin(), "obscur": teinte if obscurite != null else Color.WHITE,
 			"lumieres": _lumieres(), "climat": jeu.climat})
 	var e := {
 		"ratio": vue.x / maxf(vue.y, 1.0), "nuit": nuit * 0.32, "peur": _peur, "coeur": _coeur * smoothstep(0.62, 0.75, _peur),
@@ -164,8 +178,65 @@ func maj(delta: float) -> void:
 # aube (rose pâle) → jour (doré doux) → soir (orange, puis mauve) → nuit (bleu d'encre) ; le matin et le soir se lisent à l'horloge
 func teinter(o: CanvasModulate, l: float) -> void:
 	_jour = l
-	var c := _couleur_heure(l)
-	o.color = c
+	# (l'heure du ciel ; sous terre, la nuit de la roche, quelle que soit l'heure)
+	var ciel := _couleur_heure(float(jeu.jour_du_ciel()) if jeu != null and jeu.has_method("jour_du_ciel") else l)
+	var sous: float = float(jeu.sous_terre) if jeu != null and jeu.get("sous_terre") != null else 0.0
+	teinte = ciel.lerp(nuit_roche, sous)
+	match _jour_dehors(ciel):
+		0:
+			o.color = ciel
+		_:
+			# (une grotte à l'écran : tout est dans sa nuit, et le jour du dehors est une lumière — voir _jour_dehors)
+			o.color = nuit_roche
+
+
+# --- le jour n'entre pas sous terre ---
+
+# Près d'une grotte (scripts/carte.gd), l'écran entier prend la nuit de la roche, et le jour du dehors lui est rendu par une
+# lumière dont la texture est le masque de ce qui est à l'air libre : on voit la bouche sombre depuis le dehors, et le jour
+# au bout du boyau depuis le dedans. Le masque est un petit carré d'image autour de la caméra, refait quand elle s'en écarte.
+# Rend 0 s'il n'y a que du dehors autour (pas de lumière, pas de coût), 1 s'il y a des deux, 2 s'il n'y a que du dedans
+func _jour_dehors(ciel: Color) -> int:
+	var carte = jeu.get("carte") if jeu != null else null
+	if carte == null or camera == null or scene == null or not is_instance_valid(camera):
+		return 0
+	var pas := DEHORS_PAS / minf(recul, 1.0)
+	var centre: Vector2 = (camera.get_screen_center_position() / pas).round() * pas
+	if _dehors_centre == Vector2.INF or absf(centre.x - _dehors_centre.x) > 4.0 * pas or absf(centre.y - _dehors_centre.y) > 4.0 * pas or pas != _dehors_pas:
+		_dehors_centre = centre
+		_dehors_pas = pas
+		_dehors_etat = 0
+		if carte.pres_d_une_grotte(centre):
+			if _dehors_img == null:
+				_dehors_img = Image.create(DEHORS_N.x, DEHORS_N.y, false, Image.FORMAT_L8)
+			var dedans := 0
+			var dehors_ := 0
+			for j in DEHORS_N.y:
+				for i in DEHORS_N.x:
+					var v := 1.0 - float(carte.sous_terre(centre + (Vector2(i, j) - (Vector2(DEHORS_N) - Vector2.ONE) * 0.5) * pas))
+					_dehors_img.set_pixel(i, j, Color(v, v, v))
+					if v < 0.02:
+						dedans += 1
+					elif v > 0.98:
+						dehors_ += 1
+			var n := DEHORS_N.x * DEHORS_N.y
+			_dehors_etat = 0 if dehors_ == n else (2 if dedans == n else 1)
+			if _dehors_etat == 1:
+				# (une texture neuve à chaque fois : une lumière garde l'image de sa texture telle qu'elle l'a reçue)
+				_dehors_tex = ImageTexture.create_from_image(_dehors_img)
+				if _lum_dehors == null or not is_instance_valid(_lum_dehors):
+					_lum_dehors = PointLight2D.new()
+					_lum_dehors.name = "JourDehors"
+					_lum_dehors.blend_mode = Light2D.BLEND_MODE_ADD
+					scene.add_child(_lum_dehors)
+				_lum_dehors.texture = _dehors_tex
+				_lum_dehors.texture_scale = pas
+				_lum_dehors.position = centre
+	var lueur := Color(maxf(ciel.r - nuit_roche.r, 0.0), maxf(ciel.g - nuit_roche.g, 0.0), maxf(ciel.b - nuit_roche.b, 0.0))
+	if _lum_dehors != null and is_instance_valid(_lum_dehors):
+		_lum_dehors.enabled = _dehors_etat == 1 and lueur.r + lueur.g + lueur.b > 0.01
+		_lum_dehors.color = lueur
+	return _dehors_etat
 
 
 func _couleur_heure(l: float) -> Color:
@@ -375,6 +446,10 @@ func recolte(p: Vector2, genre: String) -> void:
 			var herbe: Color = pal.get("herbe", P.MOUSSE)
 			_gerbe(p + Vector2(0, -6), 8, T.brin(), T.rampe([[0.0, herbe.lightened(0.25)], [1.0, herbe.darkened(0.2)]]), false,
 				{"vitesse": [40.0, 90.0], "spread": 120.0, "gravite": Vector2(v * 20.0, 200), "amortir": 30.0, "duree": 0.8, "taille": [0.5, 0.8], "tourne": true})
+		"champignon":
+			# (un champignon de grotte : ses spores s'envolent, luisantes, et s'éteignent en montant)
+			_gerbe(p + Vector2(0, -6), 9, T.point_doux(), T.rampe([[0.0, Color(0.7, 1.0, 0.92, 0.95)], [0.6, Color(0.42, 0.95, 0.82, 0.6)], [1.0, Color(0.42, 0.95, 0.82, 0.0)]]), false,
+				{"vitesse": [8.0, 26.0], "spread": 80.0, "gravite": Vector2(v * 10.0, -14), "amortir": 10.0, "duree": 1.6, "taille": [0.08, 0.16], "rayon": 7.0})
 		_:
 			_gerbe(p + Vector2(0, -3), 5, T.brin(), T.rampe([[0.0, P.TERRE.lightened(0.2)], [1.0, P.TERRE.darkened(0.2)]]), false,
 				{"vitesse": [40.0, 90.0], "gravite": Vector2(0, 300), "duree": 0.6, "taille": [0.4, 0.6], "tourne": true})
