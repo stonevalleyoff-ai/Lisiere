@@ -16,10 +16,13 @@ const MEMOIRES := {
 	"traque": {"traque": 0.9, "attitude": "traqueuse"},
 	"feu": {"neophobie": 0.95},
 	"accoutumance": {"neophobie": 0.05},
+	"agressivite": {"agressivite": 0.8, "attitude": "agressive"},
+	"troupeau": {"mefiance": 0.7, "agressivite": 0.3, "attitude": "fuyante"},
 }
 # ce que le carnet dit d'une attitude (le mot que publie Orvane), ou à défaut de la disposition qui domine
 const ATTITUDES := {"traqueuse": "elle traque les veilleuses", "rodeuse": "elle rôde autour des camps", "quemandeuse": "elle vient quémander",
-	"defensive": "elle se défend de près", "fuyante": "elle fuit les veilleuses", "familiere": "familière des veilleuses"}
+	"agressive": "elle fait front, et charge", "defensive": "méfiante, elle fait front quand même", "exigeante": "elle exige sa part, et mord qui ne donne rien",
+	"fuyante": "elle fuit les veilleuses", "familiere": "familière des veilleuses"}
 const SEUIL_DIT := 0.35
 
 var index: Dictionary = {}
@@ -126,7 +129,8 @@ func charger_lieu(id: String) -> Dictionary:
 
 
 # la faune d'un lieu, comme le jeu la joue. Chaque entrée : { lignee, id, nom, masse, effectif, poids, sociable, activite, memoire }
-# (memoire : { mefiance, habituation, attrait, traque, neophobie, attitude }, ce que sa population a appris des joueurs)
+# (memoire : { mefiance, habituation, attrait, traque, neophobie, agressivite, attitude }, ce que sa population a appris des joueurs ;
+# chaque bête s'en écarte ensuite selon sa propre audace : scripts/bete.gd, _apprendre)
 func faune(inst: Dictionary, id: String) -> Dictionary:
 	var F := {"proies_jour": [], "proies_nuit": [], "rodeurs": [], "chasseurs_nuit": []}
 	var chasseurs := []
@@ -191,7 +195,7 @@ static func dire_memoire(m: Dictionary) -> String:
 	if ATTITUDES.has(a):
 		return ATTITUDES[a]
 	var feu := (float(m.get("neophobie", 0.5)) - 0.5) * 2.0
-	var dits := [[float(m.get("traque", 0.0)), "pour elle, tu es une proie"], [float(m.get("mefiance", 0.0)), "méfiante : on la chasse ici"],
+	var dits := [[float(m.get("traque", 0.0)), "pour elle, tu es une proie"], [float(m.get("agressivite", 0.0)), "elle a appris à faire front"], [float(m.get("mefiance", 0.0)), "méfiante : on la chasse ici"],
 		[feu, "elle craint le feu"], [-feu, "le feu ne l'effraie plus"], [float(m.get("habituation", 0.0)), "habituée aux veilleuses"],
 		[float(m.get("attrait", 0.0)), "attirée par les camps"]]
 	var mieux := SEUIL_DIT

@@ -36,6 +36,9 @@ const BARRE := 2.6               # la barre de vie reste visible, après un coup
 const REARME := 6.0              # secondes sans mordre, après lesquelles une morsure ouvre un nouvel assaut
 const GUET := 0.6                # un rôdeur qui traque s'arrête et regarde, avant de charger
 const PRESAGE := 1.0             # un chasseur qui a appris à passer la torche s'aplatit et gronde, avant
+const FRONT_SEUIL := 0.4         # l'agressivité à partir de laquelle une bête fait front au lieu de fuir
+const FRONT := 0.9               # elle s'arrête, fait face et gronde ce temps-là, avant de pouvoir charger
+const FRONT_MASSE := 1.0         # en dessous (en kilos), elle tient sa place et menace, sans charger
 
 # (une couche dessinée par la bête : les pattes de derrière, celles de devant, la barre, la traîne d'un écho)
 class Calque extends Node2D:
@@ -81,6 +84,8 @@ var confiance := 0.0             # (habituation) elle se laisse approcher
 var traque := 0.0                # la veilleuse est une proie : elle la suit, revient, passe la torche
 var attrait := 0.0               # la veilleuse et son camp l'attirent : elle vient voir
 var peur_feu := 0.0              # (neophobie) de -1, faite au feu, à 1, elle le craint
+var agressivite := 0.0           # elle fait front au lieu de fuir : elle tient sa place, menace, charge qui l'approche
+var ecart := 0.0                 # son audace à elle, en écarts-types de celle de sa population : une bête n'est pas sa population
 var attitude := ""
 var touchee := false             # frappée par la veilleuse, et en vie : une « blessure », si elle s'en va ainsi
 var _effarouchee := -1           # le jour du jeu où un feu, une torche l'ont arrêtée (c'est compté une fois par nuit)
@@ -250,6 +255,8 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 	flair = 90.0 + 230.0 * float(plan.get("perception", 0.5))
 	audace = float(plan.get("temperament", 0.3))
 	if role != "echo":
+		# (son audace à elle, tirée une fois : plus hardie que les siennes, elle craint moins et ose plus ; l'essai la fixe)
+		ecart = clampf(float(e["ecart"]) if e.has("ecart") else randfn(0.0, 1.0), -2.5, 2.5)
 		_apprendre(e.get("memoire", {}))
 	_poids = clampf(log(maxf(masse, 0.2) / 0.2) / log(1500.0), 0.0, 1.0)
 	_sens = 1.0 if randf() < 0.5 else -1.0
@@ -288,21 +295,26 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 		modulate = Color(1.0, 1.0, 1.0, 0.0)
 
 
-# ce que sa population a appris des joueurs (Orvane.dispositions : mefiance, habituation, traque, attrait, neophobie). La première
-# nuit, ce qui la rend dangereuse ne compte que pour moitié : qui s'éveille dans un lieu que d'autres ont rendu hostile a une
-# nuit pour le comprendre.
+# ce que sa population a appris des joueurs (Orvane.dispositions : mefiance, habituation, traque, attrait, neophobie,
+# agressivite), puis ce qu'elle en a retenu, elle (Orvane.individu, à son écart d'audace) : dans un troupeau qui fuit, la plus
+# hardie peut faire front. La première nuit, ce qui la rend dangereuse ne compte que pour moitié : qui s'éveille dans un lieu que
+# d'autres ont rendu hostile a une nuit pour le comprendre.
 func _apprendre(m) -> void:
 	if typeof(m) != TYPE_DICTIONARY or m.is_empty():
 		return
+	if ecart != 0.0:
+		m = Orvane.individu(m, ecart)
 	crainte = clampf(float(m.get("mefiance", 0.0)), 0.0, 1.0)
 	confiance = clampf(float(m.get("habituation", 0.0)), 0.0, 1.0)
 	traque = clampf(float(m.get("traque", 0.0)), 0.0, 1.0)
 	# (une bête qui craint les joueurs ne vient pas les voir)
 	attrait = clampf(float(m.get("attrait", 0.0)), 0.0, 1.0) * (1.0 - crainte)
 	peur_feu = clampf((float(m.get("neophobie", 0.5)) - 0.5) * 2.0, -1.0, 1.0)
+	agressivite = clampf(float(m.get("agressivite", 0.0)), 0.0, 1.0)
 	attitude = str(m.get("attitude", ""))
 	if jeu != null and "nuits" in jeu and int(jeu.nuits) == 0:
 		traque *= 0.5
+		agressivite *= 0.5
 		peur_feu = maxf(peur_feu, peur_feu * 0.5)
 	# (son audace : celle de son plan, que la traque enhardit et que la crainte rabat)
 	if traque > 0.0 or crainte > 0.0:
@@ -583,16 +595,20 @@ func blesser(n: float, depuis: Vector2) -> void:
 		touchee = true
 	match role:
 		"proie":
-			_fuir(depuis, 4.0 * (1.0 + 0.6 * crainte))
+			# (agressive et de taille, elle se retourne sur qui la frappe, tant qu'il lui reste de la force ; sinon elle fuit)
+			if agressivite >= FRONT_SEUIL and masse >= FRONT_MASSE and pv > pv_max * lerpf(0.3, 0.6, crainte):
+				_charger_de_front()
+			else:
+				_fuir(depuis, 4.0 * (1.0 + 0.6 * crainte))
 		"rodeur":
-			# (craintif, il ne se retourne que s'il lui reste presque toute sa force)
-			if masse >= 4.0 and pv > pv_max * lerpf(0.4, 0.75, crainte):
+			# (craintif, il ne se retourne que s'il lui reste presque toute sa force ; agressif, même entamé)
+			if masse >= 4.0 and pv > pv_max * (lerpf(0.4, 0.75, crainte) - 0.25 * agressivite):
 				_charger()
 			else:
 				_fuir(depuis, 4.0)
 		"chasseur":
-			# (craintif, il lâche prise plus tôt, plus souvent, plus longtemps ; traqueur, il revient)
-			if pv < pv_max * lerpf(0.4, 0.7, crainte) or randf() < lerpf(0.25, 0.6, crainte) * (1.0 - traque):
+			# (craintif, il lâche prise plus tôt, plus souvent, plus longtemps ; traqueur, il revient ; agressif, il ne lâche pas)
+			if pv < pv_max * lerpf(0.4, 0.7, crainte) * (1.0 - 0.5 * agressivite) or randf() < lerpf(0.25, 0.6, crainte) * (1.0 - traque) * (1.0 - agressivite):
 				_fuir(depuis, maxf(1.0, 2.5 + 4.0 * crainte - 1.2 * traque))
 
 
@@ -639,6 +655,18 @@ func _assaillir(duree: float) -> void:
 func _charger() -> void:
 	_changer("attaque", 6.0 + 4.0 * traque)
 	_assaillir(_duree)
+
+
+# une proie qui fait front charge (plus longtemps si elle est plus agressive) : un assaut, comme celui d'un rôdeur
+func _charger_de_front() -> void:
+	_changer("attaque", 3.0 + 4.0 * agressivite)
+	_assaillir(_duree)
+
+
+# à quelle distance de la veilleuse une proie qui fait front charge : une part de sa distance de fuite, d'autant plus grande
+# qu'elle est agressive (50 pixels au moins, 200 au plus)
+func _portee_front() -> float:
+	return clampf(_distance_fuite(true) * (0.3 + 0.5 * agressivite), 50.0, 200.0)
 
 
 # elle s'en va (trop loin, à l'aube) frappée par la veilleuse et en vie : une blessure, dont sa population se souviendra
@@ -795,7 +823,33 @@ func _proie(delta: float) -> void:
 			if position.distance_to(f.position) < f.rayon() * 0.9:
 				_fuir(f.position, 4.0)
 				break
+	# (l'agressivité : elle ne fuit plus. Elle charge ; ou elle s'est arrêtée, tournée vers la veilleuse, et gronde)
+	if etat == "attaque":
+		_aller(j.position, vitesse * 0.85, delta)
+		_mordre_si_pres(dj)
+		if _t > _duree:
+			maison = position
+			_changer("repos", 2.0)
+		return
+	if etat == "front":
+		if absf(j.position.x - position.x) > 2.0:
+			regard = signf(j.position.x - position.x)
+		if masse >= FRONT_MASSE:
+			# (de taille à charger : si la veilleuse insiste, après le présage)
+			if _t >= FRONT and dj < _portee_front():
+				_charger_de_front()
+		elif dj < 36.0:
+			# (trop petite : elle a tenu sa place jusqu'au bout, puis file)
+			_fuir(j.position, randf_range(3.0, 5.0))
+		# (la veilleuse a reculé : elle a tenu, et retourne à ce qu'elle faisait)
+		if etat == "front" and dj > _distance_fuite(true) * 1.25:
+			_changer("repos", 1.0)
+		return
 	if etat != "fuit" and dj < _distance_fuite(j.en_mouvement):
+		if agressivite >= FRONT_SEUIL:
+			_changer("front", 999.0)
+			jeu.grognement(self, true)
+			return
 		_fuir(j.position, randf_range(3.0, 5.0) * (1.0 + 0.6 * crainte))
 	if etat == "fuit":
 		_aller(_loin_de(j.position if dj < 400.0 else _fuite_de), vitesse, delta)
@@ -815,8 +869,8 @@ func _rodeur(delta: float) -> void:
 			maison = position
 			_changer("repos", 1.0)
 		return
-	# (habitué, il laisse passer de plus près ; traqueur, il charge de plus loin, 130 pixels au plus)
-	var portee := clampf(70.0 - 30.0 * confiance + 60.0 * traque, 40.0, 130.0) + largeur * 0.3
+	# (habitué, il laisse passer de plus près ; traqueur ou agressif, il charge de plus loin, 130 pixels au plus)
+	var portee := clampf(70.0 - 30.0 * confiance + 60.0 * traque + 40.0 * agressivite, 40.0, 130.0) + largeur * 0.3
 	if etat == "guet":
 		# (une charge apprise s'annonce : il s'arrête, tourné vers elle, et gronde ; si elle s'est éloignée, il renonce)
 		if absf(j.position.x - position.x) > 2.0:
@@ -827,8 +881,8 @@ func _rodeur(delta: float) -> void:
 			else:
 				_changer("repos", 1.0)
 		return
-	if etat != "attaque" and dj < portee and masse >= 4.0 and randf() < audace * delta * 3.0:
-		if traque > 0.0:
+	if etat != "attaque" and dj < portee and masse >= 4.0 and randf() < (audace + 0.3 * agressivite) * delta * 3.0:
+		if traque > 0.0 or agressivite >= FRONT_SEUIL:
 			_changer("guet", GUET)
 			jeu.grognement(self, true)
 		else:
@@ -1031,7 +1085,7 @@ func _allure(v: float, delta: float) -> void:
 	var nuit: bool = role == "chasseur" and not jeu.est_jour()
 	var affut := 1.0 if nuit and _retenu else 0.0
 	var vite := clampf((v / maxf(vitesse, 1.0) - 0.42) / 0.3, 0.0, 1.0) * (1.0 - affut)
-	var bond := vite if _n_cote == 2 and (role != "proie" or etat == "fuit") else 0.0
+	var bond := vite if _n_cote == 2 and (role != "proie" or etat == "fuit" or etat == "attaque") else 0.0
 	_marche = lerpf(_marche, smoothstep(2.5, 12.0, v), 1.0 - exp(-delta * 10.0))
 	_affut = lerpf(_affut, affut, lisse)
 	_bond = lerpf(_bond, bond, lisse)
@@ -1377,8 +1431,8 @@ func _gestes_repos(delta: float) -> void:
 		_geste = ""
 		_geste_t = maxf(_geste_t, 0.6)
 		return
-	if etat == "guet":
-		# (le rôdeur qui va charger : la tête levée, sans la quitter des yeux)
+	if etat == "guet" or etat == "front":
+		# (le rôdeur qui va charger, la bête qui fait front : la tête levée, sans la quitter des yeux)
 		_geste = "guette"
 		_geste_t = 0.3
 		return
