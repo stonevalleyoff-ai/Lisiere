@@ -10,17 +10,54 @@ extends Node
 var jeu
 var ok := true
 var n := 0
+# le garde-fou : un fil à part regarde si l'essai avance. S'il ne dit plus rien pendant cent secondes, il dit où il en était
+# (la dernière vérification, si les images passent encore, l'allure du temps) et arrête tout : un essai qui se fige est un échec
+var _garde: Thread
+var _dit_ms := 0
+var _dernier := ""
+var _images := 0
+var _fini := false
 
 
 func _ready() -> void:
 	jeu = get_parent()
+	_dit_ms = Time.get_ticks_msec()
+	_garde = Thread.new()
+	_garde.start(_garder)
 	_lancer.call_deferred()
+
+
+func _process(_delta: float) -> void:
+	_images += 1
+
+
+func _garder() -> void:
+	var images_avant := 0
+	while not _fini:
+		OS.delay_msec(2000)
+		if _fini:
+			return
+		var passent: bool = _images != images_avant
+		images_avant = _images
+		if Time.get_ticks_msec() - _dit_ms > 100000:
+			print("\nÉCHEC : l'essai n'avance plus depuis cent secondes, après « %s ». Les images %s ; l'allure du temps : %s." % [
+				_dernier, "passent encore (une attente qui ne finit pas)" if passent else "sont figées (un calcul qui ne finit pas)", str(Engine.time_scale)])
+			OS.kill(OS.get_process_id())
+			return
+
+
+func _exit_tree() -> void:
+	_fini = true
+	if _garde != null and _garde.is_started():
+		_garde.wait_to_finish()
 
 
 func verif(c: bool, m: String) -> void:
 	n += 1
 	if not c:
 		ok = false
+	_dit_ms = Time.get_ticks_msec()
+	_dernier = m.substr(0, 90)
 	print(("  ✓ " if c else "  ✗ ") + m)
 
 
@@ -133,9 +170,10 @@ func _lancer() -> void:
 
 	print("2. Les gestes")
 	var j = jeu.joueur
+	# (un arbre sans rien d'autre à prendre à son pied : les trois coups sont pour lui)
 	var o = null
 	for x in jeu.monde.objets:
-		if x.genre == "arbre" or x.genre == "sapin":
+		if (x.genre == "arbre" or x.genre == "sapin") and jeu.monde.autour(x.position + Vector2(0, 20), 70.0).filter(func(y): return y != x and not y.epuise()).is_empty():
 			o = x
 			break
 	j.position = o.position + Vector2(0, 20)
@@ -155,6 +193,21 @@ func _lancer() -> void:
 	jeu.nourrir_feu()
 	verif(f.bois > avant + 20.0, "une bûche nourrit le feu (%d → %d secondes)" % [int(avant), int(f.bois)])
 
+	# (le son de la foudre se fabriquait par une boucle qui, pour six tirages sur mille, ne finissait pas : le jeu se figeait.
+	# Ces graines-là la figeaient ; si elle se fige de nouveau, le garde-fou de l'essai le dira)
+	var Recettes := load("res://scripts/sons_recettes.gd")
+	var r_son := RandomNumberGenerator.new()
+	var foudres := 0
+	for graine_son in [3357669, 5068173, 5939263, 6145157, 9803735, 10263037]:
+		r_son.seed = graine_son
+		if not Recettes._foudre(r_son).is_empty():
+			foudres += 1
+	for nom_son in ["foudre0", "foudre1", "tonnerre0", "tonnerre1", "tonnerre2", "presage"]:
+		for k in 12:
+			r_son.seed = 1000 + k * 77
+			if not Recettes.fabriquer(nom_son, r_son).is_empty():
+				foudres += 1
+	verif(foudres == 6 + 72, "les sons de la foudre se fabriquent toujours jusqu'au bout (78 tirages, dont six qui figeaient le jeu)")
 	print("2 bis. Le temps qu'il fait")
 	# (scripts/climat.gd, scripts/incendie.gd : le temps de la partie pèse sur le feu, le sol, le corps ; tout est joué ici sans
 	# attendre, en appelant les mêmes fonctions que le jeu, image par image)
@@ -338,9 +391,10 @@ func _lancer() -> void:
 		"brûlé jusqu'au bout, un arbre n'est plus qu'une souche noire : elle n'abrite plus de la pluie, et ne reprend pas feu")
 	# sous un arbre pendant l'orage, la foudre finit par choisir cet arbre-là ; seule debout à découvert, elle tombe sur elle
 	C.forcer("orage", 1.0, 9999.0)
+	# (un arbre seul : sous deux feuillages qui se touchent, la foudre prendrait l'un ou l'autre)
 	var refuge = null
 	for x in jeu.monde.objets:
-		if x.couvert() > 0.0 and x.position.distance_to(f.position) > 500.0:
+		if x.couvert() > 0.0 and x.position.distance_to(f.position) > 500.0 and jeu.monde.autour(x.position, 90.0).filter(func(y): return y.couvert() > 0.0).size() == 1:
 			refuge = x
 			break
 	j.position = refuge.position + Vector2(3.0, 0.0)
@@ -536,6 +590,7 @@ func _lancer() -> void:
 	jeu.sons.arreter_brefs()
 	for p in jeu.sons.find_children("*", "AudioStreamPlayer", false, false):
 		p.stop()
+	_fini = true
 	await get_tree().create_timer(0.3, true, false, true).timeout
 	get_tree().quit(0 if ok else 1)
 
@@ -546,7 +601,15 @@ func _lieu_sans_bord() -> void:
 	print("8. Le lieu sans bord")
 	# (MONDE-OUVERT.md, étape 2 : le lieu se fabrique par morceaux autour de la veilleuse, et ne garde que ce qu'on y change)
 	var propose: Array = jeu._lieux_du_titre()
-	verif(str(propose[0]["id"]) == "ouvert:prairie" and propose.size() == jeu.donnees.lieux().size() + 1, "l'écran-titre propose « %s » (%s), avec les lieux du monde" % [propose[0]["nom"], propose[0]["detail"]])
+	var rang_foret := -1
+	var rang_ouvert := -1
+	for i in propose.size():
+		if str(propose[i]["id"]) == "foret":
+			rang_foret = i
+		elif str(propose[i]["id"]) == "ouvert:monde":
+			rang_ouvert = i
+	verif(rang_ouvert == rang_foret + 1 and rang_foret >= 0 and propose.size() == jeu.donnees.lieux().size() + 1,
+		"l'écran-titre propose « %s » (%s) juste après la forêt, sur laquelle la liste s'ouvre" % [propose[rang_ouvert]["nom"], propose[rang_ouvert]["detail"]])
 	await jeu._commencer("prairie", {}, true)
 	var W = jeu.monde
 	var jo = jeu.joueur
@@ -610,6 +673,9 @@ func _lieu_sans_bord() -> void:
 	W.suivre(ici, true)
 	var buisson_plein = a_cet_endroit.call(p_buisson)
 	verif(buisson_plein != null and buisson_plein.intact() and a_cet_endroit.call(p_arbre).genre == "souche", "deux minutes plus tard, le buisson a repoussé sans elle ; la souche est toujours une souche")
+	await _les_regions()
+	jo.position = ici
+	W.suivre(ici, true)
 	# gardée, la partie ne retient que ce qui a changé
 	var gardee2: Dictionary = JSON.parse_string(JSON.stringify(PG.photo(jeu)))
 	await jeu._commencer("prairie", gardee2)
@@ -617,3 +683,136 @@ func _lieu_sans_bord() -> void:
 	verif(jeu.ouvert and gardee2["objets"].is_empty() and gardee2["monde"]["changes"].size() >= 1 and jeu.joueur.position.distance_to(ici) < 1.0
 		and souche2.size() == 1 and souche2[0].genre == "souche" and souche2[0].calcine and jeu.monde.autour(p_brindille, 1.5).is_empty(),
 		"gardée puis reprise, la partie sans bord revient là où elle était, avec ce qu'elle avait changé (%d octets pour tout le lieu)" % JSON.stringify(gardee2["monde"]).length())
+
+
+# le monde ouvert : d'un biome à l'autre (scripts/carte.gd, MONDE-OUVERT.md, étape 3)
+func _les_regions() -> void:
+	var C = jeu.carte
+	var W = jeu.monde
+	var jo = jeu.joueur
+	jeu._regions()
+	var terres := 0
+	for reg in C.regions:
+		if not reg["eau"]:
+			terres += 1
+	verif(C != null and str(C.regions[C.region_en(Vector2.ZERO)]["type"]) == "prairie" and jeu.biome == "prairie" and terres > 100,
+		"le monde ouvert a sa carte : %d régions de terre ; on s'éveille dans la prairie du centre (%s)" % [terres, C.regions[C.depart]["id"]])
+	# vers la forêt voisine : la plus proche des régions de forêt
+	var foret := -1
+	for k in C.regions.size():
+		if str(C.regions[k]["type"]) == "foret" and (foret < 0 or C.regions[k]["pos"].length() < C.regions[foret]["pos"].length()):
+			foret = k
+	var la: Vector2 = C.regions[foret]["pos"] - C.tordre(C.regions[foret]["pos"])
+	W.suivre(Vector2.ZERO, true)
+	var arbres_ici: int = W.autour(Vector2.ZERO, 1000.0).filter(func(x): return x.couvert() > 0.0).size()
+	jo.position = la
+	W.suivre(la, true)
+	await jeu._lire_biome("foret")
+	jeu._regions()
+	var arbres_la: int = W.autour(la, 1000.0).filter(func(x): return x.couvert() > 0.0).size()
+	verif(str(C.regions[C.region_en(la)]["type"]) == "foret" and jeu.biome == "foret" and jeu.faune == jeu._faunes["foret"] and not jeu.faune["chasseurs_nuit"].is_empty()
+		and absf(jeu.climat.humide - float(jeu.donnees.biome("foret")["axes"]["humidite"])) < 0.01 and arbres_la > arbres_ici * 2,
+		"à %d pixels de là, la forêt : ses bêtes (%d chasseurs de nuit), son climat, ses arbres (%d dans un rayon de 1 000 pixels, contre %d dans la prairie)" % [
+			int(la.length()), jeu.faune["chasseurs_nuit"].size(), arbres_la, arbres_ici])
+	var bete_la = jeu._creer(jeu.faune["proies_jour"][0], "proie", la + Vector2(60, 0))
+	verif(str(bete_la.get_meta("biome", "")) == "foret" and str(bete_la.get_meta("parcelle", "")) == str(C.regions[foret]["id"]),
+		"une bête de là-bas sera comptée dans son biome et sa parcelle d'Orvane (%s)" % str(bete_la.get_meta("parcelle", "")))
+	bete_la.queue_free()
+	# l'eau est une frontière : on n'y entre pas, rien n'y pousse
+	var eau_ := -1
+	var terre_ := -1
+	for k in C.regions.size():
+		if C.regions[k]["eau"] or eau_ >= 0:
+			continue
+		for v in C.regions[k]["voisines"]:
+			if C.regions[v]["eau"] and not C.regions[v]["bord"]:
+				eau_ = v
+				terre_ = k
+				break
+	var p_eau: Vector2 = C.regions[eau_]["pos"] - C.tordre(C.regions[eau_]["pos"])
+	var p_terre: Vector2 = C.regions[terre_]["pos"] - C.tordre(C.regions[terre_]["pos"])
+	var vers_l_eau: Vector2 = p_terre
+	for k in 2000:
+		var n: Vector2 = W.repousser(vers_l_eau + (p_eau - vers_l_eau).normalized() * 40.0, 8.0)
+		if n.distance_to(vers_l_eau) < 2.0:
+			break
+		vers_l_eau = n
+	W.suivre(p_eau, true)
+	verif(not C.regions[C.region_en(vers_l_eau)]["eau"] and vers_l_eau.distance_to(p_eau) < p_terre.distance_to(p_eau) * 0.75 and W.autour(p_eau, 900.0).is_empty(),
+		"l'eau est une frontière : partie de %s vers %s, elle s'arrête sur la rive ; rien ne pousse dans l'eau" % [C.regions[terre_]["id"], C.regions[eau_]["id"]])
+	# une crête : deux biomes qui se touchent sur la carte sans être voisins dans Orvane
+	var ca := -1
+	var cb := -1
+	for k in C.regions.size():
+		if not C.regions[k]["murs"].is_empty() and ca < 0:
+			ca = k
+			cb = int(C.regions[k]["murs"].keys()[0])
+	var p_a: Vector2 = C.regions[ca]["pos"] - C.tordre(C.regions[ca]["pos"])
+	var p_b: Vector2 = C.regions[cb]["pos"] - C.tordre(C.regions[cb]["pos"])
+	var vers_la_crete: Vector2 = p_a
+	for k in 2000:
+		var n: Vector2 = C.retenir(vers_la_crete + (p_b - vers_la_crete).normalized() * 40.0)
+		if n.distance_to(vers_la_crete) < 2.0:
+			break
+		vers_la_crete = n
+	var au_pied: Vector2 = vers_la_crete + (p_b - vers_la_crete).normalized() * 60.0
+	W.suivre(au_pied, true)
+	var rochers: int = W.autour(au_pied, 500.0).filter(func(x): return x.genre == "rocher").size()
+	verif(C.region_en(vers_la_crete) != cb and vers_la_crete.distance_to(p_b) < p_a.distance_to(p_b) * 0.8 and rochers >= 8,
+		"une crête ferme la frontière entre %s et %s : on ne passe pas, des rochers la marquent (%d au pied)" % [C.regions[ca]["type"], C.regions[cb]["type"], rochers])
+	# ce qu'on découvre se note, et la carte du carnet le montre
+	var co: Array = C.contour(foret)
+	var aire_ := 0.0
+	for k in co[0].size():
+		aire_ += co[0][k].cross(co[0][(k + 1) % co[0].size()])
+	jeu.ui.montrer_pause(true)
+	var page_carte: bool = jeu.ui._pause.carte_monde.visible and not jeu.ui._pause._commandes.visible and str(jeu.ui._pause._sous.text).contains("découverte")
+	jeu.ui.montrer_pause(false)
+	var gardee_d: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
+	verif(jeu.decouvertes.has(foret) and jeu.decouvertes.size() >= 2 and absf(aire_) * 0.5 > 0.3 * C.cote * C.cote and absf(aire_) * 0.5 < 3.0 * C.cote * C.cote
+		and page_carte and gardee_d["decouvertes"].has(str(C.regions[foret]["id"])),
+		"ce qu'on découvre se note (%d régions) et se garde ; à la pause, le carnet en montre la carte (« %s »)" % [jeu.decouvertes.size(), jeu.ui._pause._sous.text])
+	# une rivière traverse sa vallée : son lit arrête ; à gué on passe à pied ; ailleurs, un pont de fortune
+	var riv := -1
+	for k in C.regions.size():
+		if C.regions[k]["riviere"] and (riv < 0 or C.regions[k]["pos"].length() < C.regions[riv]["pos"].length()):
+			riv = k
+	var fond := Vector2.INF
+	var gue := Vector2.INF
+	for ix in range(-40, 41):
+		for iy in range(-40, 41):
+			var q: Vector2 = C.regions[riv]["pos"] + Vector2(ix, iy) * 220.0
+			if C.region_en(q) != riv or C.lit(q) < 0.5:
+				continue
+			if C.champ_gue(q) > 0.62 and gue == Vector2.INF:
+				gue = q
+			elif C.champ_gue(q) < 0.3 and fond == Vector2.INF and not C.pont_depuis(C.retenir(q)).is_empty():
+				fond = q
+	var berge: Vector2 = C.retenir(fond)
+	jo.position = berge
+	W.suivre(berge, true)
+	jeu._regions()
+	verif(riv >= 0 and fond != Vector2.INF and C.lit(fond) > 0.5 and C.lit(berge) == 0.0 and berge.distance_to(fond) > 20.0 and jeu.biome == "riviere"
+		and W.objets.filter(func(x): return C.mouille(x.position)).is_empty(),
+		"une rivière traverse sa vallée (%s) : son lit arrête la veilleuse sur la berge, rien n'y pousse" % C.regions[riv]["id"])
+	verif(gue != Vector2.INF and C.retenir(gue) == gue and jeu.climat.eau(gue) > 0.3 and jeu.climat.allure(gue) < 0.9,
+		"à gué, on passe à pied : de l'eau jusqu'aux genoux (%.2f), on y marche à %d %% de l'allure" % [jeu.climat.eau(gue), int(jeu.climat.allure(gue) * 100.0)])
+	jo.inventaire["bois"] = 20
+	jo.inventaire["fibre"] = 10
+	jeu._pont_vu = 0.0
+	jeu._voir_les_ponts(1.0)
+	var possible: bool = jeu.pont_possible
+	jeu.fabriquer("pont")
+	var pont = jeu.ponts[0] if not jeu.ponts.is_empty() else null
+	var milieu: Vector2 = (pont.a + pont.b) * 0.5 if pont != null else Vector2.ZERO
+	verif(possible and pont != null and int(jo.inventaire["bois"]) == 14 and int(jo.inventaire["fibre"]) == 7 and C.lit(milieu) > 0.0 and C.retenir(milieu) == milieu
+		and jeu.climat.eau(milieu) == 0.0 and C.lit(pont.b) == 0.0,
+		"au bord, un pont de fortune se pose jusqu'à l'autre berge (%d pixels ; 6 bois, 3 fibres) : on y passe au sec" % int(pont.a.distance_to(pont.b)))
+	var gardee_p: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
+	pont.tenue = 0.5
+	pont._process(1.0)
+	verif(gardee_p["ponts"].size() == 1 and jeu.ponts.is_empty() and C.retenir(milieu).distance_to(milieu) > 5.0,
+		"il se garde avec la partie, mais ne dure pas : usé, il cède, et le lit arrête de nouveau")
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	jeu._regions()

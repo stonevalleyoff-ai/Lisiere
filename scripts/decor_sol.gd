@@ -13,6 +13,7 @@ const GARDEES := 20            # les tuiles gardées en mémoire
 
 var materiau: ShaderMaterial
 var limite := LIMITE           # (un lieu sans bord, scripts/monde.gd : pas de limite)
+var monde_                     # (le monde ouvert : sa carte dit quelles régions touchent une tuile, lui ce qu'est chacune)
 var densite := 1.35
 var _tuiles := {}              # tuile → [Sprite2D, ImageTexture, quand elle a servi]
 var _peintres: Array = []      # les SubViewports, hors de l'arbre quand elles ne peignent pas
@@ -38,12 +39,57 @@ func _peintre() -> SubViewport:
 	vp.disable_3d = true
 	vp.transparent_bg = false
 	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	var quad := Peinture.new()
-	if limite > LIMITE:
-		quad.demi = 300000.0
-	quad.material = materiau
-	vp.add_child(quad)
+	# (le monde ouvert : jusqu'à trois régions sur une tuile, une couche chacune, chacune avec sa matière)
+	for n in (3 if monde_ != null and monde_.carte != null else 1):
+		var quad := Peinture.new()
+		if limite > LIMITE:
+			quad.demi = 300000.0
+		quad.material = materiau if n == 0 and (monde_ == null or monde_.carte == null) else materiau.duplicate()
+		vp.add_child(quad)
 	return vp
+
+
+# les régions d'une tuile : la plus présente couvre tout, les autres par-dessus, là où elles sont les plus proches
+func _regler(vp: SubViewport, rect: Rect2) -> void:
+	if monde_ == null or monde_.carte == null:
+		return
+	var C = monde_.carte
+	var regs: Array = C.dans(rect.grow(float(BORD) + 2.0)).slice(0, 3)
+	for n in 3:
+		var quad: Node2D = vp.get_child(n)
+		quad.visible = n < regs.size()
+		if not quad.visible:
+			continue
+		var reg: Dictionary = C.regions[regs[n]]
+		var m: ShaderMaterial = quad.material
+		var sol: Dictionary = monde_.lieu_de(str(reg["type"]))["sol"]
+		for k in sol:
+			m.set_shader_parameter(k, sol[k])
+		var autres: Array = []
+		var rive := false
+		var crete := Vector3.ZERO
+		var eaux := Vector3.ZERO
+		for o in regs:
+			if o != regs[n]:
+				if C.ferme(regs[n], o):
+					crete[autres.size()] = 1.0
+				if C.regions[o]["eau"] or C.regions[o]["riviere"]:
+					eaux[autres.size()] = 1.0
+				autres.append(C.regions[o]["pos"])
+				if bool(C.regions[o]["eau"]) != bool(reg["eau"]):
+					rive = true
+		while autres.size() < 3:
+			autres.append(Vector2(1.0e7, 1.0e7))
+		m.set_shader_parameter("crete", crete)
+		m.set_shader_parameter("eaux", eaux)
+		m.set_shader_parameter("lit_ici", 1.0 if reg["riviere"] else 0.0)
+		m.set_shader_parameter("couche", 0 if n == 0 else 1)
+		m.set_shader_parameter("site_moi", reg["pos"])
+		m.set_shader_parameter("site_a", autres[0])
+		m.set_shader_parameter("site_b", autres[1])
+		m.set_shader_parameter("site_c", autres[2])
+		m.set_shader_parameter("rive", 1.0 if rive else 0.0)
+		m.set_shader_parameter("fondu", C.FONDU)
 
 
 # la caméra regarde ce rectangle du monde : chaque tuile qu'il touche doit être peinte (les plus proches du centre d'abord)
@@ -86,6 +132,7 @@ func suivre(vue: Rect2) -> void:
 		var t := float(_taille() - BORD * 2)
 		var e := t / TUILE
 		var origine := Vector2(k) * TUILE
+		_regler(vp, Rect2(origine, Vector2(TUILE, TUILE)))
 		add_child(vp)
 		vp.canvas_transform = Transform2D(0.0, Vector2(e, e), 0.0, -origine * e + Vector2(BORD, BORD))
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE

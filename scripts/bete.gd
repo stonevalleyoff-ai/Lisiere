@@ -632,6 +632,8 @@ func _aller(vers: Vector2, v: float, delta: float) -> void:
 		# (un lieu sans bord : celle qu'on a laissée loin derrière s'en va)
 		if role != "echo" and etat != "mort" and jeu.joueur != null and position.distance_to(jeu.joueur.position) > 2600.0:
 			queue_free()
+		elif role != "echo" and jeu.monde.carte != null:
+			position = jeu.monde.carte.retenir(position)
 	else:
 		position = Vector2(clampf(position.x, -R.DEMI, R.DEMI), clampf(position.y, -R.DEMI, R.DEMI))
 

@@ -104,8 +104,12 @@ const RECETTES := {
 	"feu": {"nom": "Feu de camp", "touche": "1", "cout": {"bois": 4, "pierre": 2}},
 	"torche": {"nom": "Torche", "touche": "2", "cout": {"bois": 2, "fibre": 1}},
 	"lance": {"nom": "Lance", "touche": "3", "cout": {"bois": 2, "pierre": 1, "fibre": 2}},
+	# (le monde ouvert : au bord d'une rivière, vers l'autre berge ; scripts/pont.gd)
+	"pont": {"nom": "Pont de fortune", "touche": "4", "cout": {"bois": 6, "fibre": 3}},
 }
-const ORDRE_RECETTES := ["feu", "torche", "lance"]
+const ORDRE_RECETTES := ["feu", "torche", "lance", "pont"]
+const PONT_DUREE := 360.0     # ce qu'un pont tient, en secondes (une journée et demie)
+const PONT_PASSAGE := 25.0    # ce que chaque passage de la veilleuse lui retire
 const NOMS := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "baies": "baies", "viande": "viande crue", "viande_cuite": "viande cuite"}
 const ORDRE_INVENTAIRE := ["bois", "pierre", "fibre", "baies", "viande", "viande_cuite"]
 

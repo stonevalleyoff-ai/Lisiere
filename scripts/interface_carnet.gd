@@ -9,6 +9,7 @@ const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/interface_theme.gd")
 const I := preload("res://scripts/interface_icones.gd")
 const Bouton := preload("res://scripts/interface_bouton.gd")
+const CarteMonde := preload("res://scripts/interface_carte_monde.gd")
 const Bestiaire := preload("res://scripts/bestiaire.gd")
 const PAPIER := preload("res://shaders/interface_papier.gdshader")
 
@@ -353,6 +354,9 @@ class Pause extends Control:
 	var _voile: ColorRect
 	var _sous: Label
 	var _commandes: Commandes
+	# le monde ouvert : la carte de ce qu'on a découvert, à la place des commandes (un bouton passe de l'une aux autres)
+	var carte_monde: CarteMonde
+	var _bascule
 	var _boutons: Array = []
 	var _ips
 	var _titre: Label
@@ -381,6 +385,10 @@ class Pause extends Control:
 		_commandes = Commandes.new()
 		_commandes.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		v.add_child(_commandes)
+		carte_monde = CarteMonde.new()
+		carte_monde.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		carte_monde.visible = false
+		v.add_child(carte_monde)
 		var h := HBoxContainer.new()
 		h.alignment = BoxContainer.ALIGNMENT_CENTER
 		h.add_theme_constant_override("separation", 30)
@@ -398,6 +406,17 @@ class Pause extends Control:
 		_ips = Bouton.new("Afficher les images par seconde", 16, true)
 		_ips.pressed.connect(func(): compteur.emit())
 		h2.add_child(_ips)
+		h2.add_theme_constant_override("separation", 24)
+		_bascule = Bouton.new("Voir les commandes", 16, true)
+		_bascule.visible = false
+		_bascule.pressed.connect(func():
+			carte_monde.visible = not carte_monde.visible
+			_commandes.visible = not carte_monde.visible
+			_disposer()
+			_bascule.libelle = "Voir les commandes" if carte_monde.visible else "Voir la carte"
+			_bascule._mesurer()
+			_bascule.queue_redraw())
+		h2.add_child(_bascule)
 		resized.connect(_disposer)
 
 	# le bouton dit ce qu'il fera
@@ -420,14 +439,37 @@ class Pause extends Control:
 
 	func _disposer() -> void:
 		var s := size
-		var ps := Vector2(minf(720.0, s.x - 40.0), minf(450.0, s.y - (92.0 if compact else 80.0)))
+		# (avec la carte du monde ouvert, la page prend toute la hauteur qu'elle peut)
+		var haut := 620.0 if (carte_monde != null and carte_monde.visible) else 450.0
+		var ps := Vector2(minf(760.0 if haut > 500.0 else 720.0, s.x - 40.0), minf(haut, s.y - (92.0 if compact else 80.0)))
 		page.size = ps
 		# (au doigt, la page descend un peu : le bouton de pause est en haut, au milieu)
 		page.position = (s - ps) * 0.5 + Vector2(0, 26.0 if compact else 0.0)
 
-	func ouvrir() -> void:
+	# (jeu : dans le monde ouvert, la page montre la carte de ce qu'on a découvert)
+	func ouvrir(jeu = null) -> void:
 		_t = 0.0
 		visible = true
+		var monde_ouvert: bool = jeu != null and jeu.get("carte") != null
+		carte_monde.visible = monde_ouvert
+		_commandes.visible = not monde_ouvert
+		_bascule.visible = monde_ouvert
+		_bascule.libelle = "Voir les commandes"
+		_bascule._mesurer()
+		_disposer()
+		if monde_ouvert:
+			carte_monde.ouvrir(jeu)
+			var biomes := {}
+			var terres := 0
+			for k in jeu.carte.regions.size():
+				if not jeu.carte.regions[k]["eau"]:
+					terres += 1
+			for k in jeu.decouvertes:
+				biomes[jeu.carte.regions[k]["type"]] = true
+			_sous.text = "%d région%s découverte%s sur %d, %d biome%s." % [jeu.decouvertes.size(), "s" if jeu.decouvertes.size() > 1 else "", "s" if jeu.decouvertes.size() > 1 else "",
+				terres, biomes.size(), "s" if biomes.size() > 1 else ""]
+		else:
+			_sous.text = "Touche le bouton du haut pour reprendre." if tactile else "La nuit attend. Échap pour reprendre."
 		if not tactile and _boutons.size() > 0:
 			_boutons[0].grab_focus.call_deferred()
 

@@ -14,6 +14,20 @@ uniform sampler2D voiles : filter_linear, repeat_enable;
 uniform sampler2D motif_a : filter_linear, repeat_enable;
 uniform sampler2D motif_b : filter_linear, repeat_enable;
 uniform float etendue = 5400.0;
+// le monde ouvert (scripts/carte.gd) : une tuile où deux ou trois régions se touchent est peinte en autant de couches. La
+// première couvre tout ; les suivantes ne se montrent que là où leur région est la plus proche (sur le plan tordu de la carte)
+uniform int couche = 0;
+uniform vec2 site_moi = vec2(0.0);
+uniform vec2 site_a = vec2(1.0e7);
+uniform vec2 site_b = vec2(1.0e7);
+uniform vec2 site_c = vec2(1.0e7);
+uniform float fondu = 150.0;           // la demi-largeur où deux régions se mêlent
+uniform float rive = 0.0;              // 1 : de l'autre côté, c'est l'eau (ou la terre) : un bord net, un trait d'encre
+uniform float etendue_eau = 0.0;       // 1 : cette région est de l'eau
+uniform vec3 crete = vec3(0.0);        // pour site_a, site_b, site_c : 1 si la frontière avec elle est fermée (une crête de roche)
+uniform float lit_ici = 0.0;           // 1 : cette région est une vallée de rivière (son lit suit les zéros de champ)
+uniform vec3 eaux = vec3(0.0);         // pour site_a, site_b, site_c : 1 si c'est de l'eau ou une rivière (le lit ne s'amincit pas vers elle)
+uniform vec3 c_eau = vec3(0.13, 0.19, 0.24);
 
 uniform vec3 terre = vec3(0.35, 0.27, 0.19);
 uniform vec3 terre_claire = vec3(0.45, 0.36, 0.25);
@@ -60,6 +74,22 @@ float h21(vec2 p) {
 // un masque aux bords nets mais tremblés : 1 au-dessus du seuil
 float masque(float v, float seuil, float aa) {
 	return smoothstep(seuil - aa, seuil + aa, v);
+}
+
+// le plan tordu de la carte : le même calcul que scripts/carte.gd (tordre)
+vec2 tordre(vec2 p) {
+	return vec2(
+		420.0 * sin(p.y / 1900.0 + 1.3) + 180.0 * sin(p.y / 730.0 + p.x / 2600.0 + 4.1) + 70.0 * sin(p.y / 260.0 + 0.7),
+		420.0 * sin(p.x / 2100.0 + 2.2) + 180.0 * sin(p.x / 810.0 - p.y / 2900.0 + 0.5) + 70.0 * sin(p.x / 290.0 + 3.3));
+}
+
+// les rivières : les mêmes calculs que scripts/carte.gd (champ, champ_gue)
+float champ(vec2 p) {
+	return sin(p.x / 1500.0 + 1.9 * sin(p.y / 2600.0 + 0.4)) + 0.55 * sin(p.y / 1150.0 + 1.1 + 1.4 * sin(p.x / 3100.0));
+}
+
+float champ_gue(vec2 p) {
+	return sin(p.x / 700.0 + 0.9 * sin(p.y / 1900.0)) * sin(p.y / 830.0 + 1.7);
 }
 
 void fragment() {
@@ -228,5 +258,65 @@ void fragment() {
 
 	// le grain du papier
 	col *= 0.965 + 0.05 * g1 + 0.025 * g2;
-	COLOR = vec4(col, 1.0);
+	// les rides de l'eau : de courts traits clairs, couchés (les lignes de niveau d'un bruit étiré)
+	float r1 = texture(motif_a, monde / vec2(1100.0, 170.0)).r + 0.5 * texture(motif_b, monde / vec2(700.0, 120.0) + 0.3).r;
+	float rides = (1.0 - smoothstep(0.0, 0.07, abs(fract(r1 * 7.0) - 0.5))) * smoothstep(0.4, 0.6, d2);
+	if (etendue_eau > 0.5) {
+		// une étendue d'eau : un lavis sombre, par nappes, ses rides
+		col = mix(c_eau, c_eau * 1.4 + 0.03, rides * 0.32) * (0.86 + 0.28 * d1);
+		col *= 0.965 + 0.05 * g1;
+	}
+	if (lit_ici > 0.5) {
+		// une rivière : son lit, qui s'amincit vers les terres voisines ; plus claire à ses berges et à ses gués
+		vec2 ql = monde + tordre(monde);
+		float ml = distance(ql, site_moi);
+		float mince = 1.0;
+		if (eaux.x < 0.5) { mince = min(mince, (distance(ql, site_a) - ml) / 2400.0); }
+		if (eaux.y < 0.5) { mince = min(mince, (distance(ql, site_b) - ml) / 2400.0); }
+		if (eaux.z < 0.5) { mince = min(mince, (distance(ql, site_c) - ml) / 2400.0); }
+		float w = 0.08 * clamp(mince, 0.0, 1.0);
+		float fl = champ(monde);
+		// (la distance à la berge, en pixels du lieu : positive dans l'eau)
+		float pente = max(length(vec2(dFdx(fl), dFdy(fl))) / px, 1.0e-6);
+		float berge = (w - abs(fl)) / pente;
+		float dans = smoothstep(-1.2, 1.2, berge) * step(1.0e-4, w);
+		float gue_ = smoothstep(0.44, 0.56, champ_gue(monde));
+		vec3 flot = mix(c_eau * 1.55 + 0.04, c_eau, smoothstep(4.0, 70.0, berge));
+		flot = mix(flot, flot * 1.4 + 0.03, rides * 0.35) * (0.88 + 0.24 * d1);
+		// le gué : on voit le fond, des galets affleurent
+		vec3 fond_gue = mix(c_eau * 2.2 + 0.1, caillou, 0.26) * (0.85 + 0.3 * d3);
+		float galets = step(0.955, h21(floor(monde / 9.0))) * 0.5;
+		flot = mix(flot, mix(fond_gue, caillou * 1.1, galets), gue_ * 0.85);
+		col = mix(col, flot, dans);
+		// la berge : un trait d'encre, un liseré clair juste dedans
+		col = mix(col, encre, (1.0 - smoothstep(0.8, 3.6, abs(berge))) * 0.72 * step(1.0e-4, w));
+		col = mix(col, vec3(0.86, 0.9, 0.92), (1.0 - smoothstep(0.0, 3.0, abs(berge - 7.0 - 3.0 * d2))) * 0.3 * dans);
+	}
+	if (crete.x + crete.y + crete.z > 0.5) {
+		// une crête : une bande de roche nue, fendue, de part et d'autre de la frontière (là où scripts/carte.gd retient les pas)
+		vec2 qc = monde + tordre(monde);
+		float mc = distance(qc, site_moi);
+		float ec = 1.0e9;
+		if (crete.x > 0.5) { ec = min(ec, abs(distance(qc, site_a) - mc)); }
+		if (crete.y > 0.5) { ec = min(ec, abs(distance(qc, site_b) - mc)); }
+		if (crete.z > 0.5) { ec = min(ec, abs(distance(qc, site_c) - mc)); }
+		float bande = 1.0 - smoothstep(120.0, 230.0, ec + (d2 - 0.5) * 110.0);
+		vec3 roche = mix(caillou * 0.42, caillou * 0.8, smoothstep(0.35, 0.65, d3)) * (0.8 + 0.35 * d1);
+		float fentes_r = 1.0 - smoothstep(0.0, 0.06, abs(fract(d1 * 5.0 + d2 * 2.5) - 0.5));
+		roche = mix(roche, encre, fentes_r * 0.55);
+		col = mix(col, roche, bande * 0.92);
+	}
+	float alpha = 1.0;
+	if (couche > 0) {
+		vec2 q = monde + tordre(monde);
+		float moi = distance(q, site_moi);
+		float eux = min(distance(q, site_a), min(distance(q, site_b), distance(q, site_c)));
+		// (la frontière tremble : deux régions se mêlent par taches ; une rive est nette)
+		float f = mix(fondu, 5.0, rive);
+		float e2 = eux - moi + (d2 - 0.5) * 2.2 * f * (1.0 - rive) + (d1 - 0.5) * 1.2 * f * (1.0 - rive);
+		alpha = smoothstep(-f, f, e2);
+		col = mix(col, encre, rive * (1.0 - smoothstep(2.0, 9.0, abs(e2))) * 0.75);
+		col = mix(col, vec3(0.86, 0.9, 0.92), rive * etendue_eau * (1.0 - smoothstep(0.0, 6.0, abs(e2 - 22.0))) * 0.3);
+	}
+	COLOR = vec4(col, alpha);
 }

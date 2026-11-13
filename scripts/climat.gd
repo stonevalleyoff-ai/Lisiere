@@ -83,6 +83,17 @@ func preparer(graine: int, axes: Dictionary, meteo: Dictionary) -> void:
 	_air(0.0)
 
 
+# le monde ouvert : la veilleuse passe dans un autre biome. Le ciel reste ce qu'il est ; ce qui viendra ensuite, l'air, ce que le
+# sol garde d'eau suivent le climat du nouveau lieu
+func changer_de_lieu(axes: Dictionary, meteo: Dictionary) -> void:
+	humide = clampf(float(axes.get("humidite", 0.5)), 0.0, 1.0)
+	tiede = clampf(float(axes.get("temperature", 0.5)), 0.0, 1.0)
+	du_monde = str(meteo.get("temps", ""))
+	boue_fond = clampf((humide - 0.75) * 1.6, 0.0, 0.4)
+	crue_fond = clampf((humide - 0.85) * 3.0, 0.0, 0.3)
+	_air(0.0)
+
+
 func _process(delta: float) -> void:
 	if jeu == null or not jeu.en_partie or jeu.en_pause or jeu.joueur == null:
 		return
@@ -234,10 +245,14 @@ func relief(p: Vector2) -> float:
 
 # la profondeur de l'eau en p, de 0 (au sec) à 1 (jusqu'aux genoux) : elle gagne d'abord les creux
 func eau(p: Vector2) -> float:
+	# (le monde ouvert : le gué d'une rivière, où l'on a de l'eau jusqu'aux genoux ; scripts/carte.gd)
+	var gue := 0.0
+	if jeu != null and jeu.get("carte") != null:
+		gue = jeu.carte.gue_en(p)
 	if crue <= 0.01:
-		return 0.0
+		return gue
 	var seuil := lerpf(0.26, 0.5, crue)
-	return clampf((seuil - relief(p)) / 0.07, 0.0, 1.0) * minf(1.0, crue * 6.0)
+	return maxf(gue, clampf((seuil - relief(p)) / 0.07, 0.0, 1.0) * minf(1.0, crue * 6.0))
 
 
 # ce que le sol fait à la marche en p (1 : rien ; 0,4 au pire) : la boue (plus épaisse dans ses flaques), l'eau, la neige.
