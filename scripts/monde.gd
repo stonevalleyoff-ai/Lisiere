@@ -298,7 +298,8 @@ func lieu_de(type: String) -> Dictionary:
 		sol["part_" + k] = float(parts[k])
 	var eau: Color = pal["eau"]
 	sol["c_eau"] = Vector3(eau.r, eau.g, eau.b)
-	sol["etendue_eau"] = 1.0 if ["marin", "aquatique"].has(str(info.get("milieu", "terrestre"))) else 0.0
+	# (une vallée de rivière est de la terre : seul son lit est de l'eau)
+	sol["etendue_eau"] = 1.0 if type != "riviere" and ["marin", "aquatique"].has(str(info.get("milieu", "terrestre"))) else 0.0
 	var arbre := "sapin" if pal.get("froid", false) else "arbre"
 	var L := {"type": type, "axes": axes, "palette": pal, "parts": parts, "sol": sol, "arbre": arbre,
 		"mesures": [float(axes.get("couvert", 0.4)), float(axes.get("humidite", 0.5)), float(axes.get("altitude", 0.3))],

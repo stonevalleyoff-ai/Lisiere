@@ -40,8 +40,8 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
    (quelques centaines de pixels où les plantes se mêlent), le sol qui passe d'une palette à l'autre, la faune par biome, le
    temps par région, les lots avec leur parcelle. Les frontières fermées sont des crêtes. À l'écran-titre : « Le monde
    d'Orvane ».
-4. **L'eau et le relief.** Les mers, les lacs, les rivières (un vrai cours d'eau, pas une région), les côtes. Les gués, où l'on
-   passe à pied. **Le pont éphémère** : une fabrication (du bois, de la fibre) qu'on pose au bord de l'eau vers l'autre rive, sur
+4. **L'eau et le relief.** *Fait pour les rivières, les gués et le pont ; le relief reste à faire.* Les mers, les lacs, les
+   rivières (un vrai cours d'eau, pas une région), les côtes. Les gués, où l'on passe à pied. **Le pont éphémère** : une fabrication (du bois, de la fibre) qu'on pose au bord de l'eau vers l'autre rive, sur
    une largeur limitée (une rivière, un bras de mer étroit, pas un lac). Il ne dure pas : il s'use à chaque passage et avec le
    temps, la crue l'emporte, le feu le brûle. Les bêtes le prennent aussi, les chasseurs compris. Un pont gardé avec la partie.
 5. **Se repérer.** Une carte dans le carnet, qui se dessine à mesure qu'on explore ; le nom de la région quand on y entre ;
@@ -94,10 +94,27 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
   prairie, la forêt, le marais, la steppe, le désert, la taïga, sur une rive et devant une crête ; l'export web dans un
   téléphone émulé, d'un biome à l'autre : 198 à 220 appels de dessin, aucune erreur.
 
+**Étape 4, faite pour l'eau** (`scripts/carte.gd`, `scripts/pont.gd`, `shaders/sol_peint.gdshader`) :
+- **les rivières** : une région « rivière » d'Orvane est une vallée, de la terre (une prairie humide) que traverse un cours
+  d'eau. Son lit suit les zéros d'un champ lent (`Carte.champ`, le même dans le shader du sol) : 110 à 330 pixels de large,
+  5 % de la vallée ; il s'amincit vers les terres voisines (une source) et garde sa largeur vers un lac ou une mer. Il arrête
+  la veilleuse et les bêtes ; rien n'y pousse ;
+- **les gués** (`Carte.champ_gue` ; un cinquième de la longueur du lit) : l'eau y est claire, on voit le fond. On y passe à
+  pied : de l'eau jusqu'aux genoux (`climat.eau`), donc ralentie, trempée, et pas de feu ;
+- **le pont de fortune** (6 bois, 3 fibres) : posé au bord, vers l'autre berge, jusqu'à 400 pixels. On y passe au sec, les
+  bêtes aussi. Il tient 360 secondes, moins 25 à chaque passage de la veilleuse ; la crue l'emporte, le feu le brûle ; ses
+  planches manquent quand il s'use. Sa recette (touche 4) et son bouton tactile ne se montrent qu'au bord d'une rivière. Gardé
+  avec la partie ;
+- **l'eau** (lacs, mers, lits) : un lavis sombre par nappes, des rides, un trait d'encre et un liseré clair sur la rive ;
+- la faune d'un biome qu'on approche se dessine une bête toutes les 0,25 seconde, pas à la file ;
+- vérifié : l'essai (70 vérifications, 17 pour le monde ouvert) ; la vitrine (`--ouvert --depuis 20420,-11060 --pont`) ;
+  l'export web dans un téléphone émulé : aucune erreur de shader.
+- **reste à faire** : le relief (montagnes, cols) ; les rivières ne coulent que dans leurs vallées (pas à travers la forêt
+  ou le marais voisins) ; l'eau ne bouge pas (elle est peinte avec le sol).
+
 **Ce que l'étape 3 ne fait pas encore** :
 - hors ligne, seuls les cinq biomes de la copie gardée ont leurs bêtes ; ailleurs, celles du biome d'avant restent ;
 - la faune est celle du biome, pas encore celle de la parcelle (la copie gardée ne dit pas la répartition par parcelle) ;
-- l'eau est un aplat, les rivières sont des régions : le vrai travail de l'eau, les gués et les ponts sont l'étape 4 ;
 - on n'a pas de carte en jouant (étape 5) : on se repère au nom du biome, quand on y entre ;
 - **pas mesuré sur un vrai téléphone** : la lecture d'un biome en marchant (le réseau, puis une vingtaine de bêtes à dessiner).
 

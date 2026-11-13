@@ -359,20 +359,30 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 
 # les bêtes du lieu, dessinées avant la partie (scripts/bestiaire.gd les garde) : une bête qui vient n'attend pas son dessin, et
 # l'image ne saute pas quand elle arrive. Quelques-unes par image, pour que l'écran d'attente vive.
-func _dessiner_la_faune(laquelle: Dictionary = {}) -> void:
+# (en jouant : la faune d'un biome qu'on approche, une bête toutes les « entre » secondes ; dessinées à la file, elles
+# feraient traîner l'image plusieurs secondes sur un téléphone)
+func _dessiner_la_faune(laquelle: Dictionary = {}, entre: float = 0.0) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	var vues := {}
 	var debut := Time.get_ticks_msec()
 	var f: Dictionary = laquelle if not laquelle.is_empty() else faune
+	var partie := graine
 	for k in f:
 		for e in f[k]:
 			if vues.has(e["id"]):
 				continue
 			vues[e["id"]] = true
 			var plan: Dictionary = e["lignee"].get("plan", {})
+			var avant := Time.get_ticks_usec()
 			Bestiaire.lire(e["lignee"], Bestiaire.largeur_de(float(e["masse"]), Bestiaire.est_chasseur(plan)))
-			if Time.get_ticks_msec() - debut > 24:
+			if entre > 0.0:
+				# (déjà dessinée : rien à attendre)
+				if Time.get_ticks_usec() - avant > 1500:
+					await get_tree().create_timer(entre).timeout
+					if not en_partie or graine != partie:
+						return
+			elif Time.get_ticks_msec() - debut > 24:
 				await get_tree().process_frame
 				debut = Time.get_ticks_msec()
 
@@ -1410,7 +1420,7 @@ func _lire_biome(type: String) -> void:
 		_faunes[type] = f
 		_meteos[type] = Orvane.meteo(type)
 		monde.flore_arrivee(type)
-		await _dessiner_la_faune(f)
+		await _dessiner_la_faune(f, 0.25)
 		if en_partie and graine == partie and biome == type:
 			faune = f
 			meteo = _meteos[type]
