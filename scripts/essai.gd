@@ -193,6 +193,21 @@ func _lancer() -> void:
 	jeu.nourrir_feu()
 	verif(f.bois > avant + 20.0, "une bûche nourrit le feu (%d → %d secondes)" % [int(avant), int(f.bois)])
 
+	# (le son de la foudre se fabriquait par une boucle qui, pour six tirages sur mille, ne finissait pas : le jeu se figeait.
+	# Ces graines-là la figeaient ; si elle se fige de nouveau, le garde-fou de l'essai le dira)
+	var Recettes := load("res://scripts/sons_recettes.gd")
+	var r_son := RandomNumberGenerator.new()
+	var foudres := 0
+	for graine_son in [3357669, 5068173, 5939263, 6145157, 9803735, 10263037]:
+		r_son.seed = graine_son
+		if not Recettes._foudre(r_son).is_empty():
+			foudres += 1
+	for nom_son in ["foudre0", "foudre1", "tonnerre0", "tonnerre1", "tonnerre2", "presage"]:
+		for k in 12:
+			r_son.seed = 1000 + k * 77
+			if not Recettes.fabriquer(nom_son, r_son).is_empty():
+				foudres += 1
+	verif(foudres == 6 + 72, "les sons de la foudre se fabriquent toujours jusqu'au bout (78 tirages, dont six qui figeaient le jeu)")
 	print("2 bis. Le temps qu'il fait")
 	# (scripts/climat.gd, scripts/incendie.gd : le temps de la partie pèse sur le feu, le sol, le corps ; tout est joué ici sans
 	# attendre, en appelant les mêmes fonctions que le jeu, image par image)
