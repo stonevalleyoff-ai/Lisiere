@@ -261,7 +261,7 @@ func _semer(r: RandomNumberGenerator, genre: String, n: int, couleur: Color, bru
 # buisson, une touffe une herbe, un roseau, une succulente ou un lichen. Chacune a son poids (sa part du lieu), et ce que le dessin
 # à l'encre de l'objet prend d'elle (objet.porter_plante) : sa couleur (lue une fois sur son dessin de l'herbier), sa taille
 # (d'après sa hauteur vraie), son port, ses défenses. Sans herbier, rien : les objets gardent les couleurs du lieu.
-const PORTS := {"arbre": ["arbre"], "buisson": ["buisson"], "touffe": ["herbe", "roseau", "succulente", "lichen", "champignon"]}
+const PORTS := {"arbre": ["arbre"], "buisson": ["buisson"], "touffe": ["herbe", "roseau", "succulente", "lichen"], "champignon": ["champignon"]}
 
 func _lire_flore(arbre: String) -> void:
 	flore = _flore_de(lieu, arbre)
@@ -285,7 +285,8 @@ func _flore_de(type: String, arbre: String) -> Dictionary:
 			if not out.has(g):
 				out[g] = []
 			out[g].append({"id": str(e["id"]), "poids": maxf(0.02, float(e.get("part", 0.0))), "taille": k, "port": port,
-				"defense": e.get("defense", []), "couleur": _couleur_plante(str(e["id"]), type)})
+				"forme": str(e.get("forme", port)), "nom": str(e.get("nom", "")),
+				"defense": e.get("defense", []), "couleur": _couleur_plante(str(e["id"]), type) if genre != "champignon" else null})
 	return out
 
 
@@ -604,8 +605,9 @@ func _prevoir_lieu(r: RandomNumberGenerator, plan: Array, rect: Rect2, arbre: St
 	if type != "" and bool(lieu_de(type).get("sous_terre", false)):
 		# (une grotte : ni arbres, ni buissons, ni herbe, ni bois mort — on y vient avec ce qu'il faut pour le feu ; de la pierre)
 		_prevoir(r, plan, rect, "rocher", 240.0 * ka, "pierre", null, 1.0, type)
-		# (et des champignons qui luisent : de quoi manger, et des repères dans le noir)
-		_prevoir(r, plan, rect, "champignon", 110.0 * ka, "", null, 1.0, type)
+		# (et la flore de la grotte, celle de l'herbier d'Orvane : des champignons — les lumineux sont des repères dans le noir,
+		# on mange ceux qu'on cueille —, des géants, des moisissures)
+		_prevoir(r, plan, rect, "champignon", 480.0 * ka, "", null, 1.0, type)
 		return
 	var couvert: float = mesures[0]
 	_prevoir(r, plan, rect, arbre, (70.0 + 430.0 * couvert) * ka, "feuilles", _bosquets, 0.25 + couvert, type)
