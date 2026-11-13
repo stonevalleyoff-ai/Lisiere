@@ -1220,11 +1220,21 @@ func _fin() -> void:
 			x += " (%d chassé%s)" % [prelevements[id], "s" if int(prelevements[id]) > 1 else ""]
 		noms.append(x)
 	var titre := "La nuit t'a prise." if lumiere_du_jour() < 0.5 else "Le lieu t'a prise."
-	var resume := "Tu as tenu %d nuit%s dans ce lieu : %s. Ton record : %d.\nTu as croisé %d bête%s de %d lignée%s, et tu en as chassé %d." % [
-		nuits, "s" if nuits > 1 else "", str(biome_info.get("nom", biome)), record, croisees, "s" if croisees > 1 else "",
+	var ou := "dans ce lieu : %s" % str(biome_info.get("nom", biome))
+	var ou_lot := "dans le lieu « %s »" % biome
+	if carte != null:
+		# (le monde ouvert : ce qu'on en a découvert)
+		var biomes_vus := {}
+		for k in decouvertes:
+			biomes_vus[carte.regions[k]["type"]] = true
+		ou = "dans le monde d'Orvane : %d région%s découverte%s, %d biome%s" % [decouvertes.size(), "s" if decouvertes.size() > 1 else "",
+			"s" if decouvertes.size() > 1 else "", biomes_vus.size(), "s" if biomes_vus.size() > 1 else ""]
+		ou_lot = "dans les lieux où tu es passée"
+	var resume := "Tu as tenu %d nuit%s %s. Ton record : %d.\nTu as croisé %d bête%s de %d lignée%s, et tu en as chassé %d." % [
+		nuits, "s" if nuits > 1 else "", ou, record, croisees, "s" if croisees > 1 else "",
 		vues.size(), "s" if vues.size() > 1 else "", chassees]
-	var lot := "Ce que ta partie renvoie au monde d'Orvane : %d rencontre%s, %d prélèvement%s, dans le lieu « %s ». %s\n%s" % [
-		nr, "s" if nr > 1 else "", np, "s" if np > 1 else "", biome, depot, " · ".join(PackedStringArray(noms))]
+	var lot := "Ce que ta partie renvoie au monde d'Orvane : %d rencontre%s, %d prélèvement%s, %s. %s\n%s" % [
+		nr, "s" if nr > 1 else "", np, "s" if np > 1 else "", ou_lot, depot, " · ".join(PackedStringArray(noms))]
 	ui.montrer_fin(titre, resume, lot)
 	_inscrire_au_tableau()
 

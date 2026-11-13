@@ -376,9 +376,10 @@ func _lancer() -> void:
 		"brûlé jusqu'au bout, un arbre n'est plus qu'une souche noire : elle n'abrite plus de la pluie, et ne reprend pas feu")
 	# sous un arbre pendant l'orage, la foudre finit par choisir cet arbre-là ; seule debout à découvert, elle tombe sur elle
 	C.forcer("orage", 1.0, 9999.0)
+	# (un arbre seul : sous deux feuillages qui se touchent, la foudre prendrait l'un ou l'autre)
 	var refuge = null
 	for x in jeu.monde.objets:
-		if x.couvert() > 0.0 and x.position.distance_to(f.position) > 500.0:
+		if x.couvert() > 0.0 and x.position.distance_to(f.position) > 500.0 and jeu.monde.autour(x.position, 90.0).filter(func(y): return y.couvert() > 0.0).size() == 1:
 			refuge = x
 			break
 	j.position = refuge.position + Vector2(3.0, 0.0)
