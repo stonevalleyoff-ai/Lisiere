@@ -446,6 +446,10 @@ func recolte(p: Vector2, genre: String) -> void:
 			var herbe: Color = pal.get("herbe", P.MOUSSE)
 			_gerbe(p + Vector2(0, -6), 8, T.brin(), T.rampe([[0.0, herbe.lightened(0.25)], [1.0, herbe.darkened(0.2)]]), false,
 				{"vitesse": [40.0, 90.0], "spread": 120.0, "gravite": Vector2(v * 20.0, 200), "amortir": 30.0, "duree": 0.8, "taille": [0.5, 0.8], "tourne": true})
+		"champignon":
+			# (un champignon de grotte : ses spores s'envolent, luisantes, et s'éteignent en montant)
+			_gerbe(p + Vector2(0, -6), 9, T.point_doux(), T.rampe([[0.0, Color(0.7, 1.0, 0.92, 0.95)], [0.6, Color(0.42, 0.95, 0.82, 0.6)], [1.0, Color(0.42, 0.95, 0.82, 0.0)]]), false,
+				{"vitesse": [8.0, 26.0], "spread": 80.0, "gravite": Vector2(v * 10.0, -14), "amortir": 10.0, "duree": 1.6, "taille": [0.08, 0.16], "rayon": 7.0})
 		_:
 			_gerbe(p + Vector2(0, -3), 5, T.brin(), T.rampe([[0.0, P.TERRE.lightened(0.2)], [1.0, P.TERRE.darkened(0.2)]]), false,
 				{"vitesse": [40.0, 90.0], "gravite": Vector2(0, 300), "duree": 0.6, "taille": [0.4, 0.6], "tourne": true})
