@@ -83,6 +83,17 @@ func preparer(graine: int, axes: Dictionary, meteo: Dictionary) -> void:
 	_air(0.0)
 
 
+# le monde ouvert : la veilleuse passe dans un autre biome. Le ciel reste ce qu'il est ; ce qui viendra ensuite, l'air, ce que le
+# sol garde d'eau suivent le climat du nouveau lieu
+func changer_de_lieu(axes: Dictionary, meteo: Dictionary) -> void:
+	humide = clampf(float(axes.get("humidite", 0.5)), 0.0, 1.0)
+	tiede = clampf(float(axes.get("temperature", 0.5)), 0.0, 1.0)
+	du_monde = str(meteo.get("temps", ""))
+	boue_fond = clampf((humide - 0.75) * 1.6, 0.0, 0.4)
+	crue_fond = clampf((humide - 0.85) * 3.0, 0.0, 0.3)
+	_air(0.0)
+
+
 func _process(delta: float) -> void:
 	if jeu == null or not jeu.en_partie or jeu.en_pause or jeu.joueur == null:
 		return

@@ -109,8 +109,15 @@ func _lancer() -> void:
 	if temps != "":
 		_poser_le_temps()
 	if jeu.ouvert:
-		# (le lieu sans bord : elle marche droit devant elle, pour voir le monde se faire et se défaire)
+		# (le monde ouvert : elle marche droit devant elle, pour voir le monde se faire et se défaire ; --depuis x,y : d'où elle part)
 		_plan = [[0.0, 0.06, "attendre"], [0.06, 1.0, "est"]]
+		var ar := OS.get_cmdline_user_args()
+		var i_d := ar.find("--depuis")
+		if i_d >= 0 and i_d + 1 < ar.size():
+			var xy := ar[i_d + 1].split(",")
+			j.position = Vector2(float(xy[0]), float(xy[1]))
+			jeu.monde.suivre(j.position, true)
+			jeu.camera.reset_smoothing()
 	# (--sans son,ciel,sol,flammes : pour chercher ce qui coûte, on éteint une chose à la fois)
 	var args := OS.get_cmdline_user_args()
 	var i_sans := args.find("--sans")

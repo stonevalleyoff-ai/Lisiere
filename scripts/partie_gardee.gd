@@ -55,7 +55,7 @@ static func photo(jeu) -> Dictionary:
 		"v": VERSION,
 		"quand": int(Time.get_unix_time_from_system()),
 		"biome": jeu.biome,
-		"nom": ("La grande %s" % str(jeu.biome_info.get("nom", jeu.biome)).to_lower()) if jeu.ouvert else str(jeu.biome_info.get("nom", jeu.biome)),
+		"nom": "Le monde d'Orvane" if jeu.ouvert else str(jeu.biome_info.get("nom", jeu.biome)),
 		"graine": jeu.graine,
 		"horloge": snappedf(jeu.horloge, 0.01),
 		"jour": jeu.jour,

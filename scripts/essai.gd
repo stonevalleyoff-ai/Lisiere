@@ -551,7 +551,7 @@ func _lieu_sans_bord() -> void:
 	for i in propose.size():
 		if str(propose[i]["id"]) == "foret":
 			rang_foret = i
-		elif str(propose[i]["id"]) == "ouvert:prairie":
+		elif str(propose[i]["id"]) == "ouvert:monde":
 			rang_ouvert = i
 	verif(rang_ouvert == rang_foret + 1 and rang_foret >= 0 and propose.size() == jeu.donnees.lieux().size() + 1,
 		"l'écran-titre propose « %s » (%s) juste après la forêt, sur laquelle la liste s'ouvre" % [propose[rang_ouvert]["nom"], propose[rang_ouvert]["detail"]])
@@ -618,6 +618,9 @@ func _lieu_sans_bord() -> void:
 	W.suivre(ici, true)
 	var buisson_plein = a_cet_endroit.call(p_buisson)
 	verif(buisson_plein != null and buisson_plein.intact() and a_cet_endroit.call(p_arbre).genre == "souche", "deux minutes plus tard, le buisson a repoussé sans elle ; la souche est toujours une souche")
+	await _les_regions()
+	jo.position = ici
+	W.suivre(ici, true)
 	# gardée, la partie ne retient que ce qui a changé
 	var gardee2: Dictionary = JSON.parse_string(JSON.stringify(PG.photo(jeu)))
 	await jeu._commencer("prairie", gardee2)
@@ -625,3 +628,82 @@ func _lieu_sans_bord() -> void:
 	verif(jeu.ouvert and gardee2["objets"].is_empty() and gardee2["monde"]["changes"].size() >= 1 and jeu.joueur.position.distance_to(ici) < 1.0
 		and souche2.size() == 1 and souche2[0].genre == "souche" and souche2[0].calcine and jeu.monde.autour(p_brindille, 1.5).is_empty(),
 		"gardée puis reprise, la partie sans bord revient là où elle était, avec ce qu'elle avait changé (%d octets pour tout le lieu)" % JSON.stringify(gardee2["monde"]).length())
+
+
+# le monde ouvert : d'un biome à l'autre (scripts/carte.gd, MONDE-OUVERT.md, étape 3)
+func _les_regions() -> void:
+	var C = jeu.carte
+	var W = jeu.monde
+	var jo = jeu.joueur
+	var terres := 0
+	for reg in C.regions:
+		if not reg["eau"]:
+			terres += 1
+	verif(C != null and str(C.regions[C.region_en(Vector2.ZERO)]["type"]) == "prairie" and jeu.biome == "prairie" and terres > 100,
+		"le monde ouvert a sa carte : %d régions de terre ; on s'éveille dans la prairie du centre (%s)" % [terres, C.regions[C.depart]["id"]])
+	# vers la forêt voisine : la plus proche des régions de forêt
+	var foret := -1
+	for k in C.regions.size():
+		if str(C.regions[k]["type"]) == "foret" and (foret < 0 or C.regions[k]["pos"].length() < C.regions[foret]["pos"].length()):
+			foret = k
+	var la: Vector2 = C.regions[foret]["pos"] - C.tordre(C.regions[foret]["pos"])
+	W.suivre(Vector2.ZERO, true)
+	var arbres_ici: int = W.autour(Vector2.ZERO, 1000.0).filter(func(x): return x.couvert() > 0.0).size()
+	jo.position = la
+	W.suivre(la, true)
+	await jeu._lire_biome("foret")
+	jeu._regions()
+	var arbres_la: int = W.autour(la, 1000.0).filter(func(x): return x.couvert() > 0.0).size()
+	verif(str(C.regions[C.region_en(la)]["type"]) == "foret" and jeu.biome == "foret" and jeu.faune == jeu._faunes["foret"] and not jeu.faune["chasseurs_nuit"].is_empty()
+		and absf(jeu.climat.humide - float(jeu.donnees.biome("foret")["axes"]["humidite"])) < 0.01 and arbres_la > arbres_ici * 2,
+		"à %d pixels de là, la forêt : ses bêtes (%d chasseurs de nuit), son climat, ses arbres (%d dans un rayon de 1 000 pixels, contre %d dans la prairie)" % [
+			int(la.length()), jeu.faune["chasseurs_nuit"].size(), arbres_la, arbres_ici])
+	var bete_la = jeu._creer(jeu.faune["proies_jour"][0], "proie", la + Vector2(60, 0))
+	verif(str(bete_la.get_meta("biome", "")) == "foret" and str(bete_la.get_meta("parcelle", "")) == str(C.regions[foret]["id"]),
+		"une bête de là-bas sera comptée dans son biome et sa parcelle d'Orvane (%s)" % str(bete_la.get_meta("parcelle", "")))
+	bete_la.queue_free()
+	# l'eau est une frontière : on n'y entre pas, rien n'y pousse
+	var eau_ := -1
+	var terre_ := -1
+	for k in C.regions.size():
+		if C.regions[k]["eau"] or eau_ >= 0:
+			continue
+		for v in C.regions[k]["voisines"]:
+			if C.regions[v]["eau"] and not C.regions[v]["bord"]:
+				eau_ = v
+				terre_ = k
+				break
+	var p_eau: Vector2 = C.regions[eau_]["pos"] - C.tordre(C.regions[eau_]["pos"])
+	var p_terre: Vector2 = C.regions[terre_]["pos"] - C.tordre(C.regions[terre_]["pos"])
+	var vers_l_eau: Vector2 = p_terre
+	for k in 2000:
+		var n: Vector2 = W.repousser(vers_l_eau + (p_eau - vers_l_eau).normalized() * 40.0, 8.0)
+		if n.distance_to(vers_l_eau) < 2.0:
+			break
+		vers_l_eau = n
+	W.suivre(p_eau, true)
+	verif(not C.regions[C.region_en(vers_l_eau)]["eau"] and vers_l_eau.distance_to(p_eau) < p_terre.distance_to(p_eau) * 0.75 and W.autour(p_eau, 900.0).is_empty(),
+		"l'eau est une frontière : partie de %s vers %s, elle s'arrête sur la rive ; rien ne pousse dans l'eau" % [C.regions[terre_]["id"], C.regions[eau_]["id"]])
+	# une crête : deux biomes qui se touchent sur la carte sans être voisins dans Orvane
+	var ca := -1
+	var cb := -1
+	for k in C.regions.size():
+		if not C.regions[k]["murs"].is_empty() and ca < 0:
+			ca = k
+			cb = int(C.regions[k]["murs"].keys()[0])
+	var p_a: Vector2 = C.regions[ca]["pos"] - C.tordre(C.regions[ca]["pos"])
+	var p_b: Vector2 = C.regions[cb]["pos"] - C.tordre(C.regions[cb]["pos"])
+	var vers_la_crete: Vector2 = p_a
+	for k in 2000:
+		var n: Vector2 = C.retenir(vers_la_crete + (p_b - vers_la_crete).normalized() * 40.0)
+		if n.distance_to(vers_la_crete) < 2.0:
+			break
+		vers_la_crete = n
+	var au_pied: Vector2 = vers_la_crete + (p_b - vers_la_crete).normalized() * 60.0
+	W.suivre(au_pied, true)
+	var rochers: int = W.autour(au_pied, 500.0).filter(func(x): return x.genre == "rocher").size()
+	verif(C.region_en(vers_la_crete) != cb and vers_la_crete.distance_to(p_b) < p_a.distance_to(p_b) * 0.8 and rochers >= 8,
+		"une crête ferme la frontière entre %s et %s : on ne passe pas, des rochers la marquent (%d au pied)" % [C.regions[ca]["type"], C.regions[cb]["type"], rochers])
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	jeu._regions()

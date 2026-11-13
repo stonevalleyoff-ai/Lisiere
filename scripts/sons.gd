@@ -480,6 +480,21 @@ func preparer_lieu(axes: Dictionary) -> void:
 	_lieu(axes, float(axes.get("temperature", 0.5)) < 0.35)
 
 
+# le monde ouvert : on y passe d'un sol à l'autre. Tous leurs pas se préparent avant la partie (sur un téléphone, rien ne se
+# fabrique pendant qu'on joue)
+func preparer_les_sols() -> void:
+	for sol in ["neige", "feuilles", "herbe", "terre"]:
+		for k in 4:
+			_demander("pas_%s%d" % [sol, k], false)
+	for nom in ["grenouille0", "grenouille1"]:
+		_demander(nom, false)
+
+
+# on entre dans un autre biome : le sol sous les pieds, ce qui chante
+func changer_de_lieu(axes: Dictionary) -> void:
+	_lieu(axes, float(axes.get("temperature", 0.5)) < 0.35)
+
+
 func _nouvelle_partie(jeu, j) -> void:
 	_joueur = j
 	var axes: Dictionary = jeu.biome_info.get("axes", {}) if "biome_info" in jeu else {}

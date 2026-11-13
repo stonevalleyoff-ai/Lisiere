@@ -14,6 +14,17 @@ uniform sampler2D voiles : filter_linear, repeat_enable;
 uniform sampler2D motif_a : filter_linear, repeat_enable;
 uniform sampler2D motif_b : filter_linear, repeat_enable;
 uniform float etendue = 5400.0;
+// le monde ouvert (scripts/carte.gd) : une tuile où deux ou trois régions se touchent est peinte en autant de couches. La
+// première couvre tout ; les suivantes ne se montrent que là où leur région est la plus proche (sur le plan tordu de la carte)
+uniform int couche = 0;
+uniform vec2 site_moi = vec2(0.0);
+uniform vec2 site_a = vec2(1.0e7);
+uniform vec2 site_b = vec2(1.0e7);
+uniform vec2 site_c = vec2(1.0e7);
+uniform float fondu = 150.0;           // la demi-largeur où deux régions se mêlent
+uniform float rive = 0.0;              // 1 : de l'autre côté, c'est l'eau (ou la terre) : un bord net, un trait d'encre
+uniform float etendue_eau = 0.0;       // 1 : cette région est de l'eau
+uniform vec3 c_eau = vec3(0.13, 0.19, 0.24);
 
 uniform vec3 terre = vec3(0.35, 0.27, 0.19);
 uniform vec3 terre_claire = vec3(0.45, 0.36, 0.25);
@@ -60,6 +71,13 @@ float h21(vec2 p) {
 // un masque aux bords nets mais tremblés : 1 au-dessus du seuil
 float masque(float v, float seuil, float aa) {
 	return smoothstep(seuil - aa, seuil + aa, v);
+}
+
+// le plan tordu de la carte : le même calcul que scripts/carte.gd (tordre)
+vec2 tordre(vec2 p) {
+	return vec2(
+		420.0 * sin(p.y / 1900.0 + 1.3) + 180.0 * sin(p.y / 730.0 + p.x / 2600.0 + 4.1) + 70.0 * sin(p.y / 260.0 + 0.7),
+		420.0 * sin(p.x / 2100.0 + 2.2) + 180.0 * sin(p.x / 810.0 - p.y / 2900.0 + 0.5) + 70.0 * sin(p.x / 290.0 + 3.3));
 }
 
 void fragment() {
@@ -228,5 +246,23 @@ void fragment() {
 
 	// le grain du papier
 	col *= 0.965 + 0.05 * g1 + 0.025 * g2;
-	COLOR = vec4(col, 1.0);
+	if (etendue_eau > 0.5) {
+		// (une étendue d'eau : un lavis sombre, des rides couchées ; le vrai travail de l'eau viendra, MONDE-OUVERT.md, étape 4)
+		float r1 = texture(motif_a, monde / vec2(1100.0, 170.0)).r + 0.5 * texture(motif_b, monde / vec2(700.0, 120.0) + 0.3).r;
+		float lignes = 1.0 - smoothstep(0.0, 0.07, abs(fract(r1 * 7.0) - 0.5));
+		col = mix(c_eau, c_eau * 1.35 + 0.03, lignes * 0.3) * (0.9 + 0.2 * d1);
+		col *= 0.965 + 0.05 * g1;
+	}
+	float alpha = 1.0;
+	if (couche > 0) {
+		vec2 q = monde + tordre(monde);
+		float moi = distance(q, site_moi);
+		float eux = min(distance(q, site_a), min(distance(q, site_b), distance(q, site_c)));
+		// (la frontière tremble : deux régions se mêlent par taches ; une rive est nette)
+		float f = mix(fondu, 5.0, rive);
+		float e2 = eux - moi + (d2 - 0.5) * 2.2 * f * (1.0 - rive) + (d1 - 0.5) * 1.2 * f * (1.0 - rive);
+		alpha = smoothstep(-f, f, e2);
+		col = mix(col, encre, rive * (1.0 - smoothstep(2.0, 9.0, abs(e2))) * 0.75);
+	}
+	COLOR = vec4(col, alpha);
 }

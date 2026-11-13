@@ -27,6 +27,7 @@ const PartieGardee := preload("res://scripts/partie_gardee.gd")
 const Bestiaire := preload("res://scripts/bestiaire.gd")
 const Climat := preload("res://scripts/climat.gd")
 const Incendie := preload("res://scripts/incendie.gd")
+const Carte := preload("res://scripts/carte.gd")
 const TempsSol := preload("res://scripts/temps_sol.gd")
 const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
 const SAUVEGARDE := "user://lisiere.json"
@@ -62,7 +63,13 @@ var biome := ""
 var biome_info: Dictionary = {}
 var faune: Dictionary = {}
 var saison := "été"
-var ouvert := false           # le lieu sans bord (MONDE-OUVERT.md)
+var ouvert := false           # le monde ouvert (MONDE-OUVERT.md)
+var carte                     # sa carte (scripts/carte.gd) ; null : un lieu fermé, ou la carte manque
+var _region := -1             # la région où est la veilleuse
+var _faunes := {}             # ce qui vit dans chaque biome déjà lu (le monde ouvert les lit en approchant)
+var _meteos := {}
+var _lecture := ""            # le biome qu'on est en train de lire
+var _illisibles := {}         # ceux qui ne se lisent pas (hors ligne, hors de la copie gardée)
 var part_nuit := 0.33
 var horloge := 0.0
 var jour := 1
@@ -275,8 +282,8 @@ func _nouvelle_version() -> void:
 		JavaScriptBridge.pwa_update()
 
 
-# les lieux qu'on propose : ceux du monde, et, à l'essai, le lieu sans bord (MONDE-OUVERT.md : la prairie du centre, où l'on
-# s'éveillera dans le monde ouvert)
+# les lieux qu'on propose : ceux du monde, et, à l'essai, le monde ouvert (MONDE-OUVERT.md), où l'on s'éveille dans la prairie
+# du centre
 func _lieux_du_titre() -> Array:
 	var lieux: Array = donnees.lieux().duplicate()
 	for l in lieux:
@@ -286,14 +293,15 @@ func _lieux_du_titre() -> Array:
 			for i in lieux.size():
 				if str(lieux[i]["id"]) == "foret":
 					ou = i + 1
-			lieux.insert(ou, {"id": "ouvert:prairie", "nom": "La grande prairie", "lignees": l["lignees"], "detail": "sans bord : le monde ouvert, à l'essai"})
+			lieux.insert(ou, {"id": "ouvert:monde", "nom": "Le monde d'Orvane", "lignees": l["lignees"], "detail": "le monde ouvert, à l'essai : tous ses biomes, d'un seul tenant"})
 			break
 	return lieux
 
 
 func _lieu_choisi(id: String) -> void:
 	if id.begins_with("ouvert:"):
-		_commencer(id.trim_prefix("ouvert:"), {}, true)
+		# (on s'y éveille dans la prairie du centre : scripts/carte.gd)
+		_commencer("prairie", {}, true)
 	else:
 		_commencer(id)
 
@@ -311,8 +319,12 @@ func _infos_monde() -> String:
 func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> void:
 	if b == "":
 		return
-	biome = b
 	ouvert = ouvert_ or bool(gardee.get("ouvert", false))
+	carte = Carte.lire(donnees.index.get("biomes", [])) if ouvert else null
+	if carte != null:
+		# (le monde ouvert : on s'éveille dans la prairie du centre)
+		b = str(carte.regions[carte.depart]["type"])
+	biome = b
 	ui.montrer_chargement("Le lieu s'éveille…")
 	var inst: Dictionary = await donnees.charger_lieu(b)
 	if inst.is_empty():
@@ -323,11 +335,18 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 		ui.message_titre("Aucune bête de ce lieu ne marche sur la terre ferme pour l'instant. Choisis-en un autre.")
 		return
 	faune = f
+	_faunes = {b: f}
+	_meteos = {b: Orvane.meteo(b)}
+	_illisibles = {}
+	_lecture = ""
+	_region = -1
 	biome_info = donnees.biome(b)
 	saison = str(inst.get("cycle", {}).get("saison", {}).get("nom", "été"))
 	part_nuit = float(R.NUIT.get(saison, 0.4))
 	meteo = Orvane.meteo(b)
 	feu_temps = 1.0
+	if ouvert:
+		sons.preparer_les_sols()
 	if qualite == "mobile":
 		await _attendre_sons()
 	await _dessiner_la_faune()
@@ -336,13 +355,14 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 
 # les bêtes du lieu, dessinées avant la partie (scripts/bestiaire.gd les garde) : une bête qui vient n'attend pas son dessin, et
 # l'image ne saute pas quand elle arrive. Quelques-unes par image, pour que l'écran d'attente vive.
-func _dessiner_la_faune() -> void:
+func _dessiner_la_faune(laquelle: Dictionary = {}) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	var vues := {}
 	var debut := Time.get_ticks_msec()
-	for k in faune:
-		for e in faune[k]:
+	var f: Dictionary = laquelle if not laquelle.is_empty() else faune
+	for k in f:
+		for e in f[k]:
 			if vues.has(e["id"]):
 				continue
 			vues[e["id"]] = true
@@ -389,6 +409,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	monde.jeu = self
 	monde.y_sort_enabled = true
 	monde.ouvert = ouvert
+	monde.carte = carte
 	scene.add_child(monde.creer_sol(biome_info, graine))
 	scene.add_child(monde)
 	if reprise:
@@ -644,6 +665,8 @@ func _process(delta: float) -> void:
 		_gestes(delta)
 	_corps(delta)
 	_temps_du_corps(delta)
+	if carte != null:
+		_regions()
 	_directeur_passe(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
@@ -885,7 +908,7 @@ func _chasseur_le_plus_proche() -> float:
 
 func bete_tuee(b) -> void:
 	chassees += 1
-	Orvane.compter(b.id, biome, "prelevement")
+	Orvane.compter(b.id, str(b.get_meta("biome", biome)), "prelevement", 1.0, "", str(b.get_meta("parcelle", "")))
 	prelevements[b.id] = int(prelevements.get(b.id, 0)) + 1
 	var viande := clampi(int(round(pow(b.masse, 0.4))), 1, 6)
 	joueur.inventaire["viande"] = int(joueur.inventaire["viande"]) + viande
@@ -1029,6 +1052,10 @@ func _creer(e: Dictionary, role: String, p: Vector2):
 	b.preparer(e, role, self, biome)
 	b.position = p
 	b.maison = p
+	# (le monde ouvert : ce qu'on en verra, ce qu'on en chassera est compté dans son biome et sa parcelle d'Orvane)
+	b.set_meta("biome", biome)
+	if carte != null and _region >= 0 and str(carte.regions[_region]["type"]) == biome:
+		b.set_meta("parcelle", str(carte.regions[_region]["id"]))
 	b.add_to_group("betes")
 	if role == "echo":
 		yeux.add_child(b)
@@ -1046,7 +1073,7 @@ func _voir() -> void:
 			b.vue = true
 			croisees += 1
 			rencontres[b.id] = int(rencontres.get(b.id, 0)) + 1
-			Orvane.compter(b.id, biome, "rencontre")
+			Orvane.compter(b.id, str(b.get_meta("biome", biome)), "rencontre", 1.0, "", str(b.get_meta("parcelle", "")))
 			if not vues.has(b.id):
 				vues[b.id] = b.nom
 				var quoi := "un chasseur" if b.role != "proie" else "une bête"
@@ -1274,6 +1301,64 @@ func _incendie_pris(o) -> void:
 		return
 	if joueur != null and joueur.position.distance_to(o.position) < 600.0:
 		_conseil("incendie", true, "La foudre a mis le feu. Les bêtes n'entrent pas dans sa lumière. Mais il brûle, et il court sous le vent.", Color(0.98, 0.75, 0.45))
+
+
+# --- le monde ouvert : d'une région à l'autre (scripts/carte.gd) ---
+
+# chaque image : la région où elle est ; le biome d'à côté se lit quand on approche de sa frontière
+func _regions() -> void:
+	var pr: Array = carte.proches(joueur.position)
+	var i: int = pr[0]
+	if i != _region:
+		var avant := _region
+		_region = i
+		if avant < 0 or str(carte.regions[avant]["type"]) != str(carte.regions[i]["type"]):
+			_entrer_dans(carte.regions[i], avant >= 0)
+	if _lecture != "":
+		return
+	var ici := str(carte.regions[i]["type"])
+	var a_cote := str(carte.regions[int(pr[1])]["type"])
+	if not _faunes.has(ici) and not _illisibles.has(ici):
+		_lire_biome(ici)
+	elif not carte.regions[int(pr[1])]["eau"] and not _faunes.has(a_cote) and not _illisibles.has(a_cote) and float(pr[3]) - float(pr[2]) < 7000.0:
+		_lire_biome(a_cote)
+
+
+# on entre dans un autre biome : ses bêtes, son climat, son sol sous les pieds ; son nom, en carte de titre
+func _entrer_dans(reg: Dictionary, le_dire: bool) -> void:
+	var type := str(reg["type"])
+	biome = type
+	biome_info = donnees.biome(type)
+	var axes: Dictionary = biome_info.get("axes", {})
+	if _faunes.has(type):
+		faune = _faunes[type]
+	meteo = _meteos.get(type, {})
+	climat.changer_de_lieu(axes, meteo)
+	sons.changer_de_lieu(axes)
+	if le_dire:
+		ui.carte(str(reg["nom"]), "")
+
+
+# un biome du monde, lu en approchant : ce qui y vit (dessiné d'avance, quelques bêtes par image), ses plantes, son temps
+func _lire_biome(type: String) -> void:
+	_lecture = type
+	var partie := graine
+	var inst: Dictionary = await donnees.charger_lieu(type)
+	if not en_partie or graine != partie:
+		_lecture = ""
+		return
+	var f: Dictionary = donnees.faune(inst, type) if not inst.is_empty() else {}
+	if f.is_empty() or (f["proies_jour"].is_empty() and f["proies_nuit"].is_empty() and f["chasseurs_nuit"].is_empty()):
+		_illisibles[type] = true
+	else:
+		_faunes[type] = f
+		_meteos[type] = Orvane.meteo(type)
+		monde.flore_arrivee(type)
+		await _dessiner_la_faune(f)
+		if en_partie and graine == partie and biome == type:
+			faune = f
+			meteo = _meteos[type]
+	_lecture = ""
 
 
 # --- la partie gardée, le tableau des scores ---

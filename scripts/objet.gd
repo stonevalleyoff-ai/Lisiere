@@ -33,6 +33,7 @@ static var incendie: ShaderMaterial
 static var _bruit_flammes: Texture2D
 # le climat du lieu, posé par le monde avant de semer (de 0 à 1) : la neige, la mousse
 static var climat := {"froid": 0.0, "humide": 0.5}
+var _climat := {"froid": 0.0, "humide": 0.5}      # celui du lieu où il est né (deux biomes voisins n'ont pas le même)
 static var _pinceau
 
 var genre := "arbre"
@@ -115,6 +116,7 @@ func preparer(g: String, couleur: Color, s: int) -> void:
 	_espece = g
 	teinte = couleur
 	graine = s
+	_climat = climat
 	match g:
 		"arbre", "sapin":
 			plein = 4
@@ -754,7 +756,7 @@ func _pied(p, r: RandomNumberGenerator, souche: bool) -> void:
 	_racines(p, r, c)
 	var haut := -9.0
 	_tronc(p, 0.5, haut, c)
-	if climat.get("humide", 0.5) > 0.5:
+	if _climat.get("humide", 0.5) > 0.5:
 		# (de la mousse au pied, du côté de l'ombre)
 		for i in r.randi_range(1, 3):
 			var m := Vector2(_axe(0.0) + r.randf_range(-5.5, -1.5), r.randf_range(-5.0, 0.5))
@@ -838,7 +840,7 @@ func _sapin(p, r: RandomNumberGenerator) -> void:
 	var c := _ecorce()
 	_tronc(p, -8.5, -_ht - 4.0, c)
 	var etages := r.randi_range(4, 5)
-	var froid := float(climat.get("froid", 0.0))
+	var froid := float(_climat.get("froid", 0.0))
 	var t0 := teinte.lerp(P.FEUILLE_SOMBRE, 0.25)
 	for i in etages:
 		var u := float(i) / etages
@@ -955,14 +957,14 @@ func _rocher(p, r: RandomNumberGenerator) -> void:
 		var face := PackedVector2Array([a, b, m])
 		p.aplat(face, pierre.lightened(0.28), Pinceau.UNI)
 		p.tracer(PackedVector2Array([a, m, b]), 0.8, ENCRE)
-	var humide := float(climat.get("humide", 0.5))
+	var humide := float(_climat.get("humide", 0.5))
 	if humide > 0.55 and r.randf() < 0.75:
 		var mousse := festons(Vector2(-w * 0.25, -h * 0.78), w * 0.55, h * 0.24, 5, 0.3, r, 24)
 		var bouts := Geometry2D.intersect_polygons(mousse, poly)
 		for b in bouts:
 			p.aplat(b, P.MOUSSE.lerp(teinte, 0.15), Pinceau.FEUILLAGE, Vector2(-w * 0.25, -h * 0.78), Vector2(w * 0.55, h * 0.3))
-	if float(climat.get("froid", 0.0)) > 0.25:
-		_neige_sur(p, poly, Vector2(-w * 0.1, -h * 0.85), w, h * 0.35, -h * lerpf(0.7, 0.5, float(climat["froid"])), r)
+	if float(_climat.get("froid", 0.0)) > 0.25:
+		_neige_sur(p, poly, Vector2(-w * 0.1, -h * 0.85), w, h * 0.35, -h * lerpf(0.7, 0.5, float(_climat["froid"])), r)
 	# les lichens, en haut à gauche
 	for i in r.randi_range(2, 5):
 		var q := Vector2(r.randf_range(-0.75, 0.2) * w, r.randf_range(-0.85, -0.35) * h)
