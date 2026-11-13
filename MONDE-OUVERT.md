@@ -40,7 +40,7 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
    (quelques centaines de pixels où les plantes se mêlent), le sol qui passe d'une palette à l'autre, la faune par biome, le
    temps par région, les lots avec leur parcelle. Les frontières fermées sont des crêtes. À l'écran-titre : « Le monde
    d'Orvane ».
-4. **L'eau et le relief.** *Fait pour les rivières, les gués et le pont ; le relief reste à faire.* Les mers, les lacs, les
+4. **L'eau et le relief.** *Fait : les rivières, les gués, le pont ; le relief (paliers, parois, cols). Restent les grottes.* Les mers, les lacs, les
    rivières (un vrai cours d'eau, pas une région), les côtes. Les gués, où l'on passe à pied. **Le pont éphémère** : une fabrication (du bois, de la fibre) qu'on pose au bord de l'eau vers l'autre rive, sur
    une largeur limitée (une rivière, un bras de mer étroit, pas un lac). Il ne dure pas : il s'use à chaque passage et avec le
    temps, la crue l'emporte, le feu le brûle. Les bêtes le prennent aussi, les chasseurs compris. Un pont gardé avec la partie.
@@ -109,8 +109,29 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
 - la faune d'un biome qu'on approche se dessine une bête toutes les 0,25 seconde, pas à la file ;
 - vérifié : l'essai (70 vérifications, 17 pour le monde ouvert) ; la vitrine (`--ouvert --depuis 20420,-11060 --pont`) ;
   l'export web dans un téléphone émulé : aucune erreur de shader.
-- **reste à faire** : le relief (montagnes, cols) ; les rivières ne coulent que dans leurs vallées (pas à travers la forêt
-  ou le marais voisins) ; l'eau ne bouge pas (elle est peinte avec le sol).
+- **reste à faire** : les rivières ne coulent que dans leurs vallées (pas à travers la forêt ou le marais voisins) ; l'eau
+  ne bouge pas (elle est peinte avec le sol) ; sous une neige épaisse, le lit d'une rivière ne se voit plus.
+
+**Étape 4, le relief** (`scripts/carte.gd`, `shaders/sol_peint.gdshader`, `scripts/decor_sol.gd`) — le jeu est vu de dessus :
+la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans la marche.
+- **la force** d'une région vient de l'altitude de son biome (0 pour un pays plat ; montagne 0,6 ; neige et sommets 1 ; le
+  canyon, bas pour Orvane, compte comme une montagne). Près d'une frontière, elle se mêle à celle de la voisine sur
+  1 500 pixels de chaque côté : le relief a des contreforts, il ne s'arrête pas net ;
+- **les paliers** : la hauteur d'un point est un champ de bosses (`Carte.bosses`, le même dans le shader), plus la force.
+  Trois paliers ; en montagne un cinquième du pays est sur le premier étage (des plateaux isolés, on circule par les
+  vallées), dans les sommets les deux tiers (un haut pays, des cuvettes) ;
+- **les parois** : là où la hauteur passe un palier, une bande de roche de 52 pixels qu'on ne franchit pas (ni les bêtes),
+  dessinée comme un escarpement de carte : un trait d'encre sur son bord haut, des barbules qui descendent, claire du côté
+  du jour, sombre de l'autre, son ombre au pied. Rien n'y pousse ;
+- **les cols** (`Carte.champ_col` ; un quart de la longueur des parois, un tous les 500 pixels à peu près) : des rampes
+  d'éboulis, aux barbules légères. On y monte à pied, à 72 % de son allure ;
+- **plus haut** : l'air perd 0,03 par étage, la caméra recule de 5 % par étage (on voit plus loin) ;
+- **sous la neige, la boue, une crue**, les parois restent visibles : elles sont peintes une seconde fois sur un calque
+  posé par-dessus ce que le temps fait au sol (`monde.relief_au_dessus`), seulement là où il y a du relief ;
+- la force se calcule aux nœuds d'une grille de 256 pixels et se retient : retenir un pas coûte 18 µs en montagne ;
+- vérifié : l'essai (76 vérifications, 4 pour le relief) ; la vitrine (`--ouvert --depuis -28480,23100 --reste`, et
+  `--recul 0.4` pour voir un pays de haut ; `--temps neige`, `--temps pluie`) ;
+- **reste à faire** : les grottes ; le relief sur la carte du carnet ; pas encore regardé dans un téléphone émulé.
 
 **Étape 5, faite** (`scripts/interface_carte_monde.gd`, la page de pause de `scripts/interface_carnet.gd`) :
 - chaque région où l'on entre est notée (`jeu.decouvertes`), et gardée avec la partie (par le nom de la région) ;

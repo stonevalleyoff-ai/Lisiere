@@ -6,7 +6,8 @@ extends RefCounted
 # point de la prairie la plus proche du centre de la carte.
 #  - region_en(p) : la région d'un point ; proches(p) : les deux plus proches, et leurs distances (pour mêler deux régions) ;
 #  - retenir(p) : un pas qui n'entre ni dans l'eau (une frontière, pour l'instant), ni dans une crête (deux biomes qui se
-#    touchent sur la carte sans être voisins dans Orvane : on ne passe pas).
+#    touchent sur la carte sans être voisins dans Orvane : on ne passe pas), ni dans une paroi du relief ;
+#  - palier(p) : à quel étage du relief on est (0 : en bas).
 # Le shader du sol (shaders/sol_peint.gdshader) tord le plan de la même façon : tordre() et lui doivent rester pareils.
 
 const FICHIER := "res://donnees/carte.json"
@@ -19,6 +20,20 @@ const LIT := 0.08             # la demi-largeur du lit, dans l'unité du champ (
 const SOURCE := 2400.0        # sur cette distance (en écart de distances aux points), le lit s'amincit jusqu'à rien
 const PONT_MAX := 400.0       # la plus longue portée d'un pont
 const PONT_LARGE := 15.0      # sa demi-largeur
+# le relief : une région haute (l'altitude de son biome) s'élève par paliers, comme les courbes d'une carte. Sa hauteur est
+# celle d'un champ de bosses (bosses), d'autant plus haut que la région est haute (force) ; là où elle passe un palier, c'est
+# une paroi de roche qu'on ne franchit pas, sauf à ses cols (champ_col), des rampes où l'on monte à pied, lentement.
+const PALIERS := 3
+const PALIER_0 := 0.4         # la hauteur du premier palier
+const PALIER_PAS := 0.27      # d'un palier au suivant
+const RELIEF := 0.62          # ce que la force d'une région ajoute à sa hauteur (à 0 : rien n'atteint le premier palier)
+const PAROI := 26.0           # la demi-épaisseur d'une paroi, en pixels
+const PENTE_MIN := 0.0005     # (là où le terrain est presque plat, une paroi s'épaissit : un massif)
+const PENTE_MAX := 0.0012     # (et là où il est très raide, elle s'amincit)
+const MAILLE := 256.0         # la force du relief se retient aux nœuds d'une grille de ce pas (elle varie lentement)
+const MONTEE := 3000.0        # sur cet écart de distances aux points, la force d'une région se mêle à celle de sa voisine
+const COL := 0.4              # au-dessus : un col
+const COL_FREIN := 0.72       # ce que la pente d'un col fait à la marche
 
 # le ton de chaque biome sur une carte (les mêmes que outils/carte.js)
 const TONS := {"banquise": "e6edf0", "toundra": "c7ccb9", "taiga": "5f7a5c", "steppe": "cdbf8a", "prairie": "a9b86b", "foret": "55733f", "jungle": "2f6a3c",
@@ -34,6 +49,8 @@ var depart := 0
 var _cases := {}              # la case d'un point (de côté « cote ») → les rangs des régions dont le point y est
 var ponts: Array = []         # les ponts posés : [un bout, l'autre] (le jeu les tient à jour)
 var _contours := {}           # le contour de chaque région déjà demandé (la carte du carnet les dessine)
+var _hautes := {}             # les cases près desquelles une région a du relief (ailleurs, on ne le cherche pas)
+var _forces := {}             # la force du relief aux nœuds de la grille déjà demandés
 
 
 # lit la carte ; biomes : ceux de l'index du monde (leur milieu dit ce qui est de l'eau, leur nom se dit en entrant). null si
@@ -48,16 +65,22 @@ static func lire(biomes: Array):
 	c.cote = float(d.get("cote", 16000.0))
 	var milieux := {}
 	var noms := {}
+	var altitudes := {}
 	for b in biomes:
 		milieux[str(b.get("id", ""))] = str(b.get("milieu", "terrestre"))
 		noms[str(b.get("id", ""))] = str(b.get("nom", b.get("id", "")))
+		altitudes[str(b.get("id", ""))] = float(b.get("axes", {}).get("altitude", 0.3))
 	var rang := {}
 	for p in d["parcelles"]:
 		rang[str(p["id"])] = c.regions.size()
 		var type := str(p["type"])
 		c.regions.append({"id": str(p["id"]), "type": type, "nom": str(noms.get(type, type)), "pos": Vector2(float(p["x"]), float(p["y"])),
 			"eau": type != "riviere" and (bool(p.get("bord", false)) or ["marin", "aquatique"].has(str(milieux.get(type, "terrestre")))),
-			"riviere": type == "riviere", "bord": bool(p.get("bord", false)), "voisines": [], "murs": {}})
+			"riviere": type == "riviere", "bord": bool(p.get("bord", false)), "voisines": [], "murs": {}, "haut": 0.0})
+		var reg: Dictionary = c.regions[-1]
+		if not reg["eau"] and not reg["riviere"] and str(milieux.get(type, "terrestre")) == "terrestre":
+			# (un canyon est bas, pour Orvane ; mais c'est un pays de parois)
+			reg["haut"] = 0.6 if type == "canyon" else smoothstep(0.5, 0.95, float(altitudes.get(type, 0.3)))
 	for k in d["parcelles"].size():
 		var p: Dictionary = d["parcelles"][k]
 		for v in p.get("voisines", []):
@@ -89,6 +112,12 @@ static func lire(biomes: Array):
 		if not c._cases.has(cle):
 			c._cases[cle] = []
 		c._cases[cle].append(k)
+	for k in c.regions.size():
+		if float(c.regions[k]["haut"]) > 0.0:
+			var cle := Vector2i((c.regions[k]["pos"] / c.cote).floor())
+			for x in range(cle.x - 2, cle.x + 3):
+				for y in range(cle.y - 2, cle.y + 3):
+					c._hautes[Vector2i(x, y)] = true
 	return c
 
 
@@ -183,7 +212,12 @@ func retenir(p: Vector2) -> Vector2:
 			vers = (q - sj).normalized() - (q - si).normalized()
 			manque = 2.0 * CRETE - (float(pr[3]) - float(pr[2])) + 1.0
 		else:
-			return p
+			# (une paroi du relief : du côté où l'on est)
+			var e := _paroi(p)
+			if e.is_empty() or bool(e[2]):
+				return p
+			p += e[1] * (1.0 if float(e[0]) >= 0.0 else -1.0) * float(e[3])
+			continue
 		var pente := maxf(vers.length(), 0.3)
 		p += vers / pente * (manque / pente)
 	return p
@@ -307,6 +341,162 @@ func pont_depuis(p: Vector2) -> Array:
 			return [p + dir * (entree - 12.0), p + dir * (d + 12.0)]
 		d += 6.0
 	return []
+
+
+# --- le relief ---
+
+# le champ des bosses, de 0 à 1 : trois ondes tordues qui se croisent, de petites dessus (le même calcul que le shader du sol)
+static func bosses(p: Vector2) -> float:
+	var f := sin((p.x * 0.966 + p.y * 0.259) / 520.0 + 1.6 * sin((p.y * 0.966 - p.x * 0.259) / 1700.0 + 0.4))
+	f += sin((p.y * 0.94 - p.x * 0.342) / 610.0 + 1.3 * sin((-p.x * 0.94 - p.y * 0.342) / 2100.0 + 2.1) + 1.7)
+	f += 0.7 * sin((p.x * 0.643 - p.y * 0.766) / 330.0 + 1.1 * sin((p.x * 0.766 + p.y * 0.643) / 1300.0 + 4.0) + 0.6)
+	f += 0.16 * sin(p.x / 95.0 + 1.2 * sin(p.y / 240.0) + 2.9) * sin(p.y / 110.0 + 0.5)
+	return 0.5 + f / 5.72
+
+
+# au-dessus de COL : un col
+static func champ_col(p: Vector2) -> float:
+	return sin(p.x / 150.0 + 0.9 * sin(p.y / 900.0)) * sin(p.y / 170.0 + 1.7 + 0.8 * sin(p.x / 1100.0))
+
+
+# la force du relief en p, de 0 (un pays plat) à 1 (les sommets) : celle de sa région, mêlée à celles de ses voisines près de
+# leurs frontières (le relief ne s'arrête pas net : il a des contreforts). Elle varie lentement : on la calcule aux nœuds d'une
+# grille, on la retient, et entre eux on la mêle
+func force(p: Vector2) -> float:
+	var u := p / MAILLE
+	var k := Vector2i(u.floor())
+	var t := u - Vector2(k)
+	var a := lerpf(_force_au_noeud(k), _force_au_noeud(k + Vector2i(1, 0)), t.x)
+	var b := lerpf(_force_au_noeud(k + Vector2i(0, 1)), _force_au_noeud(k + Vector2i(1, 1)), t.x)
+	return lerpf(a, b, t.y)
+
+
+func _force_au_noeud(k: Vector2i) -> float:
+	var f = _forces.get(k)
+	if f == null:
+		if _forces.size() > 30000:
+			_forces.clear()
+		f = _force_en(Vector2(k) * MAILLE)
+		_forces[k] = f
+	return f
+
+
+func _force_en(p: Vector2) -> float:
+	var q := p + tordre(p)
+	var c := Vector2i((q / cote).floor())
+	if not _hautes.has(c):
+		return 0.0
+	var pres: Array = []
+	var d0 := INF
+	for x in range(c.x - 2, c.x + 3):
+		for y in range(c.y - 2, c.y + 3):
+			for k in _cases.get(Vector2i(x, y), []):
+				var d: float = q.distance_to(regions[k]["pos"])
+				pres.append(k)
+				pres.append(d)
+				d0 = minf(d0, d)
+	var somme := 0.0
+	var poids := 0.0
+	for n in range(0, pres.size(), 2):
+		var w := maxf(0.0, 1.0 - (float(pres[n + 1]) - d0) / MONTEE)
+		if w > 0.0:
+			w *= w
+			poids += w
+			somme += w * float(regions[pres[n]]["haut"])
+	return somme / poids if poids > 0.0 else 0.0
+
+
+# la hauteur en p (au-dessus de PALIER_0 : sur le premier palier, et ainsi de suite)
+func hauteur(p: Vector2) -> float:
+	var b := bosses(p)
+	if b < PALIER_0 - 0.03:
+		# (sous le premier palier quelle que soit la force : inutile de la chercher)
+		return b - RELIEF
+	return b + RELIEF * (force(p) - 1.0)
+
+
+# l'étage où l'on est : 0 en bas, jusqu'à PALIERS
+func palier(p: Vector2) -> int:
+	var h := hauteur(p)
+	var n := 0
+	while n < PALIERS and h > PALIER_0 + PALIER_PAS * n:
+		n += 1
+	return n
+
+
+# la paroi où est p : [l'écart au palier, en pixels (positif : du côté haut), la direction qui monte, vrai si c'est un col,
+# le pas qui en sort] ; [] s'il n'y en a pas. (marge : une paroi élargie d'autant, pour ce qui ne doit pas pousser tout contre.)
+func _paroi(p: Vector2, marge: float = 0.0) -> Array:
+	var b := bosses(p)
+	if b < PALIER_0 - (PAROI + marge) * PENTE_MAX:
+		return []
+	var f := force(p)
+	if f < 0.03:
+		return []
+	# (le palier le plus proche ; trop loin de lui, quelle que soit la pente : pas de paroi)
+	var h := b + RELIEF * (f - 1.0)
+	var n := clampi(roundi((h - PALIER_0) / PALIER_PAS), 0, PALIERS - 1)
+	var e := h - (PALIER_0 + PALIER_PAS * n)
+	if absf(e) >= (PAROI + marge) * PENTE_MAX:
+		return []
+	var g := Vector2(bosses(p + Vector2(4, 0)) - bosses(p - Vector2(4, 0)), bosses(p + Vector2(0, 4)) - bosses(p - Vector2(0, 4))) / 8.0
+	var l := g.length()
+	var pente := clampf(l, PENTE_MIN, PENTE_MAX)
+	var d := e / pente
+	if absf(d) >= PAROI + marge:
+		return []
+	return [d, g / maxf(l, 1.0e-7), champ_col(p) > COL, minf((PAROI - absf(d)) * pente / maxf(l, 1.0e-6) + 1.0, 80.0)]
+
+
+# une paroi qu'on ne passe pas, en p ?
+func paroi_en(p: Vector2) -> bool:
+	var e := _paroi(p)
+	return not e.is_empty() and not bool(e[2])
+
+
+# un col, en p ? (une rampe dans une paroi)
+func col_en(p: Vector2) -> bool:
+	var e := _paroi(p)
+	return not e.is_empty() and bool(e[2])
+
+
+# ce que la pente fait à la marche en p : un col se monte lentement
+func allure(p: Vector2) -> float:
+	return COL_FREIN if col_en(p) else 1.0
+
+
+# rien ne pousse là : l'eau, le lit d'une rivière, une paroi, un col
+func nu(p: Vector2) -> bool:
+	return mouille(p) or not _paroi(p, 10.0).is_empty()
+
+
+# les régions dont le relief compte sur un rectangle : [x, y, force] chacune (au plus 6 ; [] si tout y est plat). Le shader du
+# sol en refait la force, comme force()
+func reliefs(rect: Rect2) -> Array:
+	var p := rect.get_center()
+	var q := p + tordre(p)
+	var c := Vector2i((q / cote).floor())
+	if not _hautes.has(c):
+		return []
+	var marge := MONTEE + 2.0 * rect.size.length() + 1400.0
+	var pres: Array = []
+	var d0 := INF
+	for x in range(c.x - 2, c.x + 3):
+		for y in range(c.y - 2, c.y + 3):
+			for k in _cases.get(Vector2i(x, y), []):
+				var d: float = q.distance_to(regions[k]["pos"])
+				pres.append([d, k])
+				d0 = minf(d0, d)
+	pres.sort_custom(func(a, b): return a[0] < b[0])
+	var out: Array = []
+	var du_relief := false
+	for e in pres:
+		if float(e[0]) - d0 > marge or out.size() >= 6:
+			break
+		var r: Dictionary = regions[e[1]]
+		out.append(Vector3(r["pos"].x, r["pos"].y, float(r["haut"])))
+		du_relief = du_relief or float(r["haut"]) > 0.0
+	return out if du_relief else []
 
 
 # --- le contour d'une région, pour la dessiner (la carte du carnet : scripts/interface_carte_monde.gd) ---

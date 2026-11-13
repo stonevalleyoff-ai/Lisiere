@@ -11,6 +11,7 @@ extends Node
 #   --ouvert   le lieu sans bord (MONDE-OUVERT.md) : la veilleuse marche droit devant elle
 #   --doigt    les boutons tactiles, comme sur un téléphone ; --carte : à la fin, la pause et la carte du carnet ;
 #   --depuis x,y : d'où elle part ; --pont : au bord d'une rivière, elle pose un pont de fortune et le passe
+#   --reste : elle ne bouge pas ; --recul 0.4 : la caméra recule d'autant (voir le relief d'un pays)
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -123,6 +124,12 @@ func _lancer() -> void:
 			j.position = Vector2(float(xy[0]), float(xy[1]))
 			jeu.monde.suivre(j.position, true)
 			jeu.camera.reset_smoothing()
+		# (--reste : elle ne bouge pas ; --recul 0.4 : on regarde de plus haut, pour voir le relief d'un pays)
+		if ar.has("--reste"):
+			_plan = [[0.0, 1.0, "attendre"]]
+		var i_r := ar.find("--recul")
+		if i_r >= 0 and i_r + 1 < ar.size():
+			jeu.effets.recul = float(ar[i_r + 1])
 	# (--sans son,ciel,sol,flammes : pour chercher ce qui coûte, on éteint une chose à la fois)
 	var args := OS.get_cmdline_user_args()
 	var i_sans := args.find("--sans")

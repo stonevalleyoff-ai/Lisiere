@@ -674,6 +674,7 @@ func _lieu_sans_bord() -> void:
 	var buisson_plein = a_cet_endroit.call(p_buisson)
 	verif(buisson_plein != null and buisson_plein.intact() and a_cet_endroit.call(p_arbre).genre == "souche", "deux minutes plus tard, le buisson a repoussé sans elle ; la souche est toujours une souche")
 	await _les_regions()
+	_le_relief()
 	jo.position = ici
 	W.suivre(ici, true)
 	# gardée, la partie ne retient que ce qui a changé
@@ -816,3 +817,75 @@ func _les_regions() -> void:
 	jo.position = Vector2.ZERO
 	W.suivre(Vector2.ZERO, true)
 	jeu._regions()
+
+
+# le monde ouvert : le relief des régions hautes (scripts/carte.gd, MONDE-OUVERT.md, étape 4)
+func _le_relief() -> void:
+	var C = jeu.carte
+	var W = jeu.monde
+	var jo = jeu.joueur
+	# la montagne la plus proche : un point de paroi, un point de col (bien au milieu de sa rampe)
+	var mont := -1
+	for k in C.regions.size():
+		if str(C.regions[k]["type"]) == "montagne" and (mont < 0 or C.regions[k]["pos"].length() < C.regions[mont]["pos"].length()):
+			mont = k
+	var centre: Vector2 = C.regions[mont]["pos"] - C.tordre(C.regions[mont]["pos"])
+	var p_paroi := Vector2.INF
+	var p_col := Vector2.INF
+	var etages := {}
+	for ix in range(-70, 71):
+		for iy in range(-70, 71):
+			var q: Vector2 = centre + Vector2(ix, iy) * 60.0
+			if C.region_en(q) != mont:
+				continue
+			etages[C.palier(q)] = true
+			var e: Array = C._paroi(q)
+			if e.is_empty() or absf(float(e[0])) > 6.0:
+				continue
+			if not bool(e[2]) and C.champ_col(q) < 0.0 and p_paroi == Vector2.INF:
+				p_paroi = q
+			elif bool(e[2]) and C.champ_col(q) > 0.75 and p_col == Vector2.INF:
+				p_col = q
+	verif(float(C.regions[mont]["haut"]) > 0.4 and C.force(Vector2.ZERO) == 0.0 and C.palier(Vector2.ZERO) == 0 and etages.size() >= 2
+		and p_paroi != Vector2.INF and p_col != Vector2.INF,
+		"la montagne s'élève par paliers (%d étages), entre eux des parois et des cols ; la prairie du réveil est plate" % etages.size())
+	# une paroi : on ne la passe ni d'en haut, ni d'en bas
+	var e_p: Array = C._paroi(p_paroi)
+	var monte: Vector2 = e_p[1]
+	var haut: Vector2 = p_paroi + monte * (C.PAROI + 14.0)
+	var bas: Vector2 = p_paroi - monte * (C.PAROI + 14.0)
+	var d_haut := _marcher(haut, -monte, 160)
+	var d_bas := _marcher(bas, monte, 160)
+	verif(C.palier(haut) == C.palier(bas) + 1 and C.retenir(p_paroi).distance_to(p_paroi) > 10.0 and C.palier(d_haut) == C.palier(haut) and C.palier(d_bas) == C.palier(bas)
+		and not C.paroi_en(d_haut) and not C.paroi_en(d_bas),
+		"une paroi sépare deux étages (%d en haut, %d en bas) : on ne la passe ni en descendant, ni en montant" % [C.palier(haut), C.palier(bas)])
+	# un col : on y monte à pied, lentement
+	var e_c: Array = C._paroi(p_col)
+	var monte_c: Vector2 = e_c[1]
+	var bas_c: Vector2 = p_col - monte_c * (C.PAROI + 14.0)
+	var arrivee := _marcher(bas_c, monte_c, 80)
+	verif(C.retenir(p_col) == p_col and C.col_en(p_col) and jeu.climat.allure(p_col) < 0.8 and jeu.climat.allure(bas_c) > 0.99 and C.palier(arrivee) == C.palier(bas_c) + 1,
+		"un col est une rampe dans la paroi : on y monte à pied, plus lentement (%.2f), d'un étage au suivant" % jeu.climat.allure(p_col))
+	# rien ne pousse sur une paroi ; plus haut, l'air est plus froid
+	jo.position = bas
+	W.suivre(bas, true)
+	var dessus: int = W.objets.filter(func(x): return not C._paroi(x.position).is_empty()).size()
+	jeu.altitude = 0.0
+	var air_bas: float = jeu.climat._air_de_fond()
+	jeu.altitude = 2.0
+	var air_haut: float = jeu.climat._air_de_fond()
+	jeu.altitude = 0.0
+	verif(dessus == 0 and W.objets.size() > 20 and air_haut < air_bas - 0.04,
+		"rien ne pousse sur une paroi, sur un col (%d objets autour) ; deux étages plus haut, l'air est plus froid (%.2f contre %.2f)" % [W.objets.size(), air_haut, air_bas])
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	jeu._regions()
+
+
+# marcher droit devant soi, à petits pas que la carte retient : où l'on arrive
+func _marcher(de: Vector2, vers: Vector2, pas: int) -> Vector2:
+	var p := de
+	for i in pas:
+		p = jeu.carte.retenir(p + vers.normalized() * 1.5)
+	return p
+

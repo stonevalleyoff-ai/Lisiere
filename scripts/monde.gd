@@ -32,6 +32,7 @@ var palette := {}
 var _grille := {}
 var _racine: Node2D
 var _sol
+var _sol_relief               # (le monde ouvert : les parois du relief, sur un calque au-dessus du temps qu'il fait)
 var _terrain := {}
 var _parts := {}
 var _mobile := false
@@ -127,6 +128,19 @@ func creer_sol(biome: Dictionary, graine: int) -> Node2D:
 			_sol.limite = 1 << 24
 			_sol.monde_ = self
 		_racine.add_child(_sol)
+		if ouvert and carte != null:
+			# (les parois du relief, peintes une seconde fois sur un calque à part : scripts/principal.gd le pose par-dessus ce
+			# que le temps fait au sol, pour que la neige ou une crue ne cachent pas un mur)
+			var mat_relief: ShaderMaterial = _mat_sol.duplicate()
+			mat_relief.set_shader_parameter("que_relief", true)
+			_sol_relief = SolCuit.new()
+			_sol_relief.name = "SolRelief"
+			_sol_relief.que_relief = true
+			_sol_relief.gardees = 12
+			_sol_relief.preparer(mat_relief, 1.0 if _mobile else R.ZOOM)
+			_sol_relief.limite = 1 << 24
+			_sol_relief.monde_ = self
+			_racine.add_child(_sol_relief)
 	_calques = []
 	for i in 4:
 		var calque := Node2D.new()
@@ -464,6 +478,18 @@ func plus_proche(p: Vector2, rayon: float):
 	return meilleur
 
 
+# le calque des parois passe juste au-dessus de la nappe du temps qu'il fait (scripts/temps_sol.gd), dans la scène
+func relief_au_dessus(scene: Node2D) -> void:
+	if _sol_relief == null:
+		return
+	var nappe: Node = scene.get_node_or_null("TempsSol")
+	if nappe == null:
+		return
+	_sol_relief.get_parent().remove_child(_sol_relief)
+	scene.add_child(_sol_relief)
+	scene.move_child(_sol_relief, nappe.get_index() + 1)
+
+
 # un pas qui bute sur les troncs et les rochers, et reste dans le lieu
 func repousser(p: Vector2, r: float) -> Vector2:
 	for o in autour(p, r + 22.0):
@@ -601,7 +627,7 @@ func _fabriquer_(k: Vector2i) -> void:
 		if c == null:
 			continue
 		var ici: Dictionary = lieu_de(str(e[4])) if carte != null else {}
-		if carte != null and carte.mouille(e[1]):
+		if carte != null and carte.nu(e[1]):
 			continue
 		var tons: Dictionary = ici["palette"] if carte != null else palette
 		var o = _poser(str(e[0]), e[1], tons[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), ici)
@@ -635,8 +661,8 @@ func _fabriquer_(k: Vector2i) -> void:
 				var L := lieu_de(str(reg["type"]))
 				if L["outils"].is_empty():
 					L["outils"] = Decor.outils(L["parts"], L["palette"], _graine)
-				# (dans une vallée de rivière, rien dans le lit)
-				Decor.exclure = Callable(carte, "mouille") if reg["riviere"] else Callable()
+				# (dans une vallée de rivière, rien dans le lit ; dans un pays de relief, rien sur une paroi, sur un col)
+				Decor.exclure = Callable(carte, "nu") if reg["riviere"] or carte.force(quart.get_center()) > 0.0 else Callable()
 				noeuds.append_array(Decor.semer_dans(self, _calques, _terrain, L["parts"], L["palette"], hash(Vector3i(_graine + 7 + qx * 2 + qy, k.x, k.y)), _mobile, quart, L["outils"], liste))
 		Decor.exclure = Callable()
 	elif _racine != null and not _outils.is_empty():
@@ -742,6 +768,8 @@ func _process(delta: float) -> void:
 		var centre: Vector2 = cam.get_screen_center_position()
 		var taille: Vector2 = get_viewport_rect().size / cam.zoom
 		_sol.suivre(Rect2(centre - taille * 0.5 - Vector2(160, 160), taille + Vector2(320, 320)))
+		if _sol_relief != null:
+			_sol_relief.suivre(Rect2(centre - taille * 0.5 - Vector2(160, 160), taille + Vector2(320, 320)))
 	if _mat_ombre != null and jeu.has_method("lumiere_du_jour"):
 		var t := fmod(float(jeu.horloge), R.DUREE)
 		var soir := R.DUREE * (1.0 - float(jeu.part_nuit))

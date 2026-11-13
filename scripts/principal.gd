@@ -73,6 +73,7 @@ var _meteos := {}
 var _lecture := ""            # le biome qu'on est en train de lire
 var _illisibles := {}         # ceux qui ne se lisent pas (hors ligne, hors de la copie gardée)
 var ponts: Array = []         # les ponts de fortune qui tiennent encore (scripts/pont.gd)
+var altitude := 0.0           # l'étage du relief où est la veilleuse (0 : en bas ; scripts/carte.gd, palier), lissé
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
 var _pont_vu := 0.0
 var part_nuit := 0.33
@@ -346,6 +347,7 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 	_lecture = ""
 	_region = -1
 	decouvertes = {}
+	altitude = 0.0
 	biome_info = donnees.biome(b)
 	saison = str(inst.get("cycle", {}).get("saison", {}).get("nom", "été"))
 	part_nuit = float(R.NUIT.get(saison, 0.4))
@@ -466,6 +468,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		dessin.jeu = self
 		scene.add_child(dessin)
 		dessin.poser(scene, monde)
+	monde.relief_au_dessus(scene)
 	horloge = R.TRANSITION + 2.0
 	jour = 1
 	nuits = 0
@@ -686,6 +689,8 @@ func _process(delta: float) -> void:
 	if carte != null:
 		_regions()
 		_voir_les_ponts(delta)
+		# (l'étage du relief où elle est, lissé : plus haut, il fait plus froid et l'on voit plus loin)
+		altitude = move_toward(altitude, float(carte.palier(joueur.position)), delta * 0.7)
 	_directeur_passe(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)

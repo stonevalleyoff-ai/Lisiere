@@ -210,6 +210,8 @@ func _air_de_fond() -> float:
 			a -= 0.04
 	if jeu != null:
 		a -= 0.11 * (1.0 - jeu.lumiere_du_jour())
+		# (sur les hauteurs du relief : scripts/carte.gd)
+		a -= R.FROID_PAR_PALIER * float(jeu.get("altitude")) if jeu.get("altitude") != null else 0.0
 	return a
 
 
@@ -268,6 +270,9 @@ func allure(p: Vector2, masse: float = 60.0) -> float:
 		a *= 1.0 - R.EAU_FREIN * e
 	if neige_sol > 0.2:
 		a *= 1.0 - R.NEIGE_FREIN * smoothstep(0.2, 0.6, neige_sol) * poids
+	# (le monde ouvert : un col se monte lentement ; scripts/carte.gd)
+	if jeu != null and jeu.get("carte") != null:
+		a *= float(jeu.carte.allure(p))
 	return maxf(a, 0.4)
 
 
