@@ -36,9 +36,10 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
 2. **Un biome sans bord.** *Fait, à essayer sur un vrai téléphone.* Le lieu d'aujourd'hui fabriqué par morceaux autour de la
    veilleuse, sans limite : le sol, les objets, les bêtes, le temps qu'il fait, la partie gardée par différences. C'est
    l'étape qui prouve la fluidité sur un téléphone. À l'écran-titre : « La grande prairie », juste après la forêt.
-3. **Plusieurs biomes.** Le jeu lit la carte : les régions, les transitions (quelques centaines de pixels où les plantes se
-   mêlent), le sol qui passe d'une palette à l'autre, la faune par parcelle, le temps par région, les lots avec leur parcelle.
-   Les frontières fermées deviennent des crêtes.
+3. **Plusieurs biomes.** *Fait, à essayer sur un vrai téléphone.* Le jeu lit la carte : les régions, les transitions
+   (quelques centaines de pixels où les plantes se mêlent), le sol qui passe d'une palette à l'autre, la faune par biome, le
+   temps par région, les lots avec leur parcelle. Les frontières fermées sont des crêtes. À l'écran-titre : « Le monde
+   d'Orvane ».
 4. **L'eau et le relief.** Les mers, les lacs, les rivières (un vrai cours d'eau, pas une région), les côtes. Les gués, où l'on
    passe à pied. **Le pont éphémère** : une fabrication (du bois, de la fibre) qu'on pose au bord de l'eau vers l'autre rive, sur
    une largeur limitée (une rivière, un bras de mer étroit, pas un lac). Il ne dure pas : il s'use à chaque passage et avec le
@@ -75,7 +76,30 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
   carte graphique). Le lieu fermé a le même coût, mais on y marche moins loin. Si ça saccade en marchant sur un vrai
   téléphone, c'est là qu'il faudra changer de méthode (garder la tuile sur la carte graphique, sans la relire).
 
-**À faire à l'étape 3** : lire `donnees/carte.json`, s'éveiller dans la prairie du centre, les régions et leurs transitions.
+**Étape 3, faite** (`scripts/carte.gd`, et le mode « ouvert » de `scripts/monde.gd`) :
+- **la carte lue par le jeu** : une région est ce qui est plus près de son point que de tout autre, sur un plan un peu tordu
+  (les frontières ondulent ; `Carte.tordre` et `shaders/sol_peint.gdshader` font le même calcul). L'origine du jeu est la
+  prairie la plus proche du centre de la carte (`prairie~2`) ;
+- **chaque quart de morceau** (350 pixels) est du biome de sa région : ses arbres (des sapins s'il fait froid), ses buissons,
+  ses rochers, son herbe et son décor, d'après ses axes ; ses plantes dessinées quand son herbier est lu ;
+- **le sol peint** mêle jusqu'à trois régions par tuile : une couche par région, la première partout, les autres là où elles
+  sont les plus proches ; la frontière se défait par taches sur 150 pixels ;
+- **l'eau** (lacs, rivières, mers) : une étendue sombre, une rive nette, rien n'y pousse, on n'y entre pas (ni les bêtes) ;
+- **les crêtes** : une bande de roche fendue et des rochers serrés, là où deux biomes se touchent sans être voisins dans
+  Orvane ; on ne passe pas (`Carte.retenir`), mais on y trouve de la pierre ;
+- **en passant d'un biome à l'autre** : ses bêtes (son morceau du monde est lu quand on approche à 3 500 pixels de la
+  frontière, et ses bêtes dessinées d'avance), son climat (`climat.changer_de_lieu`), son sol sous les pieds, son nom en
+  carte de titre ; ce qu'on y voit et ce qu'on y chasse est compté dans son biome et sa parcelle d'Orvane ;
+- vérifié : l'essai (13 vérifications pour le monde ouvert, 66 en tout) ; la vitrine (`--ouvert --depuis x,y`) dans la
+  prairie, la forêt, le marais, la steppe, le désert, la taïga, sur une rive et devant une crête ; l'export web dans un
+  téléphone émulé, d'un biome à l'autre : 198 à 220 appels de dessin, aucune erreur.
+
+**Ce que l'étape 3 ne fait pas encore** :
+- hors ligne, seuls les cinq biomes de la copie gardée ont leurs bêtes ; ailleurs, celles du biome d'avant restent ;
+- la faune est celle du biome, pas encore celle de la parcelle (la copie gardée ne dit pas la répartition par parcelle) ;
+- l'eau est un aplat, les rivières sont des régions : le vrai travail de l'eau, les gués et les ponts sont l'étape 4 ;
+- on n'a pas de carte en jouant (étape 5) : on se repère au nom du biome, quand on y entre ;
+- **pas mesuré sur un vrai téléphone** : la lecture d'un biome en marchant (le réseau, puis une vingtaine de bêtes à dessiner).
 
 ## Ce qui reste incertain
 

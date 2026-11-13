@@ -24,6 +24,7 @@ uniform vec2 site_c = vec2(1.0e7);
 uniform float fondu = 150.0;           // la demi-largeur où deux régions se mêlent
 uniform float rive = 0.0;              // 1 : de l'autre côté, c'est l'eau (ou la terre) : un bord net, un trait d'encre
 uniform float etendue_eau = 0.0;       // 1 : cette région est de l'eau
+uniform vec3 crete = vec3(0.0);        // pour site_a, site_b, site_c : 1 si la frontière avec elle est fermée (une crête de roche)
 uniform vec3 c_eau = vec3(0.13, 0.19, 0.24);
 
 uniform vec3 terre = vec3(0.35, 0.27, 0.19);
@@ -252,6 +253,20 @@ void fragment() {
 		float lignes = 1.0 - smoothstep(0.0, 0.07, abs(fract(r1 * 7.0) - 0.5));
 		col = mix(c_eau, c_eau * 1.35 + 0.03, lignes * 0.3) * (0.9 + 0.2 * d1);
 		col *= 0.965 + 0.05 * g1;
+	}
+	if (crete.x + crete.y + crete.z > 0.5) {
+		// une crête : une bande de roche nue, fendue, de part et d'autre de la frontière (là où scripts/carte.gd retient les pas)
+		vec2 qc = monde + tordre(monde);
+		float mc = distance(qc, site_moi);
+		float ec = 1.0e9;
+		if (crete.x > 0.5) { ec = min(ec, abs(distance(qc, site_a) - mc)); }
+		if (crete.y > 0.5) { ec = min(ec, abs(distance(qc, site_b) - mc)); }
+		if (crete.z > 0.5) { ec = min(ec, abs(distance(qc, site_c) - mc)); }
+		float bande = 1.0 - smoothstep(120.0, 230.0, ec + (d2 - 0.5) * 110.0);
+		vec3 roche = mix(caillou * 0.42, caillou * 0.8, smoothstep(0.35, 0.65, d3)) * (0.8 + 0.35 * d1);
+		float fentes_r = 1.0 - smoothstep(0.0, 0.06, abs(fract(d1 * 5.0 + d2 * 2.5) - 0.5));
+		roche = mix(roche, encre, fentes_r * 0.55);
+		col = mix(col, roche, bande * 0.92);
 	}
 	float alpha = 1.0;
 	if (couche > 0) {

@@ -531,11 +531,12 @@ func _plan_m(k: Vector2i) -> Array:
 				var L := lieu_de(str(reg["type"]))
 				_prevoir_lieu(r, plan, quart, str(L["arbre"]), L["mesures"], str(reg["type"]))
 				# une crête (deux biomes qui ne sont pas voisins dans Orvane) : des rochers serrés, on ne passe pas
-				for i in 14:
-					var q := Decor._dans(r, quart)
-					var g := r.randi()
-					if carte.crete_en(q) < 0.5 + 0.2 * r.randf():
-						plan.append(["rocher", q, "pierre", g, str(reg["type"])])
+				if carte.crete_en(quart.get_center()) < 1.0 or carte.crete_en(quart.position) < 1.0 or carte.crete_en(quart.end) < 1.0:
+					for i in 44:
+						var q := Decor._dans(r, quart)
+						var g := r.randi()
+						if carte.crete_en(q) < 0.45 + 0.25 * r.randf():
+							plan.append(["rocher", q, "pierre", g, str(reg["type"])])
 	# au réveil, de quoi faire un premier feu à portée (les mêmes, quel que soit le morceau où ils tombent)
 	var r0 := RandomNumberGenerator.new()
 	r0.seed = _graine + 31
