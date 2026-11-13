@@ -25,9 +25,15 @@ const BOUTONS := [
 	["nourrir", "Nourrir", Vector2(-292, -150), 29.0],
 	["cuire", "Cuire", Vector2(-230, -258), 29.0],
 	["manger", "Manger", Vector2(-120, -306), 29.0],
+	# (le pont de fortune : seulement au bord d'une rivière, là où il peut se poser)
+	["pont", "Pont", Vector2(-318, -56), 29.0],
 ]
 const MARCHE := {"droite": Vector2.RIGHT, "gauche": Vector2.LEFT, "bas": Vector2.DOWN, "haut": Vector2.UP}
-const ICONES := {"feu": "feu", "torche": "torche", "lance": "lance", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger"}
+const ICONES := {"feu": "feu", "torche": "torche", "lance": "lance", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger", "pont": "pont"}
+
+
+func _montre(action: String) -> bool:
+	return action != "pont" or bool(jeu.pont_possible)
 
 var jeu
 var actif := false
@@ -119,7 +125,7 @@ func _bouton_sous(p: Vector2) -> String:
 	if jeu.en_pause:
 		return ""
 	for b in BOUTONS:
-		if p.distance_to(_taille() + b[2]) < float(b[3]) * 1.12:
+		if _montre(b[0]) and p.distance_to(_taille() + b[2]) < float(b[3]) * 1.12:
 			return b[0]
 	return ""
 
@@ -197,7 +203,7 @@ func _lacher() -> void:
 func _disponible(action: String) -> bool:
 	var inv: Dictionary = jeu.joueur.inventaire
 	match action:
-		"feu", "torche", "lance":
+		"feu", "torche", "lance", "pont":
 			return jeu.peut_fabriquer(action)
 		"manger":
 			return int(inv["baies"]) + int(inv["viande"]) + int(inv["viande_cuite"]) > 0
@@ -243,6 +249,8 @@ func _dessiner() -> void:
 		_dessin.draw_string(g, c + Vector2(-lw * 0.5, RAYON_STICK + 16.0), "marcher", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(ENCRE, 0.45))
 	# les boutons
 	for b in BOUTONS:
+		if not _montre(b[0]):
+			continue
 		var p: Vector2 = t + b[2]
 		var r: float = b[3]
 		var dispo := _disponible(b[0])

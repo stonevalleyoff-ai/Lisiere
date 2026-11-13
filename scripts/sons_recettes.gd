@@ -1174,7 +1174,9 @@ static func _foudre(r: RandomNumberGenerator) -> PackedFloat32Array:
 	while t < tc - 0.004:
 		O.eclat(e, t, r.randf_range(0.0004, 0.0012), r.randf_range(0.3, 0.7), r, VIF)
 		t += ecart * r.randf_range(0.6, 1.3)
-		ecart *= 0.8
+		# (les éclats se resserrent, mais jamais jusqu'à s'arrêter : sans ce plancher, la somme des écarts pouvait ne pas
+		# atteindre le coup, et la boucle ne finissait pas : le jeu se figeait en fabriquant ce son, pour six tirages sur mille)
+		ecart = maxf(ecart * 0.8, 0.004)
 	O.eclat(e, tc, 0.02, 1.0, r, VIF)
 	O.bas(e, 5000.0, VIF)
 	O.poser(s, e, 0, 1.8)

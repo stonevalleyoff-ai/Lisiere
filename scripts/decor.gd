@@ -388,8 +388,11 @@ static func semer_dans(monde, calques: Array, t: Dictionary, s: Dictionary, pal:
 	return faits
 
 
+# (là où rien ne se pose : le lit d'une rivière ; scripts/monde.gd le dit avant de semer une vallée)
+static var exclure := Callable()
+
 static func _instance(cases: Dictionary, rect: Rect2, genre: String, q: Vector2, echelle: float, teinte: Color, r: RandomNumberGenerator, petale := 0.0) -> void:
-	if not rect.grow(10.0).has_point(q):
+	if not rect.grow(10.0).has_point(q) or (exclure.is_valid() and exclure.call(q)):
 		return
 	var cle := Vector2i(int(floor(q.x / CASE)), int(floor(q.y / CASE)))
 	if not cases.has(cle):
@@ -449,6 +452,8 @@ static func _poser(monde, t: Dictionary, s: Dictionary, graine: int, mobile: boo
 				"champignons":
 					ok = float(ici["neige"]) < 0.3
 			if not ok or q.length() < (130.0 if genre == "cailloux" else 210.0) or _gene(monde, q, 10.0 if genre != "flaque" else 20.0):
+				continue
+			if exclure.is_valid() and exclure.call(q):
 				continue
 			var cle := Vector2i(int(floor(q.x / CASE)), int(floor(q.y / CASE)))
 			if not cases.has(cle):

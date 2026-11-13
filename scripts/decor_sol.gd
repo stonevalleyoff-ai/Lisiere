@@ -10,10 +10,14 @@ const TUILE := 512.0
 const BORD := 2                # des texels de plus autour de chaque tuile : pas de couture entre deux tuiles
 const LIMITE := 6              # au-delà de ces tuiles (6 × 512 = 3 072 pixels du centre), il n'y a que le noir
 const GARDEES := 20            # les tuiles gardées en mémoire
+var gardees := GARDEES        # (davantage si la caméra recule assez pour en montrer plus à la fois)
 
 var materiau: ShaderMaterial
 var limite := LIMITE           # (un lieu sans bord, scripts/monde.gd : pas de limite)
+var monde_                     # (le monde ouvert : sa carte dit quelles régions touchent une tuile, lui ce qu'est chacune)
 var densite := 1.35
+# (le calque des parois, par-dessus ce que le temps fait au sol : transparent ailleurs, et rien là où il n'y a pas de relief)
+var que_relief := false
 var _tuiles := {}              # tuile → [Sprite2D, ImageTexture, quand elle a servi]
 var _peintres: Array = []      # les SubViewports, hors de l'arbre quand elles ne peignent pas
 var _en_cours: Array = []      # [peintre, tuile], peints à l'image d'avant : à copier
@@ -36,14 +40,74 @@ func _peintre() -> SubViewport:
 	var t := _taille()
 	vp.size = Vector2i(t, t)
 	vp.disable_3d = true
-	vp.transparent_bg = false
+	vp.transparent_bg = que_relief
 	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	var quad := Peinture.new()
-	if limite > LIMITE:
-		quad.demi = 300000.0
-	quad.material = materiau
-	vp.add_child(quad)
+	# (le monde ouvert : jusqu'à trois régions sur une tuile, une couche chacune, chacune avec sa matière)
+	for n in (1 if que_relief else 3 if monde_ != null and monde_.carte != null else 1):
+		var quad := Peinture.new()
+		if limite > LIMITE:
+			quad.demi = 300000.0
+		quad.material = materiau if n == 0 and (monde_ == null or monde_.carte == null) else materiau.duplicate()
+		vp.add_child(quad)
 	return vp
+
+
+# les régions d'une tuile : la plus présente couvre tout, les autres par-dessus, là où elles sont les plus proches
+func _regler(vp: SubViewport, rect: Rect2) -> void:
+	if monde_ == null or monde_.carte == null:
+		return
+	var C = monde_.carte
+	var regs: Array = C.dans(rect.grow(float(BORD) + 2.0)).slice(0, 3)
+	if que_relief:
+		# (une seule couche : la terre la plus présente ; le relief est le même pour toutes)
+		var terres: Array = regs.filter(func(r): return not C.regions[r]["eau"])
+		regs = [terres[0] if not terres.is_empty() else regs[0]]
+	# (le relief : les régions dont la force compte ici, les mêmes pour chaque couche)
+	var pres: Array = C.reliefs(rect)
+	var n_reliefs := pres.size()
+	var reliefs := PackedVector3Array()
+	var creuses := PackedFloat32Array()
+	for i in 6:
+		reliefs.append(Vector3(pres[i].x, pres[i].y, pres[i].z) if i < n_reliefs else Vector3(1.0e7, 1.0e7, 0.0))
+		creuses.append(float(pres[i].w) if i < n_reliefs else 0.0)
+	for n in vp.get_child_count():
+		var quad: Node2D = vp.get_child(n)
+		quad.visible = n < regs.size()
+		if not quad.visible:
+			continue
+		var reg: Dictionary = C.regions[regs[n]]
+		var m: ShaderMaterial = quad.material
+		var sol: Dictionary = monde_.lieu_de(str(reg["type"]))["sol"]
+		for k in sol:
+			m.set_shader_parameter(k, sol[k])
+		var autres: Array = []
+		var rive := false
+		var crete := Vector3.ZERO
+		var eaux := Vector3.ZERO
+		for o in regs:
+			if o != regs[n]:
+				if C.ferme(regs[n], o):
+					crete[autres.size()] = 1.0
+				if C.regions[o]["eau"] or C.regions[o]["riviere"]:
+					eaux[autres.size()] = 1.0
+				autres.append(C.regions[o]["pos"])
+				if bool(C.regions[o]["eau"]) != bool(reg["eau"]):
+					rive = true
+		while autres.size() < 3:
+			autres.append(Vector2(1.0e7, 1.0e7))
+		m.set_shader_parameter("reliefs", reliefs)
+		m.set_shader_parameter("creuses", creuses)
+		m.set_shader_parameter("n_reliefs", n_reliefs)
+		m.set_shader_parameter("crete", crete)
+		m.set_shader_parameter("eaux", eaux)
+		m.set_shader_parameter("lit_ici", 1.0 if reg["riviere"] else 0.0)
+		m.set_shader_parameter("couche", 0 if n == 0 else 1)
+		m.set_shader_parameter("site_moi", reg["pos"])
+		m.set_shader_parameter("site_a", autres[0])
+		m.set_shader_parameter("site_b", autres[1])
+		m.set_shader_parameter("site_c", autres[2])
+		m.set_shader_parameter("rive", 1.0 if rive else 0.0)
+		m.set_shader_parameter("fondu", C.FONDU)
 
 
 # la caméra regarde ce rectangle du monde : chaque tuile qu'il touche doit être peinte (les plus proches du centre d'abord)
@@ -67,13 +131,14 @@ func suivre(vue: Rect2) -> void:
 	var a := (vue.position / TUILE).floor()
 	var b := (vue.end / TUILE).floor()
 	var centre := vue.get_center() / TUILE - Vector2(0.5, 0.5)
+	gardees = maxi(gardees, int((b.x - a.x + 1.0) * (b.y - a.y + 1.0)) + 4)
 	var manque := []
 	for x in range(maxi(int(a.x), -limite), mini(int(b.x), limite - 1) + 1):
 		for y in range(maxi(int(a.y), -limite), mini(int(b.y), limite - 1) + 1):
 			var k := Vector2i(x, y)
 			if _tuiles.has(k):
 				_tuiles[k][2] = _tour
-			else:
+			elif not que_relief or not monde_.carte.reliefs(Rect2(Vector2(k) * TUILE, Vector2(TUILE, TUILE))).is_empty():
 				manque.append(k)
 	if manque.is_empty():
 		return
@@ -86,6 +151,7 @@ func suivre(vue: Rect2) -> void:
 		var t := float(_taille() - BORD * 2)
 		var e := t / TUILE
 		var origine := Vector2(k) * TUILE
+		_regler(vp, Rect2(origine, Vector2(TUILE, TUILE)))
 		add_child(vp)
 		vp.canvas_transform = Transform2D(0.0, Vector2(e, e), 0.0, -origine * e + Vector2(BORD, BORD))
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -100,13 +166,18 @@ func suivre(vue: Rect2) -> void:
 
 # une place pour une tuile : neuve, ou reprise à celle qui a servi le moins récemment (et ne se peint pas)
 func _place() -> Array:
-	if _tuiles.size() < GARDEES:
+	if _tuiles.size() < gardees:
 		var s := Sprite2D.new()
 		s.centered = false
 		s.region_enabled = true
 		var t := float(_taille())
 		s.region_rect = Rect2(BORD, BORD, t - BORD * 2, t - BORD * 2)
 		s.scale = Vector2.ONE * TUILE / (t - BORD * 2)
+		if que_relief:
+			# (un calque transparent sort de son peintre déjà multiplié par son alpha)
+			var mat := CanvasItemMaterial.new()
+			mat.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
+			s.material = mat
 		add_child(s)
 		move_child(s, 0)
 		return [s, null, _tour]

@@ -9,6 +9,10 @@ extends Node
 # attend, tourne, puis va là où ça se passe (sous un arbre, dans l'eau, près de l'arbre frappé, contre les flammes).
 #   --image <chemin> --a 0.3,0.6,0.9   écrit <chemin>_1.png, _2.png… à ces moments (en fractions de la durée)
 #   --ouvert   le lieu sans bord (MONDE-OUVERT.md) : la veilleuse marche droit devant elle
+#   --doigt    les boutons tactiles, comme sur un téléphone ; --carte : à la fin, la pause et la carte du carnet ;
+#   --depuis x,y : d'où elle part ; --pont : au bord d'une rivière, elle pose un pont de fortune et le passe
+#   --reste : elle ne bouge pas ; --vers x,y : elle marche vers ce point ; --recul 0.4 : la caméra recule d'autant (voir le
+#   relief d'un pays, le plan d'une grotte)
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -106,11 +110,33 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	# (--doigt : comme sur un téléphone, les boutons à l'écran)
+	if OS.get_cmdline_user_args().has("--doigt"):
+		jeu.tactile.activer()
 	if temps != "":
 		_poser_le_temps()
 	if jeu.ouvert:
-		# (le lieu sans bord : elle marche droit devant elle, pour voir le monde se faire et se défaire)
+		# (le monde ouvert : elle marche droit devant elle, pour voir le monde se faire et se défaire ; --depuis x,y : d'où elle part)
 		_plan = [[0.0, 0.06, "attendre"], [0.06, 1.0, "est"]]
+		var ar := OS.get_cmdline_user_args()
+		var i_d := ar.find("--depuis")
+		if i_d >= 0 and i_d + 1 < ar.size():
+			var xy := ar[i_d + 1].split(",")
+			j.position = Vector2(float(xy[0]), float(xy[1]))
+			jeu.monde.suivre(j.position, true)
+			jeu.camera.reset_smoothing()
+		# (--reste : elle ne bouge pas ; --recul 0.4 : on regarde de plus haut, pour voir le relief d'un pays)
+		if ar.has("--reste"):
+			_plan = [[0.0, 1.0, "attendre"]]
+		# (--vers x,y : elle marche vers ce point)
+		var i_v := ar.find("--vers")
+		if i_v >= 0 and i_v + 1 < ar.size():
+			var but := ar[i_v + 1].split(",")
+			_but = Vector2(float(but[0]), float(but[1]))
+			_plan = [[0.0, 0.06, "attendre"], [0.06, 1.0, "aller"]]
+		var i_r := ar.find("--recul")
+		if i_r >= 0 and i_r + 1 < ar.size():
+			jeu.effets.recul = float(ar[i_r + 1])
 	# (--sans son,ciel,sol,flammes : pour chercher ce qui coûte, on éteint une chose à la fois)
 	var args := OS.get_cmdline_user_args()
 	var i_sans := args.find("--sans")
@@ -328,6 +354,28 @@ func _process(delta: float) -> void:
 		jeu.ui.visible = false
 	_le_temps_passe(u)
 	_mesurer()
+	# (--carte : à la fin, la pause, et la carte du carnet ; les régions à deux pas de là sont découvertes, pour la voir pleine)
+	if jeu.ouvert and u > 0.8 and not _fait.has("carte") and OS.get_cmdline_user_args().has("--carte") and jeu.carte != null:
+		_fait["carte"] = true
+		for i in jeu.decouvertes.keys():
+			for v in jeu.carte.regions[i]["voisines"]:
+				if not jeu.carte.regions[v]["eau"]:
+					jeu.decouvertes[v] = true
+					for w in jeu.carte.regions[v]["voisines"]:
+						if not jeu.carte.regions[w]["eau"] and (w % 3) != 0:
+							jeu.decouvertes[w] = true
+		jeu.en_pause = true
+		jeu.ui.montrer_pause(true)
+	# (--pont : au bord d'une rivière, elle pose un pont de fortune et le passe)
+	if jeu.ouvert and jeu.pont_possible and not _fait.has("pont") and OS.get_cmdline_user_args().has("--pont"):
+		_fait["pont"] = true
+		j.inventaire["bois"] = 40
+		j.inventaire["fibre"] = 12
+		jeu.fabriquer("pont")
+		if not jeu.ponts.is_empty():
+			var pt = jeu.ponts[0]
+			_but = pt.b + (pt.b - pt.a).normalized() * 140.0
+			_plan = [[0.0, 1.0, "aller"]]
 	if _regles.has("--corps"):
 		j.temperature = float(_regles["--corps"])
 	if u >= 1.0:
