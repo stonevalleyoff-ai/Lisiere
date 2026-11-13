@@ -182,7 +182,7 @@ func _ready() -> void:
 
 
 # une mémoire forcée, pour essayer à la main tant que le monde publié n'en porte pas : -- --memoire <nom> (crainte, confiance,
-# traque, feu, accoutumance : scripts/donnees.gd, MEMOIRES), ou ?memoire=<nom> au bout de l'adresse du jeu web. Elle ne change que
+# traque, feu, accoutumance, agressivite, troupeau : scripts/donnees.gd, MEMOIRES), ou ?memoire=<nom> au bout de l'adresse du jeu web. Elle ne change que
 # ce que le jeu lit des populations du lieu ; une partie jouée ainsi n'envoie rien à Orvane. L'essai pose les siennes lui-même.
 func _memoire_forcee() -> void:
 	var nom := ""

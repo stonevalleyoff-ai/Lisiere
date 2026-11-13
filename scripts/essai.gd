@@ -604,9 +604,12 @@ func _lancer() -> void:
 # La copie gardée dans le jeu n'en porte pas : chaque bête est faite ici avec la mémoire qu'aurait sa population, et jouée sans
 # attendre, image par image, par les fonctions du jeu (bete.gd, _conduire).
 
-# une bête de cette lignée, dont la population aurait appris cela (les autres dispositions à leur valeur neutre)
+# une bête de cette lignée, dont la population aurait appris cela (les autres dispositions à leur valeur neutre) ; elle est la
+# bête moyenne de sa population (ecart 0), sauf si l'entrée dit son écart d'audace
 func _bete(e: Dictionary, role: String, p: Vector2, memoire: Dictionary):
 	var x: Dictionary = e.duplicate()
+	if not x.has("ecart"):
+		x["ecart"] = 0.0
 	var m: Dictionary = Orvane.DISPOSITIONS_NEUTRES.duplicate()
 	m.merge(memoire, true)
 	x["memoire"] = m
@@ -717,6 +720,36 @@ func _charge(e: Dictionary, memoire: Dictionary, distance: float) -> Dictionary:
 			out["duree"] = b._duree
 			break
 	_oter(b)
+	return out
+
+
+# une proie dont la veilleuse s'approche, deux pixels à la fois (quarante pixels par seconde) : à quelle distance elle s'arrête
+# pour faire front (-1 : jamais), à quelle distance elle charge (-1 : jamais) et pour combien de temps, à quelle distance elle
+# s'enfuit (-1 : jamais) ; et la bête, encore là (à ôter)
+func _front(e: Dictionary, memoire: Dictionary, masse: float, ecart: float = 0.0) -> Dictionary:
+	var out := {"front": -1.0, "charge": -1.0, "fuite": -1.0, "duree": 0.0, "portee": 0.0, "bete": null}
+	var j = jeu.joueur
+	j.en_mouvement = true
+	var x: Dictionary = e.duplicate()
+	x["masse"] = masse
+	x["ecart"] = ecart
+	var b = _bete(x, "proie", j.position + Vector2(700.0, 0.0), memoire)
+	out["portee"] = b._portee_front()
+	var d := 700.0
+	while d > 20.0:
+		d -= 2.0
+		b.position = j.position + Vector2(d, 0.0)
+		b._conduire(0.05)
+		if out["front"] < 0.0 and b.etat == "front":
+			out["front"] = d
+		if b.etat == "attaque":
+			out["charge"] = d
+			out["duree"] = b._duree
+			break
+		if b.etat == "fuit":
+			out["fuite"] = d
+			break
+	out["bete"] = b
 	return out
 
 
@@ -912,6 +945,59 @@ func _la_memoire(F: Dictionary, f) -> void:
 	for x in [suit_sans, suit_1, suit_2, suit_3]:
 		_oter(x)
 
+	# --- l'agressivité (docs/50) : une proie qui fait front au lieu de fuir ; et une bête n'est pas sa population
+	var flair_p := 90.0 + 230.0 * float(proie_e["lignee"]["plan"].get("perception", 0.5))
+	var assauts_p0: float = _compte(id_p, "attaque")
+	var f_sans := _front(proie_e, {}, 12.0)
+	var f_ag := _front(proie_e, {"agressivite": 0.8}, 12.0)
+	var f_menue := _front(proie_e, {"agressivite": 0.8}, 0.3)
+	jeu.nuits = 0
+	var f_nuit1 := _front(proie_e, {"agressivite": 0.6}, 12.0)
+	jeu.nuits = 1
+	verif(f_sans["front"] < 0.0 and absf(f_sans["fuite"] - flair_p) <= 2.0 and f_ag["fuite"] < 0.0 and absf(f_ag["front"] - flair_p) <= 2.0
+		and f_ag["charge"] > 0.0 and f_ag["charge"] <= f_ag["portee"] and f_ag["portee"] >= 50.0 and f_ag["portee"] <= 200.0 and f_ag["front"] - f_ag["charge"] >= 30.0 and is_equal_approx(f_ag["duree"], 6.2)
+		and _compte(id_p, "attaque") == assauts_p0 + 1.0,
+		"une proie d'une population agressive ne fuit plus : à %d pixels (là où l'autre s'enfuit) elle s'arrête, fait face et gronde ; si la veilleuse insiste, elle charge à %d pixels, %.1f secondes ; sa charge est un assaut, compté pour Orvane" % [
+			int(f_ag["front"]), int(f_ag["charge"]), f_ag["duree"]])
+	verif(f_menue["front"] > 0.0 and f_menue["charge"] < 0.0 and f_menue["fuite"] >= 0.0 and f_menue["fuite"] <= 36.0 and f_nuit1["front"] < 0.0 and f_nuit1["fuite"] > 0.0 and is_equal_approx(f_nuit1["bete"].agressivite, 0.3),
+		"trop petite pour charger (300 grammes), elle tient sa place et menace, et ne file qu'à %d pixels ; la première nuit, l'agressivité compte pour moitié : celle-là fuit encore" % int(f_menue["fuite"]))
+	# frappée : elle se retourne, là où l'autre s'enfuit
+	f_sans["bete"].etat = "repos"
+	f_sans["bete"].blesser(0.5, j.position)
+	var ag2 = _bete(proie_e.merged({"masse": 12.0}), "proie", j.position + Vector2(40, 0), {"agressivite": 0.8})
+	ag2.blesser(0.5, j.position)
+	verif(f_sans["bete"].etat == "fuit" and ag2.etat == "attaque", "frappée, une proie sans mémoire s'enfuit ; agressive et de taille, elle se retourne et charge")
+	# la même population, trois bêtes : la plus hardie fait front, la plus craintive fuit de plus loin
+	var troupeau := {"mefiance": 0.7, "agressivite": 0.3}
+	var f_moy := _front(proie_e, troupeau, 12.0, 0.0)
+	var f_hardie := _front(proie_e, troupeau, 12.0, 1.5)
+	var f_crainte := _front(proie_e, troupeau, 12.0, -1.5)
+	var une: Dictionary = Orvane.individu(troupeau, 1.5)
+	var meme: Dictionary = Orvane.individu(troupeau, 0.0)
+	verif(f_moy["front"] < 0.0 and f_moy["fuite"] > flair_p and f_hardie["front"] > 0.0 and f_hardie["fuite"] < 0.0 and f_crainte["front"] < 0.0 and f_crainte["fuite"] > f_moy["fuite"] + 10.0
+		and absf(float(une["mefiance"]) - 0.4495) < 0.001 and absf(float(une["agressivite"]) - 0.5505) < 0.001 and is_equal_approx(float(meme["mefiance"]), 0.7) and is_equal_approx(float(meme["agressivite"]), 0.3)
+		and float(Orvane.individu(Orvane.DISPOSITIONS_NEUTRES, 2.0)["agressivite"]) == 0.0 and float(Orvane.individu(Orvane.DISPOSITIONS_NEUTRES, 2.0)["mefiance"]) == 0.0,
+		"une bête n'est pas sa population : dans un troupeau qui fuit (méfiance 0,7, agressivité 0,3), la bête moyenne s'enfuit à %d pixels, la plus craintive à %d, et la plus hardie fait front à %d (méfiance %.2f, agressivité %.2f) ; rien d'appris, rien à déplacer" % [
+			int(f_moy["fuite"]), int(f_crainte["fuite"]), int(f_hardie["front"]), une["mefiance"], une["agressivite"]])
+	for x in [f_sans, f_ag, f_menue, f_nuit1, f_moy, f_hardie, f_crainte]:
+		_oter(x["bete"])
+	_oter(ag2)
+	# un chasseur agressif ne lâche plus prise sous les coups (quatre cents coups qui ne l'entament pas)
+	var lache := [0, 0]
+	for k in 2:
+		var ch = _bete(ch_e, "chasseur", j.position + Vector2(300, 0), {"agressivite": 0.8} if k == 1 else {})
+		ch.pv_max = 1.0e9
+		ch.pv = 1.0e9
+		for i in 400:
+			ch.etat = "chasse"
+			ch.blesser(1.0, j.position)
+			if ch.etat == "fuit":
+				lache[k] += 1
+		_oter(ch)
+	var car: Dictionary = Orvane.caractere({"id": "essai", "caractere": {"hardiesse": 0.7, "combativite": 0.86, "opportunisme": 0.57}})
+	verif(lache[0] >= 70 and lache[0] <= 130 and lache[1] <= 40 and lache[1] * 2 < lache[0] and is_equal_approx(float(car.get("combativite", 0.0)), 0.86) and car.size() == 3 and Orvane.caractere("inconnue").is_empty(),
+		"frappé, un chasseur lâche prise %d fois sur 400 ; d'une population agressive, %d fois : il ne recule plus ; le kit lit aussi le caractère d'une lignée (combativité %.2f)" % [lache[0], lache[1], car.get("combativite", 0.0)])
+
 	# --- le carnet, le texte du lot, la mémoire qu'on force pour essayer
 	var comptes: int = Orvane.en_cours()
 	jeu.donnees.memoire_forcee = "traque"
@@ -923,6 +1009,7 @@ func _la_memoire(F: Dictionary, f) -> void:
 		if libre["chasseurs_nuit"][i]["memoire"] != jeu.faune["chasseurs_nuit"][i]["memoire"]:
 			du_monde = false
 	verif(D.dire_memoire({"mefiance": 0.9}) == "méfiante : on la chasse ici" and D.dire_memoire({"neophobie": 0.95, "attitude": "traqueuse"}) == "elle traque les veilleuses"
+		and D.dire_memoire({"agressivite": 0.6}) == "elle a appris à faire front" and D.dire_memoire({"attitude": "agressive"}) == "elle fait front, et charge" and D.MEMOIRES.has("agressivite")
 		and D.dire_memoire(Orvane.DISPOSITIONS_NEUTRES) == "" and dit.contains("tenues à distance") and dit.contains("1 assaut") and dit.contains("bête blessée"),
 		"le carnet le dit : « %s » sous une bête craintive, rien sous une bête sans mémoire ; et le lot : « …%s »" % [D.dire_memoire({"mefiance": 0.9}), dit])
 	verif(forcee["chasseurs_nuit"].all(func(e): return e["memoire"]["traque"] == 0.9 and e["memoire"]["attitude"] == "traqueuse")
