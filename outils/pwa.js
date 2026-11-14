@@ -9,7 +9,12 @@
 //        manquant, et rien n'est gardé, le jeu ne s'ouvre jamais hors ligne. On ne lui laisse que ceux qui existent ;
 //      - il ne gardait le gros du jeu (le .wasm et le .pck, près de 40 Mo) qu'au deuxième lancement : ouvert une seule fois, le jeu
 //        ne se rouvrait pas hors ligne. Il les garde dès son installation (le navigateur vient de les lire : il les a encore) ;
-//      - ouvert à l'adresse du dossier (…/), sans index.html, il ne trouvait rien hors ligne : il y sert index.html.
+//      - ouvert à l'adresse du dossier (…/), sans index.html, il ne trouvait rien hors ligne : il y sert index.html ;
+//      - une version nouvelle prenait ses fichiers là où le navigateur les avait encore (dix minutes, chez GitHub Pages) : lue
+//        peu après l'ancienne, elle gardait l'ancien jeu sous son nouveau nom. Il les redemande au site (« no-cache » : une
+//        question, et le fichier seulement s'il a changé) ;
+//   4. la mise à jour (outils/maj.js, posé dans index.html) : on la cherche dès l'ouverture, et le jeu sait quand elle est
+//      prête ; la date de l'export, pour que l'écran-titre dise de quand est le jeu.
 // Il vérifie à la fin que tout ce que le manifeste et le service worker nomment est là, et sort en erreur sinon.
 //   node outils/pwa.js build/web
 'use strict';
@@ -79,9 +84,26 @@ const APRES = "let cached = await cache.match(event.request) || (isNavigate && n
 if (sw.includes(APRES)) dit('le service worker sert déjà index.html à l\'adresse du dossier');
 else if (sw.includes(AVANT)) { sw = sw.replace(AVANT, APRES); dit("le service worker sert index.html à l'adresse du dossier, hors ligne"); }
 else faux("le service worker n'a plus la ligne attendue (« " + AVANT + " ») : à revoir avec cette version de Godot");
+const GARDE = 'cache.addAll(CACHED_FILES)', GARDE_FRAIS = "cache.addAll(CACHED_FILES.map((f) => new Request(f, { cache: 'no-cache' })))";
+if (sw.includes(GARDE_FRAIS)) dit('le service worker redemande déjà ses fichiers au site');
+else if (sw.includes(GARDE)) { sw = sw.replace(GARDE, GARDE_FRAIS); dit('le service worker redemande ses fichiers au site à chaque version'); }
+else faux("le service worker n'a plus la ligne attendue (« " + GARDE + " ») : à revoir avec cette version de Godot");
 fs.writeFileSync(SW, sw);
 
-// 4. tout ce qui est nommé est là
+// 4. la mise à jour, dans la page
+const exporte = Number((sw.match(/const CACHE_VERSION = '(\d+)\|/) || [])[1] || 0);
+let page = fs.readFileSync(ICI('index.html'), 'utf8');
+if (!exporte) faux("le service worker ne dit pas quand le jeu a été exporté (CACHE_VERSION)");
+else if (page.includes('lisiereMaj')) dit('la page cherche déjà les versions nouvelles');
+else if (!page.includes('<head>')) faux("index.html n'a pas d'en-tête où poser la mise à jour");
+else {
+  const script = fs.readFileSync(path.join(__dirname, 'maj.js'), 'utf8').replace('__VERSION__', String(exporte));
+  page = page.replace('<head>', '<head>\n<script>\n' + script + '</script>');
+  fs.writeFileSync(ICI('index.html'), page);
+  dit(`la page cherche les versions nouvelles dès l'ouverture (ce jeu : ${new Date(exporte * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC)`);
+}
+
+// 5. tout ce qui est nommé est là
 const nommes = [...manifeste.icons, ...manifeste.screenshots].map(i => i.src);
 const garde = sw.match(/const CACHED_FILES = (\[[^\]]*\]);/), gardables = sw.match(/const CACHE?ABLE_FILES = (\[[^\]]*\]);/);
 for (const m of [garde, gardables]) if (m) nommes.push(...JSON.parse(m[1]));
