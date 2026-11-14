@@ -552,6 +552,7 @@ func _lancer() -> void:
 	_la_durete()
 	_la_noire(F)
 	_le_pistage(F)
+	_les_empreintes(F)
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -1767,26 +1768,71 @@ func _la_noire(F: Dictionary) -> void:
 	# acte 3 : le siège
 	jeu.nuits = 2
 	N.mettre_en_scene(3, 900.0, PI)
-	var s3 := {"pres_feu": INF, "tour": 0.0, "avant": NAN}
+	var s3 := {"pres_feu": INF, "tour": 0.0, "avant": NAN, "feinte": false, "feinte_pres": INF}
 	_noire_joue(34.0, func(_t):
 		if N.corps == null:
 			return
 		var q: Vector2 = N.corps.position - feu.position
 		s3["pres_feu"] = minf(s3["pres_feu"], q.length() / r)
+		if N.etat == "feinte":
+			s3["feinte"] = true
+			s3["feinte_pres"] = minf(s3["feinte_pres"], q.length() / r)
 		if (N.etat == "tourne" or N.etat == "guette") and not is_nan(s3["avant"]):
 			s3["tour"] += absf(wrapf(q.angle() - float(s3["avant"]), -PI, PI))
 		s3["avant"] = q.angle())
 	verif(N.acte == 3 and s3["pres_feu"] >= 0.97 and s3["tour"] > 0.5 and j.sante == 100.0 and N.su.has("feu"),
 		"acte 3, le siège : un feu vif la tient (au plus près, %.2f rayon), elle tourne autour (%.1f radians) sans mordre" % [s3["pres_feu"], s3["tour"]])
+	verif(s3["feinte"] and s3["feinte_pres"] >= 0.97 and s3["feinte_pres"] < 1.06 and N.su.has("feinte") and j.sante == 100.0,
+		"elle feinte : elle se jette vers la lumière et s'arrête à son bord (%.2f rayon), sans mordre ; la veilleuse le retient" % s3["feinte_pres"])
+	# (vive : plus légère dans ses pas que sa masse ; sa tête suit la veilleuse, en haut puis en bas)
+	N._changer("guette")
+	N._pose = 99.0
+	N._feinte = 99.0
+	# (sans écran, la caméra n'a pas suivi la veilleuse : on joue son corps tout droit, comme s'il était à l'image)
+	var poser_la_tete := func() -> float:
+		for i in 30:
+			N.corps._corps(0.0, 0.05, 0.36, 1.0 if N.corps._face >= 0.0 else -1.0)
+		return N.corps._tete_rot
+	# (elle ne bouge pas ; la veilleuse est devant elle, à 200 pixels : plus loin dans le lieu, puis plus près de nous)
+	_noire_joue(1.0)
+	N.corps.ordre = "guette"
+	var devant_elle: Vector2 = N.corps.position + Vector2(200.0 * (1.0 if N.corps._face >= 0.0 else -1.0), 0.0)
+	j.position = devant_elle + Vector2(0.0, -90.0)
+	var tete_haut: float = poser_la_tete.call()
+	j.position = devant_elle + Vector2(0.0, 90.0)
+	var tete_bas: float = poser_la_tete.call()
+	# (sa cadence la plus vive : un quart de plus que celle qu'aurait une bête de sa masse, dans cette qualité)
+	verif(N.corps._poids < N.corps._lourd and N.corps._f_max > 3.0 * (1.0 if N.corps._fin else 0.82) * 1.25 and tete_bas - tete_haut > 0.12,
+		"elle est vive (ses pas : ceux d'une bête de poids %.2f, pour %.2f) et sa tête suit la veilleuse (%.2f radian quand elle monte, %.2f quand elle descend)" % [N.corps._poids, N.corps._lourd, tete_haut, tete_bas])
+	# (la veilleuse passe de l'autre côté du feu : elle la suit le long de la lisière)
+	var en_face: Vector2 = feu.position - (N.corps.position - feu.position).normalized() * 55.0
+	j.position = en_face
+	_noire_joue(14.0)
+	var entre: float = absf(wrapf((N.corps.position - feu.position).angle() - (j.position - feu.position).angle(), -PI, PI))
+	verif(entre < 0.75 and (N.corps.position - feu.position).length() / r >= 0.97 and j.sante == 100.0,
+		"la veilleuse fait le tour du feu : elle la suit le long de la lisière, et se retrouve en face d'elle (à %.2f radian)" % entre)
+	# (une bûche dans le feu : elle sursaute et s'écarte)
+	var avant_gerbe: float = (N.corps.position - feu.position).length()
+	N.corps.gerbe(feu)
+	var saute: bool = N.etat == "sursaut"
+	_noire_joue(0.8)
+	var ecartee: float = (N.corps.position - feu.position).length() - avant_gerbe
+	_noire_joue(1.5)
+	verif(saute and ecartee > 30.0 and N.etat == "guette", "une bûche jetée dans le feu la fait sursauter : elle s'écarte de %d pixels, puis revient guetter" % int(ecartee))
+	j.position = ici
+	N._pose = 6.0
 	# (hors de la lumière, la torche à la main : elle la tient un moment, puis le présage, puis la charge et la morsure)
 	j.position = feu.position + Vector2(r + 420.0, 0.0)
 	j.torche = 200.0
-	var t3 := {"presage": -1.0, "charge": -1.0, "morsure": -1.0, "recule": false, "prise": 0.0}
+	var t3 := {"presage": -1.0, "charge": -1.0, "morsure": -1.0, "recule": false, "prise": 0.0, "claque": false, "tendue": 0.0}
 	_noire_joue(RR.NOIRE_TORCHE[3] + 22.0, func(t):
 		if N.corps == null:
 			return
 		if t3["presage"] < 0.0 and N.corps.aplatie > 0.5:
 			t3["presage"] = t
+		t3["claque"] = t3["claque"] or N.corps._claque >= 0.0
+		if N.corps.aplatie > 0.5:
+			t3["tendue"] = maxf(t3["tendue"], N.corps._bas)
 		if t3["charge"] < 0.0 and N.etat == "charge":
 			t3["charge"] = t
 		if t3["morsure"] < 0.0 and j.sante < 100.0:
@@ -1798,6 +1844,7 @@ func _la_noire(F: Dictionary) -> void:
 		"hors du feu, la torche la tient %d secondes ; puis elle s'aplatit %.1f s (le présage), charge, et mord %.1f s après" % [int(t3["presage"]), t3["charge"] - t3["presage"], t3["morsure"] - t3["charge"]])
 	verif(absf(t3["prise"] - RR.NOIRE_MORSURE) < 0.01 and t3["recule"] and jeu._mordeur == "La Noire",
 		"sa morsure prend %d ; elle se reprend un instant après avoir mordu ; la fin dira « La Noire t'a prise. »" % int(RR.NOIRE_MORSURE))
+	verif(t3["tendue"] > 0.15 and t3["claque"], "avant de charger elle se tasse au sol (%.2f de sa hauteur de pattes) ; quand elle mord, son corps se jette en avant et sa tête claque" % t3["tendue"])
 	# (revenue dans la lumière : elle lâche)
 	j.position = ici
 	j.sante = 100.0
@@ -2035,4 +2082,153 @@ func _le_pistage(F: Dictionary) -> void:
 	jeu.vues = garde["vues"]
 	jeu._deja = garde["deja"]
 	jeu.noire.su = garde["su"]
+
+
+# --- les empreintes (scripts/traces.gd, shaders/empreinte.gdshader) : le pied de la bête, son poids, le sol, l'eau ---
+
+func _les_empreintes(F: Dictionary) -> void:
+	print("Les empreintes")
+	var j = jeu.joueur
+	var T = jeu.traces
+	var C = jeu.climat
+	var garde := {"h": jeu.horloge, "p": j.position, "pluie": C.pluie, "temps": C.temps, "boue": C.boue, "neige": C.neige_sol, "crue": C.crue}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	jeu.horloge = floorf(jeu.horloge / jeu.R.DUREE) * jeu.R.DUREE + jeu.R.DUREE * 0.3
+	C.pluie = 0.0
+	C.temps = "clair"
+	C.boue = 0.0
+	C.neige_sol = 0.0
+	C.crue = 0.0
+	T.vider()
+	# le pied de chaque bête fait son empreinte
+	var genres := {}
+	var pieds := {}
+	var lourde = null
+	var legere = null
+	var tous: Array = F["proies_jour"] + F["proies_nuit"] + F["rodeurs"] + F["chasseurs_nuit"]
+	for e in tous:
+		var b = _bete(e, "proie", j.position + Vector2(400.0, 300.0), {})
+		if b._trace_pas > 0.0:
+			var pied := str(b._sq["pattes"][0].get("pied_genre", "")) if not b._sq.is_empty() and not b._sq["pattes"].is_empty() else ""
+			genres[b._trace_genre] = true
+			pieds[pied] = b._trace_genre
+			if lourde == null or b.masse > lourde.masse:
+				if lourde != null and lourde != legere:
+					_oter(lourde)
+				lourde = b
+				continue
+			if legere == null or b.masse < legere.masse:
+				if legere != null and legere != lourde:
+					_oter(legere)
+				legere = b
+				continue
+		_oter(b)
+	var bon := true
+	for pied in pieds:
+		if T.GENRES.has(pied) and int(T.GENRES[pied]) != int(pieds[pied]):
+			bon = false
+	verif(genres.size() >= 2 and bon and not genres.has(2),
+		"le pied de chaque bête fait son empreinte : %d genres dans ce lieu (%s), aucun n'est celui de la Noire" % [genres.size(), ", ".join(pieds.keys())])
+	var fond_marche: float = lourde._trace_fond()
+	lourde._course = 1.0
+	var fond_course: float = lourde._trace_fond()
+	lourde._course = 0.0
+	verif(lourde != null and legere != null and fond_marche > legere._trace_fond() + 0.05 and fond_course > fond_marche + 0.1,
+		"une bête lourde marque davantage (%.2f pour %d kg, %.2f pour %.1f kg), et plus encore quand elle court (%.2f)" % [fond_marche, int(lourde.masse), legere._trace_fond(), legere.masse, fond_course])
+	# chaque pied pose la sienne : deux files, de part et d'autre de sa marche
+	lourde.conduite = false
+	lourde.position = j.position + Vector2(-160.0, 120.0)
+	lourde._premiere = true
+	var y0: float = lourde.position.y
+	for i in 260:
+		lourde.position += Vector2(1.6, 0.0)
+		lourde._animer(0.05)
+	var dessus := 0
+	var dessous := 0
+	for e in T._liste:
+		if float(e[T.Y]) < y0 - 1.0:
+			dessus += 1
+		elif float(e[T.Y]) > y0 + 1.0:
+			dessous += 1
+	verif(dessus >= 2 and dessous >= 2 and T.nombre(lourde._trace_genre) == dessus + dessous,
+		"en marchant, ses pieds laissent deux files d'empreintes (%d d'un côté, %d de l'autre, en %d pixels)" % [dessus, dessous, 416])
+	_oter(lourde)
+	_oter(legere)
+	# le sol : nu là où la veilleuse s'éveille, couvert plus loin
+	T.vider()
+	T.poser(Vector2(4.0, 3.0), 0.0, 6.0, 500.0, 0, "x", 0.7)
+	var nu: float = T._liste[0][T.COUVERT]
+	var couvert_max := 0.0
+	for k in 24:
+		T.poser(Vector2(700.0 + 90.0 * k, -600.0 + 55.0 * k), 0.0, 6.0, 500.0, 0, "x", 0.7)
+		couvert_max = maxf(couvert_max, float(T._liste[T._liste.size() - 1][T.COUVERT]))
+	verif(nu < 0.25 and couvert_max > 0.3, "le sol compte : la terre nue du réveil la prend nette (%.2f de couvert), l'herbe et la litière se couchent seulement (jusqu'à %.2f)" % [nu, couvert_max])
+	# l'eau : la pluie la remplit, le beau temps la sèche
+	T.vider()
+	T.poser(Vector2(4.0, 3.0), 0.0, 6.0, 5000.0, 0, "x", 0.7)
+	var e0: Array = T._liste[0]
+	var sec: float = e0[T.EAU]
+	C.pluie = 1.0
+	C.temps = "pluie"
+	for i in 12:
+		T.maj(0.34)
+	var mi: float = e0[T.EAU]
+	for i in 30:
+		T.maj(0.34)
+	var pleine: float = e0[T.EAU]
+	C.pluie = 0.0
+	C.temps = "clair"
+	for i in 60:
+		T.maj(0.34)
+	var apres: float = e0[T.EAU]
+	verif(sec == 0.0 and mi > 0.3 and mi < 0.6 and pleine == 1.0 and apres < 1.0 and apres > 0.5,
+		"sous la pluie, l'empreinte se remplit : %.2f en 4 secondes, pleine en 14 ; le beau temps revenu, elle sèche lentement (%.2f vingt secondes après)" % [mi, apres])
+	# un sol gorgé : l'eau y sourd tout de suite ; la neige : pas d'eau, et elle part à la fonte
+	C.boue = 0.85
+	T.poser(Vector2(40.0, 3.0), 0.0, 6.0, 5000.0, 0, "x", 0.7)
+	var sourd: float = T._liste[T._liste.size() - 1][T.EAU]
+	C.boue = 0.0
+	C.neige_sol = 0.6
+	T.poser(Vector2(80.0, 3.0), 0.0, 6.0, 5000.0, 0, "x", 0.7)
+	var en_neige: Array = T._liste[T._liste.size() - 1]
+	C.pluie = 1.0
+	for i in 12:
+		T.maj(0.34)
+	var neige_seche: bool = float(en_neige[T.NEIGE]) == 1.0 and float(en_neige[T.EAU]) == 0.0
+	C.pluie = 0.0
+	C.neige_sol = 0.0
+	for i in 20:
+		T.maj(0.34)
+	verif(sourd > 0.3 and neige_seche and not T._liste.has(en_neige) and T._liste.has(e0),
+		"dans un sol gorgé l'eau y sourd aussitôt (%.2f) ; dans la neige elle reste sèche, et s'en va quand la neige fond" % sourd)
+	# la crue : on n'y marque pas, et celle qui y était disparaît sous l'eau
+	var creux := Vector2.ZERO
+	var trouve := false
+	C.crue = 0.6
+	for k in 400:
+		var q := Vector2(-1500.0 + 37.0 * (k % 80), -900.0 + 190.0 * (k / 80))
+		if float(C.eau(q)) > 0.3:
+			creux = q
+			trouve = true
+			break
+	C.crue = 0.0
+	T.vider()
+	T.poser(creux, 0.0, 6.0, 5000.0, 0, "x", 0.7)
+	C.crue = 0.6
+	T.poser(creux + Vector2(3.0, 0.0), 0.0, 6.0, 5000.0, 0, "x", 0.7)
+	T.maj(0.34)
+	var noyee: bool = T._liste.size() == 1 and bool(T._liste[0][T.NOYEE]) and T.la_plus_proche(creux, 30.0).is_empty()
+	C.crue = 0.0
+	T.maj(0.34)
+	verif(trouve and noyee and not bool(T._liste[0][T.NOYEE]), "sous la crue on ne marque pas, et l'empreinte qui était là disparaît sous l'eau ; l'eau retirée, elle reparaît")
+	# (tout remis comme avant)
+	T.vider()
+	C.pluie = garde["pluie"]
+	C.temps = garde["temps"]
+	C.boue = garde["boue"]
+	C.neige_sol = garde["neige"]
+	C.crue = garde["crue"]
+	jeu.horloge = garde["h"]
+	j.position = garde["p"]
 
