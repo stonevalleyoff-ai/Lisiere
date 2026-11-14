@@ -553,6 +553,7 @@ func _lancer() -> void:
 	_la_noire(F)
 	_le_pistage(F)
 	_les_empreintes(F)
+	_l_atelier(F)
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -2231,4 +2232,309 @@ func _les_empreintes(F: Dictionary) -> void:
 	C.crue = garde["crue"]
 	jeu.horloge = garde["h"]
 	j.position = garde["p"]
+
+
+# --- l'atelier (scripts/atelier.gd) : ce qu'elle fabrique, porte, pose, et ce que chaque chose change ---
+
+func _l_atelier(F: Dictionary) -> void:
+	print("L'atelier")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var C = jeu.climat
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "p": j.position, "inv": j.inventaire.duplicate(), "sante": j.sante, "faim": j.faim, "peur": j.peur, "temp": j.temperature,
+		"trempe": j.trempe, "torche": j.torche, "pluie": C.pluie, "air": C.air, "vent": C.vent, "chassees": jeu.chassees, "prel": jeu.prelevements.duplicate(),
+		"feux": jeu.feux.duplicate(), "regard": j.regard, "deja": jeu._deja.duplicate()}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	var base: float = floorf(jeu.horloge / RR.DUREE) * RR.DUREE
+	var jour_h: float = base + RR.DUREE * 0.3
+	var nuit_h: float = base + RR.DUREE * (1.0 - jeu.part_nuit) + 2.0
+	jeu.horloge = jour_h
+	jeu.feux.clear()
+	C.pluie = 0.0
+	j.torche = 0.0
+	j.regard = 1.0
+	# (un endroit sans arbre au-dessus de la tête)
+	var ici := Vector2(60.0, 40.0)
+	for k in 40:
+		var q := Vector2(60.0 + 55.0 * (k % 8), 40.0 + 60.0 * (k / 8))
+		if float(C.abri(q)) == 0.0:
+			ici = q
+			break
+	j.position = ici
+	A.commencer()
+	var inv: Dictionary = j.inventaire
+	var donner := func(d: Dictionary) -> void:
+		for k in d:
+			inv[k] = d[k]
+
+	# la liste se tient
+	var bon: bool = A.ORDRE.size() == A.OBJETS.size()
+	var familles := {}
+	for f in A.FAMILLES:
+		familles[f[0]] = true
+	for id in A.ORDRE:
+		var o: Dictionary = A.OBJETS.get(id, {})
+		if o.is_empty() or str(o.get("nom", "")) == "" or str(o.get("dit", "")) == "" or not familles.has(o.get("famille")) or not (o.get("ou") in ["main", "etabli"]):
+			bon = false
+		for k in o.get("cout", {}):
+			if not A.MATIERES.has(k) or int(o["cout"][k]) <= 0:
+				bon = false
+		if bool(o.get("pose", false)) and str(o["famille"]) != "camp":
+			bon = false
+	verif(bon, "l'atelier a %d choses à fabriquer, chacune avec son nom, sa phrase, sa famille et ce qu'elle coûte en matières connues" % A.ORDRE.size())
+
+	# l'établi, de ses mains ; le reste, à l'établi
+	donner.call({"bois": 20, "pierre": 10, "fibre": 20})
+	var sans: String = A.empeche("corde")
+	var fait: bool = A.fabriquer("etabli")
+	var paye: bool = int(inv["bois"]) == 14 and int(inv["pierre"]) == 8 and int(inv["fibre"]) == 18 and A.possede("etabli") == 1
+	var pose: bool = A.poser("etabli")
+	var etabli = A.poses[0] if A.poses.size() == 1 else null
+	verif(sans.contains("établi") and fait and paye and pose and etabli != null and A.possede("etabli") == 0 and etabli.position.distance_to(j.position) < 80.0 and A.pres_d_un_etabli(),
+		"l'établi se fabrique de ses mains (6 bois, 2 pierres, 2 fibres) et se pose devant elle ; sans lui, rien d'autre ne se fait (« %s »)" % sans)
+	var corde: bool = A.fabriquer("corde")
+	var rien: bool = not A.fabriquer("tente")
+	verif(corde and int(inv["corde"]) == 1 and int(inv["fibre"]) == 15 and rien and int(inv["corde"]) == 1 and A.possede("tente") == 0 and not A.manque("tente").is_empty(),
+		"à l'établi, trois fibres font une corde ; ce qu'elle n'a pas de quoi faire ne se fait pas, et ne lui prend rien")
+
+	# ce qu'elle porte : sans sac, vingt de chaque ; avec, quarante
+	donner.call({"bois": 18, "peau": 6, "corde": 4, "bache": 4, "fibre": 12})
+	var entre: int = A.ranger("bois", 10)
+	var cap0: int = A.capacite()
+	var sac: bool = A.fabriquer("sac_a_dos")
+	var entre2: int = A.ranger("bois", 10)
+	verif(entre == 2 and cap0 == 20 and sac and A.porte("sac_a_dos") and A.capacite() == 40 and entre2 == 10 and bool(j.tenue.get("sac", false)) and A.empeche("sac_a_dos") != "",
+		"sans sac elle porte vingt de chaque matière (deux bois sur dix sont entrés) ; le sac à dos, cousu, se porte aussitôt, se voit sur elle, et double ce qu'elle porte")
+	A.basculer("sac_a_dos")
+	var ote: bool = not A.porte("sac_a_dos") and A.capacite() == 20 and not bool(j.tenue.get("sac", false))
+	A.basculer("sac_a_dos")
+	verif(ote and A.porte("sac_a_dos"), "une tenue s'ôte et se remet")
+	verif(A.peaux_de(2.0) >= 1 and A.peaux_de(300.0) > A.peaux_de(2.0) and A.peaux_de(900.0) <= 4, "la chasse donne des peaux : %d pour une bête de 2 kg, %d pour une de 300" % [A.peaux_de(2.0), A.peaux_de(300.0)])
+
+	# la pelisse contre le froid, la cape contre la pluie
+	var refroidir := func() -> float:
+		j.temperature = 50.0
+		j.trempe = 0.0
+		for i in 30:
+			jeu._temps_du_corps(1.0)
+		return j.temperature
+	C.air = 0.12
+	C.vent = 0.0
+	var nue: float = refroidir.call()
+	A.fabriquer("vetement_chaud")
+	var couverte: float = refroidir.call()
+	verif(A.porte("vetement_chaud") and couverte > nue + 8.0 and couverte < 50.0, "la pelisse coupe le froid : par grand froid, son corps tombe à %d sans elle, à %d avec" % [int(nue), int(couverte)])
+	C.air = 0.5
+	var se_mouiller := func() -> float:
+		j.trempe = 0.0
+		j.temperature = 50.0
+		for i in 6:
+			jeu._temps_du_corps(1.0)
+		return j.trempe
+	C.pluie = 1.0
+	var mouillee: float = se_mouiller.call()
+	A.fabriquer("vetement_pluie")
+	var au_sec: float = se_mouiller.call()
+	C.pluie = 0.0
+	verif(A.porte("vetement_pluie") and mouillee > 10.0 and au_sec < mouillee * 0.3, "la cape de pluie : six secondes d'averse la trempent à %d sans elle, à %d avec" % [int(mouillee), int(au_sec)])
+
+	# la tente : un abri
+	donner.call({"bois": 12, "corde": 6, "bache": 6})
+	j.position = ici + Vector2(0.0, 160.0)
+	A.fabriquer("corde")
+	j.position = ici
+	verif(A.fabriquer("tente") and A.possede("tente") == 1, "à l'établi : une tente (2 bâches, 2 cordes, 4 bois)")
+	j.position = ici + Vector2(-220.0, 30.0)
+	j.regard = -1.0
+	var posee: bool = A.poser("tente")
+	var tente = A.poses[A.poses.size() - 1]
+	verif(posee and str(tente.genre) == "tente" and A.abri(tente.position) == 1.0 and C.abri(tente.position) == 1.0 and A.abri(tente.position + Vector2(90.0, 0.0)) == 0.0,
+		"posée, la tente abrite qui s'y tient (de la pluie, du vent), pas ce qui est à côté")
+
+	# le récupérateur d'eau, la gourde, la popote
+	var cuve = A._creer("recuperateur", ici + Vector2(0.0, -120.0), {})
+	C.pluie = 1.0
+	for i in 26:
+		A.maj(1.0)
+	C.pluie = 0.0
+	var tombee: float = cuve.etat.get("eau", 0.0)
+	j.position = cuve.position + Vector2(20.0, 0.0)
+	A._puiser(cuve)
+	var sans_gourde: int = int(inv.get("eau", 0))
+	A.objets["gourde"] = 1
+	A._puiser(cuve)
+	var puisee: int = int(inv.get("eau", 0))
+	j.temperature = 80.0
+	var bu: bool = A.boire()
+	verif(tombee > 2.0 and tombee < 2.5 and sans_gourde == 0 and puisee == 2 and bu and int(inv["eau"]) == 1 and j.temperature < 75.0,
+		"sous l'averse le récupérateur se remplit (%.1f gorgées en 26 secondes) ; il faut une gourde pour en emporter ; boire rafraîchit" % tombee)
+	A.objets["popote"] = 1
+	donner.call({"viande": 2, "bouillon": 0})
+	var cuit: bool = A.cuisiner()
+	var plus_d_eau: bool = not A.cuisiner()
+	j.faim = 20.0
+	jeu.manger()
+	verif(cuit and plus_d_eau and int(inv["viande"]) == 1 and int(inv["eau"]) == 0 and int(inv["bouillon"]) == 0 and absf(j.faim - 70.0) < 0.5,
+		"la popote : de l'eau et de la viande font un bouillon, qui rend 50 de faim (la viande cuite : 35)")
+
+	# le sommeil
+	j.position = ici
+	j.faim = 100.0
+	j.sante = 60.0
+	j.peur = 40.0
+	j.temperature = 50.0
+	var sans_duvet: bool = not A.dormir(null)
+	A.objets["duvet"] = 1
+	var allure: float = Engine.time_scale
+	var dort: bool = A.dormir(null)
+	A.maj(0.5)
+	var vite: bool = is_equal_approx(Engine.time_scale, allure * A.SOMMEIL) and j.endormie
+	for i in 20:
+		A.maj(0.5)
+	var reposee: bool = j.peur < 40.0 and j.sante > 60.0
+	jeu.agir()
+	verif(sans_duvet and dort and vite and reposee and not A.endormie and not j.endormie and is_equal_approx(Engine.time_scale, allure),
+		"avec un duvet, elle dort à même le sol : le temps passe %d fois plus vite, la peur s'en va, la santé revient ; un geste la réveille" % int(A.SOMMEIL))
+	j.position = tente.position + Vector2(20.0, 0.0)
+	jeu.horloge = nuit_h
+	A.dormir(tente)
+	var dedans: bool = A.endormie and bool(tente.etat.get("occupe", false))
+	jeu.horloge = jour_h
+	A._t = 3.0
+	A.maj(0.1)
+	verif(dedans and not A.endormie and not bool(tente.etat.get("occupe", false)), "couchée de nuit sous sa tente, elle se réveille au jour")
+	var chasseur = _bete(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(200.0, 0.0), {})
+	var guettee: bool = not A.dormir(tente)
+	_oter(chasseur)
+	verif(guettee and not A.endormie, "une bête trop près : elle ne s'endort pas")
+
+	# la lampe et ses piles
+	j.position = ici
+	j.regard = 1.0
+	jeu.horloge = nuit_h
+	A.objets["lampe"] = 1
+	A.basculer("lampe")
+	var sans_piles: bool = not A.porte("lampe")
+	A.objets["piles"] = 1
+	A.basculer("lampe")
+	var vides: bool = not A.porte("lampe")
+	A.charge = 50.0
+	A.basculer("lampe")
+	var devant: float = jeu.eclairage(j.position + Vector2(200.0, 0.0))
+	var derriere: float = jeu.eclairage(j.position + Vector2(-200.0, 0.0))
+	var de_cote: float = jeu.eclairage(j.position + Vector2(40.0, 180.0))
+	for i in 10:
+		A.maj(1.0)
+	var apres: float = A.charge
+	A.charge = 0.4
+	A.maj(1.0)
+	verif(sans_piles and vides and devant > 0.9 and derriere == 0.0 and de_cote == 0.0 and absf(apres - (50.0 - 10.0 * A.LAMPE)) < 0.1 and not A.porte("lampe"),
+		"la lampe ne s'allume qu'avec des piles chargées ; son faisceau éclaire loin devant elle (%.1f à 200 pixels), rien derrière ni sur les côtés ; vides, elle s'éteint" % devant)
+
+	# le cerf-volant recharge les piles
+	jeu.horloge = jour_h
+	var volant = A._creer("cerf_volant", ici + Vector2(140.0, -60.0), {})
+	j.position = volant.position + Vector2(-20.0, 0.0)
+	A.charge = 0.0
+	A._brancher(volant)
+	A.vent_force = 0.1
+	for i in 10:
+		A.maj(1.0)
+	var calme: float = A.charge
+	A.vent_force = 0.8
+	for i in 10:
+		A.maj(1.0)
+	var vent_fort: float = A.charge
+	A.basculer("lampe")
+	var pas_sur_elle: bool = not A.porte("lampe")
+	A.foudre(volant.position + Vector2(100.0, 0.0))
+	verif(A.fil == volant or A.charge == 100.0, "les piles sont au fil du cerf-volant")
+	verif(calme == 0.0 and absf(vent_fort - 10.0 * A.CHARGER * 0.8) < 0.2 and pas_sur_elle and A.charge == 100.0,
+		"le cerf-volant ne charge rien sans vent ; par grand vent, %d %% en dix secondes ; la foudre qui tombe près de lui les remplit d'un coup" % int(vent_fort))
+	A.vent_force = -1.0
+	A.fil = null
+
+	# le filet
+	var filet = A._creer("filet", ici + Vector2(-80.0, 140.0), {})
+	var petite = null
+	var grosse = null
+	for e in F["proies_jour"] + F["proies_nuit"]:
+		if petite == null and float(e["masse"]) <= A.PRISE_MAX:
+			petite = e
+		if grosse == null and float(e["masse"]) > A.PRISE_MAX:
+			grosse = e
+	var g = _bete(grosse, "proie", filet.position, {}) if grosse != null else null
+	A.maj(0.1)
+	var passe: bool = not filet.etat.has("prise")
+	_oter(g)
+	var prises_avant: int = jeu.chassees
+	var b2 = _bete(petite, "proie", filet.position + Vector2(4.0, 2.0), {})
+	A.maj(0.1)
+	var prise: bool = filet.etat.has("prise") and not b2.is_in_group("betes") and jeu.chassees == prises_avant + 1
+	donner.call({"viande": 0, "peau": 0})
+	j.position = filet.position + Vector2(20.0, 0.0)
+	A._relever(filet)
+	verif(petite != null and passe and prise and int(inv["viande"]) >= 1 and int(inv["peau"]) == 1 and not filet.etat.has("prise"),
+		"le filet : une bête de plus de %d kg passe ; une petite s'y prend, et se relève sans combat (de la viande, une peau)" % int(A.PRISE_MAX))
+
+	# les vestiges
+	var n_poses: int = A.poses.size()
+	A.semer_vestiges()
+	var vestiges: Array = A.poses.filter(func(x): return str(x.genre) == "vestige")
+	var loin := true
+	for v in vestiges:
+		if v.position.length() < 600.0 or absf(v.position.x) > RR.DEMI or absf(v.position.y) > RR.DEMI:
+			loin = false
+	donner.call({"ferraille": 0})
+	j.position = vestiges[0].position + Vector2(20.0, 0.0) if not vestiges.is_empty() else ici
+	jeu.agir()
+	var trouve: int = int(inv["ferraille"])
+	jeu.agir()
+	verif(vestiges.size() == 3 and A.poses.size() == n_poses + 3 and loin and trouve >= 2 and int(inv["ferraille"]) == trouve,
+		"trois vestiges d'autres veilleuses dans le lieu, loin du réveil ; « Agir » y trouve de la ferraille (%d), une seule fois" % trouve)
+
+	# replier, et la partie gardée
+	j.position = filet.position + Vector2(20.0, 0.0)
+	var replie: bool = A.replier()
+	verif(replie and A.possede("filet") == 1 and not A.poses.has(filet), "une chose posée se replie et retourne dans le sac")
+	A.fil = volant
+	A.charge = 37.0
+	var photo: Dictionary = JSON.parse_string(JSON.stringify(A.photo()))
+	var A2 = jeu.Atelier.new()
+	A2.jeu = jeu
+	A2.reprendre(photo)
+	var memes: bool = A2.objets.size() == A.objets.size() and A2.possede("filet") == 1 and A2.porte("sac_a_dos") and A2.porte("vetement_chaud") and not A2.porte("lampe") \
+		and A2.poses.size() == A.poses.size() and absf(A2.charge - 37.0) < 0.1 and A2.fil != null and str(A2.fil.genre) == "cerf_volant" \
+		and A2.poses.filter(func(x): return str(x.genre) == "vestige" and bool(x.etat.get("fouille", false))).size() == 1
+	verif(memes, "la partie gardée retient ce qu'elle a fabriqué, ce qu'elle porte, son camp posé (%d choses), les piles et où elles sont" % A.poses.size())
+	for s2 in A2.poses:
+		s2.queue_free()
+
+	# (tout remis comme avant)
+	for s3 in A.poses:
+		if is_instance_valid(s3):
+			s3.queue_free()
+	A.commencer()
+	for k in inv.keys():
+		inv[k] = int(garde["inv"].get(k, 0))
+	jeu.feux.clear()
+	for f in garde["feux"]:
+		jeu.feux.append(f)
+	jeu.horloge = garde["h"]
+	jeu.chassees = garde["chassees"]
+	jeu.prelevements = garde["prel"]
+	jeu._deja = garde["deja"]
+	j.position = garde["p"]
+	j.regard = garde["regard"]
+	j.sante = garde["sante"]
+	j.faim = garde["faim"]
+	j.peur = garde["peur"]
+	j.temperature = garde["temp"]
+	j.trempe = garde["trempe"]
+	j.torche = garde["torche"]
+	C.pluie = garde["pluie"]
+	C.air = garde["air"]
+	C.vent = garde["vent"]
 

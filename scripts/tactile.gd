@@ -27,9 +27,11 @@ const BOUTONS := [
 	["manger", "Manger", Vector2(-120, -306), 29.0],
 	# (le pont de fortune : seulement au bord d'une rivière, là où il peut se poser)
 	["pont", "Pont", Vector2(-318, -56), 29.0],
+	# (son sac : elle y fabrique l'établi, pose son camp, met sa tenue ; scripts/atelier.gd)
+	["sac", "Sac", Vector2(-336, -244), 29.0],
 ]
 const MARCHE := {"droite": Vector2.RIGHT, "gauche": Vector2.LEFT, "bas": Vector2.DOWN, "haut": Vector2.UP}
-const ICONES := {"feu": "feu", "torche": "torche", "lance": "lance", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger", "pont": "pont"}
+const ICONES := {"feu": "feu", "torche": "torche", "lance": "lance", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger", "pont": "pont", "sac": "fibre"}
 
 
 func _montre(action: String) -> bool:
@@ -206,7 +208,7 @@ func _disponible(action: String) -> bool:
 		"feu", "torche", "lance", "pont":
 			return jeu.peut_fabriquer(action)
 		"manger":
-			return int(inv["baies"]) + int(inv["viande"]) + int(inv["viande_cuite"]) > 0
+			return int(inv["baies"]) + int(inv["viande"]) + int(inv["viande_cuite"]) + int(inv.get("bouillon", 0)) > 0
 		"nourrir":
 			return int(inv["bois"]) > 0 and not jeu.feux.is_empty()
 		"cuire":

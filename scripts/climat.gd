@@ -292,6 +292,9 @@ func abri(p: Vector2) -> float:
 		return 0.0
 	if toit > 0.5:
 		return 1.0
+	# (sous sa tente : scripts/atelier.gd)
+	if jeu.get("atelier") != null and float(jeu.atelier.abri(p)) > 0.5:
+		return 1.0
 	for o in jeu.monde.autour(p, 90.0):
 		var c: float = o.couvert()
 		if c > 0.0 and p.distance_to(o.position + Vector2(0.0, -4.0)) < c:

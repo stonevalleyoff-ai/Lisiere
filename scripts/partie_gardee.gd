@@ -87,6 +87,8 @@ static func photo(jeu) -> Dictionary:
 		"noire": jeu.noire.photo() if jeu.noire != null else {},
 		# (ce qu'elle a appris des bêtes, à l'affût : scripts/pistage.gd)
 		"savoir": jeu.savoir.duplicate(),
+		# (ce qu'elle a fabriqué, ce qu'elle porte, son camp posé ; scripts/atelier.gd)
+		"atelier": jeu.atelier.photo() if jeu.atelier != null else {},
 	}
 
 

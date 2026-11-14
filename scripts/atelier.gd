@@ -84,6 +84,8 @@ var lit = null                    # là où elle dort (une tente, un hamac ; nul
 var lit_de_nuit := false          # elle s'est couchée de nuit (elle se réveillera à l'aube ; de jour : au soir)
 var _dit := {}
 var _t := 0.0
+var _avant := 1.0                 # l'allure du temps avant qu'elle s'endorme (l'essai joue en accéléré)
+var vent_force := -1.0            # (l'essai) le vent qu'on lui donne, à la place de celui du lieu (-1 : celui du lieu)
 
 
 # --- ce que la page de l'établi et celle du sac demandent ---
@@ -298,7 +300,7 @@ func agir() -> bool:
 		return false
 	match str(s.genre):
 		"etabli":
-			jeu.ui.montrer_etabli(true)
+			jeu.ouvrir_page("etabli")
 		"tente", "hamac":
 			dormir(s)
 		"recuperateur":
@@ -342,6 +344,7 @@ func dormir(ou = null) -> bool:
 		jeu.ui.message(danger, Color(0.95, 0.5, 0.42))
 		return false
 	endormie = true
+	_avant = Engine.time_scale
 	lit = ou
 	lit_de_nuit = jeu.jour_du_ciel() <= 0.0
 	_t = 0.0
@@ -360,7 +363,7 @@ func reveiller(pourquoi: String) -> void:
 		lit.etat["occupe"] = false
 	lit = null
 	jeu.joueur.endormie = false
-	Engine.time_scale = 1.0
+	Engine.time_scale = _avant
 	if pourquoi != "":
 		jeu.ui.message(pourquoi, TEINTE)
 
@@ -397,7 +400,7 @@ func maj(delta: float) -> void:
 			_tenue()
 			jeu.ui.message("Les piles sont vides : la lampe s'éteint.", Color(0.95, 0.5, 0.42))
 	var pluie: float = float(C.pluie) if C != null else 0.0
-	var vent: float = float(jeu.vent())
+	var vent: float = vent_force if vent_force >= 0.0 else float(jeu.vent())
 	for s in poses:
 		if not is_instance_valid(s):
 			continue
@@ -409,6 +412,8 @@ func maj(delta: float) -> void:
 			"cerf_volant":
 				s.etat["vent"] = vent
 				s.etat["branche"] = fil == s
+				if float(s.etat.get("foudre", 0.0)) > 0.0:
+					s.etat["foudre"] = maxf(0.0, float(s.etat["foudre"]) - 2.5 * delta)
 				if fil == s and vent >= VENT_MIN and charge < 100.0:
 					charge = minf(100.0, charge + CHARGER * vent * delta)
 					s.etat["charge"] = charge / 100.0
@@ -419,7 +424,7 @@ func maj(delta: float) -> void:
 
 
 func _dormir(delta: float, j) -> void:
-	Engine.time_scale = SOMMEIL
+	Engine.time_scale = _avant * SOMMEIL
 	# (elle se repose : la peur s'en va, la santé revient un peu)
 	j.peur = maxf(0.0, float(j.peur) - 1.5 * delta)
 	if float(j.faim) > 30.0:
@@ -427,9 +432,6 @@ func _dormir(delta: float, j) -> void:
 	var danger := _danger()
 	if danger != "":
 		reveiller(danger)
-		return
-	if j.en_mouvement:
-		reveiller("Tu te lèves.")
 		return
 	# (la nuit finie, ou le jour : elle se réveille d'elle-même)
 	var nuit: bool = jeu.jour_du_ciel() <= 0.0
@@ -563,6 +565,74 @@ func _tenue() -> void:
 	if j == null:
 		return
 	j.tenue = {"sac": porte("sac_a_dos"), "chaud": porte("vetement_chaud"), "pluie": porte("vetement_pluie"), "lampe": porte("lampe")}
+
+
+# la foudre vient de tomber en p : un cerf-volant en l'air, tout près, la prend. Les piles qui y sont branchées se chargent
+# d'un coup ; une fois sur trois, il n'en reste que des cendres.
+func foudre(p: Vector2) -> void:
+	for s in poses.duplicate():
+		if not is_instance_valid(s) or str(s.genre) != "cerf_volant" or float(s.etat.get("vent", 0.0)) < VENT_MIN or s.position.distance_to(p) > 520.0:
+			continue
+		s.etat["foudre"] = 1.0
+		if fil == s:
+			charge = 100.0
+			s.etat["charge"] = 1.0
+			jeu.ui.message("La foudre a pris le cerf-volant : tes piles sont pleines.", Color(0.98, 0.9, 0.6))
+		if randf() < 0.34:
+			if fil == s:
+				fil = null
+			poses.erase(s)
+			s.queue_free()
+			jeu.ui.message("Du cerf-volant, il ne reste que des cendres.", Color(0.75, 0.7, 0.66))
+		return
+
+
+# --- les vestiges : ce que d'autres veilleuses ont laissé (de la ferraille, pour la popote, la lampe, les piles, le cerf-volant) ---
+
+# un lieu fermé : trois vestiges, loin du réveil
+func semer_vestiges() -> void:
+	if jeu.ouvert or jeu.monde == null:
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = int(jeu.graine) ^ 0x7e57
+	var lim := R.DEMI * 0.88
+	for k in 3:
+		for essai in 12:
+			var p := Vector2.from_angle(TAU * (k + r.randf()) / 3.0) * r.randf_range(650.0, 1700.0)
+			p = jeu.monde.repousser(Vector2(clampf(p.x, -lim, lim), clampf(p.y, -lim, lim)), 20.0)
+			if float(jeu.climat.eau(p)) < 0.05 or essai == 11:
+				_creer("vestige", p, {"riche": 1 if k == 0 else 0})
+				break
+
+
+# le monde ouvert : dans cette région qu'elle découvre, un vestige, trois fois sur quatre (toujours dans la première : il lui
+# faut de la ferraille), sur son chemin : à quelques centaines de pas devant elle, vers le cœur de la région
+func vestige_de(i: int) -> void:
+	var C = jeu.carte
+	if C == null or i < 0 or i >= C.regions.size() or bool(C.regions[i]["eau"]):
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = (int(jeu.graine) ^ 0x7e57) + i * 7919
+	if r.randf() > 0.75 and not jeu.decouvertes.is_empty():
+		return
+	var ici: Vector2 = jeu.joueur.position
+	var centre: Vector2 = C.regions[i]["pos"]
+	var cap := (centre - ici).angle() if centre.distance_to(ici) > 200.0 else r.randf() * TAU
+	for essai in 12:
+		var p: Vector2 = C.retenir(ici + Vector2.from_angle(cap + r.randf_range(-0.8, 0.8)) * r.randf_range(650.0, 1400.0))
+		if int(C.region_en(p)) == i and not bool(C.roche_en(p)) and float(C.lit(p)) <= 0.0:
+			_creer("vestige", p, {"riche": 1 if r.randf() < 0.3 else 0})
+			return
+
+
+# le lieu s'en va (la fin, le retour au titre)
+func vider() -> void:
+	if endormie:
+		Engine.time_scale = _avant
+	endormie = false
+	poses = []
+	fil = null
+	lit = null
 
 
 # --- la partie ---

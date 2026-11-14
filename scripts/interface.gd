@@ -354,7 +354,7 @@ func _construire_hud() -> void:
 		_recettes.append([k, r])
 	_sac = Hud.Sac.new()
 	_cadre.add_child(_sac)
-	_aide = T.libelle("Espace : récolter, frapper · E : manger · F : nourrir le feu · C : cuire · Échap : pause", T.texte_moyen(), 13, Color(P.IVOIRE, 0.6))
+	_aide = T.libelle("Espace : récolter, frapper · E : manger · F : nourrir le feu · C : cuire · B : le sac · Échap : pause", T.texte_moyen(), 13, Color(P.IVOIRE, 0.6))
 	_aide.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_cadre.add_child(_aide)
 	_notes = _plein()
