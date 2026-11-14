@@ -680,6 +680,12 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 	var morsure := -1.0
 	var morsures := 0
 	var pas := int(secondes / 0.05)
+	# (dans la seconde moitié, tenu : combien de fois il fait volte-face, combien de fois il passe d'avancer à reculer)
+	var voltes := 0
+	var va_et_vient := 0
+	var regard_avant: float = b.regard
+	var d_avant := INF
+	var sens_avant := 0.0
 	for i in pas:
 		var sante: float = j.sante
 		b._conduire(0.05)
@@ -688,6 +694,14 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 		if i >= pas / 2:
 			somme += d
 			k += 1
+			if b.regard != regard_avant:
+				voltes += 1
+			var sens := signf(d - d_avant) if absf(d - d_avant) > 0.05 else sens_avant
+			if sens != sens_avant and sens_avant != 0.0:
+				va_et_vient += 1
+			sens_avant = sens
+		regard_avant = b.regard
+		d_avant = d
 		if annonce < 0.0 and b._presage > 0.0:
 			annonce = i * 0.05
 		if j.sante < sante:
@@ -696,7 +710,8 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 				morsure = i * 0.05
 			j.sante = 100.0
 	j.torche = 0.0
-	return {"pres": pres, "moyenne": somme / maxf(k, 1), "annonce": annonce, "morsure": morsure, "morsures": morsures, "bete": b}
+	return {"pres": pres, "moyenne": somme / maxf(k, 1), "annonce": annonce, "morsure": morsure, "morsures": morsures, "bete": b,
+		"voltes": voltes, "va_et_vient": va_et_vient}
 
 
 # un rôdeur d'audace 0,5 tenu à cette distance de la veilleuse, une minute au plus : quand il s'arrête pour guetter, quand il
@@ -862,6 +877,10 @@ func _la_memoire(F: Dictionary, f) -> void:
 	jeu.nuits = 0
 	var t1 := _face_a_la_torche(ch_e, {"traque": 1.0}, 14.0)
 	jeu.nuits = 1
+	# (il avançait dès qu'il sortait de sa limite et reculait dès qu'il y rentrait : cent volte-face en sept secondes)
+	verif(t0["va_et_vient"] <= 2 and t0["voltes"] <= 6 and ta["va_et_vient"] <= 2 and ta["voltes"] <= 6 and tp["va_et_vient"] <= 2 and tp["voltes"] <= 6,
+		"tenu par la torche, il longe la lisière de sa lumière sans aller et venir : en sept secondes, %d volte-face et %d va-et-vient (fait au feu : %d et %d ; qui le craint : %d et %d)" % [
+			t0["voltes"], t0["va_et_vient"], ta["voltes"], ta["va_et_vient"], tp["voltes"], tp["va_et_vient"]])
 	# (il passe la ligne des 140 pixels d'un pas avant d'être tenu : au plus près, un peu moins de 140 ; mesuré, 133)
 	verif(t0["pres"] >= 125.0 and t0["morsure"] < 0.0 and tt["morsure"] > 0.0 and tt["annonce"] >= 0.0 and tt["morsure"] - tt["annonce"] >= 0.8,
 		"la torche tient un chasseur d'audace 0,5 à %d pixels ; le même, d'une population qui traque, s'aplatit et gronde, puis la franchit et mord %.1f s plus tard" % [

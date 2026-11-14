@@ -92,6 +92,7 @@ var touchee := false             # frappée par la veilleuse, et en vie : une «
 var _effarouchee := -1           # le jour du jeu où un feu, une torche l'ont arrêtée (c'est compté une fois par nuit)
 var _assaut := 0.0               # le temps pendant lequel une morsure est encore du même assaut
 var _presage := 0.0              # ce qu'elle a déjà annoncé, avant de passer la torche
+var _a_la_torche := false        # un chasseur, tenu à la lisière de la torche (il la longe ; il lui faut s'en écarter pour la quitter)
 var _suit := false               # elle suit la veilleuse de loin
 
 # l'animation
@@ -940,8 +941,10 @@ func _chasseur(delta: float) -> void:
 	# la cible : la veilleuse ; mais pas dans la lumière d'un feu, ni trop près d'une torche
 	var but: Vector2 = j.position
 	var retenu := false
+	var pousse := false
 	var feu = jeu.feu_qui_protege(j.position)
 	if feu != null:
+		_a_la_torche = false
 		var c: Vector2 = feu.position
 		var bord: float = feu.rayon() * 0.85
 		var ici := position - c
@@ -953,25 +956,39 @@ func _chasseur(delta: float) -> void:
 			_effaroucher("feu")
 	elif j.torche > 0.0:
 		var tenue := _tenue_torche()
-		if dj < tenue - 5.0:
-			if audace < 0.75 + 0.2 * maxf(peur_feu, 0.0):
-				but = j.position + (position - j.position).normalized() * tenue
-				retenu = true
-				_effaroucher("lumiere")
-			elif traque > 0.0 and _presage < PRESAGE:
-				# (il a appris à passer la torche : il s'aplatit et gronde d'abord, le temps qu'on le voie venir)
+		var tient := audace < 0.75 + 0.2 * maxf(peur_feu, 0.0)
+		# (il a appris à passer la torche : il s'aplatit et gronde d'abord, le temps qu'on le voie venir)
+		var gronde := not tient and traque > 0.0 and _presage < PRESAGE
+		# à sa lisière ? Un peu d'élan pour y entrer, davantage pour en sortir : sans cela il avançait dès qu'il en était
+		# sorti et reculait dès qu'il y rentrait, d'un pas à l'autre, en faisant volte-face à chaque fois
+		if dj < tenue + (70.0 if _a_la_torche else 12.0) and (tient or gronde):
+			_a_la_torche = true
+			retenu = true
+			# tenu, il longe la lisière de la torche, comme celle d'un feu : il tourne autour de la veilleuse
+			# (visant un point en avant sur le cercle, il couperait par la corde : on le vise un peu plus loin, et il s'y tient)
+			but = j.position + Vector2.from_angle((position - j.position).angle() + _sens * 0.45) * tenue / cos(0.45)
+			pousse = dj < tenue - 22.0
+			if tient:
+				if dj < tenue + 12.0:
+					_effaroucher("lumiere")
+			else:
 				if _presage <= 0.0:
 					jeu.grognement(self, true)
 				_presage += delta
-				but = j.position + (position - j.position).normalized() * tenue
-				retenu = true
-		elif dj > tenue + 80.0:
-			_presage = 0.0
+		else:
+			_a_la_torche = false
+			if dj > tenue + 80.0:
+				_presage = 0.0
+	else:
+		_a_la_torche = false
 	_retenu = retenu
 	var allure := 0.5 if retenu else 0.9
 	if traque > 0.0:
 		# (traqueur, il arpente la lisière plus vite et vient plus droit, sans jamais gagner sur elle ce qu'il ne gagnait pas déjà)
 		allure = 0.5 + 0.25 * traque if retenu else maxf(0.9, minf(lerpf(0.9, 1.0, traque), 0.97 * R.VITESSE / maxf(vitesse, 1.0)))
+	if pousse:
+		# (la veilleuse marche sur lui, la torche haute : il recule plus vite qu'il ne rôde)
+		allure = maxf(allure, 0.9)
 	_aller(but, vitesse * allure, delta)
 	# (le feu a grandi sous elle : la bête recule hors de sa lumière ; plus loin encore si elle le craint)
 	var lisiere := _lisiere()
