@@ -542,13 +542,16 @@ func _lancer() -> void:
 	jeu.climat.boue = 0.4
 	jeu.joueur.trempe = 30.0
 	jeu.joueur.temperature = 41.0
+	jeu.savoir["essai-affut"] = 7.5
 	var gardee: Dictionary = load("res://scripts/partie_gardee.gd").photo(jeu)
+	jeu.savoir.erase("essai-affut")
 	jeu.climat.boue = 0.0
 	jeu.joueur.trempe = 0.0
 	jeu.joueur.temperature = 50.0
 
 	_la_durete()
 	_la_noire(F)
+	_le_pistage(F)
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -587,6 +590,7 @@ func _lancer() -> void:
 		int(revenue["nuits"]), revenue["tuees"].size()])
 	verif(absf(jeu.climat.boue - 0.4) < 0.02 and absf(jeu.joueur.trempe - 30.0) < 0.5 and absf(jeu.joueur.temperature - 41.0) < 0.5 and jeu.monde.objets.filter(func(x): return x.calcine).size() > 0,
 		"avec elle reviennent le sol détrempé, la veilleuse mouillée, sa température, et ce que l'incendie a brûlé")
+	verif(absf(float(jeu.savoir.get("essai-affut", 0.0)) - 7.5) < 0.01, "et ce qu'elle avait appris des bêtes, à l'affût")
 	verif(not FileAccess.file_exists("user://partie.json") or PG.lire() == lu, "l'essai ne réécrit pas la partie gardée")
 	PG.effacer()
 	jeu.ui.montrer_reprise({})
@@ -1925,4 +1929,110 @@ func _la_noire(F: Dictionary) -> void:
 	j.faim = garde["faim"]
 	j.torche = garde["torche"]
 	N.commencer()
+
+
+# --- le pistage (scripts/pistage.gd) : l'affût, les pistes, le carnet des bêtes ---
+
+func _le_pistage(F: Dictionary) -> void:
+	print("Le pistage")
+	var j = jeu.joueur
+	var Pi = jeu.pistage
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "p": j.position, "torche": j.torche, "savoir": jeu.savoir.duplicate(), "vues": jeu.vues.duplicate(),
+		"mouvement": j.en_mouvement, "deja": jeu._deja.duplicate(), "su": jeu.noire.su.duplicate()}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	var base: float = floorf(jeu.horloge / RR.DUREE) * RR.DUREE
+	var jour_h: float = base + RR.DUREE * 0.3
+	var nuit_h: float = base + RR.DUREE * (1.0 - jeu.part_nuit) + 2.0
+	jeu.horloge = jour_h
+	jeu.savoir.clear()
+	jeu.traces.vider()
+	j.position = Vector2(900.0, -700.0)
+	j.torche = 0.0
+	j.en_mouvement = false
+	var e: Dictionary = F["proies_jour"][0]
+	var id := str(e["id"])
+	var b = _bete(e, "proie", j.position + Vector2(200.0, 30.0), {})
+	jeu.vues[id] = b.nom
+	var joue := func(secondes: float) -> void:
+		for i in int(round(secondes / 0.1)):
+			Pi.maj(0.1)
+	# l'affût : immobile, près d'une bête qu'on voit et qui vaque
+	joue.call(3.0)
+	var a3: float = jeu.savoir.get(id, 0.0)
+	verif(Pi.cible == b and absf(a3 - 3.0) < 0.15 and Pi.niveau(id) == 0 and absf(Pi.part(id) - 0.5) < 0.05,
+		"à l'affût, immobile, la veilleuse observe la bête la plus proche : %.1f s d'affût en 3 s, la jauge à moitié" % a3)
+	j.en_mouvement = true
+	joue.call(2.0)
+	var marche: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01
+	j.en_mouvement = false
+	b.etat = "fuit"
+	joue.call(2.0)
+	var fuite: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01
+	b.etat = "repos"
+	jeu.horloge = nuit_h
+	joue.call(2.0)
+	var noir: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01 and jeu.eclairage(b.position) < 0.3
+	jeu.horloge = jour_h
+	b.position = j.position + Vector2(Pi.PORTEE + 40.0, 0.0)
+	joue.call(2.0)
+	var loin: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01
+	b.position = j.position + Vector2(200.0, 30.0)
+	verif(marche and fuite and noir and loin, "rien ne s'apprend en marchant, d'une bête qui fuit, dans le noir, ni de trop loin ; et rien n'est perdu")
+	var p0: Dictionary = Pi.page(jeu, id)
+	joue.call(3.2)
+	var p1: Dictionary = Pi.page(jeu, id)
+	verif(Pi.niveau(id) == 1 and p0["lignes"].is_empty() and p0["reste"] != "" and p1["lignes"].size() >= 4 and p1["lignes"][0] == "Une proie." and p1["reste"] != "",
+		"six secondes : elle est observée, et le carnet dit ce qu'elle est (%d lignes : %s)" % [p1["lignes"].size(), " ".join(p1["lignes"])])
+	joue.call(13.0)
+	var p2: Dictionary = Pi.page(jeu, id)
+	var plein: float = jeu.savoir[id]
+	joue.call(2.0)
+	verif(Pi.niveau(id) == 2 and p2["lignes"].size() >= p1["lignes"].size() + 3 and p2["reste"] == "" and Pi.cible == null and jeu.savoir[id] == plein and plein == Pi.CONNUE,
+		"dix-huit secondes : elle est connue, le carnet dit comment l'approcher et ce qu'elle vaut (%d lignes de plus) ; il n'y a plus rien à en apprendre" % (p2["lignes"].size() - p1["lignes"].size()))
+	# un chasseur : sa morsure, la torche
+	var c: Dictionary = F["chasseurs_nuit"][0]
+	jeu.vues[str(c["id"])] = str(c["nom"])
+	jeu.savoir[str(c["id"])] = Pi.CONNUE
+	var pc: Dictionary = Pi.page(jeu, str(c["id"]))
+	var texte: String = " ".join(pc["lignes"])
+	verif(texte.contains("chasseur") and texte.contains("morsure") and (texte.contains("torche") or texte.contains("charge")) and texte.contains("coup"),
+		"d'un chasseur connu, le carnet dit la morsure, la torche et les coups qu'il faut : « %s »" % texte)
+	# les pistes
+	jeu.traces.vider()
+	jeu.savoir.erase(id)
+	jeu.traces.poser(j.position + Vector2(12.0, 0.0), 0.0, 5.0, 60.0, 0, id)
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	var dit1: String = Pi.dernier_dit
+	var gagne: float = jeu.savoir.get(id, 0.0)
+	Pi.dernier_dit = ""
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	verif(dit1.contains(b.nom) and dit1.contains("toute fraîche") and dit1.contains("l'est") and absf(gagne - Pi.PISTE) < 0.01 and Pi.dernier_dit == "",
+		"sur des empreintes, elle lit la piste : « %s » ; cela vaut %.1f s d'affût, une fois par bête et par moment" % [dit1, gagne])
+	jeu.traces.vider()
+	jeu.traces.poser(j.position + Vector2(0.0, 10.0), PI * 0.5, 5.0, 60.0, 1, "jamais-vue")
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	var dit2: String = Pi.dernier_dit
+	jeu.traces.vider()
+	jeu.noire.su["empreintes"] = true
+	jeu.traces.poser(j.position + Vector2(-10.0, 0.0), -PI * 0.5, 20.0, 60.0, 2, "la-noire")
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	verif(dit2.contains("pas encore vue") and dit2.contains("le sud") and Pi.dernier_dit.contains("la Noire") and Pi.dernier_dit.contains("le nord") and Pi.cap(PI) == "l'ouest",
+		"la piste d'une bête jamais vue se lit sans son nom, celle de la Noire se reconnaît ; chacune dit vers où elle va")
+	# (tout remis comme avant)
+	_oter(b)
+	jeu.traces.vider()
+	jeu.horloge = garde["h"]
+	j.position = garde["p"]
+	j.torche = garde["torche"]
+	j.en_mouvement = garde["mouvement"]
+	jeu.savoir = garde["savoir"]
+	jeu.vues = garde["vues"]
+	jeu._deja = garde["deja"]
+	jeu.noire.su = garde["su"]
 

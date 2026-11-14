@@ -1152,7 +1152,7 @@ func _animer(delta: float) -> void:
 			_trace_d = 0.0
 			_trace_cote = -_trace_cote
 			var sens := d / dl
-			jeu.traces.poser(position + sens.orthogonal() * _trace_cote * largeur * 0.07, sens.angle(), _trace_taille, _trace_duree, _trace_genre)
+			jeu.traces.poser(position + sens.orthogonal() * _trace_cote * largeur * 0.07, sens.angle(), _trace_taille, _trace_duree, _trace_genre, id)
 			if role == "noire":
 				jeu.noire.pas(self)
 	if _pivot == null:

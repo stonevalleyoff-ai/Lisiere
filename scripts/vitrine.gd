@@ -133,6 +133,9 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	# (--affut : elle ne bouge pas, pour regarder l'œil de l'affût s'ouvrir sur une bête ; scripts/pistage.gd)
+	if OS.get_cmdline_user_args().has("--affut"):
+		_plan = [[0.0, 1.0, "attendre"]]
 	# (devant la Noire, elle reste près de son feu ; --sort : à mi-temps, elle s'éloigne dans le noir, pour voir la charge)
 	if quelle.is_valid_int():
 		_plan = [[0.0, 1.0, "attendre"]]
@@ -408,16 +411,26 @@ func _process(delta: float) -> void:
 							jeu.decouvertes[w] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
-	# (--carnet : à la fin, la pause, et la page de ce qu'on sait de la Noire — six choses apprises, et vue dans la lumière)
+	# (--carnet : à la fin, la pause, et le carnet des bêtes — la Noire, six choses apprises, vue dans la lumière ; --bas : la
+	# page descendue jusqu'aux autres bêtes)
 	if u > 0.8 and not _fait.has("carnet") and OS.get_cmdline_user_args().has("--carnet"):
 		_fait["carnet"] = true
 		for cle in ["appel", "empreintes", "silence", "yeux", "feu", "taniere"]:
 			jeu.noire.su[cle] = true
 		jeu.noire.vue = true
 		jeu.noire.taniere_connue = true
+		# (et les bêtes croisées : une connue, une observée, les autres seulement croisées)
+		var k := 0
+		for id in jeu.vues:
+			jeu.savoir[id] = [18.0, 6.0, 0.0][mini(k, 2)]
+			k += 1
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
 		jeu.ui._pause._montrer_elle(true)
+		if OS.get_cmdline_user_args().has("--bas"):
+			await get_tree().process_frame
+			await get_tree().process_frame
+			jeu.ui._pause.savoirs.scroll_vertical = 230
 	# (--pont : au bord d'une rivière, elle pose un pont de fortune et le passe)
 	if jeu.ouvert and jeu.pont_possible and not _fait.has("pont") and OS.get_cmdline_user_args().has("--pont"):
 		_fait["pont"] = true

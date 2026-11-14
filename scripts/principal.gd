@@ -37,6 +37,7 @@ const TempsSol := preload("res://scripts/temps_sol.gd")
 const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
 const Noire := preload("res://scripts/noire.gd")
 const Traces := preload("res://scripts/traces.gd")
+const Pistage := preload("res://scripts/pistage.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -85,6 +86,8 @@ var _maux := {}               # ce qui a pris sur sa santé ces dernières secon
 var _mordeur := ""            # le nom de la dernière bête qui l'a mordue
 var noire                     # la Noire : son scénario, d'une nuit à l'autre (scripts/noire.gd)
 var traces                    # les empreintes laissées sur le sol (scripts/traces.gd)
+var pistage                   # l'affût et la lecture des pistes (scripts/pistage.gd)
+var savoir: Dictionary = {}   # ce qu'elle a appris de chaque lignée, en secondes d'affût (le carnet des bêtes)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
 var _pont_vu := 0.0
 var part_nuit := 0.33
@@ -521,6 +524,10 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	if noire == null:
 		noire = Noire.new()
 		noire.jeu = self
+	# (l'œil de l'affût : au-dessus du lieu)
+	pistage = Pistage.new()
+	pistage.jeu = self
+	scene.add_child(pistage)
 	horloge = R.TRANSITION + 2.0
 	jour = 1
 	nuits = 0
@@ -531,6 +538,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	rencontres.clear()
 	prelevements.clear()
 	appris.clear()
+	savoir.clear()
 	_deja.clear()
 	_directeur = 0.5
 	_vague = 0.0
@@ -595,6 +603,7 @@ func _vider() -> void:
 	monde = null
 	yeux = null
 	traces = null
+	pistage = null
 	if noire != null:
 		noire.corps = null
 	effets.vider()

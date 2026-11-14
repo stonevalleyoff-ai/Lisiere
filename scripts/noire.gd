@@ -725,7 +725,8 @@ func _piste(a: Vector2, b: Vector2) -> void:
 		var bord := smoothstep(0.0, 400.0, s) * smoothstep(0.0, 400.0, long - s)
 		var p := a + dir * s + orth * (130.0 * sin(s / 520.0 + phase) + 60.0 * sin(s / 190.0 + phase * 1.7)) * bord
 		trou -= pas
-		if trou < 0.0:
+		# (jamais de trou aux deux bouts : la piste se trouve au camp, et ne se perd pas en vue de la tanière)
+		if trou < 0.0 and s > 380.0 and long - s > 380.0:
 			# (la piste se perd, sur quelques foulées, puis reprend)
 			if trou < -_r.randf_range(160.0, 300.0):
 				trou = _r.randf_range(500.0, 900.0)

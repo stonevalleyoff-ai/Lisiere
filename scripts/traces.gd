@@ -18,7 +18,7 @@ const BORD := Color(0.86, 0.78, 0.62)
 
 var jeu
 var _t := 0.0
-var _liste: Array = []           # [x, y, angle, taille, née à, s'efface à, genre]
+var _liste: Array = []           # [x, y, angle, taille, née à, s'efface à, genre, qui (l'id de la lignée)]
 var _vu := 0.0
 static var _tex: Array = []
 
@@ -35,12 +35,13 @@ func vider() -> void:
 	queue_redraw()
 
 
-# une empreinte, en p, tournée vers « angle » ; taille : sa demi-largeur (pixels du lieu) ; duree : ce qu'elle tient (secondes)
-func poser(p: Vector2, angle: float, taille: float, duree: float, genre: int) -> void:
+# une empreinte, en p, tournée vers « angle » ; taille : sa demi-largeur (pixels du lieu) ; duree : ce qu'elle tient (secondes) ;
+# qui : la lignée qui l'a laissée (scripts/pistage.gd la lit)
+func poser(p: Vector2, angle: float, taille: float, duree: float, genre: int, qui: String = "") -> void:
 	if jeu != null and jeu.get("carte") != null and jeu.carte != null:
 		if float(jeu.carte.lit(p)) > 0.0 or bool(jeu.carte.roche_en(p)):
 			return
-	_liste.append([p.x, p.y, angle, taille, _t, _t + duree, genre])
+	_liste.append([p.x, p.y, angle, taille, _t, _t + duree, genre, qui])
 	if _liste.size() > MAX:
 		# (les plus vieilles d'abord, mais pas la piste de la Noire)
 		for i in _liste.size():
@@ -58,6 +59,23 @@ func pres(p: Vector2, rayon: float, genre: int) -> bool:
 		if int(e[6]) == genre and Vector2(e[0], e[1]).distance_squared_to(p) < r2:
 			return true
 	return false
+
+
+# l'empreinte la plus proche de p, à moins de « rayon » ([] : aucune) ; et son âge, de 0 (elle vient d'être laissée) à 1 (elle
+# s'efface)
+func la_plus_proche(p: Vector2, rayon: float) -> Array:
+	var d0 := rayon * rayon
+	var mieux: Array = []
+	for e in _liste:
+		var d := Vector2(e[0], e[1]).distance_squared_to(p)
+		if d < d0:
+			d0 = d
+			mieux = e
+	return mieux
+
+
+func age(e: Array) -> float:
+	return clampf((_t - float(e[4])) / maxf(float(e[5]) - float(e[4]), 0.01), 0.0, 1.0)
 
 
 # combien d'empreintes de ce genre (l'essai)
