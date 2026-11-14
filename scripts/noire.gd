@@ -537,10 +537,12 @@ func _entourage(delta: float, j) -> void:
 	if not vue and d < 520.0 and jeu.eclairage(ou) > 0.35:
 		vue = true
 	_fuite -= delta
-	if la and _fuite <= 0.0:
+	if (la or etat == "dort") and _fuite <= 0.0:
+		# (les autres bêtes ne restent pas près d'elle ; endormie, elles se tiennent seulement à l'écart de sa tanière)
 		_fuite = 0.6
+		var portee := 580.0 if la else 340.0
 		for b in jeu.get_tree().get_nodes_in_group("betes"):
-			if b != corps and b.role != "echo" and b.position.distance_to(ou) < 580.0:
+			if b != corps and b.role != "echo" and b.position.distance_to(ou) < portee:
 				b.effrayer(ou, 5.0)
 
 
@@ -711,7 +713,7 @@ func _piste(a: Vector2, b: Vector2) -> void:
 		return
 	var dir := (b - a) / long
 	var orth := dir.orthogonal()
-	var pas := R.NOIRE_LARGEUR * 0.3
+	var pas := R.NOIRE_LARGEUR * 0.2
 	var n := int(long / pas)
 	var phase := _r.randf() * TAU
 	var trou := _r.randf_range(500.0, 800.0)
@@ -731,5 +733,5 @@ func _piste(a: Vector2, b: Vector2) -> void:
 			continue
 		cote = -cote
 		var sens := (p - avant).normalized() if p.distance_to(avant) > 1.0 else dir
-		jeu.traces.poser(p + sens.orthogonal() * cote * R.NOIRE_LARGEUR * 0.07, sens.angle(), R.NOIRE_LARGEUR * 0.055, 420.0, 2)
+		jeu.traces.poser(p + sens.orthogonal() * cote * R.NOIRE_LARGEUR * 0.07, sens.angle(), R.NOIRE_LARGEUR * 0.066, 420.0, 2)
 		avant = p

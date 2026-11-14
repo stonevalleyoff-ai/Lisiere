@@ -291,8 +291,8 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 		_trace_duree = 45.0 if role == "proie" else 150.0
 		_trace_genre = 0 if forme_ == "quadrupede" else 1
 		if role == "noire":
-			_trace_pas = largeur * 0.3
-			_trace_taille = largeur * 0.055
+			_trace_pas = largeur * 0.2
+			_trace_taille = largeur * 0.066
 			_trace_duree = 420.0
 			_trace_genre = 2
 	if role != "echo" and role != "noire":

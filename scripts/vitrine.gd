@@ -408,6 +408,16 @@ func _process(delta: float) -> void:
 							jeu.decouvertes[w] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
+	# (--carnet : à la fin, la pause, et la page de ce qu'on sait de la Noire — six choses apprises, et vue dans la lumière)
+	if u > 0.8 and not _fait.has("carnet") and OS.get_cmdline_user_args().has("--carnet"):
+		_fait["carnet"] = true
+		for cle in ["appel", "empreintes", "silence", "yeux", "feu", "taniere"]:
+			jeu.noire.su[cle] = true
+		jeu.noire.vue = true
+		jeu.noire.taniere_connue = true
+		jeu.en_pause = true
+		jeu.ui.montrer_pause(true)
+		jeu.ui._pause._montrer_elle(true)
 	# (--pont : au bord d'une rivière, elle pose un pont de fortune et le passe)
 	if jeu.ouvert and jeu.pont_possible and not _fait.has("pont") and OS.get_cmdline_user_args().has("--pont"):
 		_fait["pont"] = true

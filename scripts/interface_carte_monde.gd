@@ -228,6 +228,16 @@ func _draw() -> void:
 			var q: Vector2 = vers.call(f.position)
 			draw_circle(q, 4.2, encre)
 			draw_circle(q, 3.0, P.BRAISE if f.allume() else P.CENDRE)
+	# la tanière de la Noire, quand la veilleuse l'a trouvée (scripts/noire.gd) : une tache d'encre, deux points rouges ; hors
+	# de la carte, elle reste au bord, du côté où elle est
+	var noire = jeu.get("noire")
+	if noire != null and noire.taniere_connue:
+		var q: Vector2 = vers.call(noire.taniere)
+		q = Vector2(clampf(q.x, 12.0, size.x - 12.0), clampf(q.y, 12.0, size.y - 12.0))
+		draw_circle(q, 7.0, Color(P.PAPIER, 0.85))
+		draw_circle(q, 5.6, Color(0.05, 0.04, 0.05))
+		draw_circle(q + Vector2(-2.1, -1.0), 1.25, P.OEIL_NOIRE)
+		draw_circle(q + Vector2(2.1, -1.0), 1.25, P.OEIL_NOIRE)
 	var v: Vector2 = vers.call(ici)
 	draw_circle(v, 6.5, Color(P.PAPIER, 0.9))
 	draw_circle(v, 5.0, encre)

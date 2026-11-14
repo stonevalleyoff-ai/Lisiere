@@ -11,7 +11,10 @@ extends Node2D
 
 const P := preload("res://scripts/palette.gd")
 const MAX := 700                 # au-delà, les plus vieilles s'en vont (jamais celles de la Noire)
-const N := 48
+const N := 64
+# (la terre foulée : un creux sombre, et son bord relevé qui prend la lumière)
+const CREUX := Color(0.05, 0.04, 0.035)
+const BORD := Color(0.86, 0.78, 0.62)
 
 var jeu
 var _t := 0.0
@@ -110,8 +113,11 @@ func _draw() -> void:
 			var fin: float = e[5]
 			var a := clampf((fin - _t) / maxf((fin - ne) * 0.3, 0.01), 0.0, 1.0) * clampf((_t - ne) / 0.4, 0.0, 1.0)
 			var t: float = e[3]
+			# (le bord relevé d'abord, un peu décalé vers le bas, puis le creux)
+			draw_set_transform(p + Vector2(0.06, 0.1) * t, float(e[2]), Vector2(t, t * 0.9) * 1.04)
+			draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(BORD, (0.3 if g == 2 else 0.22) * a))
 			draw_set_transform(p, float(e[2]), Vector2(t, t * 0.9))
-			draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(P.ENCRE, (0.5 if g == 2 else 0.4) * a))
+			draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(CREUX, (0.82 if g == 2 else 0.6) * a))
 	draw_set_transform(Vector2.ZERO)
 
 

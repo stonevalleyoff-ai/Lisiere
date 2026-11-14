@@ -412,6 +412,9 @@ func _dessiner_la_faune(laquelle: Dictionary = {}, entre: float = 0.0) -> void:
 	var debut := Time.get_ticks_msec()
 	var f: Dictionary = laquelle if not laquelle.is_empty() else faune
 	var partie := graine
+	if laquelle.is_empty():
+		# (la Noire aussi, d'avance : son dessin est grand, et il ne faut pas qu'il fige l'image quand elle arrive)
+		Bestiaire.lire(Noire.LIGNEE, R.NOIRE_LARGEUR)
 	for k in f:
 		for e in f[k]:
 			if vues.has(e["id"]):
