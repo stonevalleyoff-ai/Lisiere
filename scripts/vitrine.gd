@@ -43,6 +43,8 @@ var appels := false
 var _appels_max := 0
 var _appels_somme := 0.0
 var _appels_n := 0
+var _geste_atelier := ""
+var _geste_atelier_t := 0.0
 var _brules: Array = []
 
 
@@ -134,6 +136,29 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	# (l'atelier, scripts/atelier.gd : --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --dort : elle dort ; --geste marteler :
+	# ce geste d'atelier, repris sans cesse (marteler, scier, coudre, monter, fouiller, boire, remuer) ; --pose etabli,tente : ces
+	# choses du camp, posées autour d'elle)
+	var ar2 := OS.get_cmdline_user_args()
+	var i_t := ar2.find("--tenue")
+	if i_t >= 0 and i_t + 1 < ar2.size():
+		var portee := {}
+		for k in ar2[i_t + 1].split(","):
+			portee[k] = true
+		j.tenue = portee
+	if ar2.has("--dort"):
+		j.endormie = true
+		_plan = [[0.0, 1.0, "attendre"]]
+	var i_g := ar2.find("--geste")
+	if i_g >= 0 and i_g + 1 < ar2.size():
+		_geste_atelier = ar2[i_g + 1]
+		_plan = [[0.0, 1.0, "attendre"]]
+	var i_p := ar2.find("--pose")
+	if i_p >= 0 and i_p + 1 < ar2.size() and jeu.atelier != null:
+		var k2 := 0
+		for g in ar2[i_p + 1].split(","):
+			jeu.atelier._creer(g, j.position + Vector2.from_angle(-0.5 + 1.05 * k2) * 120.0, {})
+			k2 += 1
 	# (--affut : elle ne bouge pas, pour regarder l'œil de l'affût s'ouvrir sur une bête ; scripts/pistage.gd)
 	if OS.get_cmdline_user_args().has("--affut"):
 		_plan = [[0.0, 1.0, "attendre"]]
@@ -415,6 +440,11 @@ func _process(delta: float) -> void:
 							jeu.decouvertes[w] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
+	if _geste_atelier != "":
+		_geste_atelier_t -= delta
+		if _geste_atelier_t <= 0.0:
+			_geste_atelier_t = 1.8
+			jeu.joueur.geste_atelier(_geste_atelier)
 	# (--noire reveil : de jour, couchée à deux pas, puis réveillée au quart du temps : elle se lève, charge, mord, s'en va)
 	if u > 0.25 and not _fait.has("reveil") and OS.get_cmdline_user_args().has("reveil") and jeu.noire.corps != null:
 		_fait["reveil"] = true

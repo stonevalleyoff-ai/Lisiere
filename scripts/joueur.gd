@@ -93,6 +93,18 @@ var regard := 1.0
 var en_mouvement := false
 var lumiere: PointLight2D
 var morte := false
+# l'atelier (scripts/atelier.gd) : ce qu'elle porte et ce qu'elle fait de ses mains ; son corps le montre
+var tenue := {}                 # « sac », « chaud », « pluie », « lampe » : vrai quand elle le porte (la lampe : allumée)
+var endormie := false           # elle dort : couchée, les yeux clos
+var atelier := ""               # le geste d'atelier en cours : marteler, scier, coudre, monter, fouiller, boire, remuer ("" : aucun)
+var atelier_t := 0.0            # depuis quand
+
+
+# un geste d'atelier commence (atelier.gd) : il dure ce que son dessin dure, puis s'efface
+func geste_atelier(nom: String) -> void:
+	atelier = nom
+	atelier_t = 0.0
+
 
 var _corps := Corps.new()
 var _trace := Trace.new()

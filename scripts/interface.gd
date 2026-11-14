@@ -575,6 +575,15 @@ func passer_au_tactile() -> void:
 	_disposer()
 
 
+# la page de l'établi et celle du sac (scripts/interface_atelier.gd) : en attendant qu'elles soient là, rien
+func montrer_etabli(_oui: bool) -> void:
+	pass
+
+
+func montrer_sac(_oui: bool) -> void:
+	pass
+
+
 func montrer_pause(oui: bool) -> void:
 	if oui:
 		_pause.dire_compteur(get_parent() != null and get_parent().get("ips") == true)

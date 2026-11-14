@@ -38,6 +38,7 @@ const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
 const Noire := preload("res://scripts/noire.gd")
 const Traces := preload("res://scripts/traces.gd")
 const Pistage := preload("res://scripts/pistage.gd")
+const Atelier := preload("res://scripts/atelier.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -90,6 +91,7 @@ var _maj_cherchee := 60.0     # avant de chercher de nouveau une version nouvell
 var noire                     # la Noire : son scénario, d'une nuit à l'autre (scripts/noire.gd)
 var traces                    # les empreintes laissées sur le sol (scripts/traces.gd)
 var pistage                   # l'affût et la lecture des pistes (scripts/pistage.gd)
+var atelier                   # ce qu'elle fabrique, porte et pose (scripts/atelier.gd)
 var savoir: Dictionary = {}   # ce qu'elle a appris de chaque lignée, en secondes d'affût (le carnet des bêtes)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
 var _pont_vu := 0.0
@@ -559,6 +561,10 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	if noire == null:
 		noire = Noire.new()
 		noire.jeu = self
+	if atelier == null:
+		atelier = Atelier.new()
+		atelier.jeu = self
+	atelier.commencer()
 	# (l'œil de l'affût : au-dessus du lieu)
 	pistage = Pistage.new()
 	pistage.jeu = self
@@ -819,6 +825,7 @@ func _process(delta: float) -> void:
 		climat.toit = sous_terre
 	_directeur_passe(delta)
 	noire.maj(delta)
+	atelier.maj(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
 	ui.maj_hud(self)
@@ -1319,6 +1326,15 @@ func _choisir(liste: Array):
 		if x <= 0.0:
 			return e
 	return liste.back()
+
+
+# une bête s'est prise dans un filet (scripts/atelier.gd) : elle quitte le lieu ; c'est un prélèvement, sans combat
+func bete_prise(b) -> void:
+	Orvane.compter(b.id, str(b.get_meta("biome", biome)), "prelevement", 1.0, "", str(b.get_meta("parcelle", "")), "", "piege")
+	prelevements[b.id] = int(prelevements.get(b.id, 0)) + 1
+	chassees += 1
+	b.remove_from_group("betes")
+	b.queue_free()
 
 
 # une bête, ou une petite bande si la lignée vit en groupe, hors de vue
