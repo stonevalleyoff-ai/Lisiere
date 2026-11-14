@@ -79,6 +79,8 @@ var _illisibles := {}         # ceux qui ne se lisent pas (hors ligne, hors de l
 var ponts: Array = []         # les ponts de fortune qui tiennent encore (scripts/pont.gd)
 var altitude := 0.0           # l'étage du relief où est la veilleuse (0 : en bas ; scripts/carte.gd, palier), lissé
 var sous_terre := 0.0         # de 0 (à l'air libre) à 1 (dans une grotte : ni jour, ni temps qu'il fait), lissé
+var _maux := {}               # ce qui a pris sur sa santé ces dernières secondes, par cause (faim, peur, froid, chaud, feu, foudre, bete)
+var _mordeur := ""            # le nom de la dernière bête qui l'a mordue
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
 var _pont_vu := 0.0
 var part_nuit := 0.33
@@ -380,6 +382,8 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 	decouvertes = {}
 	altitude = 0.0
 	sous_terre = 0.0
+	_maux = {}
+	_mordeur = ""
 	biome_info = donnees.biome(b)
 	saison = str(inst.get("cycle", {}).get("saison", {}).get("nom", "été"))
 	part_nuit = float(R.NUIT.get(saison, 0.4))
@@ -946,12 +950,13 @@ func manger() -> void:
 		ui.message("De la viande cuite. Ça réchauffe.")
 	elif int(inv["baies"]) > 0:
 		inv["baies"] = int(inv["baies"]) - 1
-		joueur.faim = minf(100.0, joueur.faim + 12.0)
+		joueur.faim = minf(100.0, joueur.faim + R.BAIE)
 		ui.message("Une poignée de baies.")
 	elif int(inv["viande"]) > 0:
 		inv["viande"] = int(inv["viande"]) - 1
 		joueur.faim = minf(100.0, joueur.faim + 18.0)
 		joueur.sante = maxf(0.0, joueur.sante - 6.0)
+		_maux["faim"] = float(_maux.get("faim", 0.0)) + 6.0
 		joueur.peur = minf(100.0, joueur.peur + 6.0)
 		ui.message("La viande crue passe mal. Cuis-la (C), près d'un feu.", Color(0.85, 0.6, 0.55))
 	else:
@@ -999,21 +1004,60 @@ func _corps(delta: float) -> void:
 	# (sous la pluie, et trempée, elle brûle plus vite)
 	joueur.torche = maxf(0.0, joueur.torche - delta * (1.0 + 0.6 * climat.pluie + (0.7 if joueur.trempe > 60.0 else 0.0)))
 	joueur.faim = maxf(0.0, joueur.faim - R.FAIM * delta)
-	if joueur.faim <= 0.0:
-		joueur.sante -= R.FAMINE * delta
-		_conseil("faim", true, "Tu as faim. Mange (E) : des baies, de la viande cuite.")
+	# (ce qui lui a fait mal ces dernières secondes s'oublie peu à peu : la fin dira ce qui l'a prise)
+	for cause in _maux:
+		_maux[cause] = float(_maux[cause]) * exp(-delta / 8.0)
+	if joueur.faim < R.FAIM_MORD:
+		# (la faim tue : elle prend sur la santé dès que l'estomac se vide, de plus en plus)
+		_mal("faim", R.FAMINE * (1.0 - joueur.faim / R.FAIM_MORD) * delta)
+		_conseil("faim", true, "Tu as faim : elle te ronge. Mange (E) : des baies, de la viande cuite.")
 	var dp := -R.PEUR_JOUR
 	if nuit > 0.5:
 		dp = R.PEUR_NOIR if lumiere < 0.35 else -R.PEUR_LUMIERE
 	if _chasseur_le_plus_proche() < 260.0:
 		dp += R.PEUR_PRESENCE
 	joueur.peur = clampf(joueur.peur + dp * delta, 0.0, 100.0)
-	if joueur.peur >= 100.0:
-		joueur.sante -= R.PANIQUE * delta
-		_conseil("panique", true, "La peur te serre le cœur. Reviens à la lumière.")
+	if joueur.peur > R.PEUR_MORD:
+		# (la peur tue : passé ce seuil, le cœur s'emballe et la santé part, de plus en plus)
+		_mal("peur", R.PANIQUE * (joueur.peur - R.PEUR_MORD) / (100.0 - R.PEUR_MORD) * delta)
+		_conseil("panique", true, "La peur te serre le cœur : elle peut te tuer. Reviens à la lumière.")
 	# (on ne guérit pas de la mort : à zéro, la partie s'arrête à la fin de cette image)
 	if joueur.sante > 0.0 and joueur.faim > 60.0 and joueur.peur < 30.0:
 		joueur.sante = minf(100.0, joueur.sante + R.SOIN * delta)
+
+
+# ce que dit l'écran de fin : ce qui a le plus pris sur sa santé, dans ses dernières secondes
+func _titre_de_fin() -> String:
+	var pire := ""
+	var combien := 0.5
+	for cause in _maux:
+		if float(_maux[cause]) > combien:
+			combien = float(_maux[cause])
+			pire = str(cause)
+	match pire:
+		"bete":
+			return "%s t'a prise." % _mordeur if _mordeur != "" else "Une bête t'a prise."
+		"faim":
+			return "La faim t'a prise."
+		"peur":
+			return "La peur t'a prise."
+		"froid":
+			return "Le froid t'a prise."
+		"chaud":
+			return "La chaleur t'a prise."
+		"feu":
+			return "Le feu t'a prise."
+		"foudre":
+			return "La foudre t'a prise."
+	return "La nuit t'a prise." if lumiere_du_jour() < 0.5 else "Le lieu t'a prise."
+
+
+# ce qui prend sur la santé de la veilleuse, et ce que c'est (la fin dit ce qui l'a prise : _maux)
+func _mal(cause: String, n: float) -> void:
+	if n <= 0.0:
+		return
+	joueur.sante -= n
+	_maux[cause] = float(_maux.get(cause, 0.0)) + n
 
 
 func _chasseur_le_plus_proche() -> float:
@@ -1092,9 +1136,11 @@ func bete_foudroyee(b) -> void:
 func mordre(b) -> void:
 	if _mort >= 0.0:
 		return
-	var d := 4.0 + 7.0 * log(float(b.masse) + 1.0) / log(10.0)
+	var d := R.MORSURE + R.MORSURE_MASSE * log(float(b.masse) + 1.0) / log(10.0)
 	var en_vie: bool = joueur.sante > 0.0
 	joueur.blesser(d)
+	_maux["bete"] = float(_maux.get("bete", 0.0)) + d
+	_mordeur = str(b.nom)
 	if en_vie and joueur.sante <= 0.0:
 		# (la morsure qui la fait tomber : sa population apprend qu'une veilleuse est une proie)
 		_raconter(b, "joueur_tombe")
@@ -1314,7 +1360,7 @@ func _fin() -> void:
 		if prelevements.has(id):
 			x += " (%d chassé%s)" % [prelevements[id], "s" if int(prelevements[id]) > 1 else ""]
 		noms.append(x)
-	var titre := "La nuit t'a prise." if lumiere_du_jour() < 0.5 else "Le lieu t'a prise."
+	var titre := _titre_de_fin()
 	var ou := "dans ce lieu : %s" % str(biome_info.get("nom", biome))
 	var ou_lot := "dans le lieu « %s »" % biome
 	if carte != null:
@@ -1401,16 +1447,16 @@ func _temps_du_corps(delta: float) -> void:
 	var k := 1.0 - exp(-delta * R.TEMPERATURE_ALLURE * (3.0 if (j.en_feu > 0.0 or brasier > 0.5) else 1.0))
 	j.temperature = clampf(lerpf(j.temperature, cible, k), 0.0, 100.0)
 	if j.temperature < R.FROID:
-		j.sante -= R.FROID_DEGATS * (R.FROID - j.temperature) / R.FROID * delta
+		_mal("froid", R.FROID_DEGATS * (R.FROID - j.temperature) / R.FROID * delta)
 		_conseil("froid", true, "Tu as froid. Trempée, c'est pire : réchauffe-toi près d'un feu." if j.trempe > 40.0 else "Tu as froid. Réchauffe-toi près d'un feu.", Color(0.72, 0.82, 0.92))
 	elif j.temperature > R.CHAUD:
-		j.sante -= R.CHAUD_DEGATS * (j.temperature - R.CHAUD) / (100.0 - R.CHAUD) * delta
+		_mal("feu" if j.en_feu > 0.0 else "chaud", R.CHAUD_DEGATS * (j.temperature - R.CHAUD) / (100.0 - R.CHAUD) * delta)
 		_conseil("chaud", j.en_feu <= 0.0, "La chaleur t'accable. Éloigne-toi des flammes." if (brasier > 0.2 or feu > 0.8) else "La chaleur t'accable. Cherche l'ombre d'un arbre, ou l'eau.")
 	# --- en feu : au contact des flammes ; la pluie, l'eau l'éteignent ---
 	if j.en_feu <= 0.0 and incendie.contact(p) and eau < 0.3:
 		enflammer_joueur()
 	if j.en_feu > 0.0:
-		j.sante -= R.EN_FEU_DEGATS * delta
+		_mal("feu", R.EN_FEU_DEGATS * delta)
 		j.en_feu -= delta * (1.0 + 1.5 * climat.pluie + (1.0 if j.trempe > 50.0 else 0.0))
 		if eau > 0.3:
 			j.en_feu = 0.0
@@ -1461,6 +1507,7 @@ func foudre_tombee(p: Vector2, sur) -> void:
 	if d < rayon and _mort < 0.0:
 		var n: float = R.FOUDRE_DEGATS * (1.0 - d / rayon) * (1.25 if joueur.trempe > 60.0 else 1.0)
 		joueur.blesser(n)
+		_maux["foudre"] = float(_maux.get("foudre", 0.0)) + n
 		ui.blessure()
 		ui.message("La foudre !" if not dans_l_eau else "La foudre court dans l'eau !", Color(0.98, 0.9, 0.6))
 		if d < R.FOUDRE_RAYON * 0.45:

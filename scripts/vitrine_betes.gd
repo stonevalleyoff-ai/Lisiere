@@ -7,6 +7,8 @@ extends Node
 #       [--image /tmp/betes]      une image par page (<image>_<lieu>_<heure>_<page>.png), puis s'arrête
 #   outils/film.sh /tmp/film -- --betes --lieu foret --duree 8        filmée : les bêtes vont, broutent, guettent
 # --figees : chaque bête reste à sa place, tournée vers la droite ; --decor : on garde les arbres et les rochers du lieu.
+# --defile pas|course : chaque bête marche (ou court) droit vers la droite, sans s'arrêter, pour regarder son allure ;
+# --id a,b : ces lignées seulement ; avec une seule et --defile, la caméra la suit ; --zoom 2.5 : de plus près.
 
 var jeu
 var lieu := "foret"
@@ -16,9 +18,13 @@ var figees := false
 var decor := false
 var image := ""
 var duree := 8.0
+var defile := ""
+var ids: Array = []
+var zoom := 1.0
 var _places: Array = []       # [la bête, sa place]
 var _t := 0.0
 var _pret := false
+var _large := 400.0
 
 
 func _ready() -> void:
@@ -38,6 +44,12 @@ func _ready() -> void:
 				image = a[i + 1]
 			"--duree":
 				duree = float(a[i + 1])
+			"--defile":
+				defile = a[i + 1]
+			"--id":
+				ids = Array(a[i + 1].split(","))
+			"--zoom":
+				zoom = float(a[i + 1])
 	_lancer.call_deferred()
 
 
@@ -55,6 +67,14 @@ func _process(delta: float) -> void:
 			b[0].maison = b[1]
 			if figees:
 				b[0].position = b[1]
+			elif defile != "":
+				# (elle va droit devant elle, à son pas ou à sa course ; au bord de l'écran, elle reprend de l'autre côté)
+				var bete = b[0]
+				bete._aller(bete.position + Vector2(300.0, 0.0), bete.vitesse * (0.34 if defile == "pas" else 1.0), delta)
+				if _places.size() == 1:
+					jeu.joueur.position = bete.position + Vector2(0.0, 6.0)
+				elif bete.position.x > b[1].x + _large * 0.5:
+					bete.position.x -= _large
 	if _pret and image == "":
 		_t += delta
 		if _t >= duree:
@@ -87,7 +107,11 @@ func _lancer() -> void:
 			if not toutes.has(e["id"]):
 				toutes[e["id"]] = e
 	var liste: Array = toutes.values()
+	if not ids.is_empty():
+		liste = liste.filter(func(x): return ids.has(str(x["id"])))
 	liste.sort_custom(func(x, y): return float(x["masse"]) < float(y["masse"]))
+	if zoom != 1.0:
+		jeu.effets.recul = zoom
 	var colonnes := 6
 	var rangs := 4
 	var par_page := colonnes * rangs
@@ -113,8 +137,16 @@ func _lancer() -> void:
 			var cx := (float(i % colonnes) + 0.5) / colonnes
 			var cy := (float(i / colonnes) + 0.6) / rangs
 			var p: Vector2 = jeu.joueur.position + Vector2((cx - 0.5) * vu.x, (cy - 0.5) * vu.y)
+			if defile != "" and liste.size() == 1:
+				# (une seule, qu'on regarde marcher : au milieu, la veilleuse cachée, la caméra sur elle)
+				p = jeu.joueur.position
+				jeu.joueur.visible = false
 			var b = jeu._creer(e, "proie", p)
 			b.flair = 0.0
+			if defile != "":
+				b.conduite = false
+				b.regard = 1.0
+				_large = vu.x / colonnes
 			if figees:
 				b.vitesse = 0.0
 				b.regard = 1.0

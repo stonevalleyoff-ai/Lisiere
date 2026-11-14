@@ -14,6 +14,7 @@ extends Node
 #   --reste : elle ne bouge pas ; --vers x,y : elle marche vers ce point ; --recul 0.4 : la caméra recule d'autant (voir le
 #   relief d'un pays, le plan d'une grotte) ; --torche : elle part une torche à la main
 #   --herbier fichier.json : l'herbier d'un biome d'Orvane, donné à la main (voir sa flore sans le réseau)
+#   --sans-feu : la nuit, pas de feu de camp (les chasseurs autour de la seule torche)
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -88,7 +89,8 @@ func _lancer() -> void:
 	j.inventaire["pierre"] = 12
 	j.inventaire["fibre"] = 12
 	j.inventaire["baies"] = 3
-	if heure != "jour":
+	# (--sans-feu : la nuit sans feu de camp, pour regarder les chasseurs autour de la seule torche)
+	if heure != "jour" and not OS.get_cmdline_user_args().has("--sans-feu"):
 		jeu.fabriquer("feu")
 		jeu.feux[0].ajouter(3)
 	jeu.fabriquer("lance")

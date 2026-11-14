@@ -205,11 +205,11 @@ class Jauges extends Allege:
 			return "En feu"
 		if corps < R.FROID:
 			return "Gelée"
-		if corps < 38.0:
+		if corps < R.FROID + 10.0:
 			return "Froid"
 		if corps > R.CHAUD:
 			return "Brûlante"
-		if corps > 66.0:
+		if corps > R.CHAUD - 10.0:
 			return "Chaud"
 		return "Trempée" if trempe > 60.0 else "Chaleur"
 
@@ -218,8 +218,9 @@ class Jauges extends Allege:
 	func _dessiner_corps(c: Vector2, r: float, police: Font) -> void:
 		var t := clampf(_corps_vu, 0.0, 100.0)
 		var u := (t - 50.0) / 50.0
-		var a_froid := clampf((36.0 - t) / 22.0, 0.0, 1.0)
-		var a_chaud := 1.0 if en_feu else clampf((t - 68.0) / 20.0, 0.0, 1.0)
+		# (elle prévient avant que la santé parte : dix degrés avant le froid qui mord, la chaleur qui accable)
+		var a_froid := clampf((R.FROID + 10.0 - t) / 22.0, 0.0, 1.0)
+		var a_chaud := 1.0 if en_feu else clampf((t - (R.CHAUD - 10.0)) / 20.0, 0.0, 1.0)
 		var alerte := maxf(a_froid, a_chaud)
 		var col := TIEDE.lerp(FROID, minf(1.0, -u * 2.2)) if u < 0.0 else TIEDE.lerp(CHAUD, minf(1.0, u * 2.2))
 		if en_feu:

@@ -16,6 +16,8 @@ const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierr
 const LUISANT := Color(0.42, 0.95, 0.82)    # la lueur des champignons lumineux d'une grotte (le vert d'eau de l'herbier d'Orvane)
 const OCRE := Color(0.65, 0.48, 0.19)       # le chapeau des autres champignons (l'ocre de l'herbier)
 const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
+const R_BAIES := preload("res://scripts/regles.gd").BAIES_PAR_BUISSON
+const R_REPOUSSE_BAIES := preload("res://scripts/regles.gd").REPOUSSE_BAIES
 const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
 # le feu : ce qui brûle se peint par shaders/incendie_objet.gdshader, qui lit dans les UV ce que le dessin lui dit
 const SHADER_FEU := preload("res://shaders/incendie_objet.gdshader")
@@ -133,10 +135,11 @@ func preparer(g: String, couleur: Color, s: int) -> void:
 			plein = 3
 			rayon = 15.0
 		"buisson":
-			plein = 3
-		"touffe", "champignon":
+			plein = R_BAIES
+		"touffe":
 			plein = 2
 		_:
+			# (une brindille ; un bouquet de champignons : une part)
 			plein = 1
 	reste = plein
 	matieres()
@@ -187,7 +190,7 @@ func _etre_champignon(f: String) -> void:
 		lueur = null
 	match forme:
 		"champignon_geant":
-			plein = 3
+			plein = 2
 			rayon = 6.0
 		"moisissure":
 			plein = 0
@@ -269,7 +272,8 @@ func recolter() -> Dictionary:
 		_sens = 1.0 if graine % 2 == 0 else -1.0
 		material = fixe
 	elif (genre == "buisson" or genre == "touffe" or genre == "champignon") and reste <= 0:
-		_repousse = REPOUSSE
+		# (les fibres reviennent vite ; ce qui se mange, lentement)
+		_repousse = REPOUSSE if genre == "touffe" else R_REPOUSSE_BAIES
 	_secoue = 0.35
 	set_process(true)
 	queue_redraw()
@@ -1101,8 +1105,8 @@ func _champignon(p, r: RandomNumberGenerator) -> void:
 			h *= 0.6
 		var pied := Vector2(x, r.randf_range(-1.0, 2.0))
 		var penche := r.randf_range(-1.8, 1.8)
-		# (cueilli une fois : les grands sont partis ; deux fois : tous)
-		var la := reste >= 2 or (reste == 1 and petit)
+		# (cueilli : il n'en reste que les pieds)
+		var la := reste >= 1
 		if not la:
 			p.tracer(PackedVector2Array([pied, pied + Vector2(penche * 0.2, -1.8)]), 1.6, Color(pale.darkened(0.25), 0.9))
 			continue

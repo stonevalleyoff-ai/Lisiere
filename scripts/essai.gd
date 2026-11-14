@@ -547,6 +547,8 @@ func _lancer() -> void:
 	jeu.joueur.trempe = 0.0
 	jeu.joueur.temperature = 50.0
 
+	_la_durete()
+
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
 	await _attendre(2.0)
@@ -588,6 +590,7 @@ func _lancer() -> void:
 	PG.effacer()
 	jeu.ui.montrer_reprise({})
 	verif(not jeu.ui._reprise.visible and jeu.ui._entrer.principal, "effacée, l'écran-titre ne propose plus que d'entrer dans la nuit")
+	_les_pattes()
 	await _lieu_sans_bord()
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
@@ -679,6 +682,12 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 	var morsure := -1.0
 	var morsures := 0
 	var pas := int(secondes / 0.05)
+	# (dans la seconde moitié, tenu : combien de fois il fait volte-face, combien de fois il passe d'avancer à reculer)
+	var voltes := 0
+	var va_et_vient := 0
+	var regard_avant: float = b.regard
+	var d_avant := INF
+	var sens_avant := 0.0
 	for i in pas:
 		var sante: float = j.sante
 		b._conduire(0.05)
@@ -687,6 +696,14 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 		if i >= pas / 2:
 			somme += d
 			k += 1
+			if b.regard != regard_avant:
+				voltes += 1
+			var sens := signf(d - d_avant) if absf(d - d_avant) > 0.05 else sens_avant
+			if sens != sens_avant and sens_avant != 0.0:
+				va_et_vient += 1
+			sens_avant = sens
+		regard_avant = b.regard
+		d_avant = d
 		if annonce < 0.0 and b._presage > 0.0:
 			annonce = i * 0.05
 		if j.sante < sante:
@@ -695,7 +712,8 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 				morsure = i * 0.05
 			j.sante = 100.0
 	j.torche = 0.0
-	return {"pres": pres, "moyenne": somme / maxf(k, 1), "annonce": annonce, "morsure": morsure, "morsures": morsures, "bete": b}
+	return {"pres": pres, "moyenne": somme / maxf(k, 1), "annonce": annonce, "morsure": morsure, "morsures": morsures, "bete": b,
+		"voltes": voltes, "va_et_vient": va_et_vient}
 
 
 # un rôdeur d'audace 0,5 tenu à cette distance de la veilleuse, une minute au plus : quand il s'arrête pour guetter, quand il
@@ -861,6 +879,10 @@ func _la_memoire(F: Dictionary, f) -> void:
 	jeu.nuits = 0
 	var t1 := _face_a_la_torche(ch_e, {"traque": 1.0}, 14.0)
 	jeu.nuits = 1
+	# (il avançait dès qu'il sortait de sa limite et reculait dès qu'il y rentrait : cent volte-face en sept secondes)
+	verif(t0["va_et_vient"] <= 2 and t0["voltes"] <= 6 and ta["va_et_vient"] <= 2 and ta["voltes"] <= 6 and tp["va_et_vient"] <= 2 and tp["voltes"] <= 6,
+		"tenu par la torche, il longe la lisière de sa lumière sans aller et venir : en sept secondes, %d volte-face et %d va-et-vient (fait au feu : %d et %d ; qui le craint : %d et %d)" % [
+			t0["voltes"], t0["va_et_vient"], ta["voltes"], ta["va_et_vient"], tp["voltes"], tp["va_et_vient"]])
 	# (il passe la ligne des 140 pixels d'un pas avant d'être tenu : au plus près, un peu moins de 140 ; mesuré, 133)
 	verif(t0["pres"] >= 125.0 and t0["morsure"] < 0.0 and tt["morsure"] > 0.0 and tt["annonce"] >= 0.0 and tt["morsure"] - tt["annonce"] >= 0.8,
 		"la torche tient un chasseur d'audace 0,5 à %d pixels ; le même, d'une population qui traque, s'aplatit et gronde, puis la franchit et mord %.1f s plus tard" % [
@@ -1423,10 +1445,10 @@ func _les_grottes() -> void:
 	var geant = par_forme.get("champignon_geant")
 	var moisi = par_forme.get("moisissure")
 	var toutes: bool = lumineux != null and ocre != null and geant != null and moisi != null
-	verif(toutes and par_forme.size() == 4 and lumineux.lueur != null and str(lumineux.plante) == "flore-grotte-champignon-lumineux" and ocre.lueur == null and ocre.plein == 2
-		and geant.lueur == null and geant.plein == 3 and geant.rayon > 0.0 and geant.hauteur > ocre.hauteur * 2.0 and moisi.epuise() and moisi.lueur == null
+	verif(toutes and par_forme.size() == 4 and lumineux.lueur != null and str(lumineux.plante) == "flore-grotte-champignon-lumineux" and ocre.lueur == null and ocre.plein == 1
+		and geant.lueur == null and geant.plein == 2 and geant.rayon > 0.0 and geant.hauteur > ocre.hauteur * 2.0 and moisi.epuise() and moisi.lueur == null
 		and int(geant.recolter().get("baies", 0)) == 1,
-		"en ligne, la flore d'une grotte est celle de l'herbier d'Orvane : le champignon, le lumineux (lui seul luit), le géant (trois parts, on bute dessus), la moisissure (rien à cueillir)")
+		"en ligne, la flore d'une grotte est celle de l'herbier d'Orvane : le champignon, le lumineux (lui seul luit), le géant (deux parts, on bute dessus), la moisissure (rien à cueillir)")
 	if not toutes or par_forme.size() != 4:
 		print("    (formes : %s ; la flore du lieu : %s)" % [par_forme.keys(), W.lieu_de("grotte")["flore"].keys()])
 	for o in poses:
@@ -1478,4 +1500,142 @@ func _marcher(de: Vector2, vers: Vector2, pas: int) -> Vector2:
 	for i in pas:
 		p = jeu.carte.retenir(p + vers.normalized() * 1.5)
 	return p
+
+
+
+
+# les pattes à trois os (scripts/bete.gd, _ik3) : la cuisse bouge peu, c'est le jarret qui plie
+func _les_pattes() -> void:
+	var F: Dictionary = jeu.faune
+	var bete = null
+	var patte := -1
+	for k in ["proies_jour", "proies_nuit", "rodeurs", "chasseurs_nuit"]:
+		for e in F[k]:
+			if bete != null:
+				break
+			var b = jeu._creer(e, "proie", jeu.joueur.position + Vector2(300.0, 200.0))
+			# (une patte de derrière à trois os : sa hanche est en arrière du milieu)
+			for i in b._p_trois.size():
+				if b._p_trois[i] and not b._p_devant[i]:
+					bete = b
+					patte = i
+					break
+			if bete == null:
+				b.queue_free()
+	if bete == null:
+		verif(false, "une bête à quatre pattes a des pattes arrière à trois os")
+		return
+	var pts: PackedVector2Array = bete._p_pts[patte]
+	var seg: PackedFloat32Array = bete._p_seg[patte]
+	var jambe: float = seg[0] + seg[1] + seg[2]
+	# au repos : elle retrouve sa pose
+	var repos: PackedVector2Array = bete._ik3(patte, pts[0], pts[3], 0.0)
+	var ecart := 0.0
+	for k in 4:
+		ecart = maxf(ecart, repos[k].distance_to(pts[k]))
+	# le pli du jarret, compté du côté où il plie au repos (plus grand : plus fermé ; négatif : retourné)
+	var sens: float = signf(wrapf((pts[3] - pts[2]).angle() - (pts[2] - pts[1]).angle(), -PI, PI))
+	var pli := func(j: PackedVector2Array) -> float: return wrapf((j[3] - j[2]).angle() - (j[2] - j[1]).angle(), -PI, PI) * sens
+	var pli_repos: float = pli.call(repos)
+	# le pied levé derrière elle (le pas qui se lève) : la cuisse suit peu, le jarret se ferme, rien ne s'arrache
+	var derriere: Vector2 = pts[3] + Vector2(-jambe * 0.2, -jambe * 0.16)
+	var leve: PackedVector2Array = bete._ik3(patte, pts[0], derriere, 1.0)
+	var cuisse := absf(wrapf((leve[1] - leve[0]).angle() - (pts[1] - pts[0]).angle(), -PI, PI))
+	var tient := true
+	for k in 3:
+		var r: float = leve[k].distance_to(leve[k + 1]) / seg[k]
+		tient = tient and r > 0.8 and r < 1.2
+	# le pied porté en avant, encore levé (le pas qui va se poser) : le jarret ne se retourne pas
+	var devant: Vector2 = pts[3] + Vector2(jambe * 0.28, -jambe * 0.12)
+	var porte: PackedVector2Array = bete._ik3(patte, pts[0], devant, 0.8)
+	verif(ecart < 1.0 and cuisse < 0.65 and float(pli.call(leve)) > pli_repos + 0.15 and tient and leve[3].distance_to(derriere) < jambe * 0.12
+		and float(pli.call(porte)) > 0.05 and porte[3].distance_to(devant) < jambe * 0.15,
+		"une patte arrière a trois os : au repos elle garde sa pose ; levée derrière, la cuisse suit peu (%.2f rad) et le jarret se ferme (%.2f → %.2f) ; portée en avant, il ne se retourne pas (%.2f)" % [
+			cuisse, pli_repos, float(pli.call(leve)), float(pli.call(porte))])
+	bete.queue_free()
+
+
+
+
+# ce qui tue (scripts/regles.gd) : la faim, la peur, le froid, la chaleur prennent sur la santé avant leur comble ; une morsure
+# compte ; les baies sont rares. Et la fin dit ce qui a pris la veilleuse
+func _la_durete() -> void:
+	var j = jeu.joueur
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "faim": j.faim, "peur": j.peur, "sante": j.sante, "temp": j.temperature, "trempe": j.trempe, "p": j.position, "maux": jeu._maux.duplicate()}
+	# (en plein jour, pour que le noir ne s'en mêle pas)
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * 0.3
+	var perd := func(faim: float, peur: float) -> float:
+		j.faim = faim
+		j.peur = peur
+		j.sante = 80.0
+		jeu._corps(1.0)
+		return 80.0 - j.sante
+	var faim_basse: float = perd.call(5.0, 0.0)
+	var faim_moyenne: float = perd.call(40.0, 0.0)
+	var faim_vide: float = perd.call(0.0, 0.0)
+	var peur_haute: float = perd.call(100.0, 92.0)
+	var peur_moyenne: float = perd.call(100.0, 60.0)
+	verif(faim_basse > 0.8 and faim_moyenne <= 0.0 and faim_vide > faim_basse and 100.0 / RR.FAMINE < 60.0 and 100.0 / RR.FAIM < RR.DUREE * 1.5,
+		"la faim tue : sous %d elle prend sur la santé (%.1f par seconde à 5, %.1f l'estomac vide : moins d'une minute pour en mourir) ; affamée en %d secondes" % [
+			int(RR.FAIM_MORD), faim_basse, faim_vide, int(100.0 / RR.FAIM)])
+	verif(peur_haute > 1.0 and peur_moyenne <= 0.0 and 100.0 / RR.PANIQUE < 30.0,
+		"la peur tue : au-dessus de %d elle prend sur la santé (%.1f par seconde à 90 ; au comble, moins de trente secondes pour en mourir)" % [int(RR.PEUR_MORD), peur_haute])
+	# le froid, la chaleur : ce que coûte une seconde, le corps à cette température (on la lui rend avant chaque mesure)
+	var par_le_temps := func(t: float) -> float:
+		j.temperature = t
+		j.sante = 80.0
+		jeu._temps_du_corps(0.05)
+		return (80.0 - j.sante) / 0.05
+	var gele: float = par_le_temps.call(8.0)
+	var frais: float = par_le_temps.call(28.0)
+	var bien: float = par_le_temps.call(50.0)
+	var brule: float = par_le_temps.call(95.0)
+	verif(gele > 1.2 and frais > 0.1 and frais < gele and bien <= 0.0 and brule > 1.5 and 100.0 / RR.FROID_DEGATS < 60.0 and 100.0 / RR.CHAUD_DEGATS < 60.0,
+		"le froid tue (%.1f par seconde à 8, il mord dès %d) ; la chaleur aussi (%.1f par seconde à 95, dès %d) ; à 50, rien" % [gele, int(RR.FROID), brule, int(RR.CHAUD)])
+	# une morsure
+	var F: Dictionary = jeu.faune
+	var b = jeu._creer(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(400.0, 300.0))
+	j.sante = 100.0
+	jeu.mordre(b)
+	var morsure: float = 100.0 - j.sante
+	var avant_m: float = 4.0 + 7.0 * log(float(b.masse) + 1.0) / log(10.0)
+	verif(morsure > avant_m * 1.4 and morsure < 40.0 and jeu._mordeur == str(b.nom),
+		"une morsure compte : %s (%.1f kg) prend %d points de santé (%d avant)" % [b.nom, float(b.masse), int(morsure), int(avant_m)])
+	# la fin dit ce qui l'a prise
+	jeu._maux = {"froid": 30.0, "faim": 4.0}
+	var t_froid: String = jeu._titre_de_fin()
+	jeu._maux = {"bete": 20.0, "peur": 6.0}
+	var t_bete: String = jeu._titre_de_fin()
+	jeu._maux = {"peur": 12.0}
+	var t_peur: String = jeu._titre_de_fin()
+	jeu._maux = {}
+	var t_rien: String = jeu._titre_de_fin()
+	verif(t_froid == "Le froid t'a prise." and t_bete == "%s t'a prise." % b.nom and t_peur == "La peur t'a prise." and t_rien.ends_with("t'a prise."),
+		"la fin dit ce qui l'a prise : « %s », « %s », « %s » ; sinon « %s »" % [t_froid, t_bete, t_peur, t_rien])
+	b.queue_free()
+	# les baies : peu de buissons, deux poignées chacun, qui repoussent lentement
+	var buissons: Array = jeu.monde.objets.filter(func(x): return x.genre == "buisson")
+	var un = null
+	for x in buissons:
+		if x.intact():
+			un = x
+			break
+	var pleins: bool = un != null and un.plein == RR.BAIES_PAR_BUISSON
+	var cueillies := 0
+	if un != null:
+		for k in 4:
+			cueillies += int(un.recolter().get("baies", 0))
+	verif(buissons.size() <= int(RR.BUISSONS + RR.BUISSONS_HUMIDE) and buissons.size() >= 5 and pleins and cueillies == RR.BAIES_PAR_BUISSON and un._repousse == RR.REPOUSSE_BAIES,
+		"les baies sont rares : %d buissons dans le lieu, %d poignées chacun, qui repoussent en %d secondes" % [buissons.size(), cueillies, int(RR.REPOUSSE_BAIES)])
+	if un != null:
+		un.reprendre("buisson", un.plein, 0.0)
+	jeu.horloge = garde["h"]
+	j.faim = garde["faim"]
+	j.peur = garde["peur"]
+	j.sante = garde["sante"]
+	j.temperature = garde["temp"]
+	j.trempe = garde["trempe"]
+	j.position = garde["p"]
+	jeu._maux = garde["maux"]
 
