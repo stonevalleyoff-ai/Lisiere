@@ -84,6 +84,9 @@ var altitude := 0.0           # l'étage du relief où est la veilleuse (0 : en 
 var sous_terre := 0.0         # de 0 (à l'air libre) à 1 (dans une grotte : ni jour, ni temps qu'il fait), lissé
 var _maux := {}               # ce qui a pris sur sa santé ces dernières secondes, par cause (faim, peur, froid, chaud, feu, foudre, bete)
 var _mordeur := ""            # le nom de la dernière bête qui l'a mordue
+var _maj_vue := 0.0           # (l'application installée) avant de regarder de nouveau si une version nouvelle est prête
+var _maj_tentee := false      # on a voulu l'ouvrir, et la page ne s'est pas rechargée : l'écran-titre dit quoi faire
+var _maj_cherchee := 60.0     # avant de chercher de nouveau une version nouvelle, à l'écran-titre
 var noire                     # la Noire : son scénario, d'une nuit à l'autre (scripts/noire.gd)
 var traces                    # les empreintes laissées sur le sol (scripts/traces.gd)
 var pistage                   # l'affût et la lecture des pistes (scripts/pistage.gd)
@@ -167,8 +170,10 @@ func _ready() -> void:
 		ui.alleger()
 	_charger()
 	_compteur_ips()
-	# l'application installée (une PWA, outils/pwa.js) : une version nouvelle s'ouvre à l'écran-titre, jamais pendant une partie
+	# l'application installée (une PWA, outils/pwa.js) : une version nouvelle s'ouvre à l'écran-titre, jamais pendant une partie.
+	# La page la cherche et la suit (outils/maj.js) ; le jeu est là : c'est lui qui décide désormais du moment.
 	if OS.has_feature("web"):
+		JavaScriptBridge.eval("if (window.lisiereMaj) window.lisiereMaj.jeu = true;")
 		JavaScriptBridge.pwa_update_available.connect(_nouvelle_version)
 	Orvane.jeu = "lisiere"
 	Orvane.monde = R.MONDE_DES_LOTS
@@ -317,15 +322,40 @@ func _titre() -> void:
 	au_titre = true
 	if session != null and essai == null:
 		session.renvoyer_attente()
-	if OS.has_feature("web") and JavaScriptBridge.pwa_needs_update():
-		_nouvelle_version()
+	if OS.has_feature("web") and essai == null:
+		# (de retour à l'écran-titre : y a-t-il une version nouvelle ? On la cherche, et l'on regarde tout de suite si une est prête)
+		JavaScriptBridge.eval("if (window.lisiereMaj) window.lisiereMaj.chercher();")
+		_maj_vue = 0.0
+		_maj_cherchee = 60.0
 
 
-# une version nouvelle du jeu est publiée, et l'application l'a reçue : à l'écran-titre, la page se recharge sur elle ; pendant
-# une partie, elle attend le retour à l'écran-titre
+# l'application installée : une version nouvelle du jeu est-elle prête sur l'appareil ? (la page le sait : outils/maj.js ; à
+# défaut, Godot)
+func _version_prete() -> bool:
+	return JavaScriptBridge.pwa_needs_update() or bool(JavaScriptBridge.eval("!!(window.lisiereMaj && window.lisiereMaj.prete)"))
+
+
+# une version nouvelle du jeu est publiée, et l'application l'a reçue : à l'écran-titre, on le dit et la page se recharge sur
+# elle ; pendant une partie, elle attend le retour à l'écran-titre. Si la page ne se recharge pas, on rend l'écran-titre, qui
+# dit quoi faire ; on n'essaie qu'une fois.
 func _nouvelle_version() -> void:
-	if au_titre and essai == null:
-		JavaScriptBridge.pwa_update()
+	if not au_titre or essai != null or _maj_tentee:
+		return
+	_maj_tentee = true
+	ui.montrer_chargement("Une version nouvelle du jeu arrive…")
+	JavaScriptBridge.eval("if (window.lisiereMaj) window.lisiereMaj.appliquer();")
+	JavaScriptBridge.pwa_update()
+	await get_tree().create_timer(12.0).timeout
+	if au_titre:
+		_titre()
+
+
+# de quand est ce jeu-ci (l'application installée : la date de son export, à l'heure de l'appareil) ; "" hors d'un navigateur
+func _version_du_jeu() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	var v = JavaScriptBridge.eval("(window.lisiereMaj && window.lisiereMaj.version) ? new Date(window.lisiereMaj.version * 1000).toLocaleString('fr-FR', {day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'}) : ''")
+	return str(v) if typeof(v) == TYPE_STRING else ""
 
 
 # les lieux qu'on propose : ceux du monde, et, à l'essai, le monde ouvert (MONDE-OUVERT.md), où l'on s'éveille dans la prairie
@@ -356,9 +386,14 @@ func _infos_monde() -> String:
 	var c: Dictionary = donnees.index.get("cycle", {})
 	var s := str(c.get("saison", {}).get("nom", ""))
 	var t := "Le monde d'Orvane, cycle %s%s" % [str(c.get("n", "?")), (", " + s) if s != "" else ""]
-	if donnees.en_ligne:
-		return t + ", tel qu'il est ce matin."
-	return t + " : la copie gardée dans le jeu (hors ligne)."
+	t += ", tel qu'il est ce matin." if donnees.en_ligne else " : la copie gardée dans le jeu (hors ligne)."
+	# (de quand est le jeu : qu'on sache d'un coup d'œil si l'application installée est à jour)
+	var v := _version_du_jeu()
+	if v != "":
+		t += "\nJeu du %s." % v
+	if _maj_tentee:
+		t += " Une version nouvelle attend : ferme le jeu et rouvre-le."
+	return t
 
 
 # ouvert_ : le lieu sans bord (MONDE-OUVERT.md), fabriqué par morceaux autour de la veilleuse
@@ -718,6 +753,18 @@ func _lumieres() -> void:
 # --- chaque image ---
 
 func _process(delta: float) -> void:
+	if au_titre and essai == null and OS.has_feature("web"):
+		# (l'application installée : à l'écran-titre, une version nouvelle s'ouvre dès qu'elle est prête)
+		_maj_vue -= delta
+		if _maj_vue <= 0.0:
+			_maj_vue = 2.0
+			if _version_prete():
+				_nouvelle_version()
+		# (et l'on en cherche une chaque minute, tant qu'on reste là)
+		_maj_cherchee -= delta
+		if _maj_cherchee <= 0.0:
+			_maj_cherchee = 60.0
+			JavaScriptBridge.eval("if (window.lisiereMaj) window.lisiereMaj.chercher();")
 	if not en_partie:
 		return
 	if Input.is_action_just_pressed("pause"):
