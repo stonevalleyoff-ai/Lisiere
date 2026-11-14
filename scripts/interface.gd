@@ -51,6 +51,7 @@ var _entrer
 var _etat_titre: Label
 var _record: Label
 var _bas_titre: VBoxContainer
+var _pages := {}              # les pages de l'atelier déjà faites : « etabli », « sac »
 var _aide_titre: Label
 var _pied: Label
 var _centre_titre: CenterContainer
@@ -575,13 +576,43 @@ func passer_au_tactile() -> void:
 	_disposer()
 
 
-# la page de l'établi et celle du sac (scripts/interface_atelier.gd) : en attendant qu'elles soient là, rien
-func montrer_etabli(_oui: bool) -> void:
-	pass
+# la page de l'établi et celle du sac (scripts/interface_atelier.gd), faites à leur première ouverture. Vrai si la page est
+# là (principal.gd ne met la partie en attente que si elle s'est ouverte).
+func montrer_etabli(oui: bool) -> bool:
+	return _montrer_page("etabli", oui)
 
 
-func montrer_sac(_oui: bool) -> void:
-	pass
+func montrer_sac(oui: bool) -> bool:
+	return _montrer_page("sac", oui)
+
+
+func _montrer_page(quelle: String, oui: bool) -> bool:
+	if not _pages.has(quelle):
+		if not oui or not ResourceLoader.exists("res://scripts/interface_atelier.gd"):
+			return false
+		var pages = load("res://scripts/interface_atelier.gd")
+		var p: Control = pages.Etabli.new() if quelle == "etabli" else pages.Sac.new()
+		p.theme = T.theme()
+		p.visible = false
+		p.fermer.connect(_fermer_page)
+		add_child(p)
+		if tactile and p.has_method("mettre_tactile"):
+			p.mettre_tactile(true)
+		_pages[quelle] = p
+	var page: Control = _pages[quelle]
+	if oui:
+		page.ouvrir(get_parent())
+		page.visible = true
+	else:
+		page.visible = false
+	return true
+
+
+# le bouton « fermer » d'une page d'atelier : la partie reprend (principal.gd)
+func _fermer_page() -> void:
+	var jeu = get_parent()
+	if jeu != null and jeu.has_method("fermer_page"):
+		jeu.fermer_page()
 
 
 func montrer_pause(oui: bool) -> void:

@@ -853,12 +853,11 @@ func _process(delta: float) -> void:
 func ouvrir_page(quelle: String) -> void:
 	if not en_partie or _mort >= 0.0 or page != "" or en_pause:
 		return
+	# (la partie n'attend que si la page s'est ouverte)
+	if not (ui.montrer_etabli(true) if quelle == "etabli" else ui.montrer_sac(true)):
+		return
 	page = quelle
 	en_pause = true
-	if quelle == "etabli":
-		ui.montrer_etabli(true)
-	else:
-		ui.montrer_sac(true)
 
 
 func fermer_page() -> void:
