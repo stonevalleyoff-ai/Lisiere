@@ -15,6 +15,7 @@ extends Node
 #   relief d'un pays, le plan d'une grotte) ; --torche : elle part une torche à la main
 #   --herbier fichier.json : l'herbier d'un biome d'Orvane, donné à la main (voir sa flore sans le réseau)
 #   --sans-feu : la nuit, pas de feu de camp (les chasseurs autour de la seule torche)
+#   --noire 2|3|4 : la Noire à cet acte (scripts/noire.gd) ; --noire dort, --noire piste : de jour, sa tanière, sa piste
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -100,9 +101,28 @@ func _lancer() -> void:
 			jeu._creer(F["proies_jour"][i % F["proies_jour"].size()], "proie", j.position + Vector2.from_angle(i * 2.1 + 0.4) * randf_range(170.0, 260.0))
 	if not F["rodeurs"].is_empty() and heure != "nuit":
 		jeu._creer(F["rodeurs"][0], "rodeur", j.position + Vector2(-300, 120))
-	if heure != "jour":
+	# (--noire 2|3|4 : la Noire à cet acte, déjà en chemin ; --noire dort : de jour, couchée à deux pas ; --noire piste : de
+	# jour, sa piste qui part du camp. Sans les chasseurs ordinaires, qu'elle ferait fuir.)
+	var i_n := OS.get_cmdline_user_args().find("--noire")
+	var quelle := OS.get_cmdline_user_args()[i_n + 1] if i_n >= 0 and i_n + 1 < OS.get_cmdline_user_args().size() else ""
+	if heure != "jour" and quelle == "":
 		for i in 2:
 			jeu._creer(F["chasseurs_nuit"][i % F["chasseurs_nuit"].size()], "chasseur", j.position + Vector2.from_angle(i * PI + 1.0) * 300.0)
+	match quelle:
+		"":
+			pass
+		"dort":
+			jeu.noire.acte = 2
+			jeu.noire.taniere = j.position + Vector2(250.0, -30.0)
+			jeu.noire.ou = jeu.noire.taniere
+		"piste":
+			jeu.noire.acte = 1
+			jeu.noire.taniere = j.position + Vector2(3600.0, -900.0)
+			jeu.noire._piste(j.position + Vector2(120.0, 60.0), jeu.noire.taniere)
+		_:
+			jeu.nuits = int(quelle) - 1
+			jeu._etait_nuit = true
+			jeu.noire.mettre_en_scene(int(quelle), 700.0, PI * 0.92)
 	# le plan de la veilleuse, en fractions de la durée
 	_plan = [
 		[0.0, 0.18, "attendre"],
@@ -113,6 +133,14 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	# (--affut : elle ne bouge pas, pour regarder l'œil de l'affût s'ouvrir sur une bête ; scripts/pistage.gd)
+	if OS.get_cmdline_user_args().has("--affut"):
+		_plan = [[0.0, 1.0, "attendre"]]
+	# (devant la Noire, elle reste près de son feu ; --sort : à mi-temps, elle s'éloigne dans le noir, pour voir la charge)
+	if quelle.is_valid_int():
+		_plan = [[0.0, 1.0, "attendre"]]
+		if OS.get_cmdline_user_args().has("--sort"):
+			_plan = [[0.0, 0.55, "attendre"], [0.55, 1.0, "sortir"]]
 	# (--doigt : comme sur un téléphone, les boutons à l'écran)
 	if OS.get_cmdline_user_args().has("--doigt"):
 		jeu.tactile.activer()
@@ -383,6 +411,26 @@ func _process(delta: float) -> void:
 							jeu.decouvertes[w] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
+	# (--carnet : à la fin, la pause, et le carnet des bêtes — la Noire, six choses apprises, vue dans la lumière ; --bas : la
+	# page descendue jusqu'aux autres bêtes)
+	if u > 0.8 and not _fait.has("carnet") and OS.get_cmdline_user_args().has("--carnet"):
+		_fait["carnet"] = true
+		for cle in ["appel", "empreintes", "silence", "yeux", "feu", "taniere"]:
+			jeu.noire.su[cle] = true
+		jeu.noire.vue = true
+		jeu.noire.taniere_connue = true
+		# (et les bêtes croisées : une connue, une observée, les autres seulement croisées)
+		var k := 0
+		for id in jeu.vues:
+			jeu.savoir[id] = [18.0, 6.0, 0.0][mini(k, 2)]
+			k += 1
+		jeu.en_pause = true
+		jeu.ui.montrer_pause(true)
+		jeu.ui._pause._montrer_elle(true)
+		if OS.get_cmdline_user_args().has("--bas"):
+			await get_tree().process_frame
+			await get_tree().process_frame
+			jeu.ui._pause.savoirs.scroll_vertical = 230
 	# (--pont : au bord d'une rivière, elle pose un pont de fortune et le passe)
 	if jeu.ouvert and jeu.pont_possible and not _fait.has("pont") and OS.get_cmdline_user_args().has("--pont"):
 		_fait["pont"] = true
@@ -451,6 +499,8 @@ func _process(delta: float) -> void:
 					_fait["morsure"] = true
 					jeu.mordre(c)
 			j.deplacer(Vector2(0.6, -0.4), delta, jeu.monde)
+		"sortir":
+			j.deplacer(Vector2(0.9, -0.35), delta, jeu.monde)
 
 
 func _cadence(_quoi: String, delta: float) -> void:
@@ -485,6 +535,10 @@ func _un_chasseur():
 
 # (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les tait, et on laisse au serveur audio le temps)
 func _quitter() -> void:
+	# (où en est la Noire, pour qui lit la sortie : son acte, sa tanière, sa piste, ce qu'on sait d'elle)
+	if jeu.noire != null and jeu.joueur != null and jeu.traces != null:
+		print("vitrine : la Noire, acte %d, %s, sa tanière à %d pixels, %d empreintes d'elle, sait : %s" % [jeu.noire.acte, jeu.noire.etat,
+			int(jeu.noire.taniere.distance_to(jeu.joueur.position)), jeu.traces.nombre(2), ", ".join(jeu.noire.su.keys())])
 	jeu.sons.taire()
 	jeu.sons.arreter_brefs()
 	await get_tree().create_timer(0.3, true, false, true).timeout

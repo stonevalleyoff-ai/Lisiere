@@ -13,6 +13,7 @@ const Bouton := preload("res://scripts/interface_bouton.gd")
 const CarteMonde := preload("res://scripts/interface_carte_monde.gd")
 const Bestiaire := preload("res://scripts/bestiaire.gd")
 const Donnees := preload("res://scripts/donnees.gd")
+const LaNoire := preload("res://scripts/noire.gd")
 const PAPIER := preload("res://shaders/interface_papier.gdshader")
 
 
@@ -372,6 +373,11 @@ class Pause extends Control:
 	# le monde ouvert : la carte de ce qu'on a découvert, à la place des commandes (un bouton passe de l'une aux autres)
 	var carte_monde: CarteMonde
 	var _bascule
+	# le carnet des bêtes : la Noire (scripts/noire.gd) et les bêtes croisées (scripts/pistage.gd) ; une page de plus, dès
+	# qu'il y a quelque chose à y lire
+	var savoirs: Savoirs
+	var _elle
+	var _monde_ouvert := false
 	var _boutons: Array = []
 	var _ips
 	var _titre: Label
@@ -404,6 +410,10 @@ class Pause extends Control:
 		carte_monde.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		carte_monde.visible = false
 		v.add_child(carte_monde)
+		savoirs = Savoirs.new()
+		savoirs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		savoirs.visible = false
+		v.add_child(savoirs)
 		var h := HBoxContainer.new()
 		h.alignment = BoxContainer.ALIGNMENT_CENTER
 		h.add_theme_constant_override("separation", 30)
@@ -432,7 +442,24 @@ class Pause extends Control:
 			_bascule._mesurer()
 			_bascule.queue_redraw())
 		h2.add_child(_bascule)
+		_elle = Bouton.new("Le carnet des bêtes", 16, true)
+		_elle.visible = false
+		_elle.pressed.connect(func(): _montrer_elle(not savoirs.visible))
+		h2.add_child(_elle)
 		resized.connect(_disposer)
+
+	# le carnet des bêtes, à la place de la carte ou des commandes ; le même bouton le referme
+	func _montrer_elle(oui: bool) -> void:
+		savoirs.visible = oui
+		carte_monde.visible = _monde_ouvert and not oui
+		_commandes.visible = not _monde_ouvert and not oui
+		_bascule.visible = _monde_ouvert and not oui
+		_bascule.libelle = "Voir les commandes"
+		_bascule._mesurer()
+		_elle.libelle = "Revenir" if oui else "Le carnet des bêtes"
+		_elle._mesurer()
+		_elle.queue_redraw()
+		_disposer()
 
 	# le bouton dit ce qu'il fera
 	func dire_compteur(visible_: bool) -> void:
@@ -455,7 +482,7 @@ class Pause extends Control:
 	func _disposer() -> void:
 		var s := size
 		# (avec la carte du monde ouvert, la page prend toute la hauteur qu'elle peut)
-		var haut := 620.0 if (carte_monde != null and carte_monde.visible) else 450.0
+		var haut := 620.0 if (carte_monde != null and carte_monde.visible) or (savoirs != null and savoirs.visible) else 450.0
 		var ps := Vector2(minf(760.0 if haut > 500.0 else 720.0, s.x - 40.0), minf(haut, s.y - (92.0 if compact else 80.0)))
 		page.size = ps
 		# (au doigt, la page descend un peu : le bouton de pause est en haut, au milieu)
@@ -466,6 +493,12 @@ class Pause extends Control:
 		_t = 0.0
 		visible = true
 		var monde_ouvert: bool = jeu != null and jeu.get("carte") != null
+		_monde_ouvert = monde_ouvert
+		savoirs.visible = false
+		savoirs.ouvrir(jeu)
+		_elle.visible = jeu != null and ((jeu.get("noire") != null and not jeu.noire.su.is_empty()) or (typeof(jeu.get("vues")) == TYPE_DICTIONARY and not jeu.vues.is_empty()))
+		_elle.libelle = "Le carnet des bêtes"
+		_elle._mesurer()
 		carte_monde.visible = monde_ouvert
 		_commandes.visible = not monde_ouvert
 		_bascule.visible = monde_ouvert
@@ -496,6 +529,90 @@ class Pause extends Control:
 		_voile.color.a = 0.66 * u
 		page.modulate.a = u
 		page.position.y = (size.y - page.size.y) * 0.5 + (26.0 if compact else 0.0) + 14.0 * (1.0 - u)
+
+
+# le carnet des bêtes (la pause) : une page qui défile. D'abord la Noire (scripts/noire.gd), dès qu'on sait quelque chose
+# d'elle : son portrait si on l'a vue dans la lumière, ce qu'on a appris, ce qui reste à apprendre (compté, sans le dire). Puis
+# chaque bête croisée (scripts/pistage.gd) : son dessin, et ce que l'affût en a appris — croisée, observée, connue.
+class Savoirs extends ScrollContainer:
+	const Pistage := preload("res://scripts/pistage.gd")
+	const ETATS := ["croisée", "observée", "connue"]
+	var _liste: VBoxContainer
+
+	func _init() -> void:
+		horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_liste = VBoxContainer.new()
+		_liste.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_liste.add_theme_constant_override("separation", 16)
+		add_child(_liste)
+
+	func ouvrir(jeu) -> void:
+		for c in _liste.get_children():
+			_liste.remove_child(c)
+			c.queue_free()
+		scroll_vertical = 0
+		if jeu == null:
+			return
+		var noire = jeu.get("noire")
+		var rien := true
+		if noire != null and not noire.su.is_empty():
+			rien = false
+			var tex = null
+			if noire.vue:
+				tex = Bestiaire.portrait(LaNoire.LIGNEE, 300.0).get("tex")
+			var sus: Array = noire.savoirs()
+			var reste: int = LaNoire.SAVOIRS.size() - sus.size()
+			_liste.add_child(_carte("La Noire", tex, sus, "Il reste %d chose%s à apprendre d'elle." % [reste, "s" if reste > 1 else ""] if reste > 0 else "",
+				true, "Tu ne l'as pas encore vue dans la lumière."))
+		var vues = jeu.get("vues")
+		if typeof(vues) == TYPE_DICTIONARY:
+			for id in vues:
+				rien = false
+				var pg: Dictionary = Pistage.page(jeu, str(id))
+				var lignee: Dictionary = pg["lignee"]
+				var tex2 = Bestiaire.portrait(lignee, 150.0).get("tex") if not lignee.is_empty() else null
+				_liste.add_child(_carte("%s, %s" % [pg["nom"], ETATS[int(pg["niveau"])]], tex2, pg["lignes"], str(pg["reste"]), false, ""))
+		if rien:
+			_liste.add_child(Encre.libelle("Aucune bête ne s'est encore montrée dans la lumière.", T.titre_italique(), 17, P.ENCRE_DOUCE))
+
+	# une bête : son dessin à gauche (ou ce qui en tient lieu), son nom et ce qu'on en sait à droite
+	func _carte(titre: String, tex, lignes: Array, pied: String, grande: bool, sans_dessin: String) -> Control:
+		var h := HBoxContainer.new()
+		h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		h.add_theme_constant_override("separation", 16)
+		var large := 220.0 if grande else 130.0
+		var gauche := VBoxContainer.new()
+		gauche.custom_minimum_size = Vector2(large, 0.0)
+		gauche.alignment = BoxContainer.ALIGNMENT_CENTER
+		h.add_child(gauche)
+		if tex != null:
+			var image := TextureRect.new()
+			image.texture = tex
+			image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			image.custom_minimum_size = Vector2(large, 140.0 if grande else 76.0)
+			image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			gauche.add_child(image)
+		elif sans_dessin != "":
+			var manque := Encre.libelle(sans_dessin, T.titre_italique(), 15, P.ENCRE_DOUCE)
+			manque.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			gauche.add_child(manque)
+		var droite := VBoxContainer.new()
+		droite.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		droite.add_theme_constant_override("separation", 3 if not grande else 6)
+		h.add_child(droite)
+		droite.add_child(Encre.libelle(titre, T.titre(), 28 if grande else 21, P.ENCRE, false))
+		for t in lignes:
+			var l := Encre.libelle("·  " + str(t), T.texte_moyen(), 15 if grande else 14, P.ENCRE, false)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			droite.add_child(l)
+		if pied != "":
+			var r := Encre.libelle(pied, T.titre_italique(), 15, P.ENCRE_DOUCE, false)
+			r.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			droite.add_child(r)
+		return h
 
 
 # les commandes, en deux colonnes : une icône, la touche (ou le bouton), ce qu'elle fait

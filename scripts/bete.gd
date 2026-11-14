@@ -6,7 +6,9 @@ extends Node2D
 #  - rodeur : un chasseur qui vit le jour ; il laisse passer, mais se retourne si l'on s'approche trop ou si on le frappe ;
 #  - chasseur : la nuit, il vient vers la veilleuse ; il n'entre pas dans la lumière d'un feu, tourne à sa lisière, et garde
 #    ses distances avec une torche (sauf les plus audacieux) ; dans le noir, il mord. À l'aube, il repart ;
-#  - echo : une bête qu'on a tuée, revenue la nuit quand la peur est haute ; pâle, lente, elle ne mord pas : elle traverse.
+#  - echo : une bête qu'on a tuée, revenue la nuit quand la peur est haute ; pâle, lente, elle ne mord pas : elle traverse ;
+#  - noire : la Noire (scripts/noire.gd), qui n'est pas d'Orvane. Elle ne décide rien ici : noire.gd lui donne un ordre (aller
+#    là, guetter, charger, dormir), son corps le suit. Le feu la tient comme les autres ; les coups ne la tuent pas.
 # Et ce que sa population a appris des joueurs (la mémoire d'Orvane, docs/50 : _apprendre) : craintive, elle fuit de plus loin et
 # guette ; habituée, elle se laisse approcher ; traqueuse, elle suit la veilleuse, revient après un coup, passe la torche (en
 # s'annonçant) ; selon qu'elle craint le feu ou s'y est faite, elle s'en tient plus ou moins loin. Sans mémoire, rien ne change.
@@ -94,6 +96,21 @@ var _assaut := 0.0               # le temps pendant lequel une morsure est encor
 var _presage := 0.0              # ce qu'elle a déjà annoncé, avant de passer la torche
 var _a_la_torche := false        # un chasseur, tenu à la lisière de la torche (il la longe ; il lui faut s'en écarter pour la quitter)
 var _suit := false               # elle suit la veilleuse de loin
+# la Noire : ce que scripts/noire.gd lui fait faire
+var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »
+var ordre_but := Vector2.ZERO
+var ordre_allure := 0.3
+var aplatie := 0.0               # de 0 à 1 : elle s'aplatit, avant de charger
+var couchee := 0.0               # de 0 à 1 : elle est couchée (elle dort)
+var yeux_clos := 0.0             # de 0 à 1 : ses yeux se ferment (elle dort, elle s'efface dans le noir)
+var de_face := 0.0               # de 0 à 1 : elle regarde la veilleuse en face, et l'on voit ses deux yeux (scripts/yeux.gd)
+# ses empreintes (scripts/traces.gd) : une à chaque foulée
+var _trace_pas := 0.0            # la longueur d'une foulée (0 : elle n'en laisse pas)
+var _trace_d := 0.0
+var _trace_cote := 1.0
+var _trace_taille := 6.0
+var _trace_duree := 45.0
+var _trace_genre := 0
 
 # l'animation
 var _sq: Dictionary = {}
@@ -258,13 +275,27 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 	masse = float(e["masse"])
 	var plan: Dictionary = lignee.get("plan", {})
 	# (sa taille à l'écran : celle du bestiaire de Lisière, qui se lit en jouant)
-	largeur = Bestiaire.largeur_de(masse, Bestiaire.est_chasseur(plan))
+	largeur = float(e["largeur"]) if e.has("largeur") else Bestiaire.largeur_de(masse, Bestiaire.est_chasseur(plan))
 	pv_max = 8.0 + 22.0 * log(masse + 1.0) / log(10.0)
 	pv = pv_max
 	vitesse = 45.0 + 15.0 * float(plan.get("vitesse_rel", 4.0))
 	flair = 90.0 + 230.0 * float(plan.get("perception", 0.5))
 	audace = float(plan.get("temperament", 0.3))
-	if role != "echo":
+	if role == "noire":
+		vitesse = R.NOIRE_VITESSE
+	# (ses empreintes : assez grande pour qu'on les voie, et des pattes pour les faire ; un chasseur marque plus longtemps)
+	var forme_ := str(plan.get("corps", {}).get("forme", "")) if typeof(plan.get("corps", {})) == TYPE_DICTIONARY else ""
+	if role != "echo" and largeur >= 58.0 and forme_ in ["quadrupede", "bipede", "oiseau"]:
+		_trace_pas = largeur * (0.46 if forme_ == "quadrupede" else 0.36)
+		_trace_taille = largeur * 0.05
+		_trace_duree = 45.0 if role == "proie" else 150.0
+		_trace_genre = 0 if forme_ == "quadrupede" else 1
+		if role == "noire":
+			_trace_pas = largeur * 0.2
+			_trace_taille = largeur * 0.066
+			_trace_duree = 420.0
+			_trace_genre = 2
+	if role != "echo" and role != "noire":
 		# (son audace à elle, tirée une fois : plus hardie que les siennes, elle craint moins et ose plus ; l'essai la fixe)
 		ecart = clampf(float(e["ecart"]) if e.has("ecart") else randfn(0.0, 1.0), -2.5, 2.5)
 		_apprendre(e.get("memoire", {}))
@@ -587,7 +618,7 @@ func paupiere() -> float:
 	if _cligne >= 0.0:
 		var t := _cligne / _cligne_d
 		o = 1.0 - smoothstep(0.0, 0.3, t) * (1.0 - smoothstep(0.5, 1.0, t))
-	return minf(o, 1.0 - smoothstep(0.3, 0.75, _derobe))
+	return minf(minf(o, 1.0 - yeux_clos), 1.0 - smoothstep(0.3, 0.75, _derobe))
 
 
 func blesser(n: float, depuis: Vector2) -> void:
@@ -606,6 +637,12 @@ func blesser(n: float, depuis: Vector2) -> void:
 	_depuis_coup = 0.0
 	# (sa queue claque)
 	_q_av += 7.0 * (1.0 if randf() < 0.5 else -1.0)
+	if role == "noire":
+		# (elle ne tombe pas : elle encaisse ; noire.gd compte ce qu'elle a pris cette nuit, et la retire quand c'est trop)
+		pv = pv_max
+		if not _du_ciel and jeu != null and jeu.get("noire") != null:
+			jeu.noire.frappee(n)
+		return
 	if pv <= 0.0:
 		# (hors du groupe tout de suite, pour qu'un second coup ne la tue pas deux fois ; elle tombe, puis s'efface)
 		remove_from_group("betes")
@@ -646,7 +683,7 @@ func foudroyer(n: float, depuis: Vector2) -> void:
 
 # quelque chose l'effraie là-bas (la foudre qui tombe) : une proie s'enfuit, un chasseur recule un moment
 func effrayer(depuis: Vector2, duree: float) -> void:
-	if pv <= 0.0 or role == "echo":
+	if pv <= 0.0 or role == "echo" or role == "noire":
 		return
 	_fuir(depuis, duree if role != "chasseur" else duree * 0.6)
 
@@ -760,6 +797,8 @@ func _conduire(delta: float) -> void:
 		"echo":
 			_echo(delta)
 			_process_sillage(delta)
+		"noire":
+			_noire(delta)
 
 
 func _aller(vers: Vector2, v: float, delta: float) -> void:
@@ -777,7 +816,7 @@ func _aller(vers: Vector2, v: float, delta: float) -> void:
 		regard = signf(pas.x)
 	if jeu != null and jeu.monde != null and jeu.monde.ouvert:
 		# (un lieu sans bord : celle qu'on a laissée loin derrière s'en va)
-		if role != "echo" and etat != "mort" and jeu.joueur != null and position.distance_to(jeu.joueur.position) > 2600.0:
+		if role != "echo" and role != "noire" and etat != "mort" and jeu.joueur != null and position.distance_to(jeu.joueur.position) > 2600.0:
 			queue_free()
 		elif role != "echo" and jeu.monde.carte != null:
 			position = jeu.monde.carte.retenir(position)
@@ -1017,10 +1056,51 @@ func _tenue_torche() -> float:
 
 
 func _mordre_si_pres(dj: float) -> void:
+	if role == "noire":
+		# (sa gueule porte loin devant elle ; elle mord moins vite qu'un chasseur, mais chaque morsure compte)
+		if dj < 100.0 and _morsure <= 0.0:
+			_morsure = 1.6
+			jeu.mordre(self)
+		return
 	if dj < 24.0 + largeur * 0.3 and _morsure <= 0.0:
 		_morsure = 1.15
 		_assaillir(REARME)
 		jeu.mordre(self)
+
+
+# la Noire : son corps fait ce que scripts/noire.gd lui dit. « va » : elle marche vers ordre_but ; « guette » : immobile,
+# tournée vers la veilleuse, les deux yeux ouverts ; « charge » : elle court sur elle et mord ; « dort » : couchée, les yeux clos.
+# Le feu reste une loi pour elle aussi : elle ne tient pas dans sa lumière.
+func _noire(delta: float) -> void:
+	var j = jeu.joueur
+	var dj := position.distance_to(j.position)
+	var face := 0.0
+	var clos := 0.0
+	var couche := 0.0
+	match ordre:
+		"dort":
+			clos = 1.0
+			couche = 1.0
+		"guette":
+			if absf(j.position.x - position.x) > 8.0:
+				regard = signf(j.position.x - position.x)
+			face = 1.0
+		"va", "charge", "efface":
+			_aller(ordre_but, vitesse * ordre_allure, delta)
+			if ordre == "charge":
+				_mordre_si_pres(dj)
+			elif ordre == "efface":
+				clos = 1.0
+	yeux_clos = move_toward(yeux_clos, clos, delta * (0.6 if clos > yeux_clos else 3.0))
+	couchee = move_toward(couchee, couche, delta * (0.5 if couche > couchee else 1.6))
+	de_face = move_toward(de_face, face, delta * 1.6)
+	if ordre != "dort":
+		for f in jeu.feux_et_foyers():
+			if f.allume():
+				var ici: Vector2 = position - f.position
+				var bord: float = f.rayon() * 0.98
+				if ici.length() < bord:
+					position = f.position + (ici.normalized() if ici.length() > 0.01 else Vector2.RIGHT) * bord
 
 
 func _echo(delta: float) -> void:
@@ -1065,6 +1145,16 @@ func _animer(delta: float) -> void:
 	if dl > 0.02:
 		_proj = lerpf(_proj, _avance / dl, 1.0 - exp(-delta * 8.0))
 	_cligner(delta)
+	if _trace_pas > 0.0 and dl > 0.02 and _mort < 0.0 and jeu != null and jeu.get("traces") != null:
+		# (une empreinte à chaque foulée, d'un côté puis de l'autre : scripts/traces.gd ; la Noire s'entend marcher)
+		_trace_d += dl
+		if _trace_d >= _trace_pas:
+			_trace_d = 0.0
+			_trace_cote = -_trace_cote
+			var sens := d / dl
+			jeu.traces.poser(position + sens.orthogonal() * _trace_cote * largeur * 0.07, sens.angle(), _trace_taille, _trace_duree, _trace_genre, id)
+			if role == "noire":
+				jeu.noire.pas(self)
 	if _pivot == null:
 		_face = move_toward(_face, regard, delta / 0.16)
 		return
@@ -1126,6 +1216,8 @@ func _allure(v: float, delta: float) -> void:
 	var lisse := 1.0 - exp(-delta * 6.0)
 	var nuit: bool = role == "chasseur" and not jeu.est_jour()
 	var affut := 1.0 if nuit and _retenu else 0.0
+	if role == "noire":
+		affut = aplatie
 	var vite := clampf((v / maxf(vitesse, 1.0) - 0.42) / 0.3, 0.0, 1.0) * (1.0 - affut)
 	var bond := vite if _n_cote == 2 and (role != "proie" or etat == "fuit" or etat == "attaque") else 0.0
 	_marche = lerpf(_marche, smoothstep(2.5, 12.0, v), 1.0 - exp(-delta * 10.0))
@@ -1138,7 +1230,7 @@ func _allure(v: float, delta: float) -> void:
 	_foulee = 0.85 * w_pas + 1.05 * _affut + 1.15 * _course + _g_foulee * _bond
 	_appui = lerpf(0.6, 0.68, _poids) * w_pas + 0.76 * _affut + 0.42 * _course + _g_appui * _bond
 	_levee = lerpf(0.26, 0.14, _poids) * w_pas + 0.15 * _affut + lerpf(0.4, 0.26, _poids) * _course + lerpf(0.42, 0.3, _poids) * _bond
-	_bas = lerpf(_bas, (0.08 if nuit else 0.0) + 0.14 * affut + (0.07 if role != "proie" else 0.03) * vite, lisse)
+	_bas = lerpf(_bas, (0.08 if nuit else 0.0) + 0.14 * affut + (0.07 if role != "proie" else 0.03) * vite + 0.6 * couchee, lisse)
 	if role == "echo":
 		_appui = 0.7
 		_levee = 0.2

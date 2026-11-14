@@ -126,6 +126,20 @@ const PONT_PASSAGE := 25.0    # ce que chaque passage de la veilleuse lui retire
 const FROID_PAR_PALIER := 0.03   # ce que chaque étage retire à la température de l'air
 const VUE_PAR_PALIER := 0.05     # et de combien la caméra recule
 const AIR_SOUS_TERRE := 0.44     # l'air d'une grotte : frais, constant
+# la Noire (scripts/noire.gd) : une seule bête, qui n'est pas d'Orvane ; elle vient d'acte en acte, nuit après nuit
+const NOIRE_LARGEUR := 330.0     # son dessin, en pixels du lieu (un chasseur de 35 kg en fait 110, la veilleuse 22)
+const NOIRE_VITESSE := 215.0     # sa charge (la veilleuse court à 165 : on ne la sème pas à la course)
+const NOIRE_VOYAGE := 140.0      # ce qu'elle parcourt par seconde, de sa tanière à la veilleuse, tant qu'on ne la voit pas
+const NOIRE_MORSURE := 38.0      # ce que prend chacune de ses morsures
+const NOIRE_TANIERE_MIN := 3200.0   # à quelle distance de la veilleuse elle fait sa tanière, au moins
+const NOIRE_TANIERE_MAX := 4600.0   # et au plus
+const NOIRE_SUIT := 5600.0       # sa tanière plus loin que cela de la veilleuse, à l'aube : elle en change, pour suivre
+const NOIRE_ENDURE := 70.0       # ce qu'elle encaisse dans une nuit avant de se retirer jusqu'à la suivante
+const NOIRE_DEPART := [1.0, 0.45, 0.3, 0.18, 0.06]   # par acte : la part de la nuit passée quand elle quitte sa tanière
+const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0]     # par acte : le temps que la torche la tient, avant qu'elle passe
+const NOIRE_PRESAGE := 1.4       # elle s'aplatit et gronde ce temps-là, avant de charger
+const NOIRE_PEUR := 5.0          # la peur gagnée par seconde sous son regard
+const NOIRE_REVEIL := 120.0      # le jour, à cette distance de sa tanière, on la réveille
 const NOMS := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "baies": "baies", "viande": "viande crue", "viande_cuite": "viande cuite"}
 const ORDRE_INVENTAIRE := ["bois", "pierre", "fibre", "baies", "viande", "viande_cuite"]
 

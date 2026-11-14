@@ -36,6 +36,7 @@ const PEUR := Color("8a6fd6")
 const ECHO := Color("bfe3ff")
 const OEIL_CHASSEUR := Color("ffc252")
 const OEIL_PROIE := Color("b8e6ff")
+const OEIL_NOIRE := Color("ff2a18")      # la Noire (scripts/noire.gd) : rouges, et ils ne s'éteignent pas dans la lumière
 
 # le jour qui passe : la couleur du monde à chaque moment (l'obscurité y multiplie tout)
 const AUBE := Color("e8b9a0")

@@ -83,6 +83,10 @@ static func photo(jeu) -> Dictionary:
 		"ouvert": jeu.ouvert,
 		"objets": [] if jeu.ouvert else jeu.monde.photo_objets(),
 		"monde": jeu.monde.photo_ouvert() if jeu.ouvert else {},
+		# (la Noire : l'acte, sa tanière, ce qu'on sait d'elle ; scripts/noire.gd)
+		"noire": jeu.noire.photo() if jeu.noire != null else {},
+		# (ce qu'elle a appris des bêtes, à l'affût : scripts/pistage.gd)
+		"savoir": jeu.savoir.duplicate(),
 	}
 
 
@@ -105,6 +109,8 @@ static func appliquer(jeu, d: Dictionary) -> void:
 		jeu.appris[k] = int(d["appris"][k])
 	for k in d.get("deja", []):
 		jeu._deja[str(k)] = true
+	for k in d.get("savoir", {}):
+		jeu.savoir[str(k)] = float(d["savoir"][k])
 	# (les bêtes tuées, retrouvées dans la faune du lieu : leurs échos reviendront)
 	for id in d.get("tuees", []):
 		var e := _dans_la_faune(jeu.faune, str(id))

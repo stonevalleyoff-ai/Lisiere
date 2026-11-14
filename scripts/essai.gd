@@ -542,12 +542,16 @@ func _lancer() -> void:
 	jeu.climat.boue = 0.4
 	jeu.joueur.trempe = 30.0
 	jeu.joueur.temperature = 41.0
+	jeu.savoir["essai-affut"] = 7.5
 	var gardee: Dictionary = load("res://scripts/partie_gardee.gd").photo(jeu)
+	jeu.savoir.erase("essai-affut")
 	jeu.climat.boue = 0.0
 	jeu.joueur.trempe = 0.0
 	jeu.joueur.temperature = 50.0
 
 	_la_durete()
+	_la_noire(F)
+	_le_pistage(F)
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -586,6 +590,7 @@ func _lancer() -> void:
 		int(revenue["nuits"]), revenue["tuees"].size()])
 	verif(absf(jeu.climat.boue - 0.4) < 0.02 and absf(jeu.joueur.trempe - 30.0) < 0.5 and absf(jeu.joueur.temperature - 41.0) < 0.5 and jeu.monde.objets.filter(func(x): return x.calcine).size() > 0,
 		"avec elle reviennent le sol détrempé, la veilleuse mouillée, sa température, et ce que l'incendie a brûlé")
+	verif(absf(float(jeu.savoir.get("essai-affut", 0.0)) - 7.5) < 0.01, "et ce qu'elle avait appris des bêtes, à l'affût")
 	verif(not FileAccess.file_exists("user://partie.json") or PG.lire() == lu, "l'essai ne réécrit pas la partie gardée")
 	PG.effacer()
 	jeu.ui.montrer_reprise({})
@@ -1638,4 +1643,396 @@ func _la_durete() -> void:
 	j.trempe = garde["trempe"]
 	j.position = garde["p"]
 	jeu._maux = garde["maux"]
+
+
+
+
+# --- la Noire (scripts/noire.gd) : son scénario, joué acte par acte, sans attendre (noire.maj, puis son corps : bete.gd) ---
+
+# tant de secondes de la Noire, l'horloge arrêtée (la nuit, ou le jour, où l'on est). « voir » est appelé à chaque pas.
+func _noire_joue(secondes: float, voir: Callable = Callable()) -> void:
+	var N = jeu.noire
+	var dt := 0.05
+	for i in int(secondes / dt):
+		N.maj(dt)
+		if N.corps != null and is_instance_valid(N.corps):
+			N.corps._conduire(dt)
+			N.corps._animer(dt)
+		if voir.is_valid():
+			voir.call(i * dt)
+
+
+func _la_noire(F: Dictionary) -> void:
+	print("La Noire")
+	var j = jeu.joueur
+	var N = jeu.noire
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "nuits": jeu.nuits, "p": j.position, "sante": j.sante, "peur": j.peur, "faim": j.faim, "torche": j.torche,
+		"feux": jeu.feux.duplicate(), "etait": jeu._etait_nuit, "maux": jeu._maux.duplicate(), "mordeur": jeu._mordeur, "deja": jeu._deja.duplicate()}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	var base: float = floorf(jeu.horloge / RR.DUREE) * RR.DUREE
+	var nuit_h: float = base + RR.DUREE * (1.0 - jeu.part_nuit) + 2.0
+	var jour_h: float = base + RR.DUREE * 0.3
+	var duree_nuit: float = RR.DUREE * jeu.part_nuit
+	j.position = Vector2(-200.0, 100.0)
+	j.sante = 100.0
+	j.peur = 0.0
+	j.torche = 0.0
+	jeu.feux.clear()
+	var feu = jeu.Feu.new()
+	feu.jeu = jeu
+	feu.position = j.position + Vector2(30.0, 0.0)
+	feu.bois = 40.0
+	jeu.monde.add_child(feu)
+	var r: float = feu.rayon()
+
+	# sa tanière
+	N.commencer()
+	var loin: float = N.taniere.distance_to(j.position)
+	verif(N.acte == 0 and N.corps == null and loin > 1500.0 and absf(N.taniere.x) <= RR.DEMI and absf(N.taniere.y) <= RR.DEMI,
+		"la Noire a sa tanière, loin de la veilleuse (%d pixels), dans le lieu ; rien d'elle avant la première nuit" % int(loin))
+
+	# acte 1 : les signes
+	jeu.nuits = 0
+	jeu.horloge = nuit_h
+	jeu.feux.append(feu)
+	var journal_avant = jeu.sons.journal
+	jeu.sons.journal = []
+	N.tombee()
+	var corps_vu := [false]
+	_noire_joue(duree_nuit, func(_t): corps_vu[0] = corps_vu[0] or N.corps != null)
+	var appels: int = jeu.sons.journal.filter(func(x): return str(x[1]) == "appel").size()
+	verif(N.acte == 1 and not corps_vu[0] and appels == 1 and N.su.has("appel") and j.sante == 100.0,
+		"acte 1, les signes : elle ne vient pas ; un appel dans la nuit (%d), que la veilleuse retient" % appels)
+	jeu.horloge = jour_h
+	N.aube()
+	var T = jeu.traces
+	var pres_camp: bool = T.pres(j.position, 420.0, 2)
+	var pres_taniere: bool = T.pres(N.taniere, 260.0, 2)
+	verif(T.nombre(2) >= 8 and pres_camp and pres_taniere and not T.pres(j.position, 150.0, 2),
+		"à l'aube, sa piste : %d empreintes, de la lisière du camp à sa tanière" % T.nombre(2))
+	var premiere := Vector2.ZERO
+	for e in T._liste:
+		if int(e[6]) == 2:
+			premiere = Vector2(e[0], e[1])
+			break
+	var ici: Vector2 = j.position
+	j.position = premiere + Vector2(20.0, 0.0)
+	_noire_joue(1.2)
+	verif(N.su.has("empreintes"), "la veilleuse qui marche sur sa piste reconnaît ses empreintes")
+	j.position = ici
+
+	# acte 2 : les yeux
+	jeu.nuits = 1
+	jeu.horloge = nuit_h
+	var proie = _bete(F["proies_jour"][0], "proie", feu.position + Vector2(-(r + 200.0), 60.0), {})
+	N.mettre_en_scene(2, 900.0, PI)
+	var m := {"pres_feu": INF, "pres": INF, "guette": false, "face": 0.0, "silence": 0.0, "peur": 0.0, "fuit": false}
+	var regarder := func(_t):
+		if N.corps == null:
+			return
+		m["pres_feu"] = minf(m["pres_feu"], N.corps.position.distance_to(feu.position) / r)
+		m["pres"] = minf(m["pres"], N.corps.position.distance_to(j.position))
+		m["guette"] = m["guette"] or N.etat == "guette"
+		m["face"] = maxf(m["face"], N.corps.de_face)
+		m["silence"] = maxf(m["silence"], N.silence)
+		m["peur"] = maxf(m["peur"], N.peur())
+		if is_instance_valid(proie):
+			proie._conduire(0.05)
+			m["fuit"] = m["fuit"] or proie.etat == "fuit"
+	_noire_joue(32.0, regarder)
+	verif(N.corps != null and m["guette"] and m["pres_feu"] >= 0.97 and m["face"] > 0.9 and j.sante == 100.0,
+		"acte 2, les yeux : elle vient, s'arrête hors de la lumière (au plus près, %.2f rayon du feu) et regarde en face, sans mordre" % m["pres_feu"])
+	verif(m["silence"] > 0.9 and N.su.has("silence") and N.su.has("yeux") and m["fuit"] and N.presente() and absf(m["peur"] - RR.NOIRE_PEUR) < 0.01,
+		"tout se tait avant elle, les autres bêtes s'enfuient, et la peur monte sous son regard (%.1f par seconde)" % m["peur"])
+	verif(T.nombre(2) >= 4, "elle laisse ses empreintes en marchant : %d" % T.nombre(2))
+	_oter(proie)
+	# (la veilleuse avance sur elle, dans le noir : les yeux s'éteignent, elle recule ; elle ne mord toujours pas)
+	var vers_elle: Vector2 = (N.corps.position - j.position).normalized()
+	j.position = N.corps.position - vers_elle * 170.0
+	feu.bois = 0.0
+	var e2 := {"recule": false, "clos": 0.0, "loin": 0.0}
+	_noire_joue(22.0, func(_t):
+		if N.corps == null:
+			return
+		e2["recule"] = e2["recule"] or N.etat == "recule"
+		e2["clos"] = maxf(e2["clos"], N.corps.yeux_clos)
+		e2["loin"] = maxf(e2["loin"], N.corps.position.distance_to(j.position)))
+	verif(e2["recule"] and e2["clos"] > 0.9 and e2["loin"] > 400.0 and j.sante == 100.0,
+		"si la veilleuse avance sur elle, ses yeux s'éteignent et elle recule (jusqu'à %d pixels) ; vingt secondes dans le noir, pas une morsure" % int(e2["loin"]))
+	j.position = ici
+	feu.bois = 40.0
+
+	# acte 3 : le siège
+	jeu.nuits = 2
+	N.mettre_en_scene(3, 900.0, PI)
+	var s3 := {"pres_feu": INF, "tour": 0.0, "avant": NAN}
+	_noire_joue(34.0, func(_t):
+		if N.corps == null:
+			return
+		var q: Vector2 = N.corps.position - feu.position
+		s3["pres_feu"] = minf(s3["pres_feu"], q.length() / r)
+		if (N.etat == "tourne" or N.etat == "guette") and not is_nan(s3["avant"]):
+			s3["tour"] += absf(wrapf(q.angle() - float(s3["avant"]), -PI, PI))
+		s3["avant"] = q.angle())
+	verif(N.acte == 3 and s3["pres_feu"] >= 0.97 and s3["tour"] > 0.5 and j.sante == 100.0 and N.su.has("feu"),
+		"acte 3, le siège : un feu vif la tient (au plus près, %.2f rayon), elle tourne autour (%.1f radians) sans mordre" % [s3["pres_feu"], s3["tour"]])
+	# (hors de la lumière, la torche à la main : elle la tient un moment, puis le présage, puis la charge et la morsure)
+	j.position = feu.position + Vector2(r + 420.0, 0.0)
+	j.torche = 200.0
+	var t3 := {"presage": -1.0, "charge": -1.0, "morsure": -1.0, "recule": false, "prise": 0.0}
+	_noire_joue(RR.NOIRE_TORCHE[3] + 22.0, func(t):
+		if N.corps == null:
+			return
+		if t3["presage"] < 0.0 and N.corps.aplatie > 0.5:
+			t3["presage"] = t
+		if t3["charge"] < 0.0 and N.etat == "charge":
+			t3["charge"] = t
+		if t3["morsure"] < 0.0 and j.sante < 100.0:
+			t3["morsure"] = t
+			t3["prise"] = 100.0 - j.sante
+		if t3["morsure"] >= 0.0:
+			t3["recule"] = t3["recule"] or N.etat == "recule")
+	verif(absf(t3["presage"] - RR.NOIRE_TORCHE[3]) < 6.0 and absf(t3["charge"] - t3["presage"] - RR.NOIRE_PRESAGE) < 0.3 and t3["morsure"] > t3["charge"] and N.su.has("torche"),
+		"hors du feu, la torche la tient %d secondes ; puis elle s'aplatit %.1f s (le présage), charge, et mord %.1f s après" % [int(t3["presage"]), t3["charge"] - t3["presage"], t3["morsure"] - t3["charge"]])
+	verif(absf(t3["prise"] - RR.NOIRE_MORSURE) < 0.01 and t3["recule"] and jeu._mordeur == "La Noire",
+		"sa morsure prend %d ; elle se reprend un instant après avoir mordu ; la fin dira « La Noire t'a prise. »" % int(RR.NOIRE_MORSURE))
+	# (revenue dans la lumière : elle lâche)
+	j.position = ici
+	j.sante = 100.0
+	_noire_joue(12.0)
+	verif(j.sante == 100.0 and (N.etat == "tourne" or N.etat == "guette"), "revenue dans la lumière du feu, la veilleuse n'est plus mordue : elle reprend son siège")
+	# (sans torche : le présage tout de suite)
+	j.position = feu.position + Vector2(-(r + 380.0), 0.0)
+	j.torche = 0.0
+	var sans := {"charge": -1.0}
+	_noire_joue(4.0, func(t):
+		if sans["charge"] < 0.0 and N.etat == "charge":
+			sans["charge"] = t)
+	verif(sans["charge"] > RR.NOIRE_PRESAGE - 0.2 and sans["charge"] < RR.NOIRE_PRESAGE + 0.6, "sans torche hors du feu : le présage, puis la charge au bout de %.1f s" % sans["charge"])
+	j.position = ici
+	j.sante = 100.0
+	_noire_joue(6.0)
+
+	# les coups : elle ne meurt pas, elle se retire
+	var pv0: float = N.corps.pv_max
+	var coups := 0
+	while not N._retiree and coups < 12:
+		N.corps.blesser(RR.DEGATS_LANCE, j.position)
+		coups += 1
+	verif(coups == int(ceil(RR.NOIRE_ENDURE / RR.DEGATS_LANCE)) and is_instance_valid(N.corps) and N.corps.pv == pv0 and N.etat == "rentre" and N.su.has("coups"),
+		"les coups ne la tuent pas : au %de coup de lance, elle se retire" % coups)
+	_noire_joue(40.0)
+	var partie: bool = N.corps == null and N.etat == "dort"
+	_noire_joue(20.0)
+	verif(partie and N.corps == null, "retirée, elle rentre à sa tanière et ne revient pas de la nuit")
+
+	# la chasse : plus tôt, et la torche tient moins
+	verif(RR.NOIRE_DEPART[4] < RR.NOIRE_DEPART[3] and RR.NOIRE_DEPART[3] < RR.NOIRE_DEPART[2] and RR.NOIRE_TORCHE[4] < RR.NOIRE_TORCHE[3],
+		"acte 4, la chasse : elle part plus tôt de sa tanière et la torche la tient moitié moins")
+
+	# plus on dort loin, plus elle arrive tard
+	var arrive := func(distance: float) -> float:
+		jeu.nuits = 1
+		N.taniere = j.position + Vector2(-distance, 0.0)
+		N.ou = N.taniere
+		N.etat = "dort"
+		N.tombee()
+		var quand := [-1.0]
+		_noire_joue(duree_nuit, func(t):
+			if quand[0] < 0.0 and N.corps != null:
+				quand[0] = t)
+		return quand[0]
+	var pres_t: float = arrive.call(1800.0)
+	var loin_t: float = arrive.call(4200.0)
+	var jamais: float = arrive.call(9000.0)
+	verif(pres_t > 0.0 and loin_t > pres_t + 10.0 and jamais < 0.0,
+		"plus on dort loin de sa tanière, plus elle arrive tard : à %d s de la tombée à 1 800 pixels, à %d s à 4 200 ; à 9 000, elle n'arrive pas de la nuit" % [int(pres_t), int(loin_t)])
+
+	# le jour : elle dort dans sa tanière ; trop près, on la réveille
+	jeu.horloge = jour_h
+	N.tombee()
+	N.acte = 3
+	N.taniere = ici + Vector2(1200.0, 300.0)
+	N.ou = N.taniere
+	N.etat = "dort"
+	N.taniere_connue = false
+	j.position = N.taniere + Vector2(-600.0, 0.0)
+	_noire_joue(3.0)
+	var dort: bool = N.corps != null and N.corps.ordre == "dort" and N.corps.couchee > 0.9 and N.corps.paupiere() < 0.1 and not N.taniere_connue
+	j.position = N.taniere + Vector2(-300.0, 0.0)
+	_noire_joue(1.0)
+	verif(dort and N.taniere_connue and N.su.has("taniere") and N.etat == "dort" and j.sante == 100.0,
+		"le jour, elle dort dans sa tanière, couchée, les yeux clos ; qui la trouve le note, et elle ne se réveille pas à 300 pixels")
+	var ancienne: Vector2 = N.taniere
+	j.position = N.taniere + Vector2(-(RR.NOIRE_REVEIL - 10.0), 0.0)
+	var reveil := [false]
+	_noire_joue(12.0, func(_t): reveil[0] = reveil[0] or (N.etat == "charge" and N._colere > 0.0))
+	verif(reveil[0] and absf(100.0 - j.sante - RR.NOIRE_MORSURE) < 0.01 and N.taniere.distance_to(ancienne) > 800.0 and not N.taniere_connue and (N.etat == "rentre" or N.etat == "dort"),
+		"à %d pixels, on la réveille : elle charge, mord une fois, même de jour, puis s'en va faire sa tanière ailleurs (à %d pixels de l'ancienne)" % [int(RR.NOIRE_REVEIL), int(N.taniere.distance_to(ancienne))])
+	j.sante = 100.0
+
+	# elle suit : sa tanière trop loin à l'aube, elle en prend une autre
+	N._disparaitre()
+	N.etat = "dort"
+	N.acte = 2
+	j.position = ici
+	N.taniere = ici + Vector2(RR.NOIRE_SUIT + 900.0, 0.0)
+	N.aube()
+	verif(N.taniere.distance_to(ici) < RR.NOIRE_SUIT, "si la veilleuse s'est trop éloignée, à l'aube elle change de tanière pour la suivre (à %d pixels)" % int(N.taniere.distance_to(ici)))
+
+	# la partie gardée
+	N.taniere_connue = true
+	var photo: Dictionary = JSON.parse_string(JSON.stringify(N.photo()))
+	var N2 = jeu.Noire.new()
+	N2.jeu = jeu
+	N2.commencer()
+	N2.reprendre(photo)
+	verif(N2.acte == N.acte and N2.taniere.distance_to(N.taniere) < 0.2 and N2.taniere_connue and N2.su.size() == N.su.size() and N2.su.has("taniere") and N.savoirs().size() == N.su.size(),
+		"la partie gardée retient l'acte, sa tanière et ce qu'on sait d'elle (%d choses apprises)" % N.su.size())
+
+	# les empreintes des autres bêtes
+	T.vider()
+	var marcheuse = null
+	for e in F["chasseurs_nuit"] + F["proies_jour"]:
+		var b = _bete(e, "proie", ici + Vector2(300.0, 200.0), {})
+		if b._trace_pas > 0.0:
+			marcheuse = b
+			break
+		_oter(b)
+	if marcheuse != null:
+		marcheuse.conduite = false
+		for i in 200:
+			marcheuse.position += Vector2(2.0, 0.0)
+			marcheuse._animer(0.05)
+	verif(marcheuse != null and T.nombre(marcheuse._trace_genre) >= 3 and T.nombre(2) == 0,
+		"les autres bêtes laissent aussi leurs empreintes : %d en 400 pixels de marche" % (T.nombre(marcheuse._trace_genre) if marcheuse != null else 0))
+	_oter(marcheuse)
+
+	# (tout remis comme avant)
+	T.vider()
+	jeu.sons.journal = journal_avant
+	jeu.feux.clear()
+	for f in garde["feux"]:
+		jeu.feux.append(f)
+	feu.queue_free()
+	jeu.horloge = garde["h"]
+	jeu.nuits = garde["nuits"]
+	jeu._etait_nuit = garde["etait"]
+	jeu._maux = garde["maux"]
+	jeu._mordeur = garde["mordeur"]
+	jeu._deja = garde["deja"]
+	j.position = garde["p"]
+	j.sante = garde["sante"]
+	j.peur = garde["peur"]
+	j.faim = garde["faim"]
+	j.torche = garde["torche"]
+	N.commencer()
+
+
+# --- le pistage (scripts/pistage.gd) : l'affût, les pistes, le carnet des bêtes ---
+
+func _le_pistage(F: Dictionary) -> void:
+	print("Le pistage")
+	var j = jeu.joueur
+	var Pi = jeu.pistage
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "p": j.position, "torche": j.torche, "savoir": jeu.savoir.duplicate(), "vues": jeu.vues.duplicate(),
+		"mouvement": j.en_mouvement, "deja": jeu._deja.duplicate(), "su": jeu.noire.su.duplicate()}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	var base: float = floorf(jeu.horloge / RR.DUREE) * RR.DUREE
+	var jour_h: float = base + RR.DUREE * 0.3
+	var nuit_h: float = base + RR.DUREE * (1.0 - jeu.part_nuit) + 2.0
+	jeu.horloge = jour_h
+	jeu.savoir.clear()
+	jeu.traces.vider()
+	j.position = Vector2(900.0, -700.0)
+	j.torche = 0.0
+	j.en_mouvement = false
+	var e: Dictionary = F["proies_jour"][0]
+	var id := str(e["id"])
+	var b = _bete(e, "proie", j.position + Vector2(200.0, 30.0), {})
+	jeu.vues[id] = b.nom
+	var joue := func(secondes: float) -> void:
+		for i in int(round(secondes / 0.1)):
+			Pi.maj(0.1)
+	# l'affût : immobile, près d'une bête qu'on voit et qui vaque
+	joue.call(3.0)
+	var a3: float = jeu.savoir.get(id, 0.0)
+	verif(Pi.cible == b and absf(a3 - 3.0) < 0.15 and Pi.niveau(id) == 0 and absf(Pi.part(id) - 0.5) < 0.05,
+		"à l'affût, immobile, la veilleuse observe la bête la plus proche : %.1f s d'affût en 3 s, la jauge à moitié" % a3)
+	j.en_mouvement = true
+	joue.call(2.0)
+	var marche: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01
+	j.en_mouvement = false
+	b.etat = "fuit"
+	joue.call(2.0)
+	var fuite: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01
+	b.etat = "repos"
+	jeu.horloge = nuit_h
+	joue.call(2.0)
+	var noir: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01 and jeu.eclairage(b.position) < 0.3
+	jeu.horloge = jour_h
+	b.position = j.position + Vector2(Pi.PORTEE + 40.0, 0.0)
+	joue.call(2.0)
+	var loin: bool = Pi.cible == null and absf(float(jeu.savoir[id]) - a3) < 0.01
+	b.position = j.position + Vector2(200.0, 30.0)
+	verif(marche and fuite and noir and loin, "rien ne s'apprend en marchant, d'une bête qui fuit, dans le noir, ni de trop loin ; et rien n'est perdu")
+	var p0: Dictionary = Pi.page(jeu, id)
+	joue.call(3.2)
+	var p1: Dictionary = Pi.page(jeu, id)
+	verif(Pi.niveau(id) == 1 and p0["lignes"].is_empty() and p0["reste"] != "" and p1["lignes"].size() >= 4 and p1["lignes"][0] == "Une proie." and p1["reste"] != "",
+		"six secondes : elle est observée, et le carnet dit ce qu'elle est (%d lignes : %s)" % [p1["lignes"].size(), " ".join(p1["lignes"])])
+	joue.call(13.0)
+	var p2: Dictionary = Pi.page(jeu, id)
+	var plein: float = jeu.savoir[id]
+	joue.call(2.0)
+	verif(Pi.niveau(id) == 2 and p2["lignes"].size() >= p1["lignes"].size() + 3 and p2["reste"] == "" and Pi.cible == null and jeu.savoir[id] == plein and plein == Pi.CONNUE,
+		"dix-huit secondes : elle est connue, le carnet dit comment l'approcher et ce qu'elle vaut (%d lignes de plus) ; il n'y a plus rien à en apprendre" % (p2["lignes"].size() - p1["lignes"].size()))
+	# un chasseur : sa morsure, la torche
+	var c: Dictionary = F["chasseurs_nuit"][0]
+	jeu.vues[str(c["id"])] = str(c["nom"])
+	jeu.savoir[str(c["id"])] = Pi.CONNUE
+	var pc: Dictionary = Pi.page(jeu, str(c["id"]))
+	var texte: String = " ".join(pc["lignes"])
+	verif(texte.contains("chasseur") and texte.contains("morsure") and (texte.contains("torche") or texte.contains("charge")) and texte.contains("coup"),
+		"d'un chasseur connu, le carnet dit la morsure, la torche et les coups qu'il faut : « %s »" % texte)
+	# les pistes
+	jeu.traces.vider()
+	jeu.savoir.erase(id)
+	jeu.traces.poser(j.position + Vector2(12.0, 0.0), 0.0, 5.0, 60.0, 0, id)
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	var dit1: String = Pi.dernier_dit
+	var gagne: float = jeu.savoir.get(id, 0.0)
+	Pi.dernier_dit = ""
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	verif(dit1.contains(b.nom) and dit1.contains("toute fraîche") and dit1.contains("l'est") and absf(gagne - Pi.PISTE) < 0.01 and Pi.dernier_dit == "",
+		"sur des empreintes, elle lit la piste : « %s » ; cela vaut %.1f s d'affût, une fois par bête et par moment" % [dit1, gagne])
+	jeu.traces.vider()
+	jeu.traces.poser(j.position + Vector2(0.0, 10.0), PI * 0.5, 5.0, 60.0, 1, "jamais-vue")
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	var dit2: String = Pi.dernier_dit
+	jeu.traces.vider()
+	jeu.noire.su["empreintes"] = true
+	jeu.traces.poser(j.position + Vector2(-10.0, 0.0), -PI * 0.5, 20.0, 60.0, 2, "la-noire")
+	Pi._sol = 0.0
+	Pi.maj(0.05)
+	verif(dit2.contains("pas encore vue") and dit2.contains("le sud") and Pi.dernier_dit.contains("la Noire") and Pi.dernier_dit.contains("le nord") and Pi.cap(PI) == "l'ouest",
+		"la piste d'une bête jamais vue se lit sans son nom, celle de la Noire se reconnaît ; chacune dit vers où elle va")
+	# (tout remis comme avant)
+	_oter(b)
+	jeu.traces.vider()
+	jeu.horloge = garde["h"]
+	j.position = garde["p"]
+	j.torche = garde["torche"]
+	j.en_mouvement = garde["mouvement"]
+	jeu.savoir = garde["savoir"]
+	jeu.vues = garde["vues"]
+	jeu._deja = garde["deja"]
+	jeu.noire.su = garde["su"]
 
