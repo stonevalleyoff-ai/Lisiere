@@ -535,6 +535,10 @@ func _un_chasseur():
 
 # (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les tait, et on laisse au serveur audio le temps)
 func _quitter() -> void:
+	# (où en est la Noire, pour qui lit la sortie : son acte, sa tanière, sa piste, ce qu'on sait d'elle)
+	if jeu.noire != null and jeu.joueur != null and jeu.traces != null:
+		print("vitrine : la Noire, acte %d, %s, sa tanière à %d pixels, %d empreintes d'elle, sait : %s" % [jeu.noire.acte, jeu.noire.etat,
+			int(jeu.noire.taniere.distance_to(jeu.joueur.position)), jeu.traces.nombre(2), ", ".join(jeu.noire.su.keys())])
 	jeu.sons.taire()
 	jeu.sons.arreter_brefs()
 	await get_tree().create_timer(0.3, true, false, true).timeout
