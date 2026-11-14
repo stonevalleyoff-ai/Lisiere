@@ -10,6 +10,8 @@ extends Node2D
 # torche l'approche, l'œil la renvoie : plus vif, avec un reflet. Ils s'allument et s'éteignent en douceur, mais la règle
 # tient : seulement la nuit, seulement hors de la lumière. Trois images faites par le code, trois appels de dessin pour tous
 # les yeux du lieu. Les échos vivent aussi dans cette couche : la nuit ne les cache pas.
+# La Noire (scripts/noire.gd) a les siens : rouges, plus grands, et qui ne s'éteignent pas dans la lumière ; quand elle guette,
+# elle regarde en face, et l'on voit ses deux yeux.
 
 const R := preload("res://scripts/regles.gd")
 const P := preload("res://scripts/palette.gd")
@@ -42,6 +44,9 @@ func _process(delta: float) -> void:
 			if nuit >= 0.2:
 				var l: float = jeu.eclairage(b.point_oeil())
 				a = clampf((0.45 - l) / 0.45, 0.0, 1.0) * nuit
+			if b.role == "noire":
+				# (ses yeux ne s'éteignent pas : ni dans la lumière d'un feu, ni tout à fait le jour)
+				a = maxf(a, lerpf(0.55, 0.85, nuit))
 			var avant: float = _vus.get(id, 0.0)
 			var v := move_toward(avant, a, delta * (5.0 if a < avant else 2.5))
 			garder[id] = v
@@ -74,6 +79,17 @@ func _draw() -> void:
 		var chasse: bool = b.role == "chasseur" or b.role == "rodeur"
 		# (une lueur qui vit : elle respire à peine)
 		var a: float = e[1] * (0.93 + 0.07 * sin(_t * 2.3 + float(b.get_instance_id() % 97)))
+		if b.role == "noire":
+			# de profil, un œil ; de face (elle guette), les deux, qui tombent l'un vers l'autre
+			var r: float = float(b.rayon_oeil()) * 1.25
+			var face: float = smoothstep(0.0, 1.0, float(b.de_face))
+			var axe: Vector2 = b.axe_oeil()
+			var ecart := r * 2.7 * face
+			var bas := Vector2(0.0, 0.34)
+			yeux.append([p + Vector2(ecart, 0.0), r, P.OEIL_NOIRE, a, ouvert, reflet * 0.5, axe.lerp(Vector2(-1.0, 0.0) + bas, face).normalized(), true])
+			if face > 0.05:
+				yeux.append([p - Vector2(ecart, 0.0), r, P.OEIL_NOIRE, a * face, ouvert, reflet * 0.5, (Vector2(1.0, 0.0) + bas).normalized(), true])
+			continue
 		yeux.append([p, float(b.rayon_oeil()), P.OEIL_CHASSEUR if chasse else P.OEIL_PROIE, a, ouvert, reflet, b.axe_oeil(), chasse])
 	# les halos d'abord (une seule image, un seul appel), puis les yeux ronds, puis les amandes, puis les reflets
 	var doux := T.point_doux()

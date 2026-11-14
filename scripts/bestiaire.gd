@@ -107,6 +107,14 @@ static func _traits(lignee: Dictionary) -> Array:
 # trop clairs ni trop sombres pour le sol du lieu), un peu réchauffés par le papier.
 static func tons(plan: Dictionary) -> Dictionary:
 	var c: Dictionary = plan.get("corps", {}).get("couleurs", {}) if typeof(plan.get("corps", {})) == TYPE_DICTIONARY else {}
+	if bool(plan.get("noire", false)):
+		# (la Noire, scripts/noire.gd : pas un pigment de carnet, de l'encre ; il n'en sort que l'œil et les crocs)
+		var poil := Color(0.1, 0.095, 0.105)
+		return {
+			"robe": poil, "lumiere": Color(0.2, 0.19, 0.215), "ombre": Color(0.04, 0.04, 0.05), "dos": Color(0.05, 0.048, 0.058),
+			"ventre": Color(0.13, 0.12, 0.13), "loin": Color(0.055, 0.052, 0.065), "accent": Color(0.06, 0.056, 0.066), "oeil": P.OEIL_NOIRE,
+			"encre": Color(0.015, 0.015, 0.02), "os": Color("e6dcc2"), "truffe": Color(0.02, 0.02, 0.025),
+		}
 	var robe := _accorder(_rvb(c.get("robe"), Color(0.55, 0.47, 0.36)), 0.34, 0.48, 0.72)
 	var dos := _accorder(_rvb(c.get("sombre"), robe.darkened(0.35)), 0.32, 0.24, 0.44)
 	var ventre := _accorder(_rvb(c.get("ventre"), robe.lightened(0.35)), 0.22, 0.68, 0.88)

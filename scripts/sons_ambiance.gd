@@ -152,7 +152,7 @@ func _nuit_maj(dt: float, c: Dictionary) -> void:
 		return
 	_chouette -= dt
 	# (sous terre, pas de chouette)
-	if _chouette <= 0.0 and float(c.get("sous", 0.0)) < 0.5:
+	if _chouette <= 0.0 and float(c.get("sous", 0.0)) < 0.5 and float(c.get("chante", 1.0)) > 0.5:
 		_chouette = _r.randf_range(40.0, 95.0)
 		var pan := _r.randf_range(-0.8, 0.8)
 		s.evenement("chouette", _r.randf_range(-19.0, -14.0), _r.randf_range(0.97, 1.03), pan)
@@ -176,7 +176,8 @@ func _chasseurs_maj(dt: float, c: Dictionary) -> void:
 	for b in c["betes"]:
 		if is_instance_valid(b) and b.role == "chasseur" and b.etat != "part":
 			chasseurs.append(b)
-	if chasseurs.is_empty():
+	# (quand la Noire est là, les chasseurs se taisent)
+	if chasseurs.is_empty() or float(c.get("chante", 1.0)) < 0.5:
 		return
 	var p: Vector2 = c["ici"]
 	_hurlement -= dt
@@ -220,7 +221,7 @@ func _chasseur_proche(c: Dictionary, rayon: float):
 	var meilleur = null
 	var d0 := rayon
 	for b in c["betes"]:
-		if is_instance_valid(b) and (b.role == "chasseur" or (b.role == "rodeur" and b.etat == "attaque")):
+		if is_instance_valid(b) and (b.role == "chasseur" or (b.role == "rodeur" and b.etat == "attaque") or (b.role == "noire" and b.ordre != "dort")):
 			var d: float = b.position.distance_to(p)
 			if d < d0:
 				d0 = d

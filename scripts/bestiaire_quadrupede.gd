@@ -1295,6 +1295,13 @@ static func _corps(p: Planche, m: Mesures, sil: PackedVector2Array) -> void:
 		# (le poil hérissé du garrot : un chasseur)
 		var g := sil[m.i_nh - 1]
 		_meches(p, g + Vector2(-lt * 0.1, th * 0.03), g.lerp(sil[m.i_nh], 0.7) + Vector2(0.0, th * 0.02), 4, th * 0.16, -2.5, T["robe"].lerp(T["dos"], 0.55))
+		if bool(p.plan.get("noire", false)):
+			# (la Noire : l'échine hérissée de la croupe à la nuque, de longues mèches d'encre, plus hautes au garrot)
+			for k in 6:
+				var s0 := 0.08 + 0.15 * k
+				var a0 := _dos(m, sil, s0)
+				var a1 := _dos(m, sil, s0 + 0.15)
+				_meches(p, a0 + Vector2(0.0, th * 0.03), a1 + Vector2(0.0, th * 0.03), 3, th * lerpf(0.14, 0.34, pow(s0 + 0.08, 1.4)), -2.3, T["dos"])
 
 
 # des écailles : de petits arcs, en deux rangs sous l'échine (rien sur une petite bête)
@@ -1666,6 +1673,10 @@ static func _tete(p: Planche, m: Mesures, P: PackedVector2Array) -> void:
 	var opts := {}
 	if (fam == "felin" and (p.nocturne or p.plan.get("activite", "") == "crepusculaire")) or ((fam == "lezard" or fam == "croco") and m.carn):
 		opts["fente"] = true
+	if bool(p.plan.get("noire", false)):
+		opts["braise"] = true
+		opts["pente"] = m.incl + 0.3
+		ro *= 0.8
 	p.oeil(oe, ro / (1.15 if p.nocturne else 1.0), opts)
 	if (fam == "lezard" or fam == "croco") and detail:
 		# (l'arcade d'écailles, le tympan)

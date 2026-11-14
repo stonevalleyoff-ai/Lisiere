@@ -21,7 +21,7 @@ const TUILES := {
 # les sons qui viennent de loin, avec leur réverbère : [durée de la queue, échos de la lisière, part du son direct]
 const LOINTAINS := {
 	"chouette": [2.2, 0.35, 0.65], "craquement": [1.8, 0.4, 0.7], "hurlement": [2.6, 0.4, 0.6], "grondement": [1.8, 0.3, 0.7],
-	"corne": [3.2, 0.45, 0.55], "murmure": [2.4, 0.25, 0.6],
+	"corne": [3.2, 0.45, 0.55], "murmure": [2.4, 0.25, 0.6], "appel": [3.4, 0.45, 0.55],
 }
 
 
@@ -38,6 +38,8 @@ const TAUX := {
 	"pluie_fine": LENT, "pluie_drue": LENT, "pluie_feuilles": SOURD, "pluie_eau": LENT, "vent_hurle": GRAVE,
 	"tonnerre": GRAVE, "foudre": VIF, "presage": VIF, "brasier": GRAVE, "craque": VIF, "vapeur": VIF, "effondre": SOURD,
 	"pas_boue": VIF, "pas_eau": VIF, "frisson": SOURD, "cri": SOURD, "crache": VIF, "goutte": VIF,
+	# la Noire (scripts/noire.gd)
+	"appel": SOURD, "pas_lourd": SOURD,
 }
 
 
@@ -154,6 +156,10 @@ static func fabriquer(nom: String, r: RandomNumberGenerator) -> Array:
 			return [_goutte(k, r), TAUX[base]]
 		"crache":
 			return [_crache(r), TAUX[base]]
+		"appel":
+			return [_appel(r), TAUX[base]]
+		"pas_lourd":
+			return [_pas_lourd(r), TAUX[base]]
 	return []
 
 
@@ -1415,3 +1421,40 @@ static func _goutte(k: int, r: RandomNumberGenerator) -> PackedFloat32Array:
 		part *= 0.6
 	O.normaliser(s, 0.8)
 	return O.bords(s, VIF)
+
+
+# --- la Noire (scripts/noire.gd) ---
+
+# son appel : une voix très grave qui enfle lentement, tient, et tombe longtemps, avec un battement lent. Rien d'une bête d'ici.
+# (des formants jusque vers 1 kHz : le haut-parleur d'un téléphone ne rend pas le grave, il lui faut de quoi l'entendre)
+static func _appel(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := _voix(4.4, 52.0, 38.0, [[210.0, 3.0, 1.0], [480.0, 4.0, 0.6], [950.0, 5.0, 0.2]], 0.3, SOURD, r)
+	var n := s.size()
+	for i in n:
+		var u := float(i) / n
+		s[i] *= pow(sin(PI * pow(u, 0.7)), 1.3) * (0.78 + 0.22 * sin(TAU * 1.3 * i / SOURD))
+	O.bas(s, 1500.0, SOURD)
+	O.normaliser(s, 0.9)
+	return O.bords(s, SOURD)
+
+
+# un de ses pas : un coup sourd qui descend, et la terre qui cède dessous
+static func _pas_lourd(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.5, SOURD)
+	var n := s.size()
+	var ph := 0.0
+	for i in n:
+		var t := float(i) / SOURD
+		ph += lerpf(64.0, 36.0, clampf(t / 0.18, 0.0, 1.0)) / SOURD
+		s[i] = sin(TAU * ph) * exp(-t / 0.11) * minf(1.0, t / 0.004)
+	var b := O.vide(0.5, SOURD)
+	O.bruit(b, r)
+	var b2 := b.duplicate()
+	O.bande(b, 180.0, 0.8, SOURD)
+	O.bande(b2, 520.0, 1.0, SOURD)
+	for i in n:
+		var t := float(i) / SOURD
+		s[i] += b[i] * 0.5 * exp(-t / 0.05) + b2[i] * 0.3 * exp(-t / 0.03)
+	O.bas(s, 900.0, SOURD)
+	O.normaliser(s, 0.9)
+	return O.bords(s, SOURD)

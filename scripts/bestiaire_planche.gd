@@ -271,6 +271,15 @@ func oeil(c: Vector2, rayon: float, opts := {}) -> void:
 	if nocturne:
 		ro *= 1.15
 	var encre := coul(tons["encre"])
+	if opts.get("braise", false):
+		# (la Noire : une fente de braise qui tombe vers le museau, sans pupille ni reflet ; rien d'un regard)
+		var tour := "rotate(%s %s %s)" % [n(rad_to_deg(float(opts.get("pente", 0.3)))), n(c.x), n(c.y)]
+		svg("<ellipse cx=\"%s\" cy=\"%s\" rx=\"%s\" ry=\"%s\" fill=\"%s\" transform=\"%s\"/>" % [n(c.x), n(c.y), n(ro * 1.5), n(ro * 0.78), encre, tour])
+		svg("<ellipse cx=\"%s\" cy=\"%s\" rx=\"%s\" ry=\"%s\" fill=\"%s\" transform=\"%s\"/>" % [n(c.x), n(c.y), n(ro * 1.18), n(ro * 0.5), coul(tons["oeil"]), tour])
+		svg("<ellipse cx=\"%s\" cy=\"%s\" rx=\"%s\" ry=\"%s\" fill=\"%s\" transform=\"%s\"/>" % [n(c.x + ro * 0.15), n(c.y), n(ro * 0.6), n(ro * 0.2), coul(tons["oeil"].lightened(0.5)), tour])
+		tracer("M%s L%s" % [pt(c + Vector2(-ro * 1.7, -ro * 1.3)), pt(c + Vector2(ro * 1.7, -ro * 0.2))], e * 1.2, tons["encre"])
+		yeux.append(Vector3(c.x, c.y, ro))
+		return
 	svg("<circle cx=\"%s\" cy=\"%s\" r=\"%s\" fill=\"%s\"/>" % [n(c.x), n(c.y), n(ro + e * 0.55), encre])
 	svg("<circle cx=\"%s\" cy=\"%s\" r=\"%s\" fill=\"%s\"/>" % [n(c.x), n(c.y), n(ro), coul(tons["oeil"])])
 	if opts.get("fente", false):

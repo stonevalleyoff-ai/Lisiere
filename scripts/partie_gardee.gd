@@ -83,6 +83,8 @@ static func photo(jeu) -> Dictionary:
 		"ouvert": jeu.ouvert,
 		"objets": [] if jeu.ouvert else jeu.monde.photo_objets(),
 		"monde": jeu.monde.photo_ouvert() if jeu.ouvert else {},
+		# (la Noire : l'acte, sa tanière, ce qu'on sait d'elle ; scripts/noire.gd)
+		"noire": jeu.noire.photo() if jeu.noire != null else {},
 	}
 
 

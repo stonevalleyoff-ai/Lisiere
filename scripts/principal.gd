@@ -35,6 +35,8 @@ const Carte := preload("res://scripts/carte.gd")
 const Pont := preload("res://scripts/pont.gd")
 const TempsSol := preload("res://scripts/temps_sol.gd")
 const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
+const Noire := preload("res://scripts/noire.gd")
+const Traces := preload("res://scripts/traces.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -81,6 +83,8 @@ var altitude := 0.0           # l'étage du relief où est la veilleuse (0 : en 
 var sous_terre := 0.0         # de 0 (à l'air libre) à 1 (dans une grotte : ni jour, ni temps qu'il fait), lissé
 var _maux := {}               # ce qui a pris sur sa santé ces dernières secondes, par cause (faim, peur, froid, chaud, feu, foudre, bete)
 var _mordeur := ""            # le nom de la dernière bête qui l'a mordue
+var noire                     # la Noire : son scénario, d'une nuit à l'autre (scripts/noire.gd)
+var traces                    # les empreintes laissées sur le sol (scripts/traces.gd)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
 var _pont_vu := 0.0
 var part_nuit := 0.33
@@ -505,6 +509,15 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		scene.add_child(dessin)
 		dessin.poser(scene, monde)
 	monde.relief_au_dessus(scene)
+	# (les empreintes : sur le sol et ce que le temps y pose, sous le relief et sous tout ce qui se tient debout)
+	traces = Traces.new()
+	traces.jeu = self
+	scene.add_child(traces)
+	var nappe: Node = scene.get_node_or_null("TempsSol")
+	scene.move_child(traces, nappe.get_index() + 1 if nappe != null else monde.get_index())
+	if noire == null:
+		noire = Noire.new()
+		noire.jeu = self
 	horloge = R.TRANSITION + 2.0
 	jour = 1
 	nuits = 0
@@ -531,6 +544,8 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	joueur.en_feu = 0.0
 	if reprise:
 		PartieGardee.appliquer(self, gardee)
+		noire.commencer()
+		noire.reprendre(gardee.get("noire", {}))
 		if ouvert:
 			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
 			monde.suivre(joueur.position, true)
@@ -539,6 +554,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		_garder()
 		return
 	partie_id = ""
+	noire.commencer()
 	if essai == null:
 		PartieGardee.effacer()
 		_ouvrir_au_tableau()
@@ -575,6 +591,9 @@ func _vider() -> void:
 	joueur = null
 	monde = null
 	yeux = null
+	traces = null
+	if noire != null:
+		noire.corps = null
 	effets.vider()
 	sons.taire()
 
@@ -740,6 +759,7 @@ func _process(delta: float) -> void:
 		sous_terre = move_toward(sous_terre, float(carte.sous_terre(joueur.position)), delta * 0.9)
 		climat.toit = sous_terre
 	_directeur_passe(delta)
+	noire.maj(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
 	ui.maj_hud(self)
@@ -1016,6 +1036,8 @@ func _corps(delta: float) -> void:
 		dp = R.PEUR_NOIR if lumiere < 0.35 else -R.PEUR_LUMIERE
 	if _chasseur_le_plus_proche() < 260.0:
 		dp += R.PEUR_PRESENCE
+	# (la Noire : la peur monte sous son regard, même dans la lumière)
+	dp += noire.peur()
 	joueur.peur = clampf(joueur.peur + dp * delta, 0.0, 100.0)
 	if joueur.peur > R.PEUR_MORD:
 		# (la peur tue : passé ce seuil, le cœur s'emballe et la santé part, de plus en plus)
@@ -1137,11 +1159,15 @@ func mordre(b) -> void:
 	if _mort >= 0.0:
 		return
 	var d := R.MORSURE + R.MORSURE_MASSE * log(float(b.masse) + 1.0) / log(10.0)
+	var la_noire: bool = b.role == "noire"
+	if la_noire:
+		d = R.NOIRE_MORSURE
+		noire.a_mordu()
 	var en_vie: bool = joueur.sante > 0.0
 	joueur.blesser(d)
 	_maux["bete"] = float(_maux.get("bete", 0.0)) + d
 	_mordeur = str(b.nom)
-	if en_vie and joueur.sante <= 0.0:
+	if en_vie and joueur.sante <= 0.0 and not la_noire:
 		# (la morsure qui la fait tomber : sa population apprend qu'une veilleuse est une proie)
 		_raconter(b, "joueur_tombe")
 	sons.jouer("mord", -1.0, randf_range(0.85, 1.1))
@@ -1183,7 +1209,7 @@ func _directeur_passe(delta: float) -> void:
 	var echos := 0
 	for b in get_tree().get_nodes_in_group("betes"):
 		var loin: float = joueur.position.distance_to(b.position)
-		if b.role != "echo" and loin > 1600.0:
+		if b.role != "echo" and b.role != "noire" and loin > 1600.0:
 			b.queue_free()
 			continue
 		match b.role:
@@ -1205,7 +1231,8 @@ func _directeur_passe(delta: float) -> void:
 	# le soir et la nuit
 	_vague -= 2.0
 	var plafond := mini(R.CHASSEURS_MAX, 2 + nuits + (1 if part_nuit >= 0.45 else 0))
-	if chasseurs < plafond and _vague <= 0.0 and l < 0.3:
+	# (quand la Noire est là, ou qu'elle arrive, personne d'autre ne vient)
+	if chasseurs < plafond and _vague <= 0.0 and l < 0.3 and not noire.presente():
 		_vague = R.VAGUE
 		var e = _choisir(faune["chasseurs_nuit"])
 		if e != null:
@@ -1286,6 +1313,7 @@ func _voir() -> void:
 
 func _tombee_de_la_nuit() -> void:
 	_vague = 0.0
+	noire.tombee()
 	ui.carte("Nuit %d" % jour, "Reste dans la lumière." if nuits == 0 else "Tiens jusqu'au matin.")
 	effets.tombee()
 	if nuits == 0:
@@ -1303,6 +1331,7 @@ func _aube() -> void:
 		record = nuits
 		_sauver()
 	monde.semer_brindilles(30)
+	noire.aube()
 
 
 # un conseil, une seule fois par partie

@@ -61,7 +61,9 @@ const FILE := ["bois", "pierre", "herbe", "coup", "manger", "allume", "coeur", "
 	"pluie_fine1", "pluie_feuilles1", "pluie_eau0", "vent_hurle0", "craque1", "effondre", "crache0", "crache1", "crache2",
 	"frisson", "cri",
 	# sous terre (les grottes du monde ouvert)
-	"goutte0", "goutte1", "goutte2", "goutte3"]
+	"goutte0", "goutte1", "goutte2", "goutte3",
+	# la Noire (scripts/noire.gd) : son appel, ses pas
+	"appel", "pas_lourd"]
 const VOIX := 14
 const VOIX_2D := 18
 
@@ -441,8 +443,11 @@ func maj(jeu, delta: float) -> void:
 	if not _traits["froid"]:
 		c["grillons"] = maxf(c["grillons"], 0.55 * float(_temps.chaleur) * clair * sec)
 	c["sous"] = sous
+	# (la Noire approche : tout ce qui chante se tait, c'est à cela qu'on la sent venir ; scripts/noire.gd)
+	var chante: float = 1.0 - clampf(float(jeu.noire.silence), 0.0, 1.0) if jeu.get("noire") != null else 1.0
+	c["chante"] = chante
 	for qui in ["grillons", "grenouilles", "oiseaux"]:
-		c[qui] = float(c[qui]) * (1.0 - sous)
+		c[qui] = float(c[qui]) * (1.0 - sous) * chante
 	# (des gouttes, une à une, quelque part dans le noir)
 	if sous > 0.5 and not morte:
 		_goutte_t -= dt
