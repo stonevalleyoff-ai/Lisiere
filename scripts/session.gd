@@ -4,6 +4,9 @@ extends Node
 # et un mot de passe ; l'adresse se confirme par le courriel de Supabase ; un mot de passe oublié se change par un lien. Tout
 # passe par Supabase Auth (/auth/v1) : le jeu n'envoie l'adresse et le mot de passe qu'à lui, et ne garde que la session (le jeton,
 # celui qui le renouvelle, l'adresse), dans user://session.json. Le jeton ne vaut qu'une heure : il se renouvelle une minute avant.
+# Dans un navigateur, la session est celle du portail et des autres jeux du site (même adresse, même stockage, sous la clé
+# « stonevalley:session ») : connecté au portail, on l'est ici en arrivant, et l'inverse ; se déconnecter déconnecte partout. Un
+# jeton de renouvellement ne sert qu'une fois : avant de renouveler, on regarde si un autre ne vient pas de le faire.
 # Sans compte, Lisière se joue pareil.
 #   var r = await jeu.session.connexion(adresse, mot_de_passe)     # { ok, erreur } ; puis jeu.session.connecte()
 
@@ -13,6 +16,7 @@ const URL := "https://ldazucyrnpewkqdneznc.supabase.co"
 # (publique par nature, celle de Stone Valley : sans compte connecté, elle n'ouvre rien)
 const CLE := "sb_publishable_qUrfgAsAUzc3jd_tiqkY9g_EVkkQRAs"
 const FICHIER := "user://session.json"
+const COMMUNE := "stonevalley:session"      # dans un navigateur : la session commune au portail et aux jeux
 const ADRESSE_DU_JEU := "https://stonevalleyoff-ai.github.io/Lisiere/"
 const MDP_MIN := 8
 # les messages de Supabase sont en anglais : on les dit
@@ -114,12 +118,14 @@ func jeton_valide() -> String:
 		while _renouvellement:
 			await get_tree().process_frame
 		return jeton
+	if _renouvelee_ailleurs():
+		return jeton
 	_renouvellement = true
 	var r := await _appeler("/token?grant_type=refresh_token", {"refresh_token": renouveau})
 	_renouvellement = false
 	if r["ok"]:
 		_prendre(r["donnees"])
-	elif int(r["code"]) == 400 or int(r["code"]) == 401:
+	elif (int(r["code"]) == 400 or int(r["code"]) == 401) and not _renouvelee_ailleurs():
 		# (la session a péri ailleurs, ou trop vieille) : on la quitte
 		deconnexion()
 	return jeton
@@ -321,21 +327,33 @@ func _retour_du_courriel() -> void:
 
 
 # --- la session gardée ---
+# Hors d'un navigateur : un fichier. Dans un navigateur : la clé commune du site, et elle seule (le fichier d'avant y est versé une
+# fois, puis effacé : sinon une session fermée au portail renaîtrait d'ici).
 
 func _lire() -> void:
+	if OS.has_feature("web"):
+		var c := _commune()
+		if not c.is_empty():
+			_adopter(c)
+			return
 	if not FileAccess.file_exists(FICHIER):
 		return
 	var s = JSON.parse_string(FileAccess.get_file_as_string(FICHIER))
-	if typeof(s) != TYPE_DICTIONARY:
-		return
-	jeton = str(s.get("jeton", ""))
-	renouveau = str(s.get("renouveau", ""))
-	expire = float(s.get("expire", 0.0))
-	uid = str(s.get("uid", ""))
-	email = str(s.get("email", ""))
+	if typeof(s) == TYPE_DICTIONARY:
+		jeton = str(s.get("jeton", ""))
+		renouveau = str(s.get("renouveau", ""))
+		expire = float(s.get("expire", 0.0))
+		uid = str(s.get("uid", ""))
+		email = str(s.get("email", ""))
+	if OS.has_feature("web"):
+		DirAccess.remove_absolute(FICHIER)
+		_ecrire()
 
 
 func _ecrire() -> void:
+	if OS.has_feature("web"):
+		_ecrire_commune()
+		return
 	if not connecte():
 		if FileAccess.file_exists(FICHIER):
 			DirAccess.remove_absolute(FICHIER)
@@ -343,3 +361,46 @@ func _ecrire() -> void:
 	var f := FileAccess.open(FICHIER, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify({"jeton": jeton, "renouveau": renouveau, "expire": expire, "uid": uid, "email": email}))
+
+
+# la session commune du site, telle qu'elle est gardée ({} : aucune). Sa forme : { jeton, refresh, exp (millisecondes), uid, email, pseudo }
+func _commune() -> Dictionary:
+	if not OS.has_feature("web"):
+		return {}
+	var t = JavaScriptBridge.eval("(function(){try{return localStorage.getItem('%s')||''}catch(e){return ''}})()" % COMMUNE, true)
+	if typeof(t) != TYPE_STRING or str(t) == "":
+		return {}
+	var s = JSON.parse_string(str(t))
+	if typeof(s) != TYPE_DICTIONARY or str(s.get("jeton", "")) == "" or str(s.get("uid", "")) == "":
+		return {}
+	return s
+
+
+func _adopter(c: Dictionary) -> void:
+	jeton = str(c.get("jeton", ""))
+	renouveau = str(c.get("refresh", ""))
+	expire = float(c.get("exp", 0.0)) / 1000.0
+	uid = str(c.get("uid", ""))
+	email = str(c.get("email", ""))
+
+
+func _ecrire_commune() -> void:
+	if not connecte():
+		JavaScriptBridge.eval("try{localStorage.removeItem('%s')}catch(e){}" % COMMUNE, true)
+		return
+	# (le pseudo que le portail y a mis reste, si c'est le même compte)
+	var avant := _commune()
+	var pseudo := str(avant.get("pseudo", "")) if str(avant.get("uid", "")) == uid else ""
+	var texte := JSON.stringify({"jeton": jeton, "refresh": renouveau, "exp": int(expire * 1000.0), "uid": uid, "email": email, "pseudo": pseudo})
+	JavaScriptBridge.eval("try{localStorage.setItem('%s',%s)}catch(e){}" % [COMMUNE, JSON.stringify(texte)], true)
+
+
+# le portail ou un autre jeu vient-il de renouveler la session commune ? Alors on prend la leur, sans rien demander au service
+func _renouvelee_ailleurs() -> bool:
+	var c := _commune()
+	if c.is_empty() or str(c.get("uid", "")) != uid or str(c.get("refresh", "")) in ["", renouveau]:
+		return false
+	if float(c.get("exp", 0.0)) / 1000.0 <= Time.get_unix_time_from_system() + 60.0:
+		return false
+	_adopter(c)
+	return true
