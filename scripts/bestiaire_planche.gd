@@ -508,7 +508,7 @@ func _atlas(sq: Dictionary) -> void:
 	var centre: Vector2 = sq["centre"]
 	for q in _pattes:
 		var m := _morceaux(q)
-		var p := {"loin": q["loin"], "cellules": [], "pied": {}}
+		var p := {"loin": q["loin"], "cellules": [], "pied": {}, "pied_genre": str(q["opts"].get("pied", "aucun"))}
 		for s in m["segs"]:
 			p["cellules"].append(cellules.size())
 			cellules.append(s)

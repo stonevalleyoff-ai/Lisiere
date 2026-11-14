@@ -104,7 +104,13 @@ var aplatie := 0.0               # de 0 à 1 : elle s'aplatit, avant de charger
 var couchee := 0.0               # de 0 à 1 : elle est couchée (elle dort)
 var yeux_clos := 0.0             # de 0 à 1 : ses yeux se ferment (elle dort, elle s'efface dans le noir)
 var de_face := 0.0               # de 0 à 1 : elle regarde la veilleuse en face, et l'on voit ses deux yeux (scripts/yeux.gd)
-# ses empreintes (scripts/traces.gd) : une à chaque foulée
+var _claque := -1.0              # son coup de gueule, de 0 à 1 (-1 : rien) : le corps se jette en avant, la tête claque
+var _tic := 0.0                  # un mouvement de tête brusque, qui retombe
+var _tic_t := 2.0
+# ses empreintes (scripts/traces.gd) : là où chaque pied se pose, quand on la voit de profil ; sinon une à chaque foulée
+const PIEDS := {"coussinet": 0, "doigts": 1, "sabot": 3, "main": 4, "griffes": 5}
+var _trace_ou: Array[Vector2] = []   # où chaque pied a laissé sa dernière empreinte
+var _lourd := 0.3                # son poids vrai, de 0 à 1 (_poids, lui, règle son allure : la Noire est plus vive que sa masse)
 var _trace_pas := 0.0            # la longueur d'une foulée (0 : elle n'en laisse pas)
 var _trace_d := 0.0
 var _trace_cote := 1.0
@@ -292,7 +298,7 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 		_trace_genre = 0 if forme_ == "quadrupede" else 1
 		if role == "noire":
 			_trace_pas = largeur * 0.2
-			_trace_taille = largeur * 0.066
+			_trace_taille = largeur * 0.052
 			_trace_duree = 420.0
 			_trace_genre = 2
 	if role != "echo" and role != "noire":
@@ -300,6 +306,10 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 		ecart = clampf(float(e["ecart"]) if e.has("ecart") else randfn(0.0, 1.0), -2.5, 2.5)
 		_apprendre(e.get("memoire", {}))
 	_poids = clampf(log(maxf(masse, 0.2) / 0.2) / log(1500.0), 0.0, 1.0)
+	_lourd = _poids
+	if role == "noire":
+		# (elle pèse, mais elle est vive : ses pas, ses ressorts, ses demi-tours sont ceux d'une bête deux fois plus légère)
+		_poids = 0.56
 	_sens = 1.0 if randf() < 0.5 else -1.0
 	var k = plan.get("corps", {}).get("couleurs", {}).get("robe", [])
 	if typeof(k) == TYPE_ARRAY and k.size() >= 3:
@@ -326,6 +336,11 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 	_oeil_rayon = maxf(1.2, oeil.z * largeur / 170.0 * 1.25)
 	if not _sq.is_empty():
 		_monter()
+		# (le genre de ses empreintes : celui de son pied — un sabot, des coussinets, des griffes, une main)
+		if _trace_pas > 0.0 and role != "noire" and _trace_genre == 0 and not _sq["pattes"].is_empty():
+			_trace_genre = int(PIEDS.get(str(_sq["pattes"][0].get("pied_genre", "")), 0))
+		for i in _p_pts.size():
+			_trace_ou.append(Vector2(INF, INF))
 	regard = 1.0 if randf() < 0.5 else -1.0
 	_face = regard
 	_souffle = randf() * TAU
@@ -688,8 +703,24 @@ func effrayer(depuis: Vector2, duree: float) -> void:
 	_fuir(depuis, duree if role != "chasseur" else duree * 0.6)
 
 
+# la Noire sursaute (une gerbe d'étincelles, un coup) : son corps se tasse, sa tête part en arrière, sa queue claque
+func sursauter() -> void:
+	_ressort_v -= 2.6
+	_derobe = maxf(_derobe, 0.4)
+	_tic = -0.22
+	_q_av += 7.0 * _sens
+	if _cligne < 0.0:
+		_cligne = 0.0
+
+
 # une bûche dans un feu de camp, une gerbe d'étincelles : une population qui craint le feu recule un moment
 func gerbe(feu) -> void:
+	if role == "noire":
+		# (elle ne fuit pas : elle sursaute et s'écarte d'un pas ; noire.gd)
+		if pv > 0.0 and ordre != "dort" and position.distance_to(feu.position) < feu.rayon() * 1.7:
+			sursauter()
+			jeu.noire.gerbe()
+		return
 	if pv <= 0.0 or role == "echo" or peur_feu <= 0.2 or position.distance_to(feu.position) > feu.rayon() * 1.3:
 		return
 	effrayer(feu.position, 1.0 + 2.5 * peur_feu)
@@ -1060,6 +1091,7 @@ func _mordre_si_pres(dj: float) -> void:
 		# (sa gueule porte loin devant elle ; elle mord moins vite qu'un chasseur, mais chaque morsure compte)
 		if dj < 100.0 and _morsure <= 0.0:
 			_morsure = 1.6
+			_claque = 0.0
 			jeu.mordre(self)
 		return
 	if dj < 24.0 + largeur * 0.3 and _morsure <= 0.0:
@@ -1145,16 +1177,17 @@ func _animer(delta: float) -> void:
 	if dl > 0.02:
 		_proj = lerpf(_proj, _avance / dl, 1.0 - exp(-delta * 8.0))
 	_cligner(delta)
-	if _trace_pas > 0.0 and dl > 0.02 and _mort < 0.0 and jeu != null and jeu.get("traces") != null:
-		# (une empreinte à chaque foulée, d'un côté puis de l'autre : scripts/traces.gd ; la Noire s'entend marcher)
+	if _trace_pas > 0.0 and dl > 0.02 and _mort < 0.0 and jeu != null and jeu.get("traces") != null and not _par_pieds():
+		# (hors de l'écran, ou vue de face : une empreinte à chaque foulée, d'un côté puis de l'autre ; scripts/traces.gd)
 		_trace_d += dl
 		if _trace_d >= _trace_pas:
 			_trace_d = 0.0
 			_trace_cote = -_trace_cote
 			var sens := d / dl
-			jeu.traces.poser(position + sens.orthogonal() * _trace_cote * largeur * 0.07, sens.angle(), _trace_taille, _trace_duree, _trace_genre, id)
+			var ou := position + sens.orthogonal() * _trace_cote * largeur * 0.07
+			jeu.traces.poser(ou, sens.angle(), _trace_taille, _trace_duree, _trace_genre, id, _trace_fond())
 			if role == "noire":
-				jeu.noire.pas(self)
+				jeu.noire.pas(self, ou)
 	if _pivot == null:
 		_face = move_toward(_face, regard, delta / 0.16)
 		return
@@ -1170,7 +1203,7 @@ func _animer(delta: float) -> void:
 	_ressort += _ressort_v * delta
 	# le retournement : un demi-tour de papier, sans saut ; plus lent chez une bête lourde
 	var avant_face := _face
-	_face = move_toward(_face, regard, delta / lerpf(0.15, 0.26, _poids))
+	_face = move_toward(_face, regard, delta / (0.12 if role == "noire" else lerpf(0.15, 0.26, _poids)))
 	if avant_face == regard * -1.0 and _face != avant_face:
 		# (elle se retourne : elle cligne, ses pieds piétinent, sa queue suit avec du retard)
 		if _cligne < 0.0:
@@ -1213,7 +1246,8 @@ func _sur_l_ecran() -> bool:
 # l'allure, d'après ce qu'elle fait et sa vitesse : le pas, l'affût (bas, de longs pas lents), la course, le galop (une proie
 # qui fuit bondit ; un chasseur lancé galope)
 func _allure(v: float, delta: float) -> void:
-	var lisse := 1.0 - exp(-delta * 6.0)
+	# (la Noire change d'allure d'un coup : du guet au galop sans transition molle)
+	var lisse := 1.0 - exp(-delta * (14.0 if role == "noire" else 6.0))
 	var nuit: bool = role == "chasseur" and not jeu.est_jour()
 	var affut := 1.0 if nuit and _retenu else 0.0
 	if role == "noire":
@@ -1230,7 +1264,7 @@ func _allure(v: float, delta: float) -> void:
 	_foulee = 0.85 * w_pas + 1.05 * _affut + 1.15 * _course + _g_foulee * _bond
 	_appui = lerpf(0.6, 0.68, _poids) * w_pas + 0.76 * _affut + 0.42 * _course + _g_appui * _bond
 	_levee = lerpf(0.26, 0.14, _poids) * w_pas + 0.15 * _affut + lerpf(0.4, 0.26, _poids) * _course + lerpf(0.42, 0.3, _poids) * _bond
-	_bas = lerpf(_bas, (0.08 if nuit else 0.0) + 0.14 * affut + (0.07 if role != "proie" else 0.03) * vite + 0.6 * couchee, lisse)
+	_bas = lerpf(_bas, (0.08 if nuit else 0.0) + 0.14 * affut + (0.07 if role != "proie" else 0.03) * vite + 0.6 * couchee + 0.13 * aplatie, lisse)
 	if role == "echo":
 		_appui = 0.7
 		_levee = 0.2
@@ -1348,6 +1382,8 @@ func _cibles_pieds() -> void:
 		var u := fposmod(_phase + _p_dec[i], 1.0)
 		var off := _p_off[i]
 		if u < _appui:
+			if _p_pose[i] == 0:
+				_pied_pose(i, off)
 			_p_pose[i] = 1
 			off = clampf(off - _avance, -lim, lim)
 			_p_lev[i] = 0.0
@@ -1377,6 +1413,36 @@ func _cibles_pieds() -> void:
 
 # ce qu'il manque à ses pattes pour atteindre leurs pieds, le corps étant là : devant, derrière (en pixels dont il faudrait
 # descendre), et l'écart entre ses épaules et ses hanches (0 : on ne sait pas la faire tanguer)
+# ses pieds font-ils eux-mêmes ses empreintes ? Quand on la voit, de profil, et qu'elle a des pattes
+func _par_pieds() -> bool:
+	return _a_l_ecran and not _hors and _proj >= 0.55 and not _p_pts.is_empty() and _pivot != null
+
+
+# ce que pèse son pas : une bête lourde marque davantage, et plus encore quand elle court
+func _trace_fond() -> float:
+	return clampf(0.4 + 0.34 * _lourd + 0.26 * (_course + _bond), 0.35, 1.0)
+
+
+# un pied vient de se poser : son empreinte, là où il est (à l'écran, de profil : les pattes du côté qu'on ne voit pas
+# marquent un peu plus haut, les autres un peu plus bas) ; la Noire s'entend, et soulève la terre
+func _pied_pose(i: int, off: float) -> void:
+	if _trace_pas <= 0.0 or _mort >= 0.0 or jeu == null or jeu.get("traces") == null or _marche < 0.2 or not _par_pieds():
+		return
+	var pts := _p_pts[i]
+	var cote := signf(_pivot.scale.x) if _pivot.scale.x != 0.0 else regard
+	var ou := position + Vector2((pts[pts.size() - 1].x + off) * cote, (-1.0 if _p_loin[i] else 1.0) * largeur * 0.062)
+	# (un pied qui se repose au même endroit ne marque pas deux fois)
+	if i < _trace_ou.size():
+		if ou.distance_to(_trace_ou[i]) < _trace_taille * 1.7:
+			return
+		_trace_ou[i] = ou
+	var sens := _vit.normalized() if _vit.length() > 4.0 else Vector2(cote, 0.0)
+	jeu.traces.poser(ou, sens.angle(), _trace_taille, _trace_duree, _trace_genre, id, _trace_fond())
+	_trace_d = 0.0
+	if role == "noire":
+		jeu.noire.pas(self, ou)
+
+
 func _besoin(t: Transform2D) -> Vector3:
 	var df := 0.0
 	var dh := 0.0
@@ -1439,9 +1505,10 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	y += H * _bas
 	# le souffle, au repos : lent chez une grande bête ; court et fort après une course
 	var repos := 1.0 - marche
-	_essouffle = clampf(_essouffle + delta * ((_course + _bond) * 0.5 - 0.16), 0.0, 1.0)
-	_souffle += delta * TAU / (1.3 + 1.1 * log(masse + 1.0) / log(10.0)) * (1.0 + 1.5 * _essouffle)
-	var ampleur := (0.026 + 0.02 * _essouffle) * (0.35 + 0.65 * repos)
+	var noire := role == "noire"
+	_essouffle = clampf(_essouffle + delta * ((_course + _bond) * 0.5 - 0.16 + 0.5 * aplatie), 0.0, 1.0)
+	_souffle += delta * TAU / (1.3 + 1.1 * log(masse + 1.0) / log(10.0)) * (1.0 + 1.5 * _essouffle) * (1.5 if noire else 1.0)
+	var ampleur := (0.026 + 0.02 * _essouffle) * (0.35 + 0.65 * repos) * (1.5 if noire else 1.0)
 	sy *= 1.0 + ampleur * sin(_souffle)
 	sx *= 1.0 + ampleur * 0.3 * sin(_souffle)
 	# frappée : elle s'écrase, ses pattes se dérobent
@@ -1454,6 +1521,21 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 		frisson = sin(_geste_age * 34.0) * sin(PI * clampf(_geste_age / 0.5, 0.0, 1.0))
 		sx *= 1.0 + 0.018 * frisson
 		tang += 0.012 * frisson
+	if noire and _mort < 0.0:
+		# la Noire : tendue avant de charger (le poitrail au sol, la croupe haute, tout le corps qui vibre) ; jamais tout à fait
+		# immobile quand elle guette (son poids passe d'une patte à l'autre) ; et le coup de gueule, quand elle mord
+		tang += 0.1 * aplatie
+		sx *= 1.0 + 0.011 * sin(_anim * 39.0) * aplatie
+		if ordre == "guette":
+			x += H * 0.02 * sin(_anim * 0.9) * (1.0 - aplatie)
+			tang += 0.011 * sin(_anim * 0.63 + 1.0) * (1.0 - aplatie)
+		if _claque >= 0.0:
+			_claque += delta / 0.3
+			if _claque >= 1.0:
+				_claque = -1.0
+			else:
+				x += H * 0.26 * sin(PI * _claque)
+				tang += 0.07 * sin(PI * _claque)
 	# elle broute, elle flaire le sol : ses épaules s'abaissent un peu
 	var penche := 0.0
 	if _geste == "broute" or _geste == "flaire":
@@ -1529,6 +1611,34 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	rot += 0.12 * _affut + 0.06 * _course + 0.07 * _bond
 	d += Vector2(0.06, 0.12) * H * _affut
 	var raide := 1.0 - exp(-delta * lerpf(6.0, 3.6, _poids))
+	if noire and _mort < 0.0 and _tete != null and jeu != null and jeu.joueur != null:
+		if ordre == "dort":
+			# (la tête posée au sol)
+			rot += 0.34 * couchee
+			d += Vector2(0.04, 0.24) * H * couchee
+		else:
+			# elle ne quitte pas la veilleuse des yeux : sa tête la suit, où qu'elle aille, autant que son cou le permet
+			# (elle la domine : sa tête plonge d'autant plus que la veilleuse est près ; un peu plus encore si elle est
+			# devant elle, vers nous, un peu moins si elle est derrière. Dans son dos, le cou ne suit plus.)
+			var pv0: Vector2 = _sq["tete"]["pivot"]
+			var pieds: Vector2 = jeu.joueur.position - position
+			var devant := pieds.x * signf(fx) > -20.0
+			var visee := clampf(atan2(maxf(-pv0.y - 36.0, 0.0), maxf(absf(pieds.x), 40.0)) * 0.6 + 0.3 * clampf(pieds.y / 160.0, -1.0, 1.0), -0.3, 0.55)
+			rot = lerpf(rot, visee, (0.45 if ordre == "charge" else 0.9) * (1.0 if devant else 0.25))
+			# (un tic : de temps en temps sa tête se penche d'un coup, puis revient)
+			_tic_t -= delta
+			if _tic_t <= 0.0:
+				_tic_t = randf_range(1.6, 4.5)
+				_tic = (1.0 if randf() < 0.5 else -1.0) * randf_range(0.07, 0.13)
+			_tic = lerpf(_tic, 0.0, 1.0 - exp(-delta * 3.5))
+			rot += _tic
+			# (avant de charger : la tête au ras du sol, qui tremble ; quand elle mord : elle claque)
+			rot += 0.2 * aplatie + 0.014 * sin(_anim * 43.0) * aplatie
+			d += Vector2(0.1, 0.2) * H * aplatie
+			if _claque >= 0.0:
+				rot += 0.5 * sin(TAU * _claque) * (1.0 - _claque)
+				d += Vector2(0.12, 0.0) * H * sin(PI * _claque)
+		raide = 1.0 - exp(-delta * 12.0)
 	_tete_rot = lerpf(_tete_rot, rot * souple, raide)
 	_tete_d = _tete_d.lerp(d * souple, raide)
 	var td := _tete_d
@@ -1573,6 +1683,23 @@ func _gestes_repos(delta: float) -> void:
 	if _geste_t > 0.0:
 		return
 	_geste_age = 0.0
+	if role == "noire":
+		# (elle ne broute ni ne flaire, et ne se détourne pas : elle gratte le sol d'une patte, s'ébroue ; noire.gd décide du reste)
+		var hasard := randf()
+		if ordre == "dort":
+			_geste = ""
+			_geste_t = 2.0
+		elif hasard < 0.5:
+			_geste = "pietine"
+			_pietine = 1.0
+			_geste_t = randf_range(1.2, 2.6)
+		elif hasard < 0.62:
+			_geste = "frisson"
+			_geste_t = 0.5
+		else:
+			_geste = ""
+			_geste_t = randf_range(0.8, 2.0)
+		return
 	var x := randf()
 	var tourne := 0.12 * (1.0 - 0.6 * _poids)
 	if role == "proie":
@@ -1812,7 +1939,7 @@ func _animer_queue(delta: float) -> void:
 			vif_b += 0.22 * sin(_geste_age * 34.0 - 1.0) * sin(PI * clampf(_geste_age / 0.5, 0.0, 1.0))
 		# ses gestes à elle, au repos ; à l'affût, son bout bat
 		_q_attente -= dt
-		if _q_geste == "" and _q_attente <= 0.0 and (_marche < 0.2 or _affut > 0.5):
+		if _q_geste == "" and _q_attente <= 0.0 and (_marche < 0.2 or _affut > 0.5 or (role == "noire" and ordre != "charge" and ordre != "dort")):
 			var hardi := audace > 0.55 or (role != "proie" and audace > 0.3) or _affut > 0.5
 			_q_geste = "fouette" if hardi else "fremit"
 			_q_geste_t = 0.0
@@ -1820,6 +1947,10 @@ func _animer_queue(delta: float) -> void:
 			if hardi:
 				_q_geste_d = lerpf(0.5, 0.85, _poids)
 				_q_attente = randf_range(2.2, 5.5) * (1.4 - 0.7 * audace)
+				if role == "noire":
+					# (sa queue fouette sans cesse, de plus en plus vite quand elle va charger)
+					_q_geste_d = lerpf(0.5, 0.3, aplatie)
+					_q_attente *= lerpf(0.38, 0.1, aplatie)
 			else:
 				_q_geste_d = 0.42
 				_q_attente = randf_range(1.8, 5.0) * (0.6 + audace)
@@ -1865,7 +1996,7 @@ func _cligner(delta: float) -> void:
 		if _cligne >= _cligne_d:
 			_cligne = -1.0
 		return
-	_cligne_t -= delta * (0.4 if _geste == "guette" else 1.0)
+	_cligne_t -= delta * (0.4 if _geste == "guette" else (0.3 if role == "noire" else 1.0))
 	if _cligne_t <= 0.0:
 		_cligne = 0.0
 		_cligne_d = lerpf(0.17, 0.27, _poids)

@@ -15,7 +15,8 @@ extends Node
 #   relief d'un pays, le plan d'une grotte) ; --torche : elle part une torche à la main
 #   --herbier fichier.json : l'herbier d'un biome d'Orvane, donné à la main (voir sa flore sans le réseau)
 #   --sans-feu : la nuit, pas de feu de camp (les chasseurs autour de la seule torche)
-#   --noire 2|3|4 : la Noire à cet acte (scripts/noire.gd) ; --noire dort, --noire piste : de jour, sa tanière, sa piste
+#   --noire 2|3|4 : la Noire à cet acte (scripts/noire.gd) ; --noire dort, --noire piste : de jour, sa tanière, sa piste ;
+#   --noire reveil : de jour, endormie puis réveillée (sa charge, sa morsure, son départ, en pleine lumière)
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -111,7 +112,7 @@ func _lancer() -> void:
 	match quelle:
 		"":
 			pass
-		"dort":
+		"dort", "reveil":
 			jeu.noire.acte = 2
 			jeu.noire.taniere = j.position + Vector2(250.0, -30.0)
 			jeu.noire.ou = jeu.noire.taniere
@@ -199,6 +200,9 @@ func _lancer() -> void:
 					cibles = jeu.scene.get_children().filter(func(n): return n.get_script() == jeu.IncendieFlammes)
 				"effets":
 					cibles = [jeu.effets]
+				"traces":
+					# (les empreintes : on ne les dessine plus, pour mesurer ce qu'elles coûtent)
+					cibles = [jeu.traces]
 			for n in cibles:
 				n.process_mode = Node.PROCESS_MODE_DISABLED
 				if n is CanvasItem:
@@ -411,6 +415,10 @@ func _process(delta: float) -> void:
 							jeu.decouvertes[w] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
+	# (--noire reveil : de jour, couchée à deux pas, puis réveillée au quart du temps : elle se lève, charge, mord, s'en va)
+	if u > 0.25 and not _fait.has("reveil") and OS.get_cmdline_user_args().has("reveil") and jeu.noire.corps != null:
+		_fait["reveil"] = true
+		jeu.noire._reveiller()
 	# (--carnet : à la fin, la pause, et le carnet des bêtes — la Noire, six choses apprises, vue dans la lumière ; --bas : la
 	# page descendue jusqu'aux autres bêtes)
 	if u > 0.8 and not _fait.has("carnet") and OS.get_cmdline_user_args().has("--carnet"):

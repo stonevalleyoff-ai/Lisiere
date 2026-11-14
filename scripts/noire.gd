@@ -5,8 +5,9 @@ extends RefCounted
 #  1. les signes : on ne la voit pas. Un appel grave, loin, dans la nuit ; à l'aube, des empreintes énormes près du camp ;
 #  2. les yeux : elle vient. Tout se tait avant elle, les autres bêtes s'en vont. Deux yeux rouges à la lisière de la lumière,
 #     qui regardent longtemps. Si la veilleuse avance, ils s'éteignent, et elle reparaît ailleurs. Elle ne mord pas encore ;
-#  3. le siège : elle tourne autour du camp, s'arrête, regarde, suit le feu à mesure qu'il baisse. Hors de la lumière d'un feu,
-#     la torche ne la tient qu'un moment ; puis elle s'aplatit, gronde (le présage), et charge ;
+#  3. le siège : elle tourne autour du camp, s'arrête, regarde, suit le feu à mesure qu'il baisse, et la veilleuse quand elle
+#     en fait le tour ; elle feinte (elle se jette vers la lumière et s'arrête à son bord) ; une bûche jetée la fait sursauter.
+#     Hors de la lumière d'un feu, la torche ne la tient qu'un moment ; puis elle s'aplatit, gronde (le présage), et charge ;
 #  4. la chasse : comme le siège, mais elle part plus tôt de sa tanière et la torche la tient moitié moins.
 # Ce qui la rend juste : elle s'annonce toujours (l'appel quand elle part, le silence quand elle approche, le présage avant la
 # charge), un feu vif la tient toujours, et l'on peut lui échapper : elle dort le jour dans sa tanière, d'où elle part chaque
@@ -45,6 +46,8 @@ const SAVOIRS := [
 		"Deux yeux rouges, à la lisière. Ils ne bougent pas."],
 	["feu", "Un feu vif la tient : elle n'entre pas dans sa lumière. Elle le suit quand il baisse.",
 		"Elle n'entre pas dans la lumière du feu. Garde-le vif."],
+	["feinte", "Elle feinte : elle se jette vers la lumière et s'arrête à son bord. Qui recule hors du feu est perdu.",
+		"Elle s'est jetée vers toi, et s'est arrêtée au bord de la lumière. Ne recule pas hors du feu."],
 	["torche", "La torche ne la retient qu'un moment. Elle s'aplatit, gronde, puis elle passe.",
 		"La torche la tient, mais pas longtemps. Quand elle s'aplatit, cours vers un feu."],
 	["coups", "Les coups ne la tuent pas. Assez de coups, et elle se retire jusqu'à la nuit suivante.",
@@ -61,7 +64,7 @@ var taniere := Vector2.ZERO
 var taniere_connue := false      # la veilleuse l'a trouvée (la carte du carnet la montre)
 var ou := Vector2.ZERO           # où elle est : là où est son corps, ou sa place tant qu'elle n'en a pas
 var corps = null                 # sa bête (scripts/bete.gd), quand elle est assez près pour en avoir une
-var etat := "dort"               # dort, vient, guette, tourne, recule, charge, rentre
+var etat := "dort"               # dort, vient, guette, tourne, feinte, sursaut, recule, charge, rentre
 var su := {}                     # ce que la veilleuse a appris d'elle (les clés de SAVOIRS)
 var vue := false                 # la veilleuse l'a vue dans la lumière (son portrait, dans le carnet)
 var silence := 0.0               # de 0 à 1 : ce qu'elle fait taire autour de la veilleuse (scripts/sons.gd)
@@ -87,6 +90,7 @@ var _lu := 0.0
 var _regarde := 0.0              # depuis combien de temps elle fixe la veilleuse
 var _siege := 0.0                # depuis combien de temps un feu la tient
 var _bloquee := 0.0
+var _feinte := 8.0               # avant sa prochaine feinte
 var _avant := Vector2.ZERO
 var _piste_de := Vector2.ZERO    # d'où part sa piste du jour (pour la refaire, quand on reprend une partie)
 var _a_piste := false
@@ -126,6 +130,7 @@ func tombee() -> void:
 	_presage = 0.0
 	_appel = false
 	_colere = 0.0
+	_feinte = _r.randf_range(6.0, 10.0)
 	if etat != "dort":
 		# (encore en chemin vers sa tanière, ou en colère : elle y est)
 		_disparaitre()
@@ -166,6 +171,8 @@ func frappee(n: float) -> void:
 	if etat == "dort":
 		_reveiller()
 		return
+	if corps != null and is_instance_valid(corps):
+		corps.sursauter()
 	if _prise >= R.NOIRE_ENDURE and not _retiree:
 		_retiree = true
 		_colere = 0.0
@@ -180,6 +187,12 @@ func frappee(n: float) -> void:
 			_reculer(460.0, 3.5)
 
 
+# une bûche jetée dans le feu, sa gerbe d'étincelles (bete.gd, gerbe) : elle sursaute, et s'écarte d'un pas
+func gerbe() -> void:
+	if etat == "guette" or etat == "tourne" or etat == "feinte":
+		_changer("sursaut")
+
+
 # elle vient de mordre (principal.gd, mordre) : elle se reprend un instant, le temps de courir vers un feu
 func a_mordu() -> void:
 	if etat != "charge":
@@ -191,13 +204,17 @@ func a_mordu() -> void:
 	_reculer(230.0, 2.2)
 
 
-# un de ses pas (bete.gd) : on l'entend venir, de loin ; lancée, elle fait trembler le sol
-func pas(b) -> void:
+# un de ses pas, en « ou » (bete.gd) : on l'entend venir, de loin ; de près, la terre se soulève sous sa patte ; lancée, elle
+# fait trembler le sol
+func pas(b, ou: Vector2) -> void:
 	var d: float = b.position.distance_to(jeu.joueur.position)
 	if d > 950.0:
 		return
-	jeu.sons.evenement("pas_lourd", lerpf(-5.0, -26.0, d / 950.0), _r.randf_range(0.88, 1.06), jeu.sons.pan_de(b.position), jeu.sons.B_MONDE)
-	if d < 380.0 and etat == "charge":
+	var lancee: bool = etat == "charge" or etat == "feinte"
+	jeu.sons.evenement("pas_lourd", lerpf(-5.0, -26.0, d / 950.0) + (2.0 if lancee else 0.0), _r.randf_range(0.88, 1.06), jeu.sons.pan_de(ou), jeu.sons.B_MONDE)
+	if d < 700.0 and jeu.effets != null:
+		jeu.effets.pas(ou, 1.0 if lancee else 0.6)
+	if d < 380.0 and lancee:
 		jeu.effets.secousse(0.16 * (1.0 - d / 380.0))
 
 
@@ -296,6 +313,10 @@ func maj(delta: float) -> void:
 			_venir(delta, j)
 		"guette", "tourne":
 			_assieger(delta, j)
+		"feinte":
+			_feinter(j)
+		"sursaut":
+			_sursauter(j)
 		"recule":
 			_s_effacer(j)
 		"charge":
@@ -428,13 +449,27 @@ func _assieger(delta: float, j) -> void:
 		_siege += delta
 		if acte >= 3 and _siege > 6.0:
 			_apprendre("feu")
+		# la feinte : de temps en temps elle se jette vers la lumière, et s'arrête à son bord
+		_feinte -= delta
+		if _feinte <= 0.0 and absf(ici.length() - tenue) < 60.0:
+			_feinte = _r.randf_range(7.0, 12.0) if acte < 4 else _r.randf_range(4.0, 8.0)
+			jeu.grognement(corps, true)
+			_changer("feinte")
+			return
 	if etat == "guette":
 		corps.ordre = "guette"
+		var vise: Vector2 = j.position - ancre
+		var ecart := wrapf(vise.angle() - ici.angle(), -PI, PI) if (feu != null and vise.length() > 24.0) else 0.0
 		if absf(ici.length() - tenue) > 45.0:
 			# (le feu a baissé, ou grandi ; la veilleuse a bougé : elle reprend sa place)
 			corps.ordre = "va"
 			corps.ordre_allure = 0.4
 			corps.ordre_but = ancre + ici.normalized() * tenue
+		elif absf(ecart) > 0.45:
+			# (la veilleuse fait le tour du feu : elle la suit le long de la lisière, pour rester en face d'elle)
+			corps.ordre = "va"
+			corps.ordre_allure = 0.55
+			corps.ordre_but = ancre + Vector2.from_angle(ici.angle() + signf(ecart) * 0.5) * tenue / cos(0.5)
 		elif dj < 620.0 and jeu.eclairage(corps.point_oeil()) < 0.6:
 			_regarde += delta
 			if _regarde > 2.0:
@@ -444,7 +479,7 @@ func _assieger(delta: float, j) -> void:
 			_changer("tourne")
 	else:
 		corps.ordre = "va"
-		corps.ordre_allure = 0.3 if acte < 4 else 0.4
+		corps.ordre_allure = 0.36 if acte < 4 else 0.46
 		# (elle vise un peu plus loin que le cercle, pour ne pas le couper par la corde)
 		corps.ordre_but = ancre + Vector2.from_angle(ici.angle() + _sens * 0.5) * tenue / cos(0.5)
 		if _coincee(delta):
@@ -452,6 +487,44 @@ func _assieger(delta: float, j) -> void:
 		if _t > _pose:
 			_pose = _r.randf_range(12.0, 18.0) if acte == 2 else _r.randf_range(4.0, 7.0)
 			_changer("guette")
+
+
+# la feinte : elle se jette vers le feu de toute sa vitesse, bute sur le bord de sa lumière (bete.gd l'y arrête), y tient un
+# instant, face à la veilleuse, puis reprend sa ronde
+func _feinter(j) -> void:
+	if corps == null:
+		_changer("vient")
+		return
+	var feu = jeu.feu_qui_protege(j.position)
+	if feu == null or _t > 1.25:
+		if feu != null:
+			_apprendre("feinte")
+		_pose = _r.randf_range(4.0, 7.0)
+		_changer("tourne")
+		return
+	if _t < 0.55:
+		var ici: Vector2 = ou - feu.position
+		corps.ordre = "va"
+		corps.ordre_allure = 1.0
+		corps.ordre_but = feu.position + (ici.normalized() if ici.length() > 1.0 else Vector2.RIGHT) * float(feu.rayon()) * 0.9
+	else:
+		corps.ordre = "guette"
+
+
+# le sursaut : une gerbe d'étincelles l'écarte de quelques pas, puis elle revient guetter
+func _sursauter(j) -> void:
+	if corps == null:
+		_changer("vient")
+		return
+	var a := _anneau(j)
+	var ancre: Vector2 = a[0]
+	var ici: Vector2 = ou - ancre
+	corps.ordre = "va"
+	corps.ordre_allure = 0.85
+	corps.ordre_but = ancre + (ici.normalized() if ici.length() > 1.0 else Vector2.RIGHT) * (float(a[1]) + 110.0)
+	if _t > 0.9:
+		_pose = _r.randf_range(3.0, 6.0)
+		_changer("guette")
 
 
 # elle recule dans le noir, les yeux clos, puis revient
@@ -530,7 +603,7 @@ func _entourage(delta: float, j) -> void:
 		_apprendre("silence")
 	var fixe := 0.0
 	if corps != null and la and d < 620.0 and float(corps.paupiere()) > 0.5:
-		fixe = 1.0 if (etat == "guette" or etat == "charge") else 0.45
+		fixe = 1.0 if (etat == "guette" or etat == "charge" or etat == "feinte") else 0.45
 	regard = move_toward(regard, fixe, delta * 1.5)
 	if corps == null:
 		return
@@ -734,5 +807,5 @@ func _piste(a: Vector2, b: Vector2) -> void:
 			continue
 		cote = -cote
 		var sens := (p - avant).normalized() if p.distance_to(avant) > 1.0 else dir
-		jeu.traces.poser(p + sens.orthogonal() * cote * R.NOIRE_LARGEUR * 0.07, sens.angle(), R.NOIRE_LARGEUR * 0.066, 420.0, 2)
+		jeu.traces.poser(p + sens.orthogonal() * cote * R.NOIRE_LARGEUR * 0.07, sens.angle(), R.NOIRE_LARGEUR * 0.052, 420.0, 2, "la-noire", 0.95)
 		avant = p
