@@ -21,14 +21,26 @@ const NUIT_COULEUR := Color(0.03, 0.035, 0.07)
 
 # le corps
 const VITESSE := 165.0
-const FAIM := 0.21            # par seconde : de rassasié à affamé en moins de deux jours
-const FAMINE := 1.2           # la santé perdue par seconde, l'estomac vide
-const SOIN := 0.35            # la santé regagnée par seconde, rassasié et calme
-const PEUR_NOIR := 5.0        # la peur gagnée par seconde dans le noir, la nuit
+# (la faim, la peur, le froid, la chaleur tuent : chacune prend sur la santé avant d'être à son comble, de plus en plus)
+const FAIM := 0.3             # par seconde : de rassasié à affamé en un jour et demi
+const FAIM_MORD := 15.0       # sous ce seuil, la faim prend sur la santé
+const FAMINE := 1.8           # la santé perdue par seconde, l'estomac vide (de moins en moins au-dessus, jusqu'à FAIM_MORD)
+const BAIE := 12.0            # ce qu'une poignée de baies rend à la faim
+const SOIN := 0.2             # la santé regagnée par seconde, rassasié et calme
+const PEUR_NOIR := 6.5        # la peur gagnée par seconde dans le noir, la nuit
 const PEUR_LUMIERE := 4.0     # perdue par seconde dans la lumière, la nuit
 const PEUR_JOUR := 3.0        # perdue par seconde, le jour
-const PEUR_PRESENCE := 3.0    # gagnée par seconde, un chasseur à moins de 260 pixels
-const PANIQUE := 2.5          # la santé perdue par seconde, la peur au comble
+const PEUR_PRESENCE := 4.0    # gagnée par seconde, un chasseur à moins de 260 pixels
+const PEUR_MORD := 75.0       # au-dessus de ce seuil, la peur prend sur la santé
+const PANIQUE := 4.0          # la santé perdue par seconde, la peur au comble (de moins en moins en dessous, jusqu'à PEUR_MORD)
+# une morsure : MORSURE + MORSURE_MASSE × log10(masse + 1) points de santé (un kilo : 9 ; cinq : 15 ; trente-cinq : 23)
+const MORSURE := 6.0
+const MORSURE_MASSE := 11.0
+# la cueillette : peu de buissons, deux poignées de baies chacun, qui repoussent en près de deux jours
+const BUISSONS := 10.0        # par lieu (4 200 pixels de côté), au plus sec…
+const BUISSONS_HUMIDE := 30.0 # … et ce que l'humidité y ajoute
+const BAIES_PAR_BUISSON := 2
+const REPOUSSE_BAIES := 420.0 # secondes avant qu'un buisson cueilli (un champignon de grotte) ne redonne
 
 # les gestes
 const CADENCE := 0.42         # secondes entre deux coups
@@ -76,10 +88,10 @@ const TREMPE_EAU := 45.0           # par seconde, dans l'eau
 const SECHE := 1.6                 # points perdus par seconde, au sec
 const SECHE_FEU := 11.0            # près d'un feu
 const TEMPERATURE_ALLURE := 0.085  # la part de l'écart que le corps rattrape par seconde
-const FROID := 25.0                # en dessous, le froid mord
-const CHAUD := 78.0                # au-dessus, la chaleur accable
-const FROID_DEGATS := 1.1          # la santé perdue par seconde, à zéro
-const CHAUD_DEGATS := 1.4          # à cent
+const FROID := 32.0                # en dessous, le froid mord
+const CHAUD := 72.0                # au-dessus, la chaleur accable
+const FROID_DEGATS := 2.4          # la santé perdue par seconde, à zéro (une nuit froide sans feu ne se passe pas)
+const CHAUD_DEGATS := 2.6          # à cent (une canicule à découvert tue en une minute)
 const EN_FEU := 4.0                # secondes : le temps que ses vêtements brûlent
 const EN_FEU_DEGATS := 6.0         # la santé perdue par seconde, en feu
 

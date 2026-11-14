@@ -547,6 +547,8 @@ func _lancer() -> void:
 	jeu.joueur.trempe = 0.0
 	jeu.joueur.temperature = 50.0
 
+	_la_durete()
+
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
 	await _attendre(2.0)
@@ -1443,10 +1445,10 @@ func _les_grottes() -> void:
 	var geant = par_forme.get("champignon_geant")
 	var moisi = par_forme.get("moisissure")
 	var toutes: bool = lumineux != null and ocre != null and geant != null and moisi != null
-	verif(toutes and par_forme.size() == 4 and lumineux.lueur != null and str(lumineux.plante) == "flore-grotte-champignon-lumineux" and ocre.lueur == null and ocre.plein == 2
-		and geant.lueur == null and geant.plein == 3 and geant.rayon > 0.0 and geant.hauteur > ocre.hauteur * 2.0 and moisi.epuise() and moisi.lueur == null
+	verif(toutes and par_forme.size() == 4 and lumineux.lueur != null and str(lumineux.plante) == "flore-grotte-champignon-lumineux" and ocre.lueur == null and ocre.plein == 1
+		and geant.lueur == null and geant.plein == 2 and geant.rayon > 0.0 and geant.hauteur > ocre.hauteur * 2.0 and moisi.epuise() and moisi.lueur == null
 		and int(geant.recolter().get("baies", 0)) == 1,
-		"en ligne, la flore d'une grotte est celle de l'herbier d'Orvane : le champignon, le lumineux (lui seul luit), le géant (trois parts, on bute dessus), la moisissure (rien à cueillir)")
+		"en ligne, la flore d'une grotte est celle de l'herbier d'Orvane : le champignon, le lumineux (lui seul luit), le géant (deux parts, on bute dessus), la moisissure (rien à cueillir)")
 	if not toutes or par_forme.size() != 4:
 		print("    (formes : %s ; la flore du lieu : %s)" % [par_forme.keys(), W.lieu_de("grotte")["flore"].keys()])
 	for o in poses:
@@ -1551,4 +1553,89 @@ func _les_pattes() -> void:
 		"une patte arrière a trois os : au repos elle garde sa pose ; levée derrière, la cuisse suit peu (%.2f rad) et le jarret se ferme (%.2f → %.2f) ; portée en avant, il ne se retourne pas (%.2f)" % [
 			cuisse, pli_repos, float(pli.call(leve)), float(pli.call(porte))])
 	bete.queue_free()
+
+
+
+
+# ce qui tue (scripts/regles.gd) : la faim, la peur, le froid, la chaleur prennent sur la santé avant leur comble ; une morsure
+# compte ; les baies sont rares. Et la fin dit ce qui a pris la veilleuse
+func _la_durete() -> void:
+	var j = jeu.joueur
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "faim": j.faim, "peur": j.peur, "sante": j.sante, "temp": j.temperature, "trempe": j.trempe, "p": j.position, "maux": jeu._maux.duplicate()}
+	# (en plein jour, pour que le noir ne s'en mêle pas)
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * 0.3
+	var perd := func(faim: float, peur: float) -> float:
+		j.faim = faim
+		j.peur = peur
+		j.sante = 80.0
+		jeu._corps(1.0)
+		return 80.0 - j.sante
+	var faim_basse: float = perd.call(5.0, 0.0)
+	var faim_moyenne: float = perd.call(40.0, 0.0)
+	var faim_vide: float = perd.call(0.0, 0.0)
+	var peur_haute: float = perd.call(100.0, 92.0)
+	var peur_moyenne: float = perd.call(100.0, 60.0)
+	verif(faim_basse > 0.8 and faim_moyenne <= 0.0 and faim_vide > faim_basse and 100.0 / RR.FAMINE < 60.0 and 100.0 / RR.FAIM < RR.DUREE * 1.5,
+		"la faim tue : sous %d elle prend sur la santé (%.1f par seconde à 5, %.1f l'estomac vide : moins d'une minute pour en mourir) ; affamée en %d secondes" % [
+			int(RR.FAIM_MORD), faim_basse, faim_vide, int(100.0 / RR.FAIM)])
+	verif(peur_haute > 1.0 and peur_moyenne <= 0.0 and 100.0 / RR.PANIQUE < 30.0,
+		"la peur tue : au-dessus de %d elle prend sur la santé (%.1f par seconde à 90 ; au comble, moins de trente secondes pour en mourir)" % [int(RR.PEUR_MORD), peur_haute])
+	# le froid, la chaleur : ce que coûte une seconde, le corps à cette température (on la lui rend avant chaque mesure)
+	var par_le_temps := func(t: float) -> float:
+		j.temperature = t
+		j.sante = 80.0
+		jeu._temps_du_corps(0.05)
+		return (80.0 - j.sante) / 0.05
+	var gele: float = par_le_temps.call(8.0)
+	var frais: float = par_le_temps.call(28.0)
+	var bien: float = par_le_temps.call(50.0)
+	var brule: float = par_le_temps.call(95.0)
+	verif(gele > 1.2 and frais > 0.1 and frais < gele and bien <= 0.0 and brule > 1.5 and 100.0 / RR.FROID_DEGATS < 60.0 and 100.0 / RR.CHAUD_DEGATS < 60.0,
+		"le froid tue (%.1f par seconde à 8, il mord dès %d) ; la chaleur aussi (%.1f par seconde à 95, dès %d) ; à 50, rien" % [gele, int(RR.FROID), brule, int(RR.CHAUD)])
+	# une morsure
+	var F: Dictionary = jeu.faune
+	var b = jeu._creer(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(400.0, 300.0))
+	j.sante = 100.0
+	jeu.mordre(b)
+	var morsure: float = 100.0 - j.sante
+	var avant_m: float = 4.0 + 7.0 * log(float(b.masse) + 1.0) / log(10.0)
+	verif(morsure > avant_m * 1.4 and morsure < 40.0 and jeu._mordeur == str(b.nom),
+		"une morsure compte : %s (%.1f kg) prend %d points de santé (%d avant)" % [b.nom, float(b.masse), int(morsure), int(avant_m)])
+	# la fin dit ce qui l'a prise
+	jeu._maux = {"froid": 30.0, "faim": 4.0}
+	var t_froid: String = jeu._titre_de_fin()
+	jeu._maux = {"bete": 20.0, "peur": 6.0}
+	var t_bete: String = jeu._titre_de_fin()
+	jeu._maux = {"peur": 12.0}
+	var t_peur: String = jeu._titre_de_fin()
+	jeu._maux = {}
+	var t_rien: String = jeu._titre_de_fin()
+	verif(t_froid == "Le froid t'a prise." and t_bete == "%s t'a prise." % b.nom and t_peur == "La peur t'a prise." and t_rien.ends_with("t'a prise."),
+		"la fin dit ce qui l'a prise : « %s », « %s », « %s » ; sinon « %s »" % [t_froid, t_bete, t_peur, t_rien])
+	b.queue_free()
+	# les baies : peu de buissons, deux poignées chacun, qui repoussent lentement
+	var buissons: Array = jeu.monde.objets.filter(func(x): return x.genre == "buisson")
+	var un = null
+	for x in buissons:
+		if x.intact():
+			un = x
+			break
+	var pleins: bool = un != null and un.plein == RR.BAIES_PAR_BUISSON
+	var cueillies := 0
+	if un != null:
+		for k in 4:
+			cueillies += int(un.recolter().get("baies", 0))
+	verif(buissons.size() <= int(RR.BUISSONS + RR.BUISSONS_HUMIDE) and buissons.size() >= 5 and pleins and cueillies == RR.BAIES_PAR_BUISSON and un._repousse == RR.REPOUSSE_BAIES,
+		"les baies sont rares : %d buissons dans le lieu, %d poignées chacun, qui repoussent en %d secondes" % [buissons.size(), cueillies, int(RR.REPOUSSE_BAIES)])
+	if un != null:
+		un.reprendre("buisson", un.plein, 0.0)
+	jeu.horloge = garde["h"]
+	j.faim = garde["faim"]
+	j.peur = garde["peur"]
+	j.sante = garde["sante"]
+	j.temperature = garde["temp"]
+	j.trempe = garde["trempe"]
+	j.position = garde["p"]
+	jeu._maux = garde["maux"]
 

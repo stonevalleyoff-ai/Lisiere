@@ -196,7 +196,7 @@ func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 func _semer_tout(r: RandomNumberGenerator, arbre: String, bosquets, couvert: float, humid: float, alt: float) -> void:
 	_semer(r, arbre, int(70 + 430 * couvert), palette["feuilles"], bosquets, 0.25 + couvert)
 	_semer(r, "rocher", int(40 + 140 * alt), palette["pierre"], null, 1.0)
-	_semer(r, "buisson", int(40 + 110 * humid), palette["feuilles"], bosquets, 0.6)
+	_semer(r, "buisson", int(R.BUISSONS + R.BUISSONS_HUMIDE * humid), palette["feuilles"], bosquets, 0.6)
 	_semer(r, "touffe", int(90 + 130 * (1.0 - couvert)), palette["herbe"], null, 1.0)
 	_semer(r, "brindille", 160, Color.WHITE, bosquets, 0.6)
 	# au réveil, de quoi faire un premier feu à portée
@@ -607,12 +607,12 @@ func _prevoir_lieu(r: RandomNumberGenerator, plan: Array, rect: Rect2, arbre: St
 		_prevoir(r, plan, rect, "rocher", 240.0 * ka, "pierre", null, 1.0, type)
 		# (et la flore de la grotte, celle de l'herbier d'Orvane : des champignons — les lumineux sont des repères dans le noir,
 		# on mange ceux qu'on cueille —, des géants, des moisissures)
-		_prevoir(r, plan, rect, "champignon", 480.0 * ka, "", null, 1.0, type)
+		_prevoir(r, plan, rect, "champignon", 300.0 * ka, "", null, 1.0, type)
 		return
 	var couvert: float = mesures[0]
 	_prevoir(r, plan, rect, arbre, (70.0 + 430.0 * couvert) * ka, "feuilles", _bosquets, 0.25 + couvert, type)
 	_prevoir(r, plan, rect, "rocher", (40.0 + 140.0 * float(mesures[2])) * ka, "pierre", null, 1.0, type)
-	_prevoir(r, plan, rect, "buisson", (40.0 + 110.0 * float(mesures[1])) * ka, "feuilles", _bosquets, 0.6, type)
+	_prevoir(r, plan, rect, "buisson", (R.BUISSONS + R.BUISSONS_HUMIDE * float(mesures[1])) * ka, "feuilles", _bosquets, 0.6, type)
 	_prevoir(r, plan, rect, "touffe", (90.0 + 130.0 * (1.0 - couvert)) * ka, "herbe", null, 1.0, type)
 	_prevoir(r, plan, rect, "brindille", 160.0 * ka, "", _bosquets, 0.6, type)
 
