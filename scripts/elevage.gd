@@ -329,7 +329,8 @@ func agir() -> bool:
 	var sauvage = a_apprivoiser()
 	if sauvage != null and _atelier().possede("licol") > 0:
 		return apprivoiser(sauvage)
-	var b = pres()
+	# (tout contre elle : une bête qui suit se tient plus loin, et « Agir » reste à ce qu'on a devant soi)
+	var b = pres(46.0)
 	if b == null:
 		return false
 	if bool(b.harnais.get("selle", false)):
