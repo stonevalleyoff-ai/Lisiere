@@ -1010,6 +1010,14 @@ func _compagne(delta: float) -> void:
 			maison = position
 			_changer("repos", 1.0)
 		return
+	# (elle ne se tient pas dans les flammes)
+	for f in jeu.feux:
+		if is_instance_valid(f):
+			var ecart := 34.0 + largeur * 0.22
+			var d: Vector2 = position - f.position
+			if d.length() < ecart:
+				position = f.position + (d.normalized() if d.length() > 0.5 else Vector2.RIGHT) * ecart
+				maison = position if not suit_la and maison.distance_to(f.position) < ecart else maison
 	var dj := position.distance_to(j.position)
 	if suit_la:
 		mange = move_toward(mange, 0.0, delta * 3.0)
