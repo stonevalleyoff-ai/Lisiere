@@ -1140,7 +1140,7 @@ func cuire() -> void:
 		ui.message("Rien à cuire.", Color(0.75, 0.7, 0.66))
 		return
 	# (avec une popote et de l'eau : un bouillon ; scripts/atelier.gd)
-	if atelier.cuisiner():
+	if atelier.cuisiner(f):
 		sons.jouer("allume", -9.0, 0.6)
 		return
 	joueur.inventaire["viande"] = int(joueur.inventaire["viande"]) - 1

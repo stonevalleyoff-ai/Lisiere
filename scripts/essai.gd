@@ -2353,6 +2353,39 @@ func _l_atelier(F: Dictionary) -> void:
 	verif(posee and str(tente.genre) == "tente" and A.abri(tente.position) == 1.0 and C.abri(tente.position) == 1.0 and A.abri(tente.position + Vector2(90.0, 0.0)) == 0.0,
 		"posée, la tente abrite qui s'y tient (de la pluie, du vent), pas ce qui est à côté")
 
+	# ce qui est posé tient sa place dans le lieu
+	var Camp = load("res://scripts/campement.gd")
+	var ouvrage: float = float(etabli.etat.get("travail", 0.0))
+	A.maj(2.0)
+	var bute: Vector2 = jeu.monde.repousser(tente.position + Vector2(3.0, 1.0), 8.0)
+	var maille = A._creer("filet", ici + Vector2(-400.0, 200.0), {})
+	var dessus: Vector2 = A.buter(maille.position + Vector2(2.0, 0.0), 8.0)
+	A.poses.erase(maille)
+	maille.queue_free()
+	verif(ouvrage == 1.0 and float(etabli.etat.get("travail", 0.0)) == 0.0 and bute.distance_to(tente.position) > float(Camp.rayon("tente")) + 7.5
+		and dessus.distance_to(maille.position) < 3.0,
+		"l'établi travaille le temps de l'ouvrage (des copeaux en volent), puis se tait ; on bute contre la tente (à %d pixels de son pied), on marche sur le filet" % int(bute.distance_to(tente.position)))
+	var arbre = null
+	for o in jeu.monde.objets:
+		if is_instance_valid(o) and str(o.genre) in ["arbre", "sapin"] and not bool(o.get("calcine")) and float(C.eau(o.position + Vector2(58.0, 12.0))) < 0.1:
+			arbre = o
+			break
+	if arbre != null:
+		var avant_h: Vector2 = j.position
+		j.position = arbre.position + Vector2(40.0, 30.0)
+		j.regard = -1.0
+		A.objets["hamac"] = 1
+		var pourquoi_h: String = A.empeche_poser("hamac")
+		var tendu: bool = A.poser("hamac")
+		var hamac = A.poses[A.poses.size() - 1]
+		verif(tendu and str(hamac.genre) == "hamac" and hamac.position.y > arbre.position.y and hamac.position.distance_to(arbre.position) < 100.0 and hamac._arbre != null,
+			"le hamac se tend à côté de son arbre, en avant de lui (sa couronne ne le cache pas), et s'y noue (« %s »)" % pourquoi_h)
+		A.poses.erase(hamac)
+		hamac.queue_free()
+		A.objets.erase("hamac")
+		j.position = avant_h
+		j.regard = 1.0
+
 	# le récupérateur d'eau, la gourde, la popote
 	var cuve = A._creer("recuperateur", ici + Vector2(0.0, -120.0), {})
 	C.pluie = 1.0
@@ -2372,12 +2405,16 @@ func _l_atelier(F: Dictionary) -> void:
 		"sous l'averse le récupérateur se remplit (%.1f gorgées en 26 secondes) ; il faut une gourde pour en emporter ; boire rafraîchit" % tombee)
 	A.objets["popote"] = 1
 	donner.call({"viande": 2, "bouillon": 0})
-	var cuit: bool = A.cuisiner()
-	var plus_d_eau: bool = not A.cuisiner()
+	var foyer := Node2D.new()
+	jeu.monde.add_child(foyer)
+	var cuit: bool = A.cuisiner(foyer)
+	var sur_le_feu: bool = foyer.get_node_or_null("Popote") != null
+	var plus_d_eau: bool = not A.cuisiner(foyer)
+	foyer.queue_free()
 	j.faim = 20.0
 	jeu.manger()
-	verif(cuit and plus_d_eau and int(inv["viande"]) == 1 and int(inv["eau"]) == 0 and int(inv["bouillon"]) == 0 and absf(j.faim - 70.0) < 0.5,
-		"la popote : de l'eau et de la viande font un bouillon, qui rend 50 de faim (la viande cuite : 35)")
+	verif(cuit and sur_le_feu and plus_d_eau and int(inv["viande"]) == 1 and int(inv["eau"]) == 0 and int(inv["bouillon"]) == 0 and absf(j.faim - 70.0) < 0.5,
+		"la popote : de l'eau et de la viande font un bouillon, qui rend 50 de faim (la viande cuite : 35) ; elle reste un moment sur le feu")
 
 	# le sommeil
 	j.position = ici

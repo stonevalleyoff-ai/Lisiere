@@ -72,6 +72,8 @@ const VENT_MIN := 0.3             # le vent qu'il faut au cerf-volant
 const CHARGER := 1.6              # ce qu'il rend aux piles par seconde, par grand vent
 const PRISE_MAX := 8.0            # la plus grosse bête qu'un filet retient (kilos)
 const SOMMEIL := 6.0              # le temps passe tant de fois plus vite quand elle dort
+const MIJOTE := 16.0              # secondes : la popote reste sur le feu, après qu'elle y a cuit
+const OUVRAGE := 1.5              # secondes : les copeaux volent de l'établi, après qu'elle y a fabriqué
 
 var jeu
 var objets := {}                  # ce qu'elle possède, plié dans son sac : l'id → combien
@@ -162,6 +164,10 @@ func fabriquer(id: String) -> bool:
 		if bool(o.get("porte", false)) and id != "lampe":
 			portes[id] = true
 	jeu.joueur.geste_atelier("coudre" if str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet"] else "marteler")
+	# (à l'établi : des copeaux en volent, le temps de l'ouvrage)
+	var e = _proche("etabli", PORTEE * 1.3)
+	if e != null:
+		e.etat["travail"] = 1.0
 	jeu.sons.jouer("bois", -6.0, 1.1)
 	jeu.ui.message("%s. %s" % [str(o["nom"]), str(o["dit"])], TEINTE)
 	_tenue()
@@ -187,21 +193,37 @@ func basculer(id: String) -> void:
 	_tenue()
 
 
-# où elle la poserait : devant elle
-func _devant() -> Vector2:
+# où elle la poserait : devant elle, là où il y a la place (le hamac : à côté de son arbre, en avant de lui, que sa couronne
+# ne le cache pas)
+func _devant(id: String = "") -> Vector2:
 	var j = jeu.joueur
-	return jeu.monde.repousser(j.position + Vector2(float(j.regard) * 46.0, 6.0), 16.0)
+	var r := maxf(16.0, Campement.rayon(id))
+	var p: Vector2 = j.position + Vector2(float(j.regard) * (30.0 + r), 6.0)
+	if id == "hamac":
+		var a = _l_arbre(p, 90.0)
+		if a != null:
+			var cote := 1.0 if j.position.x >= a.position.x else -1.0
+			p = a.position + Vector2(cote * 58.0, 12.0)
+	return jeu.monde.repousser(p, r)
 
 
 # ce qui l'empêche de la poser là ("" : rien) ; la page du sac éteint son bouton et le dit
 func empeche_poser(id: String) -> String:
 	if possede(id) <= 0 or not bool(OBJETS[id].get("pose", false)):
 		return "Tu n'en as pas."
-	var p := _devant()
+	var p := _devant(id)
 	if float(jeu.climat.eau(p)) > 0.2:
 		return "Le sol est sous l'eau : rien ne s'y pose."
 	if id == "hamac" and not _un_arbre(p, 90.0):
 		return "Un hamac se tend près d'un arbre."
+	# (ni sur un buisson, ni sur un feu)
+	var r := Campement.rayon(id)
+	for o in jeu.monde.autour(p, r + 14.0):
+		if str(o.genre) == "buisson":
+			return "Un buisson gêne : il n'y a pas la place ici."
+	for f in jeu.feux:
+		if is_instance_valid(f) and f.position.distance_to(p) < r + 26.0:
+			return "Trop près du feu."
 	return ""
 
 
@@ -222,8 +244,12 @@ func poser(id: String) -> bool:
 			jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
 		return false
 	var j = jeu.joueur
-	var p := _devant()
+	var p := _devant(id)
 	objets[id] = possede(id) - 1
+	# (elle dégage le sol : les brindilles, les touffes qui passeraient au travers)
+	for o in jeu.monde.autour(p, maxf(14.0, Campement.rayon(id)) + 4.0):
+		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe"]:
+			jeu.monde.retirer(o)
 	_creer(id, p, {})
 	j.geste_atelier("monter")
 	jeu.sons.jouer("bois", -4.0, 0.85)
@@ -341,10 +367,19 @@ func agir() -> bool:
 
 
 # elle cuit à la popote, sur ce feu : de l'eau et de la viande font un bouillon ; faux si elle n'a pas de quoi
-func cuisiner() -> bool:
+func cuisiner(feu = null) -> bool:
 	var inv: Dictionary = jeu.joueur.inventaire
 	if possede("popote") <= 0 or int(inv.get("eau", 0)) <= 0 or int(inv.get("viande", 0)) <= 0:
 		return false
+	if feu != null and is_instance_valid(feu):
+		# (la popote reste un moment sur ce feu : elle y frémit)
+		var m = feu.get_node_or_null("Popote")
+		if m == null:
+			m = Marmite.new()
+			m.name = "Popote"
+			m.jeu = jeu
+			feu.add_child(m)
+		m.reste = MIJOTE
 	inv["eau"] = int(inv["eau"]) - 1
 	inv["viande"] = int(inv["viande"]) - 1
 	inv["bouillon"] = int(inv.get("bouillon", 0)) + 1
@@ -429,6 +464,9 @@ func maj(delta: float) -> void:
 		if not is_instance_valid(s):
 			continue
 		match str(s.genre):
+			"etabli":
+				if float(s.etat.get("travail", 0.0)) > 0.0:
+					s.etat["travail"] = maxf(0.0, float(s.etat["travail"]) - delta / OUVRAGE)
 			"recuperateur":
 				# (sous la pluie, hors d'un toit : il se remplit)
 				if pluie > 0.02:
@@ -502,10 +540,36 @@ func _la_plus_proche(portee: float):
 
 
 func _un_arbre(p: Vector2, rayon: float) -> bool:
+	return _l_arbre(p, rayon) != null
+
+
+# l'arbre debout le plus proche de ce point (null : aucun à cette portée)
+func _l_arbre(p: Vector2, rayon: float):
+	var mieux = null
+	var d0 := rayon
 	for o in jeu.monde.autour(p, rayon):
 		if (str(o.genre) == "arbre" or str(o.genre) == "sapin") and not bool(o.get("calcine")):
-			return true
-	return false
+			var d: float = o.position.distance_to(p)
+			if d < d0:
+				d0 = d
+				mieux = o
+	return mieux
+
+
+# un pas bute aussi sur ce qu'elle a posé (scripts/monde.gd, repousser) ; le filet : on marche dessus
+func buter(p: Vector2, r: float) -> Vector2:
+	for s in poses:
+		if not is_instance_valid(s):
+			continue
+		var ro: float = Campement.rayon(str(s.genre))
+		if ro <= 0.0:
+			continue
+		var d: Vector2 = p - s.position
+		var m := r + ro
+		var l := d.length()
+		if l < m:
+			p = (s.position + d / l * m) if l > 0.001 else p + Vector2(m, 0.0)
+	return p
 
 
 # au récupérateur : elle remplit sa gourde
@@ -702,3 +766,30 @@ func reprendre(d: Dictionary) -> void:
 		if x.size() > 4 and bool(x[4]):
 			fil = s
 	_tenue()
+
+
+# la popote, sur un feu : elle y frémit un moment, puis elle la reprend (son dessin : scripts/campement.gd)
+class Marmite extends Node2D:
+	const Camp := preload("res://scripts/campement.gd")
+	var jeu
+	var reste := 0.0
+	var _t := 0.0
+	var _dans := 0.0
+
+	func _process(delta: float) -> void:
+		if jeu != null and jeu.en_pause:
+			return
+		_t += delta
+		reste -= delta
+		var feu = get_parent()
+		if reste <= 0.0 or (feu != null and feu.has_method("allume") and not feu.allume()):
+			queue_free()
+			return
+		_dans -= delta / maxf(Engine.time_scale, 0.01)
+		if _dans <= 0.0:
+			_dans = 1.0 / 14.0
+			queue_redraw()
+
+	func _draw() -> void:
+		Camp.popote(self, _t)
+
