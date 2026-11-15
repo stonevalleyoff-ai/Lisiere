@@ -2690,6 +2690,30 @@ func _l_atelier(F: Dictionary) -> void:
 	verif(posee and str(tente.genre) == "tente" and A.abri(tente.position) == 1.0 and C.abri(tente.position) == 1.0 and A.abri(tente.position + Vector2(90.0, 0.0)) == 0.0,
 		"posée, la tente abrite qui s'y tient (de la pluie, du vent), pas ce qui est à côté")
 
+	# le thème de l'écran-titre (scripts/sons_theme.gd) : un morceau d'un seul tenant, fait pas à pas
+	var MorceauTitre = load("res://scripts/sons_theme.gd")
+	var chantier = MorceauTitre.Chantier.new()
+	var pas_theme := 0
+	while not chantier.avancer(4000) and pas_theme < 5000:
+		pas_theme += 1
+	var crete_t := 0.0
+	var carre_t := 0.0
+	var trou_t := 0
+	var silence_t := 0
+	var taux_t: int = MorceauTitre.TAUX
+	for i in chantier.s.size():
+		var x: float = chantier.s[i]
+		crete_t = maxf(crete_t, absf(x))
+		carre_t += x * x
+		# (un trou : plus d'un quart de seconde de silence avant la dernière mesure)
+		silence_t = silence_t + 1 if absf(x) < 0.004 else 0
+		if silence_t > taux_t / 4 and i < int((MorceauTitre.DUREE - MorceauTitre.MESURE) * taux_t):
+			trou_t += 1
+	var rms_t := sqrt(carre_t / chantier.s.size())
+	verif(chantier.fini and pas_theme > 8 and chantier.pcm.size() == MorceauTitre.octets() and crete_t > 0.7 and crete_t <= 0.86 and rms_t > 0.1 and rms_t < 0.4 and trou_t == 0
+		and absf(chantier.s[chantier.s.size() - 1]) < 0.002 and absf(MorceauTitre.PERIODE - 40.8) < 0.01,
+		"le thème de l'écran-titre se fabrique pas à pas (%d pas), d'un seul tenant (%d secondes, sans un trou), et s'éteint sans claquer ; il reprend toutes les %.1f secondes" % [pas_theme, int(MorceauTitre.DUREE), MorceauTitre.PERIODE])
+
 	# ce qu'on entend à l'établi et au camp (scripts/sons_atelier.gd)
 	var SA = load("res://scripts/sons_atelier.gd")
 	var rs := RandomNumberGenerator.new()

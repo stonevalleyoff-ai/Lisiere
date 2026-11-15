@@ -22,6 +22,7 @@ const Ambiance := preload("res://scripts/sons_ambiance.gd")
 const Musique := preload("res://scripts/sons_musique.gd")
 const Temps := preload("res://scripts/sons_temps.gd")
 const SA := preload("res://scripts/sons_atelier.gd")
+const ThemeTitre := preload("res://scripts/sons_theme.gd")
 
 const B_LISIERE := "Lisiere"
 const B_MONDE := "Lisiere-monde"          # tout le lieu : la peur l'assourdit (hors navigateur, par un passe-bas), la fin le tait
@@ -55,8 +56,8 @@ const ALIAS := {"vent": ["vent_grave", "vent_clair"], "nuit": ["bourdon"], "feu"
 const FILE := ["bois", "pierre", "herbe", "coup", "manger", "allume", "coeur", "mord", "grogne", "vent_grave0", "vent_clair0",
 	"feu_souffle0", "feu_braise0", "braise0", "braise1", "braise2", "braise3", "braise4", "braise5", "braise6", "braise7",
 	"pop0", "pop1", "pop2", "oiseau0", "oiseau1", "oiseau2", "oiseau3", "nappe_jour", "cloche", "bourdon0", "grillon0",
-	"grillon1", "choeur0", "eteint", "gresille", "froissement0", "froissement1", "nappe_nuit", "tension0", "chute", "flute",
-	"flute_longue", "vent_clair1", "feu_souffle1", "vent_grave1", "murmure", "corne", "hurlement0", "hurlement1", "grondement",
+	"grillon1", "choeur0", "eteint", "gresille", "froissement0", "froissement1", "nappe_nuit", "tension0", "chute",
+	"vent_clair1", "feu_souffle1", "vent_grave1", "murmure", "corne", "hurlement0", "hurlement1", "grondement",
 	"chouette", "craquement",
 	# le temps qu'il fait : la pluie, la foudre, l'incendie, la boue et l'eau sous les pas, le corps
 	"pluie_drue0", "pluie_fine0", "pluie_feuilles0", "foudre0", "tonnerre0", "presage", "brasier0", "craque0", "vapeur",
@@ -127,8 +128,14 @@ var _goutte_t := 2.0
 var _espace := 0.0
 var _traits := {}
 var _titre := false
-var _theme := false
 var _titre_dit := false
+# le thème de l'écran-titre (sons_theme.gd) : un morceau d'un seul tenant, fait pas à pas la première fois, puis gardé
+var _theme_flux: AudioStreamWAV
+var _theme_chantier = null
+var _theme_voix: Array = []       # deux lecteurs : il reprend sur l'autre, pendant que la queue du premier s'éteint
+var _theme_tour := 0
+var _theme_dans := 0.0
+var _theme_ms := 0
 
 
 func _ready() -> void:
@@ -170,6 +177,12 @@ func _ready() -> void:
 		add_child(p)
 		_voix.append(p)
 	_fin.resize(VOIX)
+	# (le thème de l'écran-titre : deux lecteurs à lui, sur le bus de la musique)
+	for i in 2:
+		var pt := AudioStreamPlayer.new()
+		pt.bus = B_MUSIQUE
+		add_child(pt)
+		_theme_voix.append(pt)
 	var force := 1.0 / maxf(0.05, float(ProjectSettings.get_setting("audio/general/2d_panning_strength", 0.5)))
 	for i in VOIX_2D:
 		var q := AudioStreamPlayer2D.new()
@@ -389,29 +402,28 @@ func _process(delta: float) -> void:
 	# la file : plus large hors partie (titre, chargement), étroite en partie (un son par image au plus)
 	_repos = maxf(0.0, _repos - dt)
 	# (sur un téléphone, rien ne se fabrique pendant qu'on joue ; mais la pause, une page ouverte, ne craignent pas un à-coup)
-	if not (mobile and en_partie and not jeu.en_pause):
+	# (à l'écran-titre, tant que le thème se fabrique, c'est lui qui a le temps : _theme_maj)
+	if not (mobile and en_partie and not jeu.en_pause) and not (_titre and _theme_chantier != null):
 		_preparer(8000 if not en_partie else 2500, en_partie)
 	var t0 := Time.get_ticks_usec()
 	# l'écran-titre : le vent, et le thème
 	var titre: bool = not en_partie and jeu != null and "essai" in jeu and jeu.essai == null and (_titre_dit or _ecran_titre(jeu))
 	if titre and not _titre:
 		_titre = true
-		_theme = false
-		for nom in ["vent_clair0", "vent_grave0", "flute_longue", "flute", "nappe_nuit"]:
+		for nom in ["vent_clair0", "vent_grave0"]:
 			_demander(nom, true)
+		_theme_ouvrir()
 	elif not titre and _titre:
 		_titre = false
 		_musique.vider()
-	# (le thème attend que ses notes soient prêtes : une note qui ne l'est pas serait sautée)
-	if _titre and not _theme and _prets.has("flute") and _prets.has("flute_longue") and _prets.has("nappe_nuit"):
-		_theme = true
-		_musique.titre()
+	_theme_maj(dt)
 	if _titre:
+		# (le vent, plus bas sous le thème : il porte la mélodie, il ne la couvre pas)
 		var g := rafale(_horloge)
-		niveau("vent_grave", 0.28 + 0.2 * g)
-		niveau("vent_clair", 0.08 + 0.22 * g)
+		var sous := 0.6 if _theme_flux != null else 1.0
+		niveau("vent_grave", (0.28 + 0.2 * g) * sous)
+		niveau("vent_clair", (0.08 + 0.22 * g) * sous)
 		_couches["vent_clair"].hauteur = 0.85 + 0.25 * g
-		_musique.maj(dt, "titre", true)
 	# la pause : tout recule
 	if en_partie:
 		_bus_cible[B_LISIERE] = -14.0 if jeu.en_pause else 0.0
@@ -1097,6 +1109,55 @@ func _finir_travail() -> void:
 
 
 # l'écran-titre est-il montré ? (l'interface garde son écran-titre dans _titre ; sans lui, pas de thème)
+# l'écran-titre s'ouvre : le thème vient du disque s'il y est (user://), sinon il se fabrique, pas à pas
+func _theme_ouvrir() -> void:
+	for p in _theme_voix:
+		p.stop()
+	_theme_dans = 0.7
+	if _theme_flux != null or _theme_chantier != null:
+		return
+	var f := ThemeTitre.fichier()
+	if FileAccess.file_exists(f):
+		var o := FileAccess.get_file_as_bytes(f)
+		if o.size() == ThemeTitre.octets():
+			_theme_flux = ThemeTitre.flux(o)
+			print_verbose("Lisière, le thème : relu du disque")
+			return
+	_theme_chantier = ThemeTitre.Chantier.new()
+	_theme_ms = Time.get_ticks_msec()
+
+
+# chaque image : le thème avance s'il se fabrique ; prêt, il joue, et reprend après une mesure de souffle ; hors du titre,
+# il s'efface
+func _theme_maj(dt: float) -> void:
+	if _titre and _theme_chantier != null and _theme_chantier.avancer(30000 if mobile else 20000):
+		_theme_flux = ThemeTitre.flux(_theme_chantier.pcm)
+		print_verbose("Lisière, le thème : fait en %.1f s" % ((Time.get_ticks_msec() - _theme_ms) / 1000.0))
+		# (gardé pour les fois suivantes : il ne se refait que si le morceau change)
+		var f := FileAccess.open(ThemeTitre.fichier(), FileAccess.WRITE)
+		if f != null:
+			f.store_buffer(_theme_chantier.pcm)
+			f.close()
+		_theme_chantier = null
+	if _titre and _theme_flux != null:
+		_theme_dans -= dt
+		if _theme_dans <= 0.0:
+			_theme_dans = ThemeTitre.PERIODE
+			var p: AudioStreamPlayer = _theme_voix[_theme_tour]
+			_theme_tour = 1 - _theme_tour
+			p.stream = _theme_flux
+			p.bus = B_MUSIQUE
+			p.volume_db = ThemeTitre.NIVEAU
+			p.pitch_scale = 1.0
+			p.play()
+	elif not _titre:
+		for p in _theme_voix:
+			if p.playing:
+				p.volume_db -= 40.0 * dt
+				if p.volume_db < -60.0:
+					p.stop()
+
+
 func _ecran_titre(jeu) -> bool:
 	if not "ui" in jeu or jeu.ui == null:
 		return false
