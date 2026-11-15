@@ -187,18 +187,42 @@ func basculer(id: String) -> void:
 	_tenue()
 
 
+# où elle la poserait : devant elle
+func _devant() -> Vector2:
+	var j = jeu.joueur
+	return jeu.monde.repousser(j.position + Vector2(float(j.regard) * 46.0, 6.0), 16.0)
+
+
+# ce qui l'empêche de la poser là ("" : rien) ; la page du sac éteint son bouton et le dit
+func empeche_poser(id: String) -> String:
+	if possede(id) <= 0 or not bool(OBJETS[id].get("pose", false)):
+		return "Tu n'en as pas."
+	var p := _devant()
+	if float(jeu.climat.eau(p)) > 0.2:
+		return "Le sol est sous l'eau : rien ne s'y pose."
+	if id == "hamac" and not _un_arbre(p, 90.0):
+		return "Un hamac se tend près d'un arbre."
+	return ""
+
+
+# ce qui l'empêche de dormir dans son duvet ("" : rien)
+func empeche_dormir() -> String:
+	if endormie:
+		return "Tu dors déjà."
+	if possede("duvet") <= 0:
+		return "Sans duvet, on ne dort pas à même le sol."
+	return _danger()
+
+
 # elle pose devant elle une chose du camp ; faux si elle ne peut pas (et le jeu dit pourquoi)
 func poser(id: String) -> bool:
-	if possede(id) <= 0 or not bool(OBJETS[id].get("pose", false)):
+	var pourquoi := empeche_poser(id)
+	if pourquoi != "":
+		if possede(id) > 0:
+			jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
 		return false
 	var j = jeu.joueur
-	var p: Vector2 = jeu.monde.repousser(j.position + Vector2(float(j.regard) * 46.0, 6.0), 16.0)
-	if float(jeu.climat.eau(p)) > 0.2:
-		jeu.ui.message("Le sol est sous l'eau : rien ne s'y pose.", Color(0.72, 0.82, 0.92))
-		return false
-	if id == "hamac" and not _un_arbre(p, 90.0):
-		jeu.ui.message("Un hamac se tend près d'un arbre.", Color(0.75, 0.7, 0.66))
-		return false
+	var p := _devant()
 	objets[id] = possede(id) - 1
 	_creer(id, p, {})
 	j.geste_atelier("monter")

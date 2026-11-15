@@ -44,6 +44,7 @@ var _appels_max := 0
 var _appels_somme := 0.0
 var _appels_n := 0
 var _geste_atelier := ""
+var _page := ""
 var _geste_atelier_t := 0.0
 var _brules: Array = []
 
@@ -152,6 +153,19 @@ func _lancer() -> void:
 	var i_g := ar2.find("--geste")
 	if i_g >= 0 and i_g + 1 < ar2.size():
 		_geste_atelier = ar2[i_g + 1]
+		_plan = [[0.0, 1.0, "attendre"]]
+	# (--page etabli|sac : de quoi fabriquer, un établi posé à côté d'elle, puis cette page ouverte à mi-temps)
+	var i_pg := ar2.find("--page")
+	if i_pg >= 0 and i_pg + 1 < ar2.size() and jeu.atelier != null:
+		_page = ar2[i_pg + 1]
+		for k3 in ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache"]:
+			j.inventaire[k3] = 14
+		j.inventaire["eau"] = 3
+		jeu.atelier.objets = {"tente": 1, "gourde": 1, "sac_a_dos": 1, "lampe": 1, "piles": 1, "duvet": 1}
+		jeu.atelier.portes = {"sac_a_dos": true}
+		jeu.atelier.charge = 62.0
+		jeu.atelier._tenue()
+		jeu.atelier._creer("etabli", j.position + Vector2(60.0, 10.0), {})
 		_plan = [[0.0, 1.0, "attendre"]]
 	var i_p := ar2.find("--pose")
 	if i_p >= 0 and i_p + 1 < ar2.size() and jeu.atelier != null:
@@ -440,6 +454,9 @@ func _process(delta: float) -> void:
 							jeu.decouvertes[w] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
+	if _page != "" and u > 0.5 and not _fait.has("page"):
+		_fait["page"] = true
+		jeu.ouvrir_page(_page)
 	if _geste_atelier != "":
 		_geste_atelier_t -= delta
 		if _geste_atelier_t <= 0.0:
