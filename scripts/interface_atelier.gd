@@ -22,6 +22,12 @@ const Atelier := preload("res://scripts/atelier.gd")
 const R := preload("res://scripts/regles.gd")
 
 const NOURRITURE := ["baies", "viande", "viande_cuite", "bouillon"]
+const Jardin := preload("res://scripts/jardin.gd")
+const Elevage := preload("res://scripts/elevage.gd")
+# ce que le jardin et les bêtes donnent, dans l'ordre où le sac le montre
+const DU_JARDIN := ["graine_baie", "graine_lin", "graine_simple", "simples", "lait"]
+const NOMS_DU_JARDIN := {"graine_baie": "Graines de baies", "graine_lin": "Graines de lin", "graine_simple": "Graines de simples",
+	"simples": "Simples", "lait": "Lait"}
 
 
 # --- la plume : ce que les morceaux d'une page ont en commun ---
@@ -1063,7 +1069,17 @@ class Sac extends Feuille:
 		var inv: Dictionary = jeu.joueur.inventaire
 		for k in NOURRITURE:
 			manger.append({"id": k, "nom": Plume.majuscule(str(R.NOMS.get(k, k))), "n": int(inv.get(k, 0)), "sur": 0})
-		return [{"titre": "Ce que tu portes · %d de chaque, au plus" % int(atelier.capacite()), "cases": _matieres()}, {"titre": "À manger", "cases": manger}]
+		var groupes := [{"titre": "Ce que tu portes · %d de chaque, au plus" % int(atelier.capacite()), "cases": _matieres()}, {"titre": "À manger", "cases": manger}]
+		# (le jardin, les bêtes : dès qu'elle en a quelque chose)
+		var jardin := []
+		var quelque_chose := false
+		for k in DU_JARDIN:
+			var n := int(inv.get(k, 0))
+			quelque_chose = quelque_chose or n > 0
+			jardin.append({"id": k, "nom": str(NOMS_DU_JARDIN[k]), "n": n, "sur": 0})
+		if quelque_chose:
+			groupes.append({"titre": "Du jardin, des bêtes", "cases": jardin})
+		return groupes
 
 	# ce qui est posé à portée de main, et qui se replie (un vestige ne se replie pas)
 	func _juste_la():
@@ -1074,10 +1090,53 @@ class Sac extends Feuille:
 
 	func _sections() -> Array:
 		var out := []
-		out.append({"titre": "De tes mains", "tuiles": [{"cle": "fab:etabli", "id": "etabli", "nom": "Faire un établi", "pale": not atelier.peut("etabli")}]})
+		var J = jeu.jardin
+		var E = jeu.elevage
+		var inv: Dictionary = jeu.joueur.inventaire
+		var mains := [{"cle": "fab:etabli", "id": "etabli", "nom": "Faire un établi", "pale": not atelier.peut("etabli")}]
+		if atelier.possede("houe") > 0:
+			mains.append({"cle": "act:becher", "id": "carre", "nom": "Bêcher un carré", "pale": J.empeche_becher() != ""})
+		if atelier.possede("licol") > 0 or not E.betes.is_empty():
+			mains.append({"cle": "act:appat", "id": "appat", "nom": "Poser un appât", "pale": E.empeche_appat() != ""})
+		out.append({"titre": "De tes mains", "tuiles": mains})
+		# juste là : ce qui se replie, le carré de jardin devant elle, sa bête
+		var la := []
 		var s = _juste_la()
 		if s != null:
-			out.append({"titre": "Juste là", "tuiles": [{"cle": "pose", "id": str(s.genre), "nom": _nom(str(s.genre)), "marque": "à replier"}]})
+			la.append({"cle": "pose", "id": str(s.genre), "nom": _nom(str(s.genre)), "marque": "à replier"})
+		var carre = _carre()
+		if carre != null:
+			if str(carre.etat.get("culture", "")) == "":
+				for c in Jardin.ORDRE:
+					var g := str(Jardin.CULTURES[c]["graine"])
+					la.append({"cle": "semer:" + c, "id": g, "nom": "Semer : %s" % str(Jardin.CULTURES[c]["nom"]).to_lower(), "pale": J.graines(c) < Jardin.GRAINES, "n": J.graines(c)})
+			elif J.mur(carre):
+				la.append({"cle": "recolter", "id": "carre", "nom": "Récolter", "marque": "mûr"})
+			else:
+				la.append({"cle": "arroser", "id": "arrosoir", "nom": "Arroser", "pale": atelier.possede("arrosoir") <= 0 or J.arrosages() <= 0})
+			la.append({"cle": "combler", "id": "carre", "nom": "Le carré", "marque": "à combler"})
+		var b = E.pres(Elevage.PORTEE + 24.0)
+		if b != null:
+			la.append({"cle": "bete:suite", "id": "bete", "nom": str(b.nom), "marque": "te suit" if bool(b.suit_la) else "reste là"})
+			if bool(b.harnais.get("selle", false)):
+				la.append({"cle": "bete:monter", "id": "selle", "nom": "La monter", "pale": E.empeche_monter(b) != ""})
+			elif float(b.masse) >= Elevage.MASSE_SELLE:
+				la.append({"cle": "bete:selle", "id": "selle", "nom": "La seller", "pale": E.empeche_harnacher(b, "selle") != ""})
+			if not bool(b.harnais.get("sacoche", false)) and float(b.masse) >= Elevage.MASSE_SACOCHE:
+				la.append({"cle": "bete:sacoche", "id": "sacoche", "nom": "Ses sacoches", "pale": E.empeche_harnacher(b, "sacoche") != ""})
+			if float(b.masse) >= Elevage.MASSE_LAIT:
+				la.append({"cle": "bete:traire", "id": "lait", "nom": "La traire", "pale": E.empeche_traire(b) != ""})
+			la.append({"cle": "bete:liberer", "id": "licol", "nom": "La relâcher"})
+		if not la.is_empty():
+			out.append({"titre": "Juste là", "tuiles": la})
+		# ce qui soigne : les simples du jardin, le lait de ses bêtes
+		var soins := []
+		if int(inv.get("simples", 0)) > 0:
+			soins.append({"cle": "use:simples", "id": "simples", "nom": "Simples", "n": int(inv["simples"])})
+		if int(inv.get("lait", 0)) > 0:
+			soins.append({"cle": "use:lait", "id": "lait", "nom": "Lait", "n": int(inv["lait"])})
+		if not soins.is_empty():
+			out.append({"titre": "Ce qui soigne", "tuiles": soins})
 		var affaires := []
 		for id in Atelier.ORDRE:
 			if Atelier.MATIERES.has(id) or atelier.possede(id) <= 0:
@@ -1100,11 +1159,124 @@ class Sac extends Feuille:
 				return str(c)
 		return super(cles)
 
+	# le carré de jardin à portée de main (null : aucun)
+	func _carre():
+		return atelier._proche("carre", Atelier.PORTEE + 10.0)
+
+	func _carte(id: String, nom: String, etat: String, dit: String, bouton: String, pourquoi: String = "", lignes: Array = []) -> Dictionary:
+		return {"id": id, "pale": false, "nom": nom, "etat": etat, "dit": dit, "lignes": lignes, "bouton": bouton, "actif": pourquoi == "", "pourquoi": pourquoi}
+
+	# les fiches du jardin et de l'élevage ({} : ce n'en est pas une)
+	func _fiche_du_jardin(cle: String) -> Dictionary:
+		var J = jeu.jardin
+		var E = jeu.elevage
+		var inv: Dictionary = jeu.joueur.inventaire
+		if cle == "act:becher":
+			return _carte("carre", "Un carré de jardin", "Devant toi.", "La houe retourne la terre. On y sème ; ça pousse si la terre est humide : la pluie, ou l'arrosoir.", "Bêcher", J.empeche_becher())
+		if cle == "act:appat":
+			return _carte("appat", "Un appât", "%d baies, posées devant toi." % Elevage.APPAT, "Une bête qui broute viendra y manger, si tu te tiens à l'écart sans bouger. La tête dedans, elle laisse venir : « Agir », et le licol est passé.",
+				"Poser", E.empeche_appat())
+		var carre = _carre()
+		if cle.begins_with("semer:") and carre != null:
+			var c := cle.trim_prefix("semer:")
+			var o: Dictionary = Jardin.CULTURES[c]
+			var donne := PackedStringArray()
+			for k in o["donne"]:
+				donne.append("%d %s" % [int(o["donne"][k]), str(NOMS_DU_JARDIN.get(k, R.NOMS.get(k, Atelier.NOMS_MATIERES.get(k, k)))).to_lower()])
+			var manque := "" if J.graines(c) >= Jardin.GRAINES else "Il te faut %d %s." % [Jardin.GRAINES, str(Jardin.NOMS_GRAINES[o["graine"]])]
+			return _carte(str(o["graine"]), str(o["nom"]), "Tu as %d graines ; il en faut %d." % [J.graines(c), Jardin.GRAINES],
+				"Mûr en %s, la terre humide. Un carré rend %s, et %d graines." % ["un jour" if float(o["jours"]) <= 1.0 else ("un jour et demi" if float(o["jours"]) < 2.0 else "deux jours"), ", ".join(donne), Jardin.RENDUES],
+				"Semer", manque)
+		if cle == "recolter" and carre != null:
+			return _carte("carre", "Le carré", J.dire(carre), "Ce qui est mûr se récolte ; le carré est de nouveau libre.", "Récolter")
+		if cle == "arroser" and carre != null:
+			var pourquoi := "" if atelier.possede("arrosoir") > 0 and J.arrosages() > 0 else ("Il te faut un arrosoir." if atelier.possede("arrosoir") <= 0 else "L'arrosoir est vide.")
+			return _carte("arrosoir", "Le carré", J.dire(carre), "Sans eau, rien ne pousse. La pluie arrose aussi.", "Arroser", pourquoi,
+				[["jauge", "Terre", float(carre.etat.get("eau", 0.0)), "humide" if float(carre.etat.get("eau", 0.0)) > 0.15 else "sèche"]])
+		if cle == "combler" and carre != null:
+			return _carte("carre", "Le carré", J.dire(carre), "Comblé, la terre reprend sa place. Ce qui y pousse est perdu.", "Combler")
+		if cle == "use:simples":
+			return _carte("simples", "Simples", "Tu en as %d." % int(inv.get("simples", 0)), "Des herbes qu'on mâche : la santé revient (%d), la peur s'apaise." % int(Jardin.SIMPLES_SANTE), "Se panser")
+		if cle == "use:lait":
+			return _carte("lait", "Lait", "Tu en as %d." % int(inv.get("lait", 0)), "Tiède. Il nourrit (%d), et calme un peu." % int(Elevage.LAIT_FAIM), "Boire")
+		if not cle.begins_with("bete:"):
+			return {}
+		var b = E.pres(Elevage.PORTEE + 24.0)
+		if b == null:
+			return {}
+		var faim := float(b.faim)
+		var jauges := [["jauge", "Faim", faim / 100.0, "repue" if faim > 60.0 else ("a faim" if faim > 25.0 else "affamée")]]
+		match cle:
+			"bete:suite":
+				return _carte("bete", str(b.nom), "Elle te suit." if bool(b.suit_la) else "Elle reste là.",
+					"Laissée près d'un piquet d'attache, elle y est liée et broute autour. La nuit, garde-la dans la lumière d'un feu : le noir les rend folles.",
+					"Reste là" if bool(b.suit_la) else "Suis-moi", "", jauges)
+			"bete:selle":
+				return _carte("selle", "La seller", str(b.nom), str(Atelier.OBJETS["selle"]["dit"]), "Seller", E.empeche_harnacher(b, "selle"))
+			"bete:sacoche":
+				return _carte("sacoche", "Ses sacoches", str(b.nom), str(Atelier.OBJETS["sacoche"]["dit"]), "Les lui mettre", E.empeche_harnacher(b, "sacoche"))
+			"bete:monter":
+				return _carte("selle", "La monter", str(b.nom), "En selle, on va bien plus vite. Ce qui lui fait peur te jette à terre.", "Monter", E.empeche_monter(b))
+			"bete:traire":
+				return _carte("lait", "La traire", str(b.nom), "Nourrie, elle donne son lait une fois par jour.", "Traire", E.empeche_traire(b),
+					[["jauge", "Lait", float(b.lait), "prête" if float(b.lait) >= 1.0 else "pas encore"]])
+			"bete:liberer":
+				return _carte("licol", "La relâcher", str(b.nom), "Tu lui ôtes son licol : elle retourne aux siens. Son harnais revient dans ton sac.", "Relâcher")
+		return {}
+
+	# faux : ce n'était pas une action du jardin ou de l'élevage
+	func _faire_au_jardin(cle: String) -> bool:
+		var J = jeu.jardin
+		var E = jeu.elevage
+		var carre = _carre()
+		var b = E.pres(Elevage.PORTEE + 24.0)
+		if cle == "act:becher":
+			J.becher()
+			refermer()
+		elif cle == "act:appat":
+			E.poser_appat()
+			refermer()
+		elif cle.begins_with("semer:"):
+			J.semer(carre, cle.trim_prefix("semer:"))
+			refermer()
+		elif cle == "recolter":
+			J.recolter(carre)
+			refermer()
+		elif cle == "arroser":
+			J.arroser(carre)
+		elif cle == "combler":
+			if carre != null:
+				atelier.poses.erase(carre)
+				carre.queue_free()
+			refermer()
+		elif cle == "use:simples":
+			J.panser()
+		elif cle == "use:lait":
+			E.boire_lait()
+		elif cle == "bete:suite":
+			E.basculer_suite(b)
+		elif cle == "bete:selle":
+			E.harnacher(b, "selle")
+		elif cle == "bete:sacoche":
+			E.harnacher(b, "sacoche")
+		elif cle == "bete:monter":
+			E.monter(b)
+			refermer()
+		elif cle == "bete:traire":
+			E.traire(b)
+		elif cle == "bete:liberer":
+			E.liberer(b)
+		else:
+			return false
+		return true
+
 	func _fiche_de(cle: String) -> Dictionary:
 		if cle == "fab:etabli":
 			return _fiche_a_fabriquer("etabli")
 		if cle == "pose":
 			return _fiche_posee()
+		if not cle.begins_with("obj:"):
+			return _fiche_du_jardin(cle)
 		var id := cle.trim_prefix("obj:")
 		var o: Dictionary = Atelier.OBJETS[id]
 		var n: int = atelier.possede(id)
@@ -1125,6 +1297,19 @@ class Sac extends Feuille:
 		elif id == "duvet":
 			f["bouton"] = "Dormir"
 			_demander(f, "empeche_dormir", [])
+		elif id == "houe":
+			f["bouton"] = "Bêcher"
+			f["pourquoi"] = str(jeu.jardin.empeche_becher())
+			f["actif"] = f["pourquoi"] == ""
+		elif id == "arrosoir":
+			var na: int = jeu.jardin.arrosages()
+			f["etat"] = "Vide." if na <= 0 else "%d arrosage%s sur %d." % [na, "s" if na > 1 else "", Jardin.ARROSAGES]
+			f["lignes"] = [["gouttes", na, Jardin.ARROSAGES]]
+			f["bouton"] = "Remplir"
+			f["actif"] = na < Jardin.ARROSAGES and float(jeu.climat.eau(jeu.joueur.position)) >= 0.3
+			f["pourquoi"] = "" if f["actif"] else ("Il est plein." if na >= Jardin.ARROSAGES else "Les pieds dans l'eau, ou « Agir » au récupérateur.")
+		elif id in ["licol", "selle", "sacoche"]:
+			f["lignes"] = [["note", "Pour une bête à toi : approche-la, et rouvre ton sac." if id != "licol" else "Pose un appât, écarte-toi : la bête qui y mange se laisse passer le licol."]]
 		elif bool(o.get("pose", false)):
 			f["lignes"] = [["note", "Se pose devant toi. Se replie quand tu veux."]]
 			f["bouton"] = "Poser"
@@ -1187,10 +1372,18 @@ class Sac extends Feuille:
 		if cle == "pose":
 			atelier.replier()
 			return ""
+		if not cle.begins_with("obj:"):
+			_faire_au_jardin(cle)
+			return ""
 		var id := cle.trim_prefix("obj:")
 		var o: Dictionary = Atelier.OBJETS[id]
 		if id == "gourde":
 			atelier.boire()
+		elif id == "houe":
+			jeu.jardin.becher()
+			refermer()
+		elif id == "arrosoir":
+			jeu.jardin.remplir()
 		elif id == "duvet":
 			# (qu'elle s'endorme ou que le jeu dise pourquoi elle ne peut pas : on le voit dans la partie, page fermée)
 			atelier.dormir(null)
