@@ -2499,6 +2499,9 @@ func _l_atelier(F: Dictionary) -> void:
 	j.position = filet.position + Vector2(20.0, 0.0)
 	var replie: bool = A.replier()
 	verif(replie and A.possede("filet") == 1 and not A.poses.has(filet), "une chose posée se replie et retourne dans le sac")
+	# (la foudre a pu réduire le cerf-volant en cendres, une fois sur trois : il en faut un pour y laisser les piles)
+	if not A.poses.has(volant):
+		volant = A._creer("cerf_volant", ici + Vector2(140.0, -60.0), {})
 	A.fil = volant
 	A.charge = 37.0
 	var photo: Dictionary = JSON.parse_string(JSON.stringify(A.photo()))
