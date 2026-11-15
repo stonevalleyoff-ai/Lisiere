@@ -91,6 +91,8 @@ static func photo(jeu) -> Dictionary:
 		"atelier": jeu.atelier.photo() if jeu.atelier != null else {},
 		# (ses bêtes apprivoisées ; scripts/elevage.gd)
 		"elevage": jeu.elevage.photo() if jeu.get("elevage") != null else {},
+		# (ce qu'elle sait des herbes, ce qu'elle a dans le sang ; scripts/botanique.gd)
+		"botanique": jeu.botanique.photo() if jeu.get("botanique") != null else {},
 	}
 
 

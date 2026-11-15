@@ -90,6 +90,7 @@ const GESTES := {
 # ceux du jardin et de l'élevage : chaque coup de houe de « becher » part aussi (impact, genre « becher »)
 const ATELIER := {"marteler": 1.2, "scier": 1.3, "coudre": 1.5, "monter": 1.6, "fouiller": 1.35, "boire": 1.2, "remuer": 1.5,
 	"becher": 1.5, "semer": 1.4, "arroser": 1.7, "caresser": 1.6, "seller": 1.7, "traire": 1.8}
+const ATELIER_REPLI := {"gouter": "boire", "piler": "remuer", "jeter": "fouiller"}
 const ATELIER_COUPS := {"marteler": [0.36, 0.64, 0.92], "monter": [0.36], "becher": [0.4, 0.78, 1.16]}
 const SEMER_JETS := [0.5, 1.0]
 const GESTES_JARDIN := ["becher", "semer", "arroser"]      # elle se tourne vers le carré de jardin
@@ -274,6 +275,8 @@ var monture = null              # la bête qu'elle monte (scripts/elevage.gd) : 
 # un geste d'atelier commence (atelier.gd) : il dure ce que son dessin dure (ATELIER), puis s'efface. Elle se tourne vers ce
 # qu'elle travaille (l'établi, la chose posée, le feu), un peu de biais, pour qu'on voie ses mains
 func geste_atelier(nom: String) -> void:
+	# (en attendant leur dessin : les gestes de l'herbier empruntent ceux de l'atelier)
+	nom = str(ATELIER_REPLI.get(nom, nom)) if not ATELIER.has(nom) else nom
 	if morte or not ATELIER.has(nom):
 		atelier = ""
 		return
@@ -463,6 +466,9 @@ func deplacer(dir: Vector2, delta: float, monde) -> void:
 		# (en selle, on va bien plus vite : scripts/elevage.gd)
 		if monture != null and monde.jeu != null and monde.jeu.get("elevage") != null:
 			allure *= float(monde.jeu.elevage.allure())
+		# (la torpeur d'une herbe à dormir : scripts/botanique.gd)
+		if monde.jeu != null and monde.jeu.get("botanique") != null:
+			allure *= float(monde.jeu.botanique.allure())
 		if temperature < 25.0:
 			allure *= lerpf(0.82, 1.0, temperature / 25.0)
 		var avant := position

@@ -24,6 +24,7 @@ const EFFACE := 0.35           # l'opacité d'une couronne qui cache la veilleus
 # un lieu sans bord (MONDE-OUVERT.md) : il se fabrique par morceaux autour de la veilleuse
 const MORCEAU := 700.0         # le côté d'un morceau
 const PORTEE := 1400.0         # jusqu'où le lieu existe autour d'elle
+const HERBES := 52             # les plants d'herbes d'un lieu (les six espèces de son herbier : scripts/botanique.gd)
 const OUBLI := 2300.0          # plus loin, un morceau est défait : on ne garde que ce qu'on y a changé
 
 var jeu
@@ -199,6 +200,8 @@ func _semer_tout(r: RandomNumberGenerator, arbre: String, bosquets, couvert: flo
 	_semer(r, "buisson", int(R.BUISSONS + R.BUISSONS_HUMIDE * humid), palette["feuilles"], bosquets, 0.6)
 	_semer(r, "touffe", int(90 + 130 * (1.0 - couvert)), palette["herbe"], null, 1.0)
 	_semer(r, "brindille", 160, Color.WHITE, bosquets, 0.6)
+	# (les herbes de l'herbier : six espèces par lieu, une cinquantaine de plants ; scripts/botanique.gd)
+	_semer(r, "herbe", HERBES, Color.WHITE, null, 1.0)
 	# au réveil, de quoi faire un premier feu à portée
 	for i in 6:
 		_poser("brindille", Vector2(r.randf_range(-120, 120), r.randf_range(-90, 90)), Color.WHITE, r.randi())
@@ -387,6 +390,8 @@ func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Diction
 		Objet.climat = ici["climat"]
 	var o = Objet.new()
 	o.preparer(genre, couleur, graine)
+	if genre == "herbe":
+		o.porter_herbe(lieu)
 	var pl := _plante(genre, graine, ici["flore"] if not ici.is_empty() else flore)
 	if not pl.is_empty():
 		o.porter_plante(pl)
@@ -619,6 +624,7 @@ func _prevoir_lieu(r: RandomNumberGenerator, plan: Array, rect: Rect2, arbre: St
 	_prevoir(r, plan, rect, "buisson", (R.BUISSONS + R.BUISSONS_HUMIDE * float(mesures[1])) * ka, "feuilles", _bosquets, 0.6, type)
 	_prevoir(r, plan, rect, "touffe", (90.0 + 130.0 * (1.0 - couvert)) * ka, "herbe", null, 1.0, type)
 	_prevoir(r, plan, rect, "brindille", 160.0 * ka, "", _bosquets, 0.6, type)
+	_prevoir(r, plan, rect, "herbe", HERBES * ka, "", null, 1.0, type)
 
 
 func _prevoir(r: RandomNumberGenerator, plan: Array, rect: Rect2, genre: String, combien: float, ton: String, bruit, densite: float, type: String) -> void:
@@ -665,6 +671,8 @@ func _fabriquer_(k: Vector2i) -> void:
 			continue
 		var tons: Dictionary = ici["palette"] if carte != null else palette
 		var o = _poser(str(e[0]), e[1], tons[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), ici)
+		if str(e[0]) == "herbe" and carte != null:
+			o.porter_herbe(str(e[4]))
 		o.set_meta("m", k)
 		o.set_meta("rang", i)
 		liste.append(o)

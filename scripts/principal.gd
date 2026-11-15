@@ -41,6 +41,7 @@ const Pistage := preload("res://scripts/pistage.gd")
 const Atelier := preload("res://scripts/atelier.gd")
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
+const Botanique := preload("res://scripts/botanique.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -96,6 +97,7 @@ var pistage                   # l'affût et la lecture des pistes (scripts/pista
 var atelier                   # ce qu'elle fabrique, porte et pose (scripts/atelier.gd)
 var jardin                      # ce qu'elle sème et récolte (scripts/jardin.gd)
 var elevage                     # les bêtes qu'elle apprivoise (scripts/elevage.gd)
+var botanique                   # les herbes, ce qu'elle en sait, ce qu'elle en prépare (scripts/botanique.gd)
 var page := ""                # la page d'atelier ouverte : « etabli », « sac » ("" : aucune) ; la partie attend, comme en pause
 var savoir: Dictionary = {}   # ce qu'elle a appris de chaque lignée, en secondes d'affût (le carnet des bêtes)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
@@ -575,8 +577,11 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		jardin.jeu = self
 		elevage = Elevage.new()
 		elevage.jeu = self
+		botanique = Botanique.new()
+		botanique.jeu = self
 	atelier.commencer()
 	elevage.vider()
+	botanique.commencer(randi())
 	# (l'œil de l'affût : au-dessus du lieu)
 	pistage = Pistage.new()
 	pistage.jeu = self
@@ -612,6 +617,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		noire.reprendre(gardee.get("noire", {}))
 		atelier.reprendre(gardee.get("atelier", {}))
 		elevage.reprendre(gardee.get("elevage", {}))
+		botanique.reprendre(gardee.get("botanique", {}))
 		if ouvert:
 			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
 			monde.suivre(joueur.position, true)
@@ -854,6 +860,7 @@ func _process(delta: float) -> void:
 	atelier.maj(delta)
 	jardin.maj(delta)
 	elevage.maj(delta)
+	botanique.maj(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
 	ui.maj_hud(self)
@@ -954,6 +961,13 @@ func agir() -> void:
 		son = "herbe"
 	_viser({"son": son, "db": -4.0, "p": o.position, "genre": genre})
 	for k in g:
+		# (une herbe : son espèce entre dans le sac, et dans l'herbier ; scripts/botanique.gd)
+		if k == "herbe":
+			var deja: bool = botanique.connue(str(o.herbe))
+			botanique.cueillie(str(o.herbe))
+			if deja:
+				ui.message("+1 %s" % Botanique.nom(str(o.herbe)).to_lower(), Color(0.75, 0.78, 0.72))
+			continue
 		# (ce qui entre dans son sac : elle ne porte pas tout ; scripts/atelier.gd)
 		var pris: int = atelier.ranger(k, int(g[k]))
 		if pris > 0:
@@ -994,15 +1008,43 @@ func _toucher_vise() -> void:
 
 # ce qui tente cette proie, dans ce que la veilleuse a posé : un appât, un carré de jardin où ça pousse (null : rien)
 func tentation(b):
-	if elevage == null or float(joueur.position.distance_to(b.position)) < float(b._distance_fuite(joueur.en_mouvement)) * 0.8:
+	if elevage == null:
 		return null
-	var t = elevage.tentation(b)
-	return t if t != null else jardin.tentation(b)
+	# (les appâts des herbes : le dormant pour ce qui broute, l'empoisonné pour ce qui chasse ; scripts/botanique.gd)
+	var t = botanique.tentation(b)
+	if t != null or str(b.role) != "proie":
+		return t
+	if float(joueur.position.distance_to(b.position)) < float(b._distance_fuite(joueur.en_mouvement)) * 0.8:
+		return null
+	t = elevage.tentation(b)
+	if t == null:
+		t = jardin.tentation(b)
+	if t != null:
+		return t
+	# (les herbes du lieu : de temps en temps elle en broute une, de celles qui se broutent ; c'est un indice pour qui regarde)
+	var deja = b._tentation
+	if deja != null and is_instance_valid(deja) and str(deja.genre) == "herbe" and int(deja.reste) > 0:
+		return deja
+	if randf() < 0.07:
+		for o in monde.autour(b.position, 150.0):
+			if str(o.genre) == "herbe" and int(o.reste) > 0 and botanique.se_broute(str(o.herbe)):
+				return o
+	return null
 
 
 # elle y mange
-func mangee(_b, quoi, delta: float) -> void:
-	if str(quoi.genre) == "appat":
+func mangee(b, quoi, delta: float) -> void:
+	if str(quoi.genre) == "herbe":
+		# (trois secondes, et l'herbe est mangée ; si la veilleuse le voit, elle le note)
+		quoi.set_meta("broute", float(quoi.get_meta("broute", 0.0)) + delta)
+		if float(quoi.get_meta("broute")) >= 3.0:
+			quoi.set_meta("broute", 0.0)
+			quoi.recolter()
+			if b.position.distance_to(joueur.position) < 560.0:
+				botanique.vue_broutee(str(quoi.herbe))
+	elif str(quoi.genre) == "appat" and str(quoi.etat.get("sorte", "")) != "":
+		botanique.mangee(b, quoi, delta)
+	elif str(quoi.genre) == "appat":
 		elevage.mangee(quoi, delta)
 	else:
 		jardin.mangee(quoi, delta)
@@ -1244,6 +1286,8 @@ func _titre_de_fin() -> String:
 			return "Le feu t'a prise."
 		"foudre":
 			return "La foudre t'a prise."
+		"poison":
+			return "Le poison t'a prise."
 	return "La nuit t'a prise." if lumiere_du_jour() < 0.5 else "Le lieu t'a prise."
 
 

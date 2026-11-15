@@ -12,10 +12,11 @@ const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const P := preload("res://scripts/palette.gd")
 const SHADER := preload("res://shaders/vegetation_feuillage.gdshader")
 const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois",
-	"champignon": "baies"}
+	"champignon": "baies", "herbe": "herbe"}
 const LUISANT := Color(0.42, 0.95, 0.82)    # la lueur des champignons lumineux d'une grotte (le vert d'eau de l'herbier d'Orvane)
 const OCRE := Color(0.65, 0.48, 0.19)       # le chapeau des autres champignons (l'ocre de l'herbier)
 const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
+const Botanique := preload("res://scripts/botanique.gd")
 const R_BAIES := preload("res://scripts/regles.gd").BAIES_PAR_BUISSON
 const R_REPOUSSE_BAIES := preload("res://scripts/regles.gd").REPOUSSE_BAIES
 const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
@@ -119,6 +120,7 @@ var _chicot := true            # calciné debout (un chicot), ou déjà abattu (
 var plante := ""
 var port := ""
 var epineux := false
+var herbe := ""                # (une herbe) son espèce dans l'herbier : « foret:ombelle » (scripts/botanique.gd)
 
 
 func preparer(g: String, couleur: Color, s: int) -> void:
@@ -139,12 +141,12 @@ func preparer(g: String, couleur: Color, s: int) -> void:
 		"touffe":
 			plein = 2
 		_:
-			# (une brindille ; un bouquet de champignons : une part)
+			# (une brindille ; un bouquet de champignons ; une herbe : une part)
 			plein = 1
 	reste = plein
 	matieres()
 	_mesurer()
-	material = vegetation if g in ["arbre", "sapin", "buisson", "touffe"] else fixe
+	material = vegetation if g in ["arbre", "sapin", "buisson", "touffe", "herbe"] else fixe
 	if g == "champignon":
 		# (des champignons luisants, sous terre : leur lueur se dessine à part, sans l'ombre de la roche)
 		lueur = Luisant.new()
@@ -271,7 +273,7 @@ func recolter() -> Dictionary:
 		_chute = 0.0
 		_sens = 1.0 if graine % 2 == 0 else -1.0
 		material = fixe
-	elif (genre == "buisson" or genre == "touffe" or genre == "champignon") and reste <= 0:
+	elif (genre == "buisson" or genre == "touffe" or genre == "champignon" or genre == "herbe") and reste <= 0:
 		# (les fibres reviennent vite ; ce qui se mange, lentement)
 		_repousse = REPOUSSE if genre == "touffe" else R_REPOUSSE_BAIES
 	_secoue = 0.35
@@ -534,6 +536,8 @@ func _draw() -> void:
 			_champignon(p, r)
 		"brindille":
 			_brindille(p, r)
+		"herbe":
+			_herbe(p, r)
 	if en_feu:
 		_dessiner_feu(p, depuis)
 	teinte = garde
@@ -1159,6 +1163,25 @@ func _moisissure(p, r: RandomNumberGenerator) -> void:
 	for i in 9:
 		var q := Vector2(r.randf_range(-0.75, 0.75) * _rx, r.randf_range(-0.6, 0.6) * _ry)
 		p.disque(q, r.randf_range(0.7, 1.3), r.randf_range(0.6, 1.0), Color(0.62, 0.71, 0.6))
+
+
+# une herbe de l'herbier (scripts/botanique.gd) : son espèce (« foret:ombelle »), d'après le lieu où elle pousse et sa graine
+func porter_herbe(type: String) -> void:
+	herbe = Botanique.espece_de(type, graine)
+
+
+# (une marque provisoire : une tige, sa fleur de la couleur de l'espèce ; son vrai dessin : scripts/herbe.gd)
+func _herbe(p, _r: RandomNumberGenerator) -> void:
+	var fleur: Color = Botanique.couleur(herbe) if herbe != "" else P.IVOIRE
+	var vert := P.MOUSSE.lightened(0.1)
+	if reste <= 0:
+		p.tracer(PackedVector2Array([Vector2(-2, 0), Vector2(-1, -3)]), 1.2, vert.darkened(0.2), false)
+		p.tracer(PackedVector2Array([Vector2(2, 0), Vector2(2, -2.5)]), 1.2, vert.darkened(0.2), false)
+		return
+	for k in 3:
+		var x := -3.0 + 3.0 * k
+		p.tracer(PackedVector2Array([Vector2(x * 0.4, 0), Vector2(x, -9.0 - 2.0 * (k % 2))]), 1.4, vert, false)
+		p.disque(Vector2(x, -10.0 - 2.0 * (k % 2)), 2.2, 2.2, fleur)
 
 
 func _touffe(p, r: RandomNumberGenerator) -> void:

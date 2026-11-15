@@ -35,6 +35,7 @@ const GISANT := 0.7              # elle reste couchée
 const EFFACEMENT := 1.6          # son encre s'efface
 const BARRE := 2.6               # la barre de vie reste visible, après un coup
 # ce qui rend juste une conduite apprise : elle s'annonce (docs/7)
+const R_POISON := 22.0          # secondes : ce que met le poison d'un appât à l'éteindre (Botanique.POISON_BETE)
 const REARME := 6.0              # secondes sans mordre, après lesquelles une morsure ouvre un nouvel assaut
 const GUET := 0.6                # un rôdeur qui traque s'arrête et regarde, avant de charger
 const PRESAGE := 1.0             # un chasseur qui a appris à passer la torche s'aplatit et gronde, avant
@@ -115,7 +116,9 @@ var mange := 0.0                 # de 0 à 1 : la tête au sol, elle mange (un a
 var suit_la := true              # (compagne) elle suit la veilleuse ; faux : elle reste là où on l'a laissée (maison)
 var faim := 100.0                # (compagne) de 0 à 100 : affamée trop longtemps, elle s'en va
 var lait := 0.0                  # (compagne) de 0 à 1 : à 1, on peut la traire
-var _tentation = null            # ce qui la tente (une chose posée : scripts/campement.gd)
+var _tentation = null            # ce qui la tente (une chose posée : scripts/campement.gd ; une herbe : scripts/objet.gd)
+var endormie := 0.0              # secondes : un appât dormant l'a couchée (scripts/botanique.gd) ; un coup la réveille
+var empoisonnee := 0.0           # secondes : un appât empoisonné la tue à petit feu
 var _tentation_t := 0.0
 # ses empreintes (scripts/traces.gd) : là où chaque pied se pose, quand on la voit de profil ; sinon une à chaque foulée
 const PIEDS := {"coussinet": 0, "doigts": 1, "sabot": 3, "main": 4, "griffes": 5}
@@ -647,6 +650,8 @@ func paupiere() -> float:
 
 
 func blesser(n: float, depuis: Vector2) -> void:
+	if not _du_ciel:
+		endormie = 0.0
 	if pv <= 0.0:
 		return
 	pv -= n
@@ -828,6 +833,26 @@ func _conduire(delta: float) -> void:
 	_t += delta
 	_morsure = maxf(0.0, _morsure - delta)
 	_assaut = maxf(0.0, _assaut - delta)
+	# (les herbes : le poison la ronge ; l'herbe à dormir la couche, les yeux clos, jusqu'à ce qu'elle passe ou qu'on la frappe)
+	if empoisonnee > 0.0 and pv > 0.0:
+		empoisonnee -= delta
+		_du_ciel = true
+		blesser(pv_max * delta / R_POISON, position + Vector2(regard, 0.0))
+		_du_ciel = false
+		if pv <= 0.0:
+			return
+	if endormie > 0.0:
+		endormie -= delta
+		couchee = move_toward(couchee, 1.0, delta * 1.4)
+		yeux_clos = move_toward(yeux_clos, 1.0, delta * 2.0)
+		mange = move_toward(mange, 0.0, delta * 3.0)
+		if endormie <= 0.0:
+			maison = position
+			_changer("repos", 2.0)
+		return
+	if role != "noire" and (couchee > 0.0 or yeux_clos > 0.0):
+		couchee = move_toward(couchee, 0.0, delta * 1.6)
+		yeux_clos = move_toward(yeux_clos, 0.0, delta * 2.5)
 	match role:
 		"proie":
 			_proie(delta)
@@ -1044,6 +1069,25 @@ func _compagne(delta: float) -> void:
 			_changer("repos", randf_range(4.0, 9.0))
 
 
+# un appât dormant : elle se couche et dort ce temps-là
+func endormir(duree: float) -> void:
+	if pv <= 0.0 or role == "noire" or role == "echo":
+		return
+	endormie = duree
+	_tentation = null
+	etat = "repos"
+
+
+# un appât empoisonné : elle s'en va mourir plus loin
+func empoisonner(duree: float) -> void:
+	if pv <= 0.0 or role == "noire" or role == "echo":
+		return
+	empoisonnee = duree
+	_tentation = null
+	vitesse *= 0.6
+	_fuir(jeu.joueur.position, duree)
+
+
 # où s'assied qui la monte, dans le lieu (le creux de son dos)
 func siege() -> Vector2:
 	if _harnais_n != null:
@@ -1052,6 +1096,9 @@ func siege() -> Vector2:
 
 
 func _rodeur(delta: float) -> void:
+	# (un appât empoisonné : il y va, et le mange ; scripts/botanique.gd)
+	if etat != "fuit" and empoisonnee <= 0.0 and _tentee(delta):
+		return
 	var j = jeu.joueur
 	var dj := position.distance_to(j.position)
 	if etat == "fuit":
@@ -1088,6 +1135,9 @@ func _rodeur(delta: float) -> void:
 
 
 func _chasseur(delta: float) -> void:
+	# (un appât empoisonné : il y va, et le mange ; scripts/botanique.gd)
+	if etat != "fuit" and empoisonnee <= 0.0 and _tentee(delta):
+		return
 	var j = jeu.joueur
 	var dj := position.distance_to(j.position)
 	_retenu = false
@@ -1173,7 +1223,9 @@ func _chasseur(delta: float) -> void:
 # jusqu'où un chasseur entre dans la lumière d'un feu, en parts de son rayon : 0,8, jamais moins (le feu reste une loi) ; plus
 # loin s'il craint le feu ou les joueurs, jusqu'à 1,05 : on ne voit plus alors que ses yeux
 func _lisiere() -> float:
-	return 0.8 + maxf(0.25 * maxf(peur_feu, 0.0), 0.15 * crainte)
+	# (la fumée âcre d'une botte jetée au feu le tient moitié plus loin : scripts/botanique.gd)
+	var fumee: float = float(jeu.botanique.garde(position)) if jeu.get("botanique") != null else 1.0
+	return (0.8 + maxf(0.25 * maxf(peur_feu, 0.0), 0.15 * crainte)) * fumee
 
 
 # à quelle distance la torche le tient : 145 pixels ; de plus loin s'il craint le feu, de plus près s'il s'y est fait ou s'il

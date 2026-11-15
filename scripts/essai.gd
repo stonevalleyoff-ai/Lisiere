@@ -747,7 +747,7 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		brouteuse._tentation_t = 0.0
 		for i in 60:
 			brouteuse._conduire(0.1)
-		verif(tentee and mange > 0.5 and tete > 0.6 and jeu.tentation(brouteuse) == null and J.garde(carre.position) and float(carre.etat["stade"]) == 2.0,
+		verif(tentee and mange > 0.5 and tete > 0.6 and jeu.tentation(brouteuse) != carre and J.garde(carre.position) and float(carre.etat["stade"]) == 2.0,
 			"une bête qui broute vient manger ce qui pousse (la tête au sol : le carré a perdu %.1f stade) ; l'épouvantail posé, elle n'y touche plus" % mange)
 		_oter(brouteuse)
 		# la nuit, l'épouvantail regarde d'où vient la Noire
