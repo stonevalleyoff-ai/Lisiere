@@ -851,6 +851,16 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 			and en_selle_dx > a_pied_dx * 1.4,
 			"des sacoches : à ses côtés, elle porte %d de plus ; une selle (pas sur une petite bête) : « Agir » la monte, puis la descend ; en selle elle va %.1f fois plus vite" % [E.SACOCHE, en_selle_dx / maxf(a_pied_dx, 0.01)])
 
+		# son harnais se dessine, la selle a son creux ; les six gestes du jardin et de l'élevage existent
+		bete._harnacher()
+		var creux: Vector2 = bete.siege()
+		var gestes_la := true
+		for g in ["becher", "semer", "arroser", "caresser", "seller", "traire"]:
+			if not j.ATELIER.has(g) or not A.GESTES.has(g):
+				gestes_la = false
+		verif(bete._harnais_n != null and creux.y < bete.position.y - 8.0 and absf(creux.x - bete.position.x) < bete.largeur and gestes_la,
+			"son harnais se dessine sur elle, la selle a son creux (à %d pixels au-dessus de ses pieds) ; bêcher, semer, arroser, caresser, seller, traire ont leur geste" % int(bete.position.y - creux.y))
+
 		# le lait
 		bete.lait = 0.0
 		bete.faim = 90.0
