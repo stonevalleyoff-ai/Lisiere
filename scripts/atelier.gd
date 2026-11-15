@@ -59,6 +59,7 @@ const OBJETS := {
 }
 const ORDRE := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
 	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles"]
+const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer"]
 const TEINTE := Color(0.86, 0.8, 0.66)
 const PORTEE := 54.0              # à quelle distance on se sert d'une chose posée, d'un établi
 const PORTER := 20                # ce qu'elle porte de chaque matière, sans sac à dos
@@ -163,17 +164,19 @@ func fabriquer(id: String) -> bool:
 		objets[id] = int(objets.get(id, 0)) + 1
 		if bool(o.get("porte", false)) and id != "lampe":
 			portes[id] = true
+	# (son geste, et ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; le bois se scie ; le reste se
+	# martèle, et chaque coup de maillet sonne quand il tombe : coup())
 	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet"]
-	jeu.joueur.geste_atelier("coudre" if cousu else "marteler")
-	# (ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; sinon la scie, puis le maillet)
+	var scie: bool = not cousu and o["cout"].has("bois")
+	jeu.joueur.geste_atelier("coudre" if cousu else ("scier" if scie else "marteler"))
 	if id == "corde" or id == "filet":
 		jeu.sons.atelier("tresse")
 	elif id == "bache":
 		jeu.sons.atelier("toile", -3.0)
 	elif cousu:
 		jeu.sons.atelier("couture")
-	else:
-		jeu.sons.atelier("scie" if o["cout"].has("bois") else "marteau")
+	elif scie:
+		jeu.sons.atelier("scie")
 	# (à l'établi : des copeaux en volent, le temps de l'ouvrage)
 	var e = _proche("etabli", PORTEE * 1.3)
 	if e != null:
@@ -283,16 +286,29 @@ func replier() -> bool:
 	return true
 
 
-# ce qu'on entend quand elle monte une chose : la corde qu'on tend, la toile qu'on déplie, le piquet qu'on enfonce
+# ce qu'on entend quand elle monte une chose : la corde qu'on tend, la toile qu'on déplie (le piquet qu'on enfonce sonne
+# quand son geste frappe : coup())
 func _son_de_pose(id: String, p: Vector2) -> void:
 	match id:
 		"hamac", "filet":
 			jeu.sons.atelier("corde", 0.0, 1.0, p)
 		"etabli":
-			jeu.sons.atelier("marteau", 0.0, 0.9, p)
+			pass
 		_:
 			jeu.sons.atelier("toile", 0.0, 1.0, p)
-			jeu.sons.atelier("piquet", -2.0, 1.0, p)
+
+
+# un geste d'atelier frappe (le signal « impact » de la veilleuse, scripts/joueur.gd) : le maillet tombe sur l'établi, des
+# copeaux en sautent ; le piquet s'enfonce
+func coup(geste: String, p: Vector2) -> void:
+	match geste:
+		"marteler":
+			jeu.sons.atelier("marteau", 0.0, 1.0, p)
+			var e = _proche("etabli", PORTEE * 1.3)
+			if e != null:
+				e.coup(1.0)
+		"monter":
+			jeu.sons.atelier("piquet", 0.0, 1.0, p)
 
 
 # une gorgée (la canicule pèse moins), et elle le dit
@@ -431,9 +447,15 @@ func dormir(ou = null) -> bool:
 	lit = ou
 	lit_de_nuit = jeu.jour_du_ciel() <= 0.0
 	_t = 0.0
+	var j = jeu.joueur
+	j.couchage = ""
 	if ou != null:
 		ou.etat["occupe"] = true
-	jeu.joueur.endormie = true
+		# (elle s'y glisse : on la voit se baisser à sa porte, au bord de sa toile, puis on ne la voit plus)
+		var porte_la: Vector2 = Vector2(-26.5, 24.4) if str(ou.genre) == "tente" else Vector2(0.0, 23.0)
+		j.position = ou.position + porte_la
+		j.couchage = str(ou.genre)
+	j.endormie = true
 	jeu.ui.message("Tu t'endors. Un geste te réveille.", TEINTE)
 	return true
 
@@ -446,6 +468,7 @@ func reveiller(pourquoi: String) -> void:
 		lit.etat["occupe"] = false
 	lit = null
 	jeu.joueur.endormie = false
+	jeu.joueur.couchage = ""
 	Engine.time_scale = _avant
 	if pourquoi != "":
 		jeu.ui.message(pourquoi, TEINTE)

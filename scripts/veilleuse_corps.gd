@@ -4,6 +4,12 @@ extends RefCounted
 # où elle regarde, puis vu de trois quarts : ce qui vient vers nous descend un peu. Ainsi elle tourne d'un seul tenant (de face,
 # de trois quarts, de profil, de dos), sans images à part. Le joueur (scripts/joueur.gd) règle la pose à chaque image ; ici,
 # on la dessine : la cape en plis, la capuche profonde et son visage pâle, l'écharpe rouille, le sac de cuir, les bottes.
+# Sa tenue (scripts/atelier.gd) se dessine dans le même trait : le sac à dos de peau, sanglé, son rouleau ; la pelisse, qui
+# l'épaissit et montre sa fourrure aux bords (le col, les poignets, l'ourlet, le tour du visage) ; la cape de pluie, cirée,
+# claire, à capuchon pointu, par-dessus le reste. Les trois se portent ensemble. Sa lampe se tient de la main gauche.
+# Ses gestes d'atelier : l'outil dans sa main (un maillet, une scie d'os, une aiguille, sa gourde, une cuiller), et l'ouvrage
+# posé devant elle, qui ne bouge pas avec son corps (la pièce martelée, le rondin scié, la peau cousue, le piquet et sa corde).
+# Son sommeil : couchée sur le côté, son duvet de peau jusqu'aux épaules, la capuche qui dépasse.
 
 const P := preload("res://scripts/palette.gd")
 const INCL := 0.45            # la vue de trois quarts : ce qui avance vers nous d'un pixel descend d'autant
@@ -31,6 +37,27 @@ const BOTTE := Color("2e241b")
 const JAMBE := Color("1f1c19")
 const BOIS := Color("8a6a45")
 const PIERRE := Color("8f8a7f")
+# la tenue : la peau tannée du sac, la fourrure de la pelisse, la toile cirée de la cape de pluie, la ferraille de la lampe
+const PEAU := Color("8a6038")
+const PEAU_OMBRE := Color("5f4128")
+const PEAU_CLAIR := Color("a77a4c")
+const PELISSE := Color("6c4529")
+const PELISSE_OMBRE := Color("4a2f1f")
+const PELISSE_LISERE := Color("92643c")
+const FOURRURE := Color("b3a88f")
+const FOURRURE_OMBRE := Color("7b705c")
+const CIRE := Color("8e8b70")
+const CIRE_OMBRE := Color("656350")
+const CIRE_LISERE := Color("bab696")
+const CIRE_PLI := Color("48463a")
+const IVOIRE_OS := Color("b3a88f")
+const CHANVRE := Color("9c9168")
+const FERRAILLE := Color("8b8a84")
+const ROUILLE := Color("8a5433")
+const MAIN_LAMPE := Vector3(7.2, -6.0, 19.6)
+const DIR_LAMPE := Vector3(0.992, 0.0, -0.125)
+# trempée, elle s'assombrit (le joueur en teinte tout son dessin) ; la toile cirée, non : sa couleur est relevée d'autant
+const TON_MOUILLE := Color(0.7, 0.74, 0.85)
 
 static var _doux: GradientTexture2D
 
@@ -74,12 +101,46 @@ var froid := 0.0              # de 0 à 1 : son souffle fait de la buée, son vi
 var chaud := 0.0              # de 0 à 1 : son visage rougit
 var boue := 0.0               # de 0 à 1 : la boue sur ses bottes
 var horloge := 0.0            # pour ce qui passe : les gouttes, la buée, les rides
+# --- sa tenue (scripts/atelier.gd ; le joueur dit ce qu'elle porte) ---
+var sac_a_dos := false        # le grand sac de peau, à la place du petit sac de cuir
+var pelisse := false          # doublée de fourrure : elle l'épaissit, et se voit aux bords
+var cire := false             # la cape de pluie, par-dessus
+var lampe := false            # la lampe, allumée, dans sa main gauche (jamais avec la torche)
+var pluie := 0.0              # la pluie qu'il fait, de 0 à 1 : la toile cirée luit, l'eau y perle
+var ballant := Vector2.ZERO   # le sac à dos, en retard sur le corps (à l'écran)
+var godet := 0.0              # le gobelet pendu au sac, qui balance (un angle)
+var lampe_dir := DIR_LAMPE    # vers où elle la pointe (devant, à droite, en hauteur)
+# --- ses gestes d'atelier (le joueur les règle) ---
+var outil := ""               # ce que tient sa main : maillet, scie, aiguille, gourde, cuiller, trouvaille
+var outil_main := 1.0         # la main qui le tient : 1 la droite, -1 la gauche (elle travaille de la main qu'on voit)
+var outil_dir := Vector3(0, 0, 1)
+var ouvrage := ""             # ce sur quoi elle travaille, posé devant elle : piece, rondin, peau, piquet, fouille
+var ouvrage_ou := Vector3.ZERO    # où (devant, de côté, en hauteur), sans la pose : il ne bouge pas avec elle
+var ouvrage_u := 0.0          # où il en est : le rondin se fend, le piquet s'enfonce, les points de la couture
+var eclats := -1.0            # depuis le dernier coup (des copeaux, de la sciure, de la terre) ; -1 : rien
+var fil := 0.0                # un fil, une corde, de l'ouvrage à sa main (de 0 à 1 : sa présence)
+var lance_pose := 0.0         # la lance : 0 dans sa main, 1 posée au sol près d'elle
+var lance_sol := PackedVector2Array([Vector2(-10, 6), Vector2(15, 8)])   # où (à l'écran) : son talon, sa pointe
+# --- son sommeil ---
+var dort := 0.0               # le duvet qui la couvre, de 0 à 1
+var respire := 0.0            # son souffle de dormeuse, de -1 à 1
 var c_visage := VISAGE
 var c_main := MAIN
 var c_botte := BOTTE
+var c_cire := CIRE
+var c_cire_ombre := CIRE_OMBRE
+var c_cire_lisere := CIRE_LISERE
+# la carrure (la pelisse l'épaissit) : la largeur et la profondeur des épaules, de la taille, de l'ourlet ; l'épaule ; la manche
+var _ep := Vector2(7.0, 4.8)
+var _ta := Vector2(7.5, 5.6)
+var _ou := Vector2(10.8, 8.4)
+var _epaule := 6.2
+var _manche := 0.0
 # --- ce que le dessin donne au joueur ---
 var bout_torche := Vector2.ZERO
 var prof_torche := 0.0
+var bout_lampe := Vector2.ZERO    # le verre de la lampe (sa lueur, son faisceau)
+var prof_lampe := 0.0
 var ancre_echarpe := Vector2.ZERO
 var prof_echarpe := 0.0
 var main_d_ecran := Vector2.ZERO
@@ -129,12 +190,40 @@ func pt(v: Vector3, th: float) -> Vector2:
 	return proj(Vector3(f, cote, h), th) + decal + Vector2(0.0, enfonce)
 
 
+# le point du corps qui, la pose prise, se trouve là (devant, de côté, en hauteur, comme si elle se tenait droite) : pour poser
+# une main sur ce qui ne bouge pas avec elle (un piquet, une pièce sur l'établi)
+func depose(w: Vector3) -> Vector3:
+	var b := minf(bas, 7.8)
+	var z := w.z + b
+	if z < 9.0:
+		z = clampf((w.z - b / 8.0) / (1.0 - b / 8.0), 0.0, 9.0)
+	var k := clampf((z - 1.0) / 8.0, 0.0, 1.0)
+	return Vector3(w.x - penche * clampf(z / 36.0, 0.0, 1.4) - elan * k, w.y - hanche * k, z)
+
+
+# un point du lieu autour d'elle (devant, de côté, en hauteur), sans sa pose
+func sol(v: Vector3) -> Vector2:
+	return proj(v, cap) + Vector2(0.0, enfonce)
+
+
 # les points qui servent au joueur (la torche, l'écharpe, les mains), avant le dessin
 func preparer() -> void:
 	# (le froid bleuit son visage et ses mains, la chaleur les rougit ; la boue colle à ses bottes)
 	c_visage = VISAGE.lerp(P.LUNE.lightened(0.5), 0.45 * froid).lerp(P.BRAISE_ROUGE.lerp(VISAGE, 0.3), 0.8 * chaud)
 	c_main = MAIN.lerp(P.LUNE.lightened(0.4), 0.5 * froid).lerp(P.BRAISE_ROUGE.lerp(MAIN, 0.4), 0.6 * chaud)
 	c_botte = BOTTE.lerp(P.TERRE.lerp(P.ENCRE_DOUCE, 0.25), 0.75 * boue)
+	# (la pelisse l'épaissit : les épaules, la taille, l'ourlet, les manches)
+	var gros := 1.12 if pelisse else 1.0
+	_ep = Vector2(7.0, 4.8) * gros
+	_ta = Vector2(7.5, 5.6) * (gros + 0.03 if pelisse else 1.0)
+	_ou = Vector2(10.8, 8.4) * (1.07 if pelisse else 1.0)
+	_epaule = 6.2 * gros
+	_manche = 0.8 if pelisse else 0.0
+	# (la toile cirée ne boit pas l'eau : elle garde sa couleur quand le reste s'assombrit)
+	var sec := Color.WHITE.lerp(TON_MOUILLE, mouille)
+	c_cire = Color(CIRE.r / sec.r, CIRE.g / sec.g, CIRE.b / sec.b)
+	c_cire_ombre = Color(CIRE_OMBRE.r / sec.r, CIRE_OMBRE.g / sec.g, CIRE_OMBRE.b / sec.b)
+	c_cire_lisere = Color(CIRE_LISERE.r / sec.r, CIRE_LISERE.g / sec.g, CIRE_LISERE.b / sec.b)
 	ancre_echarpe = chute * pt(Vector3(-3.6, 1.6, 29.6 + epaules), buste)
 	prof_echarpe = prof(Vector3(-3.6, 1.6, 0.0), buste)
 	main_d_ecran = chute * pt(main_d, buste)
@@ -142,6 +231,9 @@ func preparer() -> void:
 	if torche:
 		bout_torche = chute * pt(main_g + DIR_TORCHE * 10.5, buste)
 		prof_torche = prof(main_g, buste)
+	if lampe:
+		bout_lampe = chute * pt(main_g + lampe_dir * 5.4, buste)
+		prof_lampe = prof(main_g + lampe_dir * 5.0, buste)
 	if lance:
 		var main := main_d if lance_main > 0.0 else main_g
 		pointe_lance = chute * pt(main + lance_dir.normalized() * 31.0, buste)
@@ -151,30 +243,55 @@ func preparer() -> void:
 
 func dessiner() -> void:
 	_ombres()
+	if lance and lance_pose > 0.5:
+		_lance_posee()
 	ci.draw_set_transform_matrix(chute)
 	# les jambes d'abord : la cape les couvre
 	var jambes := [[prof(pied_d, cap), pied_d, 1.0], [prof(pied_g, cap), pied_g, -1.0]]
 	jambes.sort_custom(func(a, b): return a[0] < b[0])
 	for j in jambes:
 		_jambe(j[1], j[2])
+	var couchee := dort > 0.01
 	var parts := []
 	parts.append([-0.5, _manteau])
-	parts.append([0.2, _capuche])
-	parts.append([0.3, _col])
-	parts.append([-6.0 * cos(buste), _sac])
+	if not couchee:
+		parts.append([0.2, _capuche])
+		parts.append([0.3, _col])
+	parts.append([-6.0 * cos(buste), _sac_a_dos if sac_a_dos else _sac])
+	if sac_a_dos and not couchee:
+		parts.append([0.1, _bretelles])
 	var pd := prof(Vector3(0, 6.2, 0), buste) + 0.15 * prof(main_d, buste) + 0.6
 	var pg := prof(Vector3(0, -6.2, 0), buste) + 0.15 * prof(main_g, buste) + 0.6
 	parts.append([pd, _bras.bind(1.0)])
 	parts.append([pg, _bras.bind(-1.0)])
 	if echarpe.size() > 1:
 		parts.append([prof_echarpe - 0.4, _queue])
-	parts.append([prof(Vector3(3.6, -1.0, 0), buste) + 0.4, _pans])
+	if not couchee:
+		parts.append([prof(Vector3(3.6, -1.0, 0), buste) + 0.4, _pans])
+	if ouvrage != "":
+		parts.append([prof(ouvrage_ou, cap) * 0.6 + 1.0, _ouvrage])
 	parts.sort_custom(func(a, b): return a[0] < b[0])
 	for p in parts:
 		p[1].call()
+	if couchee:
+		# le duvet la couvre jusqu'aux épaules ; la capuche et l'écharpe en dépassent
+		ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+		_duvet()
+		ci.draw_set_transform_matrix(chute)
+		_col()
+		# (sa tête repose sur le côté, moins couchée que son corps : on voit son visage, ses yeux clos)
+		var c0 := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste)
+		var haut := chute * pt(Vector3(0.0, 0.0, 26.8 + epaules), buste)
+		var pied := chute * pt(Vector3(0.0, 0.0, -4.0), cap)
+		var le_long := (haut - pied).normalized()
+		var repos := Transform2D(0.6 * sens_chute, haut + le_long * 6.6 + Vector2(0.0, -1.4)) * Transform2D(0.0, -c0)
+		ci.draw_set_transform_matrix(chute.interpolate_with(repos, dort))
+		_capuche()
 	if allonge < 0.3:
 		if mouille > 0.15:
 			_gouttes()
+		if cire and pluie > 0.04:
+			_perles()
 		if froid > 0.2:
 			_buee()
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
@@ -276,7 +393,8 @@ func _jambe(pied: Vector3, cote: float) -> void:
 	ci.draw_line(tige[0] + Vector2(-1.2, 0.4), tige[0] + Vector2(1.2, 0.4), CUIR_OMBRE, 1.0, true)
 
 
-# un anneau du manteau (h : sa hauteur ; a : sa largeur, de côté ; b : sa profondeur) ; genre 2 : l'ourlet, ses plis
+# un anneau du manteau (h : sa hauteur ; a : sa largeur, de côté ; b : sa profondeur) ; genre 2 : l'ourlet, ses plis ; 3 : celui
+# de la cape de pluie
 func _anneau(h: float, a: float, b: float, th: float, n: int, genre: int) -> Array:
 	var pts := PackedVector2Array()
 	var profs := PackedFloat32Array()
@@ -291,6 +409,11 @@ func _anneau(h: float, a: float, b: float, th: float, n: int, genre: int) -> Arr
 			dec = cape * (0.8 + 0.35 * maxf(0.0, -cos(al)))
 		elif genre == 1:
 			dec = cape * 0.35
+		elif genre == 3:
+			# (la cape de pluie : cinq plis plus larges, une toile plus raide)
+			k = 1.0 + 0.05 * sin(5.0 * al + plis * 1.3 + 1.0)
+			hh += 0.6 * cos(5.0 * al + plis * 1.3 + 1.0)
+			dec = cape * (0.6 + 0.3 * maxf(0.0, -cos(al)))
 		var v := Vector3(b * cos(al) * k, a * sin(al) * k, hh)
 		pts.append(pt(v, th) + dec)
 		profs.append(prof(v, th))
@@ -345,9 +468,10 @@ static func _courbe(a: Vector2, b: Vector2, c: Vector2, n: int) -> PackedVector2
 
 func _manteau() -> void:
 	var n := 20 if mobile else 30
-	var ep: Array = _anneau(27.2 + epaules, 7.0, 4.8, buste, n, 0)
-	var ta: Array = _anneau(17.0, 7.5, 5.6, lerp_angle(cap, buste, 0.5), n, 1)
-	var ou: Array = _anneau(8.0, 10.8, 8.4, cap, n, 2)
+	var mi := lerp_angle(cap, buste, 0.5)
+	var ep: Array = _anneau(27.2 + epaules, _ep.x, _ep.y, buste, n, 0)
+	var ta: Array = _anneau(17.0, _ta.x, _ta.y, mi, n, 1)
+	var ou: Array = _anneau(8.0, _ou.x, _ou.y, cap, n, 2)
 	var e := _extremes(ep[0])
 	var t := _extremes(ta[0])
 	var o := _extremes(ou[0])
@@ -359,68 +483,179 @@ func _manteau() -> void:
 	contour.append_array(_courbe(ou[0][o.y], ta[0][t.y], ep[0][e.y], 6))
 	contour = _simple(contour)
 	var cx: float = (ta[0][t.x].x + ta[0][t.y].x) * 0.5
-	_remplir(contour, CAPE)
+	# (la pelisse : une peau brune, à la place de l'étoffe du manteau ; la capuche reste la sienne)
+	var etoffe := PELISSE if pelisse else CAPE
+	var etoffe_ombre := PELISSE_OMBRE if pelisse else CAPE_OMBRE
+	_remplir(contour, etoffe)
 	# l'ombre, du côté loin de la lumière (elle vient d'en haut à gauche)
-	_remplir(_vers_droite(contour, cx + 1.0), CAPE_OMBRE)
+	_remplir(_vers_droite(contour, cx + 1.0), etoffe_ombre)
 	# les plis : une ligne qui descend vers chaque creux de l'ourlet, du côté qu'on voit
 	for k in 6:
 		var al := (-PI * 0.5 - plis + TAU * k) / 6.0
-		var vo := Vector3(8.4 * cos(al) * 0.94, 10.8 * sin(al) * 0.94, 8.0 - 0.75)
+		var vo := Vector3(_ou.y * cos(al) * 0.94, _ou.x * sin(al) * 0.94, 8.0 - 0.75)
 		if prof(vo, cap) < 1.5:
 			continue
-		var vt := Vector3(5.6 * cos(al), 7.5 * sin(al), 15.0)
+		var vt := Vector3(_ta.y * cos(al), _ta.x * sin(al), 15.0)
 		var bas_ := pt(vo, cap) + cape * 0.85
-		var haut := pt(vt, lerp_angle(cap, buste, 0.5)) + cape * 0.35
+		var haut := pt(vt, mi) + cape * 0.35
 		var mil := haut.lerp(bas_, 0.55) + Vector2(0.6 * sin(al * 3.0 + plis), 0)
-		ci.draw_polyline(PackedVector2Array([haut.lerp(bas_, 0.25), mil, bas_]), CAPE_OMBRE.darkened(0.35), 0.9, true)
+		ci.draw_polyline(PackedVector2Array([haut.lerp(bas_, 0.25), mil, bas_]), etoffe_ombre.darkened(0.35), 0.9, true)
 	# l'ouverture du manteau, sous la ceinture, quand elle est de face
 	var devant := prof(Vector3(1, 0, 0), cap)
 	if devant > 0.25:
-		var a := pt(Vector3(5.6, 0.0, 16.0), lerp_angle(cap, buste, 0.5)) + cape * 0.35
-		var b := pt(Vector3(8.4, 0.0, 7.6), cap) + cape * 0.8
+		var a := pt(Vector3(_ta.y, 0.0, 16.0), mi) + cape * 0.35
+		var b := pt(Vector3(_ou.y, 0.0, 7.6), cap) + cape * 0.8
 		ci.draw_polyline(PackedVector2Array([a, a.lerp(b, 0.5) + Vector2(0.3, 0), b]), DOUBLURE, 1.2, true)
-	# la ceinture, et la bourse à sa hanche droite
-	var tl := _arc(ta[0], ta[1], t.x, t.y, true)
-	ci.draw_polyline(tl, P.ENCRE, 2.8, true)
-	ci.draw_polyline(tl, CUIR_OMBRE, 1.4, true)
-	if devant > 0.2:
-		var boucle := pt(Vector3(5.7, 0.0, 17.0), lerp_angle(cap, buste, 0.5)) + cape * 0.35
-		ci.draw_rect(Rect2(boucle - Vector2(0.9, 0.9), Vector2(1.8, 1.8)), PIERRE.lightened(0.1))
-	var vb := Vector3(5.6 * cos(1.75), 7.5 * sin(1.75) + 0.6, 15.2)
-	if prof(vb, cap) > -2.5:
-		var pb := pt(vb, cap) + cape * 0.35
-		var bourse := PackedVector2Array([pb + Vector2(-1.7, -1.0), pb + Vector2(1.7, -1.0), pb + Vector2(1.9, 1.6), pb + Vector2(0.0, 3.0), pb + Vector2(-1.9, 1.6)])
-		_forme(bourse, CUIR)
+	if not cire:
+		# la ceinture, et la bourse à sa hanche droite (la cape de pluie les couvre)
+		var tl := _arc(ta[0], ta[1], t.x, t.y, true)
+		ci.draw_polyline(tl, P.ENCRE, 2.8, true)
+		ci.draw_polyline(tl, CUIR_OMBRE, 1.4, true)
+		if devant > 0.2:
+			var boucle := pt(Vector3(_ta.y + 0.1, 0.0, 17.0), mi) + cape * 0.35
+			ci.draw_rect(Rect2(boucle - Vector2(0.9, 0.9), Vector2(1.8, 1.8)), PIERRE.lightened(0.1))
+		var vb := Vector3(_ta.y * cos(1.75), _ta.x * sin(1.75) + 0.6, 15.2)
+		if prof(vb, cap) > -2.5:
+			var pb := pt(vb, cap) + cape * 0.35
+			var bourse := PackedVector2Array([pb + Vector2(-1.7, -1.0), pb + Vector2(1.7, -1.0), pb + Vector2(1.9, 1.6), pb + Vector2(0.0, 3.0), pb + Vector2(-1.9, 1.6)])
+			_forme(bourse, CUIR)
 	# le liseré de lumière, en haut et à gauche, puis l'encre
 	var lisere := PackedVector2Array()
 	for p in contour:
 		if p.x < cx - 2.0 and p.y < ourlet[0].y - 1.0:
 			lisere.append(p + Vector2(0.9, 0.2))
 	if lisere.size() > 1:
-		ci.draw_polyline(lisere, CAPE_LISERE, 1.0, true)
+		ci.draw_polyline(lisere, PELISSE_LISERE if pelisse else CAPE_LISERE, 1.0, true)
 	_encre(contour)
+	# la pelisse : sa fourrure dépasse à l'ourlet
+	if pelisse:
+		_fourrure(ourlet, 3.0, 0.9, cx)
 	# l'ombre de la capuche sur les épaules
 	var col := pt(Vector3(-0.5, 0.0, 28.0 + epaules), buste)
-	_remplir(_ellipse(col + Vector2(0.8, 0.6), 7.0, 2.4, 12), CAPE_OMBRE.darkened(0.3))
+	_remplir(_ellipse(col + Vector2(0.8, 0.6), _ep.x, 2.4, 12), CAPE_OMBRE.darkened(0.3))
+	if cire:
+		_cape_pluie(n)
+	if pelisse:
+		# le col de fourrure, sur les épaules (l'écharpe se noue par-dessus)
+		_fourrure(_arc(ep[0], ep[1], e.x, e.y, true), 1.4, 2.6 if cire else 3.6, cx)
+
+
+# une bande de fourrure le long d'un trait (ce qu'elle dépasse au-dessus, au-dessous) : pâle, son bord en mèches
+func _fourrure(arc: PackedVector2Array, haut: float, dessous: float, cx: float) -> void:
+	if arc.size() < 2:
+		return
+	var a := PackedVector2Array()
+	var b := PackedVector2Array()
+	for i in arc.size():
+		var m := 0.4 if i % 2 == 0 else -0.2
+		a.append(arc[i] + Vector2(0.0, -haut - m * 0.4))
+		b.append(arc[i] + Vector2(0.0, dessous + m))
+	b.reverse()
+	a.append_array(b)
+	a = _simple(a)
+	_remplir(a, FOURRURE)
+	_remplir(_vers_droite(a, cx + 1.5), FOURRURE_OMBRE)
+	_encre(a, 0.8)
+
+
+# la cape de pluie : une cloche de toile cirée, des épaules à mi-cuisse, par-dessus le manteau
+func _cape_pluie(n: int) -> void:
+	var mi := lerp_angle(cap, buste, 0.6)
+	var ep: Array = _anneau(27.6 + epaules, _ep.x + 0.5, _ep.y + 0.5, buste, n, 0)
+	var ta: Array = _anneau(19.2, _ta.x + 1.9, _ta.y + 1.7, mi, n, 1)
+	var bo: Array = _anneau(12.4, _ou.x + 0.5, _ou.y + 0.4, cap, n, 3)
+	var e := _extremes(ep[0])
+	var t := _extremes(ta[0])
+	var o := _extremes(bo[0])
+	var contour := PackedVector2Array()
+	contour.append_array(_arc(ep[0], ep[1], e.y, e.x, false))
+	contour.append_array(_courbe(ep[0][e.x], ta[0][t.x], bo[0][o.x], 6))
+	var bord := _arc(bo[0], bo[1], o.x, o.y, true)
+	contour.append_array(bord)
+	contour.append_array(_courbe(bo[0][o.y], ta[0][t.y], ep[0][e.y], 6))
+	contour = _simple(contour)
+	var cx: float = (ta[0][t.x].x + ta[0][t.y].x) * 0.5
+	# (son ombre portée sur le manteau, juste dessous)
+	var portee := PackedVector2Array()
+	for p in bord:
+		portee.append(p + Vector2(0.0, 1.5))
+	ci.draw_polyline(portee, Color(DOUBLURE, 0.7), 1.6, true)
+	_remplir(contour, c_cire)
+	_remplir(_vers_droite(contour, cx + 1.0), c_cire_ombre)
+	# ses plis, raides : une ligne vers chaque creux du bord
+	for k in 5:
+		var al := (-PI * 0.5 - plis * 1.3 - 1.0 + TAU * k) / 5.0
+		var vo := Vector3((_ou.y + 0.4) * cos(al) * 0.95, (_ou.x + 0.5) * sin(al) * 0.95, 12.4 - 0.6)
+		if prof(vo, cap) < 1.5:
+			continue
+		var vt := Vector3((_ta.y + 1.7) * cos(al), (_ta.x + 1.9) * sin(al), 20.5)
+		var bas_ := pt(vo, cap) + cape * 0.75
+		var haut := pt(vt, mi) + cape * 0.35
+		ci.draw_polyline(PackedVector2Array([haut, haut.lerp(bas_, 0.55) + Vector2(0.5 * sin(al * 3.0 + plis), 0), bas_]), CIRE_PLI, 0.8, true)
+	# elle se ferme devant : une ligne, deux boutons d'os
+	var devant := prof(Vector3(1, 0, 0), cap)
+	if devant > 0.25:
+		var a := pt(Vector3(_ep.y + 0.6, 0.0, 26.0 + epaules), buste)
+		var b := pt(Vector3(_ou.y + 0.4, 0.0, 12.2), cap) + cape * 0.7
+		ci.draw_polyline(PackedVector2Array([a, a.lerp(b, 0.5) + Vector2(0.3, 0), b]), CIRE_PLI, 1.0, true)
+		if not mobile:
+			for u in [0.42, 0.7]:
+				ci.draw_circle(a.lerp(b, u) + Vector2(1.3, 0.0), 0.75, FOURRURE)
+	# la toile luit, du côté du jour : un liseré, plus vif sous la pluie
+	var lisere := PackedVector2Array()
+	for p in contour:
+		if p.x < cx - 2.0 and p.y < bord[0].y - 1.0:
+			lisere.append(p + Vector2(1.0, 0.2))
+	if lisere.size() > 1:
+		ci.draw_polyline(lisere, c_cire_lisere.lerp(P.PAPIER, 0.5 * pluie), 1.0 + 0.4 * pluie, true)
+	_encre(contour)
+
+
+# le tour de la capuche, autour de c ; celle de la cape de pluie est pointue
+func _tour_capuche(c: Vector2, th: float, n: int) -> PackedVector2Array:
+	var pic := _pic(th)
+	var pointe := 3.0 * (0.35 + 0.65 * absf(sin(th)))
+	var aigu := 6.0
+	var rx := 7.7
+	var ry := 7.0
+	var depart := 0.0
+	if cire:
+		# (un capuchon pointu, qui part en arrière : un point du tour est juste à sa pointe)
+		pointe = 5.2
+		aigu = 22.0
+		rx = 7.9
+		ry = 7.2
+		depart = pic.angle()
+	var contour := PackedVector2Array()
+	for k in n:
+		var be := depart + TAU * k / n
+		var dir := Vector2(cos(be), sin(be))
+		var p := Vector2(cos(be) * rx, sin(be) * ry)
+		if dir.y > 0.0:
+			p.x *= 1.0 + 0.14 * dir.y
+		var vers := maxf(0.0, dir.dot(pic))
+		p += dir * pow(vers, aigu) * pointe
+		if cire:
+			p += dir * pow(vers, 3.0) * 1.7
+		contour.append(c + p)
+	return contour
+
+
+# vers où pointe la capuche (à l'écran)
+func _pic(th: float) -> Vector2:
+	return proj(Vector3(-0.7, 0.0, 1.0) if cire else Vector3(-1.0, 0.0, 0.85), th).normalized()
 
 
 func _capuche() -> void:
 	var th := tete
 	var c := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste)
-	var pic := proj(Vector3(-1.0, 0.0, 0.85), th).normalized()
-	var pointe := 3.0 * (0.35 + 0.65 * absf(sin(th)))
-	var contour := PackedVector2Array()
-	var n := 20 if mobile else 30
-	for k in n:
-		var be := TAU * k / n
-		var dir := Vector2(cos(be), sin(be))
-		var p := Vector2(cos(be) * 7.7, sin(be) * 7.0)
-		if dir.y > 0.0:
-			p.x *= 1.0 + 0.14 * dir.y
-		p += dir * pow(maxf(0.0, dir.dot(pic)), 6.0) * pointe
-		contour.append(c + p)
-	_remplir(contour, CAPE)
-	_remplir(_vers_droite(contour, c.x + 1.6), CAPE_OMBRE)
+	var pic := _pic(th)
+	var contour := _tour_capuche(c, th, 20 if mobile else 30)
+	var etoffe := c_cire if cire else CAPE
+	var etoffe_ombre := c_cire_ombre if cire else CAPE_OMBRE
+	var etoffe_lisere := c_cire_lisere if cire else CAPE_LISERE
+	_remplir(contour, etoffe)
+	_remplir(_vers_droite(contour, c.x + 1.6), etoffe_ombre)
 	# l'ouverture, et le visage dans son ombre
 	var vis := smoothstep(-0.45, 0.05, cos(th))
 	if vis > 0.02:
@@ -433,6 +668,19 @@ func _capuche() -> void:
 			if q.y < oc.y:
 				q.y -= 0.9 * pow((oc.y - q.y) / ry, 4.0)
 				trou[i] = q
+		if pelisse:
+			# la fourrure, tout autour du visage : pâle, en mèches (sous l'écharpe, on n'en voit que le haut)
+			var poil := PackedVector2Array()
+			for i in 22:
+				var al := TAU * i / 22.0
+				var m := 0.35 if i % 2 == 0 else -0.2
+				var q := Vector2(cos(al) * (rx + 2.15 + m), sin(al) * (ry + 2.0 + m))
+				if q.y < 0.0:
+					q.y -= 0.9 * pow(-q.y / (ry + 2.0), 4.0)
+				poil.append(oc + q)
+			# (sans cerne : il mangerait ce liseré ; le clair sur l'étoffe sombre suffit)
+			_remplir(poil, FOURRURE)
+			_remplir(_vers_droite(poil, oc.x + rx * 0.75), FOURRURE.lerp(FOURRURE_OMBRE, 0.65))
 		_remplir(trou, DOUBLURE)
 		var fc := oc + Vector2(sin(th) * minf(0.9, rx * 0.25), 1.0)
 		var rxf := rx * 0.62
@@ -461,26 +709,36 @@ func _capuche() -> void:
 				ci.draw_rect(Rect2(ex - 0.6, ey - 0.65, 1.2, 1.3), P.ENCRE)
 			else:
 				ci.draw_line(Vector2(ex - 0.8, ey), Vector2(ex + 0.8, ey), P.ENCRE, 0.7, true)
-		_encre(trou, 0.8)
-		# le bord de la capuche, qui prend la lumière
-		var bord := PackedVector2Array()
-		for i in 7:
-			var a := PI * 1.08 + PI * 0.7 * i / 6.0
-			bord.append(oc + Vector2(cos(a) * (rx + 0.7), sin(a) * (ry + 0.7)))
-		ci.draw_polyline(bord, CAPE_LISERE, 0.9, true)
+		_encre(trou, 0.5 if pelisse else 0.8)
+		if not pelisse:
+			# le bord de la capuche, qui prend la lumière
+			var bord := PackedVector2Array()
+			for i in 7:
+				var a := PI * 1.08 + PI * 0.7 * i / 6.0
+				bord.append(oc + Vector2(cos(a) * (rx + 0.7), sin(a) * (ry + 0.7)))
+			ci.draw_polyline(bord, etoffe_lisere, 0.9, true)
 	# de dos : la couture
 	if cos(th) < -0.15:
-		var haut := c + pic * 9.5
+		var haut := c + pic * (13.0 if cire else 9.5)
 		var a := clampf(-cos(th) * 2.0, 0.0, 1.0)
-		ci.draw_polyline(PackedVector2Array([haut, c + pic * 3.0, c + Vector2(0.0, 6.0)]), Color(CAPE_OMBRE.darkened(0.4), a), 0.9, true)
+		ci.draw_polyline(PackedVector2Array([haut, c + pic * 3.0, c + Vector2(0.0, 6.0)]), Color(CIRE_PLI if cire else CAPE_OMBRE.darkened(0.4), a), 0.9, true)
 	# le liseré en haut à gauche, puis l'encre
 	var lisere := PackedVector2Array()
-	for p in contour:
+	var k0 := 0
+	if cire:
+		# (son tour part de la pointe : on le reprend au premier point de gauche, pour que le trait ne saute pas)
+		for i in contour.size():
+			var d0 := (contour[i] - c).normalized()
+			var d1 := (contour[(i + contour.size() - 1) % contour.size()] - c).normalized()
+			if d0.x < 0.25 and d0.y < -0.15 and not (d1.x < 0.25 and d1.y < -0.15):
+				k0 = i
+	for i in contour.size():
+		var p := contour[(k0 + i) % contour.size()]
 		var d := (p - c).normalized()
 		if d.x < 0.25 and d.y < -0.15:
 			lisere.append(p - d * 0.9)
 	if lisere.size() > 1:
-		ci.draw_polyline(lisere, CAPE_LISERE, 1.0, true)
+		ci.draw_polyline(lisere, etoffe_lisere.lerp(P.PAPIER, 0.5 * pluie) if cire else etoffe_lisere, 1.0, true)
 	_encre(contour)
 
 
@@ -618,10 +876,103 @@ func _sac() -> void:
 			ci.draw_line(a, b, CUIR_OMBRE, 1.1, true)
 
 
+# le sac à dos : de peau, plus haut et plus large que le petit sac, son rabat sanglé, ses poches, un rouleau en travers dessus ;
+# il est en retard d'un rien sur le corps quand elle marche (ballant), un gobelet de ferraille y pend
+func _sac_a_dos() -> void:
+	var th := buste
+	var f0 := -11.6
+	var f1 := -4.6
+	var s := 5.7
+	var h0 := 14.0
+	var h1 := 26.2
+	var coins := PackedVector2Array()
+	for v in [Vector3(f0, -s, h0), Vector3(f0, s, h0), Vector3(f0, s, h1), Vector3(f0, -s, h1), Vector3(f1, -s, h0), Vector3(f1, s, h0), Vector3(f1, s, h1), Vector3(f1, -s, h1)]:
+		coins.append(pt(v, th) + ballant)
+	var dos := -cos(th)
+	var droite := sin(th)
+	# la poche de peau, aux coins ronds ; le dessus plus clair
+	var poche := _arrondi(_enveloppe(coins), 2)
+	var cx := (coins[0].x + coins[1].x + coins[4].x + coins[5].x) * 0.25
+	_remplir(poche, PEAU)
+	_remplir(_vers_droite(poche, cx + 1.6), PEAU_OMBRE)
+	_remplir(_arrondi(PackedVector2Array([coins[3], coins[2], coins[6], coins[7]]), 1), PEAU_CLAIR)
+	if absf(droite) > 0.3:
+		# de profil : la poche de côté, et la bretelle qui passe l'épaule
+		var c := 1.0 if droite > 0.0 else -1.0
+		var q := PackedVector2Array()
+		for v in [Vector3(f0 + 1.6, c * s, h0 + 0.6), Vector3(f1 - 1.0, c * s, h0 + 0.6), Vector3(f1 - 1.0, c * s, h0 + 6.4), Vector3(f0 + 1.6, c * s, h0 + 6.4)]:
+			q.append(pt(v + Vector3(0.0, c * 1.3, 0.0), th) + ballant)
+		_forme(_arrondi(q, 2), PEAU_OMBRE.lerp(PEAU, 0.5), 0.8)
+		ci.draw_line(q[3].lerp(q[2], 0.1) + Vector2(0.0, 1.6), q[2].lerp(q[3], 0.1) + Vector2(0.0, 1.6), P.ENCRE, 0.7, true)
+		var e0 := pt(Vector3(f1, c * (s - 0.6), h1 - 0.6), th) + ballant
+		var e1 := pt(Vector3(0.6, c * (_epaule - 0.4), 28.2 + epaules), th)
+		var e2 := pt(Vector3(_ep.y, c * (_epaule - 0.6), 24.4), th)
+		ci.draw_polyline(PackedVector2Array([e0, e1, e2]), P.ENCRE, 2.6, true)
+		ci.draw_polyline(PackedVector2Array([e0, e1, e2]), PEAU, 1.3, true)
+	if dos > 0.15:
+		# de dos : le rabat, plus sombre, son bord en accolade ; deux sangles et leurs boucles
+		var g := coins[3]
+		var d := coins[2]
+		var gb := coins[0]
+		var db := coins[1]
+		var rabat := PackedVector2Array([g, d, d.lerp(db, 0.44), d.lerp(db, 0.52).lerp(g.lerp(gb, 0.52), 0.25) + Vector2(0, 0.9), d.lerp(db, 0.5).lerp(g.lerp(gb, 0.5), 0.5) + Vector2(0, 0.2),
+			d.lerp(db, 0.52).lerp(g.lerp(gb, 0.52), 0.75) + Vector2(0, 0.9), g.lerp(gb, 0.44)])
+		_forme(_arrondi(rabat, 1), CUIR, 0.8)
+		for u in [0.27, 0.73]:
+			var haut := g.lerp(d, u)
+			var bas_ := gb.lerp(db, u)
+			ci.draw_line(haut.lerp(bas_, 0.06), haut.lerp(bas_, 0.86), CUIR_OMBRE, 1.5, true)
+			ci.draw_rect(Rect2(haut.lerp(bas_, 0.56) - Vector2(0.8, 0.7), Vector2(1.6, 1.4)), PIERRE)
+	_encre(poche)
+	# le gobelet de ferraille, pendu au côté qu'on voit : il balance
+	if not mobile and absf(droite) > 0.2:
+		var c := 1.0 if droite > 0.0 else -1.0
+		var clou := pt(Vector3(f0 + 2.4, c * (s + 0.4), h0 + 3.0), th) + ballant
+		var pend := clou + Vector2(sin(godet), cos(godet)) * 2.6
+		ci.draw_line(clou, pend, P.ENCRE, 0.7, true)
+		_forme(PackedVector2Array([pend + Vector2(-1.4, -0.7), pend + Vector2(1.4, -0.7), pend + Vector2(1.0, 1.9), pend + Vector2(-1.0, 1.9)]), FERRAILLE.darkened(0.25), 0.8)
+		ci.draw_line(pend + Vector2(-0.6, -0.1), pend + Vector2(-0.5, 1.1), FERRAILLE.lightened(0.25), 0.6, true)
+	# le rouleau, en travers sur le sac : gros, sanglé deux fois, ses bouts dépassent des épaules
+	var r1 := pt(Vector3(-7.9, -9.0, 28.3), th) + ballant
+	var r2 := pt(Vector3(-7.9, 9.0, 28.3), th) + ballant
+	ci.draw_line(r1, r2, P.ENCRE, 6.2, true)
+	ci.draw_line(r1, r2, ROULEAU, 4.0, true)
+	ci.draw_line(r1 + Vector2(0.0, -1.2), r2 + Vector2(0.0, -1.2), ROULEAU.lightened(0.2), 0.9, true)
+	for u in [0.3, 0.7]:
+		var p := r1.lerp(r2, u)
+		ci.draw_line(p + Vector2(0, -2.6), p + Vector2(0, 2.6), CUIR_OMBRE, 1.3, true)
+	for bout in [r1, r2]:
+		var vers: float = signf(bout.x - (r1.x + r2.x) * 0.5)
+		if absf(r1.x - r2.x) < 3.0:
+			vers = 1.0 if droite >= 0.0 else -1.0
+			if (bout == r1) == (droite >= 0.0):
+				continue
+		# (de profil on voit son bout, enroulé ; de face et de dos, sa tranche)
+		_forme(_ellipse(bout, 0.7 + 1.5 * absf(droite), 2.7, 10), ROULEAU.darkened(0.12), 0.9)
+		if absf(droite) > 0.35:
+			ci.draw_arc(bout, 1.3, 0.0, TAU * 0.8, 8, CUIR_OMBRE, 0.6, true)
+
+
+# les bretelles du sac à dos, devant : claires sur le manteau, de l'épaule à la taille, une boucle
+func _bretelles() -> void:
+	var droite := sin(buste)
+	for c in [1.0, -1.0]:
+		if prof(Vector3(1.0, c * 0.9, 0.0), buste) < 0.1:
+			continue
+		var a := pt(Vector3(1.6, c * (_epaule - 1.9), 27.6 + epaules), buste)
+		var m := pt(Vector3(_ep.y + 0.5, c * (_epaule - 2.2), 24.0), buste)
+		var b := pt(Vector3(_ta.y + 0.2, c * (_epaule - 1.6), 18.6), buste)
+		var bretelle := PackedVector2Array([a, m, b])
+		ci.draw_polyline(bretelle, P.ENCRE, 3.0, true)
+		ci.draw_polyline(bretelle, PEAU_CLAIR if c * droite >= -0.1 else PEAU, 1.6, true)
+		ci.draw_rect(Rect2(m.lerp(b, 0.5) - Vector2(0.9, 0.8), Vector2(1.8, 1.6)), P.ENCRE)
+		ci.draw_rect(Rect2(m.lerp(b, 0.5) - Vector2(0.5, 0.4), Vector2(1.0, 0.8)), PIERRE.lightened(0.1))
+
+
 # un bras (cote : 1 le droit, -1 le gauche), de l'épaule à la main
 func _bras(cote: float) -> void:
 	var main := main_d if cote > 0.0 else main_g
-	var epaule := Vector3(0.2, cote * 6.2, 25.8 + epaules)
+	var epaule := Vector3(0.2, cote * _epaule, 25.8 + epaules)
 	var d := main - epaule
 	var l := d.length()
 	var demi := 7.0
@@ -638,30 +989,88 @@ func _bras(cote: float) -> void:
 	# (deux segments et un coude rond : un trait épais plié fait une pointe)
 	var poignet := pts[1].lerp(pts[2], 0.82)
 	var tissu := CAPE_OMBRE if loin else CAPE.lightened(0.1)
-	ci.draw_line(pts[0], pts[1], P.ENCRE, 4.8, true)
-	ci.draw_line(pts[1], poignet, P.ENCRE, 4.6, true)
-	ci.draw_circle(pts[1], 2.35, P.ENCRE)
-	ci.draw_line(pts[0], pts[1], tissu, 3.0, true)
-	ci.draw_line(pts[1], poignet, tissu, 2.8, true)
-	ci.draw_circle(pts[1], 1.45, tissu)
-	# le brassard de cuir
+	if cire:
+		tissu = c_cire_ombre if loin else c_cire.lightened(0.06)
+	elif pelisse:
+		tissu = PELISSE_OMBRE if loin else PELISSE.lightened(0.08)
+	var gros := _manche
+	ci.draw_line(pts[0], pts[1], P.ENCRE, 4.8 + gros, true)
+	ci.draw_line(pts[1], poignet, P.ENCRE, 4.6 + gros, true)
+	ci.draw_circle(pts[1], 2.35 + gros * 0.5, P.ENCRE)
+	ci.draw_line(pts[0], pts[1], tissu, 3.0 + gros, true)
+	ci.draw_line(pts[1], poignet, tissu, 2.8 + gros, true)
+	ci.draw_circle(pts[1], 1.45 + gros * 0.5, tissu)
 	var a := pts[1].lerp(pts[2], 0.55)
 	var b := pts[1].lerp(pts[2], 0.8)
-	ci.draw_line(a, b, CUIR_OMBRE if loin else CUIR, 3.0, true)
+	if pelisse:
+		# le poignet de fourrure : un bourrelet pâle
+		var p0 := pts[1].lerp(pts[2], 0.62)
+		var p1 := pts[1].lerp(pts[2], 0.9)
+		ci.draw_line(p0, p1, P.ENCRE, 5.4, true)
+		ci.draw_line(p0, p1, FOURRURE_OMBRE if loin else FOURRURE, 3.8, true)
+	elif cire:
+		# (la manche du manteau dépasse de la toile)
+		ci.draw_line(a, b, CAPE_OMBRE if loin else CAPE.lightened(0.1), 3.0, true)
+	else:
+		# le brassard de cuir
+		ci.draw_line(a, b, CUIR_OMBRE if loin else CUIR, 3.0, true)
 	# ce qu'elle tient
-	if lance and cote == lance_main:
+	if lance and cote == lance_main and lance_pose <= 0.5:
 		_lance(main)
 	if cote < 0.0 and torche:
 		_torche(main)
+	if cote < 0.0 and lampe:
+		_lampe(main)
+	if outil != "" and cote == outil_main:
+		_outil(main)
 	_forme(_ellipse(pts[2], 1.6, 1.5, 8), c_main.darkened(0.3) if loin else c_main, 0.9)
 	if cote > 0.0 and objet != "":
 		_objet(pts[2])
+
+
+# la lampe : un tube de ferraille rouillée, une tête plus large, son verre clair ; une dragonne de corde au poignet
+func _lampe(main: Vector3) -> void:
+	var d := lampe_dir
+	var cul := pt(main - d * 2.4, buste)
+	var col := pt(main + d * 3.2, buste)
+	var tete_ := pt(main + d * 4.6, buste)
+	ci.draw_line(cul, tete_, P.ENCRE, 3.5, true)
+	ci.draw_line(cul, col, FERRAILLE.darkened(0.2), 2.0, true)
+	ci.draw_line(cul.lerp(col, 0.2), cul.lerp(col, 0.45), ROUILLE, 2.0, true)
+	ci.draw_line(col, tete_, P.ENCRE, 4.6, true)
+	ci.draw_line(col, tete_, FERRAILLE, 3.0, true)
+	# (le verre : on le voit quand elle ne nous tourne pas le dos)
+	var face := prof(d, buste)
+	if face > -0.5:
+		var verre := pt(main + d * 5.4, buste)
+		var large := 0.45 + 0.55 * clampf(face, 0.0, 1.0)
+		_forme(_ellipse(verre, 1.75 * large + 0.35, 1.75, 10), P.BRAISE_COEUR.lerp(P.PAPIER, 0.5), 0.8)
+	var dragonne := pt(main - d * 2.4 + Vector3(0.0, 0.0, -2.6), buste)
+	ci.draw_polyline(PackedVector2Array([cul, dragonne, pt(main + Vector3(-0.6, 0.0, -1.2), buste)]), ROULEAU.lightened(0.15), 0.7, true)
 
 
 func _lance(main: Vector3) -> void:
 	var dir := lance_dir.normalized()
 	var pointe := pt(main + dir * 25.0, buste)
 	var talon := pt(main - dir * 11.0, buste)
+	if lance_pose > 0.0:
+		# (elle la pose : de sa main vers le sol)
+		talon = talon.lerp(lance_sol[0], lance_pose)
+		pointe = pointe.lerp(lance_sol[1], lance_pose)
+	_fut(talon, pointe)
+
+
+# la lance posée au sol, près d'elle (elle a besoin de ses deux mains ; elle dort)
+func _lance_posee() -> void:
+	var main := main_d if lance_main > 0.0 else main_g
+	var dir := lance_dir.normalized()
+	var talon := (chute * pt(main - dir * 11.0, buste)).lerp(lance_sol[0], lance_pose)
+	var pointe := (chute * pt(main + dir * 25.0, buste)).lerp(lance_sol[1], lance_pose)
+	ci.draw_line(talon + Vector2(0.0, 1.2), pointe + Vector2(0.0, 1.2), Color(0, 0, 0, 0.25), 2.4, true)
+	_fut(talon, pointe)
+
+
+func _fut(talon: Vector2, pointe: Vector2) -> void:
 	ci.draw_line(talon, pointe, P.ENCRE, 3.1, true)
 	ci.draw_line(talon, pointe, BOIS, 1.5, true)
 	var u := (pointe - talon).normalized()
@@ -671,6 +1080,229 @@ func _lance(main: Vector3) -> void:
 	_forme(fer, PIERRE)
 	ci.draw_line(pointe - u * 0.6 + nrm * 1.0, pointe - u * 0.6 - nrm * 1.0, ROULEAU, 1.2, true)
 	ci.draw_line(pointe - u * 2.0 + nrm * 1.0, pointe - u * 2.0 - nrm * 1.0, ROULEAU, 1.2, true)
+
+
+# l'outil d'un geste d'atelier, dans sa main : il pointe vers outil_dir
+func _outil(main: Vector3) -> void:
+	var d := outil_dir.normalized()
+	var p := pt(main, buste)
+	match outil:
+		"maillet":
+			# un manche de bois, un galet lié en travers
+			var bout := pt(main + d * 6.5, buste)
+			var cul := pt(main - d * 1.8, buste)
+			ci.draw_line(cul, bout, P.ENCRE, 2.8, true)
+			ci.draw_line(cul, bout, BOIS, 1.4, true)
+			var u := (bout - cul).normalized()
+			if u == Vector2.ZERO:
+				u = Vector2.UP
+			var n := Vector2(-u.y, u.x)
+			var galet := PackedVector2Array([bout - u * 1.7 + n * 3.0, bout + u * 1.7 + n * 2.6, bout + u * 1.9 - n * 2.6, bout - u * 1.5 - n * 3.0])
+			_forme(_arrondi(galet, 1), PIERRE)
+			ci.draw_line(bout - u * 1.2 + n * 2.0, bout + u * 0.9 + n * 1.8, PIERRE.lightened(0.25), 0.8, true)
+			ci.draw_line(bout + n * 1.5, bout - n * 1.5, ROULEAU.darkened(0.25), 1.0, true)
+		"scie":
+			# une lame d'os, ses dents de silex vers le bas ; une poignée de bois
+			var bout := pt(main + d * 9.5, buste)
+			var cul := pt(main - d * 1.8, buste)
+			var u := (bout - p).normalized()
+			if u == Vector2.ZERO:
+				u = Vector2.RIGHT
+			var n := Vector2(-u.y, u.x)
+			if n.y < 0.0:
+				n = -n
+			_forme(PackedVector2Array([p + u * 0.8 - n * 1.0, bout - n * 0.5, bout + n * 0.7, p + u * 0.8 + n * 1.4]), IVOIRE_OS, 0.8)
+			for k in 4:
+				var q := p.lerp(bout, 0.26 + 0.19 * k) + n * 1.2
+				ci.draw_line(q, q + n * 0.9 - u * 0.5, P.ENCRE, 0.7, true)
+			ci.draw_line(cul, p + u * 1.2, P.ENCRE, 3.0, true)
+			ci.draw_line(cul, p + u * 1.2, BOIS, 1.6, true)
+		"aiguille":
+			var bout := pt(main + d * 3.4, buste)
+			ci.draw_line(p, bout, P.ENCRE, 1.7, true)
+			ci.draw_line(p, bout, IVOIRE_OS.lightened(0.2), 0.8, true)
+		"gourde":
+			# une outre de peau : sa panse au bout, son col vers la bouche, un lien
+			var panse := pt(main + d * 2.9, buste)
+			var col := pt(main - d * 1.5, buste)
+			var u := (panse - col).normalized()
+			if u == Vector2.ZERO:
+				u = Vector2.UP
+			ci.draw_line(col, panse, P.ENCRE, 2.6, true)
+			ci.draw_line(col, panse, PEAU_OMBRE, 1.3, true)
+			_forme(_ellipse(panse + u * 0.4, 3.0, 2.3, 10, u.angle()), PEAU)
+			ci.draw_line(panse - u * 1.0 + Vector2(-0.8, -0.9), panse + u * 1.2 + Vector2(-0.8, -0.9), PEAU_CLAIR, 0.8, true)
+			ci.draw_line(col - u * 0.3, col + u * 0.6, IVOIRE_OS, 1.3, true)
+		"cuiller":
+			# une longue cuiller de bois, tenue par le haut
+			var cul := pt(main - d * 1.2, buste)
+			var bout := pt(main + d * 8.4, buste)
+			ci.draw_line(cul, bout, P.ENCRE, 2.4, true)
+			ci.draw_line(cul, bout, BOIS.lightened(0.1), 1.1, true)
+			var u := (bout - cul).normalized()
+			_forme(_ellipse(bout + u * 0.9, 1.9, 1.4, 8, u.angle()), BOIS.lightened(0.1), 0.8)
+		"trouvaille":
+			# un morceau de ferraille, levé pour le regarder : il accroche le jour
+			var c := p + Vector2(0.0, -2.4)
+			_forme(PackedVector2Array([c + Vector2(-2.0, -0.4), c + Vector2(-0.4, -2.0), c + Vector2(2.1, -1.1), c + Vector2(1.5, 1.4), c + Vector2(-1.2, 1.6)]), FERRAILLE)
+			ci.draw_line(c + Vector2(-0.9, -0.6), c + Vector2(0.9, -1.0), FERRAILLE.lightened(0.5), 0.8, true)
+			ci.draw_line(c + Vector2(0.2, 0.9), c + Vector2(1.0, 0.2), ROUILLE, 0.8, true)
+			var vif := 0.5 + 0.5 * sin(horloge * 19.0)
+			for k in 4:
+				var r := Vector2.from_angle(k * PI * 0.5 + 0.4)
+				ci.draw_line(c + Vector2(0.6, -1.4) + r * 1.4, c + Vector2(0.6, -1.4) + r * (2.6 + vif), Color(P.PAPIER, 0.75), 0.7, true)
+
+
+# l'ouvrage, posé devant elle (il ne suit pas son corps) ; ce qui en saute quand elle frappe, le fil qui le lie à sa main
+func _ouvrage() -> void:
+	var o := ouvrage_ou
+	var main := chute.affine_inverse() * (main_d_ecran if outil_main > 0.0 else main_g_ecran)
+	var grain := BOIS.lightened(0.3)
+	match ouvrage:
+		"piece":
+			# une pièce de bois, sur le billot : elle tressaute sous le maillet
+			var saut := Vector2(0.0, 0.6) if eclats >= 0.0 and eclats < 0.07 else Vector2.ZERO
+			var a := sol(o + Vector3(0.0, -3.4, 0.0)) + saut
+			var b := sol(o + Vector3(0.0, 3.4, 0.0)) + saut
+			if a.distance_to(b) < 3.0:
+				a = sol(o) + saut + Vector2(-1.6, 0.0)
+				b = sol(o) + saut + Vector2(1.6, 0.0)
+			ci.draw_line(a, b, P.ENCRE, 4.2, true)
+			ci.draw_line(a, b, BOIS, 2.6, true)
+			ci.draw_line(a + Vector2(0.0, -0.8), b + Vector2(0.0, -0.8), grain, 0.8, true)
+		"rondin":
+			# un rondin en travers ; au dernier trait de scie, son bout tombe
+			var coupe := 2.8
+			var a := sol(o + Vector3(0.0, -6.4, 0.0))
+			var m := sol(o + Vector3(0.0, coupe, 0.0))
+			var b := sol(o + Vector3(0.0, 6.2, 0.0))
+			var de_bout := a.distance_to(b) < 5.0
+			if de_bout:
+				# (vu par le bout : une rondelle)
+				_forme(_ellipse(sol(o), 2.6, 2.4, 10), BOIS)
+				ci.draw_arc(sol(o), 1.2, 0.0, TAU, 8, grain, 0.6, true)
+			else:
+				var chu := ouvrage_u * ouvrage_u
+				var tombe := Vector2(signf(b.x - m.x) * 2.5 * ouvrage_u, minf(9.0 * chu, o.z - 1.5))
+				ci.draw_line(a, m, P.ENCRE, 4.6, true)
+				ci.draw_line(a, m, BOIS, 3.0, true)
+				ci.draw_line(a + Vector2(0.0, -0.9), m + Vector2(0.0, -0.9), grain, 0.8, true)
+				var m2 := m + tombe + (b - m).normalized() * 0.5 * signf(ouvrage_u)
+				var b2 := b + tombe + Vector2(0.0, 2.0 * chu)
+				ci.draw_line(m2, b2, P.ENCRE, 4.6, true)
+				ci.draw_line(m2, b2, BOIS, 3.0, true)
+				_forme(_ellipse(m2, 1.0, 1.9, 8), grain, 0.7)
+		"peau":
+			# une pièce de peau sur ses genoux ; les points s'y alignent un à un
+			var c := sol(o)
+			var piece := PackedVector2Array([c + Vector2(-3.6, -1.6), c + Vector2(-0.4, -2.3), c + Vector2(3.4, -1.5), c + Vector2(3.9, 1.0), c + Vector2(1.0, 2.2), c + Vector2(-3.2, 1.5)])
+			_forme(piece, PEAU)
+			_remplir(PackedVector2Array([c + Vector2(0.6, 0.2), c + Vector2(3.9, 1.0), c + Vector2(1.0, 2.2), c + Vector2(-3.2, 1.5)]), PEAU_OMBRE)
+			_encre(piece, 0.8)
+			for k in int(round(ouvrage_u * 3.0)):
+				var q := c + Vector2(-2.2 + 1.7 * k, -0.9 + 0.15 * k)
+				ci.draw_line(q, q + Vector2(0.9, 0.5), IVOIRE_OS.lightened(0.2), 0.8, true)
+		"piquet":
+			# un piquet, qui s'enfonce à chaque coup ; puis la corde qu'elle y tend
+			var pied := sol(Vector3(o.x, o.y, 0.0))
+			var haut := sol(o)
+			ci.draw_line(pied + Vector2(-2.2, 0.2), pied + Vector2(2.2, 0.2), Color(0, 0, 0, 0.3), 1.6, true)
+			ci.draw_line(pied, haut, P.ENCRE, 3.3, true)
+			ci.draw_line(pied, haut, BOIS, 1.8, true)
+			ci.draw_line(haut + Vector2(-1.0, 0.0), haut + Vector2(1.0, 0.0), grain, 1.2, true)
+		"fouille":
+			# ce qu'elle écarte : de la terre, des débris
+			var c := sol(o)
+			for k in 3:
+				var q := c + Vector2(-3.0 + 3.0 * k, 0.4 - 0.5 * (k % 2))
+				_forme(_ellipse(q, 1.9, 1.1, 6, 0.4 * k), P.TERRE.darkened(0.25) if k != 1 else FERRAILLE.darkened(0.35), 0.8)
+	if fil > 0.01:
+		var depart := sol(o)
+		if ouvrage == "peau":
+			# le fil, de la peau à l'aiguille
+			var bout := pt((main_d if outil_main > 0.0 else main_g) + outil_dir.normalized() * 3.4, buste)
+			ci.draw_line(depart + Vector2(0.6, -0.8), bout, Color(IVOIRE_OS, 0.85 * fil), 0.5, true)
+		else:
+			# la corde, du piquet à ses mains : tendue, elle vibre
+			var milieu := depart.lerp(main, 0.5) + Vector2(0.0, 3.0 * (1.0 - fil) + 0.35 * sin(horloge * 60.0) * fil)
+			var corde := PackedVector2Array([depart + Vector2(0.0, 1.0), milieu, main])
+			ci.draw_polyline(corde, Color(P.ENCRE, fil), 1.7, true)
+			ci.draw_polyline(corde, Color(CHANVRE, fil), 0.8, true)
+	if eclats >= 0.0 and eclats < 0.34 and not mobile:
+		# ce qui saute : des copeaux, de la sciure, de la terre
+		var c := sol(o) + (Vector2(0.0, -1.5) if ouvrage != "fouille" else Vector2.ZERO)
+		var teinte := grain if ouvrage != "fouille" else P.TERRE.lightened(0.15)
+		for k in 4:
+			var v := Vector2(-16.0 + 11.0 * k + 5.0 * sin(k * 2.3), -26.0 - 7.0 * cos(k * 1.7))
+			var q := c + v * eclats + Vector2(0.0, 150.0 * eclats * eclats)
+			ci.draw_line(q, q + v.normalized() * 1.5, Color(teinte, 1.0 - eclats / 0.34), 0.9, true)
+
+
+# le duvet : une peau roulée autour d'elle, des pieds aux épaules (on y devine la hanche, l'épaule), cousue le long, son bord
+# retourné sur sa fourrure ; il se soulève à son souffle
+func _duvet() -> void:
+	var pied := chute * pt(Vector3(0.0, 0.0, -4.0), cap)
+	var haut := chute * pt(Vector3(0.0, 0.0, 26.8 + epaules), buste)
+	var axe := haut - pied
+	var l := axe.length()
+	if l < 4.0:
+		return
+	var u := axe / l
+	var n := Vector2(-u.y, u.x)
+	if n.y > 0.0:
+		n = -n
+	# (le long du corps : où, son épaisseur au-dessus, au-dessous ; les pieds, les genoux, la hanche, la taille, l'épaule)
+	var gonfle := 0.5 * respire
+	var profil := [[0.0, 2.4, 2.2], [0.05, 5.0, 4.2], [0.14, 5.9, 4.9], [0.28, 5.6, 5.2], [0.44, 7.5 + 0.3 * gonfle, 5.6], [0.62, 6.3 + 0.5 * gonfle, 5.4],
+		[0.84, 8.1 + gonfle, 5.8], [1.0, 7.3 + 0.7 * gonfle, 5.5]]
+	var dessus := PackedVector2Array()
+	var dessous := PackedVector2Array()
+	var jusque := dort
+	for q in profil:
+		var f := minf(float(q[0]), jusque)
+		dessus.append(pied + u * l * f + n * float(q[1]))
+		dessous.append(pied + u * l * f - n * float(q[2]))
+		if float(q[0]) >= jusque:
+			break
+	var retour := dessous.duplicate()
+	retour.reverse()
+	var corps := PackedVector2Array()
+	corps.append_array(dessus)
+	corps.append_array(retour)
+	corps = _arrondi(corps, 2)
+	_remplir(corps, PEAU)
+	# (l'ombre : le dessous, contre le sol ; la lumière : une ligne sur le dessus)
+	var ombre := PackedVector2Array()
+	for i in dessous.size():
+		ombre.append(dessous[i].lerp(dessus[i], 0.36))
+	ombre.append_array(retour)
+	_remplir(_simple(ombre), PEAU_OMBRE)
+	var clair := PackedVector2Array()
+	for i in range(1, dessus.size()):
+		clair.append(dessus[i].lerp(dessous[i], 0.17))
+	if clair.size() > 1:
+		ci.draw_polyline(clair, PEAU_CLAIR, 1.1, true)
+	# la couture, le long ; deux plis où le corps se creuse
+	if not mobile:
+		for k in 8:
+			var f := 0.1 + 0.1 * k
+			if f < jusque - 0.06:
+				var c := pied + u * l * f + n * 0.6
+				ci.draw_line(c - u * 0.9, c + u * 0.9 + n * 0.5, PEAU_OMBRE.darkened(0.35), 0.8, true)
+		for f in [0.33, 0.7]:
+			if f < jusque - 0.06:
+				var c: Vector2 = pied + u * l * float(f)
+				ci.draw_polyline(PackedVector2Array([c + n * 6.0, c + n * 3.2 + u * 1.2, c + n * 1.6 + u * 0.6]), PEAU_OMBRE.darkened(0.3), 0.8, true)
+	_encre(corps)
+	if jusque > 0.9:
+		# le bord, retourné sur sa fourrure, sous son menton
+		var bord := PackedVector2Array()
+		for k in 7:
+			var v := -1.0 + 2.0 * k / 6.0
+			var m := 0.3 if k % 2 == 0 else -0.2
+			bord.append(pied + u * (l * jusque - 0.4 - 1.5 * (1.0 - v * v) + m) + n * ((7.2 + 0.7 * gonfle) * v if v > 0.0 else 5.4 * v))
+		ci.draw_polyline(bord, P.ENCRE, 3.8, true)
+		ci.draw_polyline(bord, FOURRURE, 2.3, true)
 
 
 func _torche(main: Vector3) -> void:
@@ -722,6 +1354,42 @@ func _gouttes() -> void:
 	ci.draw_line(ep + Vector2(-5.8, 0.6), ep + Vector2(-4.6, 4.4), Color(pale, 0.34 * mouille), 1.0, true)
 
 
+# la cape de pluie sous l'averse : la toile luit (un reflet sur le capuchon, un sur l'épaule), et l'eau y perle : des gouttes
+# rondes se forment, roulent jusqu'au bord, et tombent
+func _perles() -> void:
+	var pale := P.PAPIER.lerp(P.ECHO, 0.3)
+	var c := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste)
+	var vif := 0.75 + 0.25 * sin(horloge * 5.3)
+	ci.draw_polyline(PackedVector2Array([c + Vector2(-5.6, -1.6), c + Vector2(-4.7, -4.0), c + Vector2(-2.6, -5.8)]), Color(pale, 0.7 * pluie * vif), 1.2, true)
+	var ep := pt(Vector3(0.0, 0.0, 26.8 + epaules), buste)
+	ci.draw_line(ep + Vector2(-6.4, 0.4), ep + Vector2(-7.2, 5.6), Color(pale, 0.55 * pluie * (1.5 - vif)), 1.2, true)
+	ci.draw_line(ep + Vector2(-1.6, 2.2), ep + Vector2(-2.2, 7.0), Color(pale, 0.3 * pluie * vif), 0.9, true)
+	# (chaque perle : où elle naît, sur le capuchon ou l'épaule, et le bord d'où elle tombe)
+	var bord := 12.0
+	var chemins := [[pt(Vector3(1.0, 5.0, 27.5 + epaules), buste), pt(Vector3(2.5, 9.4, bord), cap) + cape * 0.7],
+		[c + Vector2(-3.0, -3.6), c + Vector2(-7.0, 4.6)],
+		[pt(Vector3(3.0, -4.6, 27.0 + epaules), buste), pt(Vector3(5.5, -7.6, bord), cap) + cape * 0.7],
+		[c + Vector2(3.6, -2.4), c + Vector2(7.0, 5.0)],
+		[pt(Vector3(4.2, 1.0, 26.0 + epaules), buste), pt(Vector3(8.2, 2.2, bord), cap) + cape * 0.7]]
+	var n := clampi(int(ceil(pluie * (3.0 if mobile else 5.0))), 1, chemins.size())
+	for k in n:
+		var u := fposmod(horloge * (0.62 + 0.11 * k) + k * 0.41, 1.0)
+		var a: Vector2 = chemins[k][0]
+		var b: Vector2 = chemins[k][1]
+		if u < 0.72:
+			# (elle grossit sur place, puis roule, de plus en plus vite)
+			var v := smoothstep(0.18, 0.72, u)
+			var p := a.lerp(b, v * v)
+			var r := 0.5 + 0.35 * smoothstep(0.0, 0.2, u)
+			ci.draw_circle(p, r, Color(pale, 0.85 * pluie))
+			ci.draw_circle(p + Vector2(0.25, 0.3), r * 0.5, Color(c_cire_ombre, 0.5))
+		else:
+			# (puis tombe du bord, jusqu'au sol)
+			var v := (u - 0.72) / 0.28
+			var y := lerpf(b.y, enfonce - 0.5, v * v)
+			ci.draw_line(Vector2(b.x, y - 2.0), Vector2(b.x, y), Color(pale, 0.6 * pluie * (1.0 - smoothstep(0.8, 1.0, v))), 0.8, true)
+
+
 # elle a froid : son souffle fait de la buée, par bouffées, devant sa bouche
 func _buee() -> void:
 	if cos(tete) < -0.35:
@@ -742,14 +1410,17 @@ func _buee() -> void:
 
 func silhouette(couleur: Color) -> void:
 	ci.draw_set_transform_matrix(chute)
-	var ep: Array = _anneau(27.2 + epaules, 7.0, 4.8, buste, 24, 0)
-	var ou: Array = _anneau(8.0, 10.8, 8.4, cap, 24, 2)
+	var ep: Array = _anneau(27.2 + epaules, _ep.x, _ep.y, buste, 24, 0)
+	var ou: Array = _anneau(8.0, _ou.x, _ou.y, cap, 24, 2)
 	var tout := PackedVector2Array()
 	tout.append_array(ep[0])
 	tout.append_array(ou[0])
 	_remplir(_enveloppe(tout), couleur)
 	var c := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste)
-	_remplir(_ellipse(c, 7.6, 7.2, 16), couleur)
+	if cire:
+		_remplir(_tour_capuche(c, tete, 24), couleur)
+	else:
+		_remplir(_ellipse(c, 7.6, 7.2, 16), couleur)
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
@@ -757,16 +1428,32 @@ func silhouette(couleur: Color) -> void:
 func lisere_lune(couleur: Color) -> void:
 	ci.draw_set_transform_matrix(chute)
 	var c := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste)
-	var pic := proj(Vector3(-1.0, 0.0, 0.85), tete).normalized()
 	var arc := PackedVector2Array()
-	for k in 12:
-		var be := PI * 0.95 + PI * 0.65 * k / 11.0
-		var dir := Vector2(cos(be), sin(be))
-		arc.append(c + Vector2(cos(be) * 7.5, sin(be) * 7.1) + dir * pow(maxf(0.0, dir.dot(pic)), 6.0) * 3.2)
-	ci.draw_polyline(arc, couleur, 1.2, true)
-	var ep: Array = _anneau(27.2 + epaules, 7.0, 4.8, buste, 24, 0)
-	var ta: Array = _anneau(17.0, 7.5, 5.6, buste, 24, 1)
-	var ou: Array = _anneau(8.0, 10.8, 8.4, cap, 24, 2)
+	if cire:
+		# (le capuchon pointu : son tour, du côté de la lune)
+		var tour := _tour_capuche(c, tete, 30)
+		var k0 := 0
+		for i in tour.size():
+			var d0 := (tour[i] - c).normalized()
+			var d1 := (tour[(i + tour.size() - 1) % tour.size()] - c).normalized()
+			if d0.x < 0.2 and d0.y < -0.02 and not (d1.x < 0.2 and d1.y < -0.02):
+				k0 = i
+		for i in tour.size():
+			var p := tour[(k0 + i) % tour.size()]
+			var d := (p - c).normalized()
+			if d.x < 0.2 and d.y < -0.02:
+				arc.append(p + d * 0.1)
+	else:
+		var pic := proj(Vector3(-1.0, 0.0, 0.85), tete).normalized()
+		for k in 12:
+			var be := PI * 0.95 + PI * 0.65 * k / 11.0
+			var dir := Vector2(cos(be), sin(be))
+			arc.append(c + Vector2(cos(be) * 7.5, sin(be) * 7.1) + dir * pow(maxf(0.0, dir.dot(pic)), 6.0) * 3.2)
+	if arc.size() > 1:
+		ci.draw_polyline(arc, couleur, 1.2, true)
+	var ep: Array = _anneau(27.2 + epaules, _ep.x, _ep.y, buste, 24, 0)
+	var ta: Array = _anneau(17.0, _ta.x, _ta.y, buste, 24, 1)
+	var ou: Array = _anneau(8.0, _ou.x, _ou.y, cap, 24, 2)
 	var g := _courbe(ep[0][_extremes(ep[0]).x], ta[0][_extremes(ta[0]).x], ou[0][_extremes(ou[0]).x], 6)
 	ci.draw_polyline(g, Color(couleur, couleur.a * 0.7), 1.0, true)
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)

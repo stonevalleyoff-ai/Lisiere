@@ -973,7 +973,11 @@ func _toucher_vise() -> void:
 			effets.arret(0.02)
 
 
-func _sur_impact(_p: Vector2, _genre: String) -> void:
+func _sur_impact(p: Vector2, genre: String) -> void:
+	# (un geste d'atelier : le maillet, le piquet ; scripts/atelier.gd)
+	if atelier != null and Atelier.GESTES.has(genre):
+		atelier.coup(genre, p)
+		return
 	_toucher_vise()
 
 

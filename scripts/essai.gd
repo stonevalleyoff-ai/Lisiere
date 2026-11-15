@@ -296,7 +296,9 @@ func _lancer() -> void:
 	for k in 400:
 		var q2 := Vector2(-1800.0 + 180.0 * (k % 20), -1800.0 + 180.0 * (k / 20))
 		# (un creux franc : l'eau y est profonde là où elle sera, et là où sera le feu qu'on y noie)
-		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and C.eau(q2 + Vector2(34, 4)) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0:
+		# (et rien autour qui pousserait ailleurs le feu qu'elle voudra y poser : un tronc, un rocher, un vestige)
+		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and C.eau(q2 + Vector2(34, 4)) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0 \
+				and jeu.monde.repousser(q2 + Vector2(34.0, 4.0), 12.0).distance_to(q2 + Vector2(34.0, 4.0)) < 1.0:
 			creux = q2
 			break
 	j.position = creux
@@ -365,6 +367,11 @@ func _lancer() -> void:
 	j.sante = 100.0
 	j.temperature = 50.0
 	# par temps sec, le feu saute aux voisins (jamais plus de INCENDIE_MAX à la fois) ; la pluie l'éteint
+	# (sans vent, qui le porterait loin d'eux, et par grande chaleur : que le hasard d'un saut ne décide pas de l'essai)
+	var vent_avant: float = C.vent
+	var chaleur_avant: float = C.chaleur
+	C.vent = 0.0
+	C.chaleur = 1.0
 	var plus := 1
 	var essouffle := 1.0
 	for k in 8:
@@ -373,11 +380,13 @@ func _lancer() -> void:
 		for foyer in I.foyers:
 			essouffle = minf(essouffle, foyer.force)
 	C.forcer("pluie", 1.0, 9999.0)
+	C.chaleur = chaleur_avant
 	for k in 240:
 		I.avancer(0.5)
+	C.vent = vent_avant
 	var brules: int = jeu.monde.objets.filter(func(x): return x.calcine).size()
 	verif(voisins_max >= 1 and plus > 1 and plus <= RR.INCENDIE_MAX and I.foyers.is_empty(),
-		"par temps sec l'incendie gagne les voisins (jusqu'à %d objets en feu, %d au plus permis) ; la pluie l'éteint (%d objets calcinés)" % [plus, RR.INCENDIE_MAX, brules])
+		"par temps sec et chaud l'incendie gagne les voisins (jusqu'à %d objets en feu, %d au plus permis) ; la pluie l'éteint (%d objets calcinés)" % [plus, RR.INCENDIE_MAX, brules])
 	verif(essouffle < 1.0 and essouffle <= RR.INCENDIE_ESSOUFFLE + 0.001, "à chaque saut l'incendie s'essouffle (il ne rase pas le lieu) : un voisin n'a plus que %d %% de sa force" % int(RR.INCENDIE_ESSOUFFLE * 100.0))
 	# brûlé jusqu'au bout, un arbre n'est plus qu'une souche noire
 	C.forcer("clair", 0.0, 9999.0)
@@ -2377,8 +2386,20 @@ func _l_atelier(F: Dictionary) -> void:
 	j.position = ou_a
 	A.basculer("sac_a_dos")
 	A.basculer("sac_a_dos")
+	var geste_corde: String = str(j.atelier)
+	# (le maillet : son geste, puis son coup, qui sonne et fait sauter des copeaux de l'établi)
+	j.position = ici
+	j.geste_atelier("marteler")
+	var geste_maillet: String = str(j.atelier)
+	var copeaux0: int = etabli._copeaux.size()
+	jeu._sur_impact(etabli.position, "marteler")
+	var copeaux1: int = etabli._copeaux.size()
+	j.atelier = ""
+	j.position = ou_a
 	var entendus_a: Array = jeu.sons.journal.map(func(x): return str(x[1]).rstrip("0123456789"))
 	jeu.sons.journal = journal_a
+	verif(geste_corde == "coudre" and geste_maillet == "marteler" and copeaux1 > copeaux0 and entendus_a.has("marteau"),
+		"elle a ses gestes d'atelier (tresser une corde : « %s ») ; quand le maillet tombe, il sonne, et des copeaux sautent de l'établi (%d)" % [geste_corde, copeaux1 - copeaux0])
 	verif(sonnent and entendus_a.has("tresse") and entendus_a.has("sangle") and jeu.sons._couches.has("bouillon") and jeu.sons._couches.has("fil"),
 		"les %d sons de l'atelier se fabriquent, sans crête folle%s ; une corde qu'on tresse, un sac qu'on boucle s'entendent" % [SA.NOMS.size(), "" if le_pire == "" else " (sauf « %s »)" % le_pire])
 
@@ -2394,16 +2415,22 @@ func _l_atelier(F: Dictionary) -> void:
 	verif(ouvrage == 1.0 and float(etabli.etat.get("travail", 0.0)) == 0.0 and bute.distance_to(tente.position) > float(Camp.rayon("tente")) + 7.5
 		and dessus.distance_to(maille.position) < 3.0,
 		"l'établi travaille le temps de l'ouvrage (des copeaux en volent), puis se tait ; on bute contre la tente (à %d pixels de son pied), on marche sur le filet" % int(bute.distance_to(tente.position)))
+	# (un arbre debout, avec de la place à côté de lui : ni eau, ni buisson, ni feu)
 	var arbre = null
+	var avant_h: Vector2 = j.position
+	A.objets["hamac"] = 1
+	j.regard = -1.0
 	for o in jeu.monde.objets:
-		if is_instance_valid(o) and str(o.genre) in ["arbre", "sapin"] and not bool(o.get("calcine")) and float(C.eau(o.position + Vector2(58.0, 12.0))) < 0.1:
-			arbre = o
-			break
-	if arbre != null:
-		var avant_h: Vector2 = j.position
-		j.position = arbre.position + Vector2(40.0, 30.0)
-		j.regard = -1.0
-		A.objets["hamac"] = 1
+		if is_instance_valid(o) and str(o.genre) in ["arbre", "sapin"] and not bool(o.get("calcine")):
+			j.position = o.position + Vector2(40.0, 30.0)
+			if A.empeche_poser("hamac") == "" and A._l_arbre(A._devant("hamac"), 90.0) == o:
+				arbre = o
+				break
+	if arbre == null:
+		A.objets.erase("hamac")
+		j.position = avant_h
+		j.regard = 1.0
+	else:
 		var pourquoi_h: String = A.empeche_poser("hamac")
 		var tendu: bool = A.poser("hamac")
 		var hamac = A.poses[A.poses.size() - 1]
@@ -2466,11 +2493,12 @@ func _l_atelier(F: Dictionary) -> void:
 	j.position = tente.position + Vector2(20.0, 0.0)
 	jeu.horloge = nuit_h
 	A.dormir(tente)
-	var dedans: bool = A.endormie and bool(tente.etat.get("occupe", false))
+	var dedans: bool = A.endormie and bool(tente.etat.get("occupe", false)) and str(j.couchage) == "tente" and j.position.distance_to(tente.position) < 40.0
 	jeu.horloge = jour_h
 	A._t = 3.0
 	A.maj(0.1)
-	verif(dedans and not A.endormie and not bool(tente.etat.get("occupe", false)), "couchée de nuit sous sa tente, elle se réveille au jour")
+	verif(dedans and not A.endormie and not bool(tente.etat.get("occupe", false)) and str(j.couchage) == "",
+		"couchée de nuit sous sa tente (à sa porte, on ne la voit plus), elle se réveille au jour")
 	var chasseur = _bete(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(200.0, 0.0), {})
 	var guettee: bool = not A.dormir(tente)
 	_oter(chasseur)
