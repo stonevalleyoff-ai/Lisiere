@@ -805,7 +805,7 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		j.position = bete.position + Vector2(-30.0, 0.0)
 		jeu.agir()
 		E.maj(0.1)
-		var liee: bool = not bete.suit_la and bool(piquet.etat.get("attache", false)) and bete.longe == piquet.position
+		var liee: bool = not bete.suit_la and bool(piquet.etat.get("attache", false)) and bete.longe != null and Vector2(bete.longe).distance_to(piquet.position) < 14.0
 		j.position = bete.position + Vector2(600.0, 0.0)
 		for i in 100:
 			bete._conduire(0.1)

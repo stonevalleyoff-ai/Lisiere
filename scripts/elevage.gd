@@ -414,7 +414,8 @@ func maj(delta: float) -> void:
 		var piquet = null if bool(b.suit_la) else _piquet_pres(b.maison, 60.0)
 		if piquet != null:
 			piquet.etat["attache"] = true
-			b.longe = piquet.position
+			# (à l'anneau du piquet : scripts/campement.gd)
+			b.longe = piquet.position + Campement.ANNEAU
 		elif bool(b.suit_la) and not bool(b.montee) and b.position.distance_to(j.position) < 220.0:
 			b.longe = j.position
 		else:

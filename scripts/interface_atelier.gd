@@ -1069,17 +1069,7 @@ class Sac extends Feuille:
 		var inv: Dictionary = jeu.joueur.inventaire
 		for k in NOURRITURE:
 			manger.append({"id": k, "nom": Plume.majuscule(str(R.NOMS.get(k, k))), "n": int(inv.get(k, 0)), "sur": 0})
-		var groupes := [{"titre": "Ce que tu portes · %d de chaque, au plus" % int(atelier.capacite()), "cases": _matieres()}, {"titre": "À manger", "cases": manger}]
-		# (le jardin, les bêtes : dès qu'elle en a quelque chose)
-		var jardin := []
-		var quelque_chose := false
-		for k in DU_JARDIN:
-			var n := int(inv.get(k, 0))
-			quelque_chose = quelque_chose or n > 0
-			jardin.append({"id": k, "nom": str(NOMS_DU_JARDIN[k]), "n": n, "sur": 0})
-		if quelque_chose:
-			groupes.append({"titre": "Du jardin, des bêtes", "cases": jardin})
-		return groupes
+		return [{"titre": "Ce que tu portes · %d de chaque, au plus" % int(atelier.capacite()), "cases": _matieres()}, {"titre": "À manger", "cases": manger}]
 
 	# ce qui est posé à portée de main, et qui se replie (un vestige ne se replie pas)
 	func _juste_la():
@@ -1129,14 +1119,14 @@ class Sac extends Feuille:
 			la.append({"cle": "bete:liberer", "id": "licol", "nom": "La relâcher"})
 		if not la.is_empty():
 			out.append({"titre": "Juste là", "tuiles": la})
-		# ce qui soigne : les simples du jardin, le lait de ses bêtes
-		var soins := []
-		if int(inv.get("simples", 0)) > 0:
-			soins.append({"cle": "use:simples", "id": "simples", "nom": "Simples", "n": int(inv["simples"])})
-		if int(inv.get("lait", 0)) > 0:
-			soins.append({"cle": "use:lait", "id": "lait", "nom": "Lait", "n": int(inv["lait"])})
-		if not soins.is_empty():
-			out.append({"titre": "Ce qui soigne", "tuiles": soins})
+		# ce que le jardin et les bêtes lui donnent : les simples, le lait, les graines
+		var dons := []
+		for k in DU_JARDIN:
+			var n := int(inv.get(k, 0))
+			if n > 0:
+				dons.append({"cle": ("use:" if k in ["simples", "lait"] else "graine:") + k, "id": k, "nom": str(NOMS_DU_JARDIN[k]), "n": n})
+		if not dons.is_empty():
+			out.append({"titre": "Du jardin, des bêtes", "tuiles": dons, "a_la_ligne": true})
 		var affaires := []
 		for id in Atelier.ORDRE:
 			if Atelier.MATIERES.has(id) or atelier.possede(id) <= 0:
@@ -1199,6 +1189,11 @@ class Sac extends Feuille:
 			return _carte("simples", "Simples", "Tu en as %d." % int(inv.get("simples", 0)), "Des herbes qu'on mâche : la santé revient (%d), la peur s'apaise." % int(Jardin.SIMPLES_SANTE), "Se panser")
 		if cle == "use:lait":
 			return _carte("lait", "Lait", "Tu en as %d." % int(inv.get("lait", 0)), "Tiède. Il nourrit (%d), et calme un peu." % int(Elevage.LAIT_FAIM), "Boire")
+		if cle.begins_with("graine:"):
+			var g := cle.trim_prefix("graine:")
+			var d_ou := "Un buisson cueilli en rend parfois." if g == "graine_baie" else ("Une touffe coupée en rend parfois." if g == "graine_lin" else "On en trouve dans les vestiges d'autres veilleuses.")
+			return _carte(g, str(NOMS_DU_JARDIN[g]), "Tu en as %d ; il en faut %d par carré." % [int(inv.get(g, 0)), Jardin.GRAINES],
+				"%s Elles se sèment dans un carré de terre, qu'une houe retourne : « Agir » devant le carré." % d_ou, "")
 		if not cle.begins_with("bete:"):
 			return {}
 		var b = E.pres(Elevage.PORTEE + 24.0)

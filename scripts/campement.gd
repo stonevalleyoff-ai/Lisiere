@@ -3,7 +3,8 @@ extends Node2D
 # Ce que la veilleuse monte de ses mains et laisse au sol : l'établi, la tente, le hamac, le récupérateur d'eau, le filet, le
 # cerf-volant ; et les vestiges d'autres veilleuses, où elle trouve de la ferraille. Ici, son dessin et sa vie (elle bouge au
 # vent, se remplit, s'use) ; ce qu'elle fait au jeu est dans scripts/atelier.gd, qui lui dit son état :
-#   genre  : « etabli », « tente », « hamac », « recuperateur », « filet », « cerf_volant », « vestige »
+#   genre  : « etabli », « tente », « hamac », « recuperateur », « filet », « cerf_volant », « vestige » ; et, du jardin et de
+#            l'élevage (scripts/jardin.gd, scripts/elevage.gd) : « carre », « epouvantail », « piquet », « mangeoire », « appat »
 #   etat   : ce que l'atelier lui dit, et qu'elle montre
 #     etabli       : « travail » (de 0 à 1 : on y fabrique quelque chose, des copeaux volent)
 #     tente, hamac : « occupe » (vrai : la veilleuse y dort)
@@ -12,6 +13,13 @@ extends Node2D
 #     cerf_volant  : « vent » (de 0 à 1), « branche » (vrai : les piles sont au fil), « charge » (de 0 à 1), « foudre » (un
 #                    instant : la foudre vient de le prendre)
 #     vestige      : « fouille » (vrai : il n'y a plus rien), « riche » (0 ou 1)
+#     carre        : « culture » ("", « baie », « lin », « simple »), « stade » (de 0, semé, à 3, mûr, en continu), « eau » (de 0,
+#                    la terre sèche, à 1), « broute » (de 0 à 1 : une bête y mange), « gel » (vrai : du givre)
+#     epouvantail  : « regard » (un angle du lieu, la nuit seulement : sa tête y tourne, lentement ; sans lui, il regarde
+#                    devant lui), « alerte » (de 0 à 1 : il tremble)
+#     piquet       : « attache » (vrai : une bête y est liée ; sa longe, c'est elle qui la dessine, jusqu'à l'anneau)
+#     mangeoire    : « foin » (de 0 à 12 : les fibres qu'on y a mises)
+#     appat        : « reste » (de 1 à 0 : ce qu'il reste de baies)
 # Son pied est à l'origine (0, 0) : le lieu trie ce qui s'y tient par hauteur (monde.gd).
 # Le dessin : à l'encre, dans la peinture des arbres et des rochers (scripts/decor_pinceau.gd, la matière qui ne bouge pas de
 # scripts/objet.gd). Chaque chose a un fond, dessiné une fois (et de nouveau quand son état change : la neige, l'eau, un pan
@@ -19,11 +27,14 @@ extends Node2D
 # (dix sur un téléphone ; image par image pour ce qui vole ou éclate), et pas du tout hors de l'écran. Ce qui brille (les
 # étincelles de la charge, la foudre) est sur un calque à part, que la nuit n'éteint pas.
 # Le vent est celui de l'herbe autour d'elle (monde.vent, là où elle est posée) ; la pluie et la neige, celles du climat.
-#   Campement.rayon(genre)    son encombrement au sol (0 : on marche dessus : le filet)
+#   Campement.rayon(genre)    son encombrement au sol (0 : on marche dessus : le filet, le carré, l'appât)
 #   Campement.hauteur(genre)  sa hauteur, au-dessus de son pied
 #   Campement.popote(ci, t)   la popote sur le feu, dessinée à l'origine de ci, d'un seul appel
 #   coup()                    un coup de maillet sur l'établi : une gerbe de copeaux (sans lui, « travail » les fait voler seul)
 #   foudroyer()               la foudre prend le cerf-volant (comme « foudre » qui passe de 0 à 1 dans son état)
+#   Campement.ANNEAU          où tient l'anneau du piquet, depuis son pied : là où finit la longe d'une bête à l'attache
+# Le carré et l'appât, sur lesquels on marche, se trient en plusieurs fois (_poser_a_plat) : la terre passe sous les pieds,
+# les rangs de plantes devant ou derrière qui les traverse.
 
 const P := preload("res://scripts/palette.gd")
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
@@ -64,10 +75,15 @@ const TENTE_B := Vector2(0.878, 0.479)
 # le hamac : la demi-longueur de sa toile, la hauteur de ses bouts
 const HAMAC_L := 22.0
 const HAMAC_Z := 17.0
+# le carré de jardin : où sont ses trois rangs, du fond vers nous (en pixels de l'écran, depuis son milieu)
+const CARRE_RANGS := [-6.5, 0.5, 7.5]
+const ANNEAU := Vector2(2.0, -9.0)
 const BOITES := {
 	"etabli": Rect2(-44.0, -40.0, 96.0, 62.0), "tente": Rect2(-44.0, -58.0, 90.0, 88.0), "hamac": Rect2(-110.0, -70.0, 220.0, 150.0),
 	"recuperateur": Rect2(-30.0, -44.0, 60.0, 66.0), "filet": Rect2(-40.0, -30.0, 80.0, 50.0),
 	"cerf_volant": Rect2(-60.0, -900.0, 260.0, 930.0), "vestige": Rect2(-50.0, -52.0, 100.0, 76.0),
+	"carre": Rect2(-30.0, -32.0, 60.0, 52.0), "epouvantail": Rect2(-28.0, -54.0, 60.0, 62.0), "piquet": Rect2(-16.0, -20.0, 32.0, 30.0),
+	"mangeoire": Rect2(-24.0, -30.0, 48.0, 42.0), "appat": Rect2(-12.0, -8.0, 24.0, 16.0),
 }
 
 static var _pinceau
@@ -113,6 +129,13 @@ var _foudre_t := -1.0           # depuis que la foudre l'a pris (-1 : rien)
 var _foudre_graine := 0
 var _roussi := false            # la foudre l'a pris une fois : il en garde la marque
 var _lueur: PointLight2D
+# le carré, l'appât
+var _sol: Node2D                # la terre, triée par son bord du fond (ce sur quoi l'on marche)
+var _rangs: Array = []          # les rangs de plantes de devant (celui du fond est _vif)
+var _sec := 0.0                 # la soif des plantes, de 0 à 1, sans à-coups
+# l'épouvantail
+var _tete := PI * 0.5           # où regarde sa tête (un angle du lieu ; vers nous : un quart de tour)
+var _secousse := Vector2.ZERO   # ce dont il tremble, à cette image
 
 
 # son encombrement au sol, pour qu'on ne marche pas dedans (0 : on marche dessus, et les bêtes aussi)
@@ -130,6 +153,12 @@ static func rayon(g: String) -> float:
 			return 6.0
 		"vestige":
 			return 19.0
+		"epouvantail":
+			return 7.0
+		"piquet":
+			return 5.0
+		"mangeoire":
+			return 15.0
 	return 0.0
 
 
@@ -150,6 +179,16 @@ static func hauteur(g: String) -> float:
 			return 17.0
 		"vestige":
 			return 37.0
+		"carre":
+			return 14.0
+		"epouvantail":
+			return 46.0
+		"piquet":
+			return 14.0
+		"mangeoire":
+			return 23.0
+		"appat":
+			return 4.0
 	return 10.0
 
 
@@ -173,6 +212,10 @@ func _ready() -> void:
 	add_child(_vif)
 	if genre == "hamac":
 		_chercher_arbre()
+	if genre == "carre" or genre == "appat":
+		_poser_a_plat()
+	_sec = _soif()
+	_tete = _regard_voulu()
 	_occupe = 1.0 if bool(etat.get("occupe", false)) else 0.0
 	_pris = etat.has("prise")
 	_prise_t = -5.0
@@ -211,8 +254,12 @@ func redessiner(tout: bool = false) -> void:
 	if change:
 		_cle = cle
 		queue_redraw()
+		if _sol != null:
+			_sol.queue_redraw()
 	if change or _remue():
 		_vif.queue_redraw()
+		for c in _rangs:
+			c.queue_redraw()
 	if _eclat != null:
 		_eclat.visible = _brille()
 		if _eclat.visible:
@@ -220,12 +267,16 @@ func redessiner(tout: bool = false) -> void:
 
 
 func _draw() -> void:
-	_peindre(self, "fond")
+	if _sol == null:
+		_peindre(self, "fond")
 
 
 func _peindre(ci: CanvasItem, quoi: String) -> void:
 	var p = pinceau()
 	p.commencer(ci.get_canvas_item())
+	# (un calque posé ailleurs qu'au pied, pour le tri : son dessin, lui, reste au pied)
+	if ci != self and ci.position != Vector2.ZERO:
+		RenderingServer.canvas_item_add_set_transform(ci.get_canvas_item(), Transform2D(0.0, -ci.position))
 	match quoi:
 		"fond":
 			match genre:
@@ -245,6 +296,16 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_cerf_volant(p)
 				"vestige":
 					_vestige(p)
+				"carre":
+					_carre(p)
+				"epouvantail":
+					_epouvantail(p)
+				"piquet":
+					_pieu(p)
+				"mangeoire":
+					_mangeoire(p)
+				"appat":
+					_appat(p)
 		"vif":
 			match genre:
 				"etabli":
@@ -262,6 +323,12 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_cerf_volant_vif(p)
 				"vestige":
 					_vestige_vif(p)
+				"carre":
+					_carre_vif(p, int(ci.get("rang")))
+				"epouvantail":
+					_epouvantail_vif(p)
+				"mangeoire":
+					_mangeoire_vif(p)
 		"eclat":
 			if genre == "cerf_volant":
 				_cerf_volant_eclat(p)
@@ -289,6 +356,13 @@ func _lire(dt: float) -> void:
 					if _arbre != null and (not is_instance_valid(_arbre) or not _est_un_arbre(_arbre)):
 						_chercher_arbre()
 						_cle = "?"
+		"carre":
+			# (arrosées, les plantes se redressent en deux secondes ; elles mettent plus longtemps à pencher)
+			var soif := _soif()
+			_sec = move_toward(_sec, soif, dt * (0.5 if soif < _sec else 0.12))
+		"epouvantail":
+			# (sa tête tourne lentement : on ne la voit pas bouger, on voit qu'elle a tourné)
+			_tete = rotate_toward(_tete, _regard_voulu(), dt * 0.3)
 		"filet":
 			if etat.has("prise") != _pris:
 				_pris = not _pris
@@ -352,6 +426,12 @@ func _cadence() -> float:
 		return (1.0 / 20.0) if _mobile else 0.0
 	if genre == "cerf_volant" and _monte > 0.02:
 		return (1.0 / 20.0) if _mobile else (1.0 / 30.0)
+	# (des tiges sous la dent d'une bête, un épouvantail qui tremble : image par image, ou presque)
+	if (genre == "carre" and float(etat.get("broute", 0.0)) > 0.0) or (genre == "epouvantail" and float(etat.get("alerte", 0.0)) > 0.02):
+		return (1.0 / 20.0) if _mobile else 0.0
+	# (les plantes ploient lentement : dix fois par seconde leur suffisent, sept sur un téléphone)
+	if genre == "carre":
+		return CADENCE * (2.0 if _mobile else 1.5)
 	return CADENCE * (1.5 if _mobile else 1.0)
 
 
@@ -372,6 +452,12 @@ func _remue() -> bool:
 			return _monte > 0.0
 		"vestige":
 			return _vent > 0.03
+		"carre":
+			return str(etat.get("culture", "")) != "" and float(etat.get("stade", 0.0)) >= 0.25 and (_vent > 0.02 or float(etat.get("broute", 0.0)) > 0.0 or absf(_sec - _soif()) > 0.004)
+		"epouvantail":
+			return _vent > 0.03 or float(etat.get("alerte", 0.0)) > 0.0 or absf(angle_difference(_tete, _regard_voulu())) > 0.002
+		"mangeoire":
+			return _vent > 0.05 and float(etat.get("foin", 0)) > 0.0
 	return false
 
 
@@ -395,6 +481,16 @@ func _cle_du_fond() -> String:
 			k += "-%s-%s-%d-%s" % [_monte <= 0.0, bool(etat.get("branche", false)), int(clampf(float(etat.get("charge", 0.0)), 0.0, 1.0) * 3.0 + 0.01), _roussi]
 		"vestige":
 			k += "-%s-%d-%s" % [bool(etat.get("fouille", false)), int(etat.get("riche", 0)), _vent > 0.03]
+		"carre":
+			# (la terre par crans d'eau ; la pousse par seizièmes de stade : elle est lente, le fond se refait rarement)
+			k += "-%d-%s-%s-%d" % [int(clampf(float(etat.get("eau", 0.0)), 0.0, 1.0) * 5.0 + 0.5), bool(etat.get("gel", false)), str(etat.get("culture", "")),
+				int(clampf(float(etat.get("stade", 0.0)), 0.0, 3.0) * 16.0)]
+		"piquet":
+			k += "-%s" % bool(etat.get("attache", false))
+		"mangeoire":
+			k += "-%d" % int(clampf(float(etat.get("foin", 0)), 0.0, 12.0))
+		"appat":
+			k += "-%d" % _appat_baies()
 	return k
 
 
@@ -1844,6 +1940,683 @@ func _lambeau(p, vent: float) -> void:
 	_corde(p, PackedVector2Array([a + Vector2(-1.7, -0.6), a + Vector2(1.5, 0.2)]), 1.3, teinte.lightened(0.1))
 
 
+# --- le jardin et l'élevage ---
+
+# ce sur quoi l'on marche (le carré, l'appât) se trie autrement : sa terre par son bord du fond, pour passer sous les pieds de
+# qui la foule ; ses rangs de plantes chacun à sa place, pour qu'on passe entre eux (le lieu trie aussi les enfants d'un
+# enfant qui se trie)
+func _poser_a_plat() -> void:
+	y_sort_enabled = true
+	_sol = Calque.new()
+	_sol.hote = self
+	_sol.quoi = "fond"
+	_sol.material = Objet.fixe
+	_sol.position = Vector2(0.0, -15.0 if genre == "carre" else -5.0)
+	add_child(_sol)
+	move_child(_sol, 0)
+	if genre != "carre":
+		return
+	_vif.position = Vector2(0.0, float(CARRE_RANGS[0]))
+	for k in [1, 2]:
+		var c := Calque.new()
+		c.hote = self
+		c.quoi = "vif"
+		c.rang = k
+		c.material = Objet.fixe
+		c.position = Vector2(0.0, float(CARRE_RANGS[k]))
+		add_child(c)
+		_rangs.append(c)
+
+
+# une pastille : une baie, une fleur, une motte (un petit disque, sans passer par la triangulation)
+static func _pastille(p, q: Vector2, rx: float, ry: float, c: Color) -> void:
+	p.eventail(q, rx, ry, c, c, 7)
+
+
+# un rondin couché, de a à b : son écorce, son dos éclairé, son bout coupé (du côté de b)
+static func _rondin(p, a: Vector2, b: Vector2, w: float, ecorce: Color, clair: Color) -> void:
+	var d := (b - a).normalized()
+	var n := d.orthogonal() * w * 0.5
+	if n.y > 0.0:
+		n = -n
+	p.aplat(PackedVector2Array([a + n, b + n, b - n, a - n]), ecorce)
+	p.tracer(PackedVector2Array([a + n * 0.4 + d, b + n * 0.4 - d * 2.0]), 0.8, Color(ecorce.lightened(0.3), 0.85), false)
+	for f in [0.2, 0.47, 0.76]:
+		var q := a.lerp(b, float(f))
+		p.tracer(PackedVector2Array([q + n * 0.8, q - n * 0.3 + d * 0.7]), 0.6, Color(ENCRE, 0.5))
+	p.tracer(PackedVector2Array([a + n, b + n]), 0.9, ENCRE, false)
+	p.tracer(PackedVector2Array([a - n, b - n]), 1.4, ENCRE, false)
+	p.tracer(PackedVector2Array([a + n, a - n]), 1.0, ENCRE, false)
+	p.disque(b, w * 0.36 + 0.55, w * 0.5 + 0.55, ENCRE)
+	p.disque(b, w * 0.36, w * 0.5, clair)
+	p.disque(b + Vector2(0.1, 0.1), w * 0.1, w * 0.16, clair.darkened(0.38))
+
+
+# --- le carré de jardin : une planche de terre retournée entre deux rondins et quelques pierres, ses sillons, ce qui y pousse ---
+
+# un point du carré (le long des sillons, en travers d'eux), déjà vu de trois quarts : il est posé un peu de biais
+static func _carre_pt(x: float, y: float) -> Vector2:
+	return Vector2(x + y * 0.14, y - x * 0.04)
+
+
+# la soif des plantes, de 0 (la terre est humide) à 1 (elle est sèche : elles penchent)
+func _soif() -> float:
+	return 1.0 - smoothstep(0.06, 0.3, clampf(float(etat.get("eau", 0.0)), 0.0, 1.0))
+
+
+# une ligne le long d'un sillon, à peine tremblée
+static func _sillon(y: float, r: RandomNumberGenerator, jeu_y: float = 0.45) -> PackedVector2Array:
+	var l := PackedVector2Array()
+	for i in 7:
+		l.append(_carre_pt(lerpf(-20.0, 20.0, i / 6.0), y + r.randf_range(-jeu_y, jeu_y)))
+	return l
+
+
+func _carre(p) -> void:
+	var r := _hasard(21)
+	var neige := _neige_cran()
+	var mouille := _mouille_cran()
+	var eau := maxf(float(int(clampf(float(etat.get("eau", 0.0)), 0.0, 1.0) * 5.0 + 0.5)) / 5.0, 0.5 * mouille)
+	var gel := bool(etat.get("gel", false))
+	var culture := str(etat.get("culture", ""))
+	var stade := clampf(float(etat.get("stade", 0.0)), 0.0, 3.0)
+	# la terre : claire et craquelée quand elle a soif, sombre et luisante quand elle a bu
+	var terre := P.TERRE.lerp(P.IVOIRE, 0.34 * (1.0 - eau)).darkened(0.08 + 0.4 * eau)
+	if gel:
+		terre = terre.lerp(NEIGE_OMBRE, 0.22)
+	var ecorce := ECORCE.darkened(0.2 * mouille)
+	var clair := BOIS_CLAIR.darkened(0.24 * mouille)
+	var pierre := _pierre_du_lieu().darkened(0.06 + 0.16 * mouille)
+	_ombre(p, Vector2(0.5, 1.5), 29.0, 16.5, 0.22)
+	# le repère de ce qu'on y a semé : une baguette, un brin d'écharpe noué
+	var repere := _carre_pt(-20.0, -13.6)
+	_baton(p, PackedVector2Array([repere, repere + Vector2(-0.7, -8.6)]), 1.2, BOIS.darkened(0.2 * mouille), 0.9)
+	p.tracer(PackedVector2Array([repere + Vector2(-0.6, -7.2), repere + Vector2(1.3, -6.2), repere + Vector2(2.2, -4.2)]), 1.5, P.ECHARPE.lerp(P.IVOIRE, 0.2).darkened(0.2 * mouille))
+	_rondin(p, _carre_pt(-22.5, -12.7), _carre_pt(22.2, -13.0), 3.4, ecorce, clair)
+	# la planche de terre, son bord inégal
+	var tour := PackedVector2Array()
+	for i in 8:
+		tour.append(_carre_pt(lerpf(-21.0, 21.0, i / 7.0), -11.2 + r.randf_range(-0.5, 0.5)))
+	for i in 2:
+		tour.append(_carre_pt(21.7 + r.randf_range(-0.5, 0.5), lerpf(-4.0, 4.5, float(i))))
+	for i in 8:
+		tour.append(_carre_pt(lerpf(21.0, -21.0, i / 7.0), 11.4 + r.randf_range(-0.5, 0.5)))
+	for i in 2:
+		tour.append(_carre_pt(-21.7 + r.randf_range(-0.5, 0.5), lerpf(4.5, -4.0, float(i))))
+	p.aplat(tour, terre)
+	# les sillons : le creux dans l'ombre, la crête où l'on sème, ses mottes retournées
+	for yf in [-10.3, -3.0, 4.0, 10.5]:
+		p.tracer(_sillon(float(yf), r), 2.4, terre.darkened(0.32))
+	for k in 3:
+		var yr: float = CARRE_RANGS[k]
+		p.tracer(_sillon(yr, r), 3.3, terre.lightened(0.09))
+		for i in 7:
+			var q := _carre_pt(r.randf_range(-19.0, 19.0), yr + r.randf_range(-1.7, 0.7))
+			var m := r.randf_range(0.8, 1.5)
+			p.tracer(PackedVector2Array([q + Vector2(-m, 0.75), q + Vector2(m * 1.1, 0.8)]), 0.8, Color(ENCRE, 0.5), false)
+			_pastille(p, q, m, m * 0.62, terre.lightened(r.randf_range(0.12, 0.24)))
+	p.contour(tour, 0.9, Color(ENCRE, 0.8), r, 4)
+	# (ce qui dépend de son état a son propre hasard : les pierres ne changent pas quand on arrose)
+	if eau < 0.25:
+		var rc := _hasard(22)
+		for i in 7:
+			var q := _carre_pt(rc.randf_range(-17.0, 17.0), rc.randf_range(-8.5, 8.5))
+			var fente := PackedVector2Array([q])
+			for k in 3:
+				q += Vector2(rc.randf_range(1.2, 2.6) * (1.0 if i % 2 == 0 else -1.0), rc.randf_range(-1.1, 1.3))
+				fente.append(q)
+			p.tracer(fente, 0.7, Color(ENCRE, 0.62))
+	elif eau > 0.55:
+		var rl := _hasard(23)
+		var luit := Color(P.ECHO.lerp(P.PAPIER, 0.3), 0.34 * (eau - 0.55) / 0.45 + 0.1 * mouille)
+		for i in 8:
+			var q := _carre_pt(rl.randf_range(-17.0, 17.0), float([-3.0, 4.0, 10.3, -10.1][i % 4]) + 0.3)
+			p.tracer(PackedVector2Array([q + Vector2(-rl.randf_range(1.5, 3.4), 0.0), q + Vector2(rl.randf_range(1.5, 3.4), -0.15)]), 0.8, luit)
+	# semé : les graines se voient encore, sur la crête
+	if culture != "" and stade < 0.75:
+		var rg := _hasard(24)
+		var grain := P.IVOIRE
+		if culture == "lin":
+			grain = P.IVOIRE.lerp(CUIVRE, 0.4)
+		elif culture == "baie":
+			grain = P.IVOIRE.lerp(BAIE, 0.3)
+		for k in 3:
+			for i in 9:
+				_pastille(p, _carre_pt(lerpf(-18.0, 18.0, i / 8.0) + rg.randf_range(-1.0, 1.0), float(CARRE_RANGS[k]) + rg.randf_range(-0.8, 0.5)), 0.65, 0.5, grain)
+	if gel and neige < 0.5:
+		var rf := _hasard(25)
+		var givre := Color(NEIGE.lerp(P.ECHO, 0.2), 0.85)
+		for i in 24:
+			var q := _carre_pt(rf.randf_range(-20.0, 20.0), rf.randf_range(-10.5, 10.5))
+			p.tracer(PackedVector2Array([q, q + Vector2(rf.randf_range(0.8, 2.0), rf.randf_range(-0.5, 0.2))]), 0.8, givre)
+	if neige > 0.15:
+		# la neige comble les sillons, puis couvre tout ; les crêtes se devinent à leur ombre
+		p.aplat(tour, Color(NEIGE, clampf(neige * 1.15 - 0.1, 0.0, 0.94)))
+		var rn := _hasard(26)
+		for k in 3:
+			p.tracer(_sillon(float(CARRE_RANGS[k]) + 1.5, rn), 1.3, Color(NEIGE_OMBRE.darkened(0.12), 0.8 * neige))
+	# les pierres des deux bouts, le rondin de devant
+	for cote in [-1.0, 1.0]:
+		for i in 3:
+			var q := _carre_pt(float(cote) * (23.6 + r.randf_range(-0.5, 0.8)), -7.2 + i * 7.0 + r.randf_range(-0.8, 0.8))
+			_caillou(p, q + Vector2(0.0, -0.8), r.randf_range(2.5, 3.3), r.randf_range(1.9, 2.4), pierre.lerp(P.IVOIRE, r.randf_range(0.0, 0.14)), r, 0.9)
+			if neige > 0.2:
+				p.disque(q + Vector2(-0.2, -2.4), 2.1, 0.6 + 0.7 * neige, NEIGE, Pinceau.DOME)
+	var droite := _carre_pt(22.8, 13.3)
+	var gauche := _carre_pt(-23.0, 13.6)
+	_rondin(p, droite, gauche, 3.8, ecorce.lightened(0.05), clair)
+	if neige > 0.2:
+		for bord in [[_carre_pt(-21.0, -14.5), _carre_pt(20.5, -14.8)], [gauche + Vector2(2.0, -1.8), droite + Vector2(-1.0, -1.8)]]:
+			p.tracer(PackedVector2Array([bord[0], bord[1]]), 0.8 + 1.5 * neige, NEIGE)
+
+
+# le vert d'une plante : il jaunit quand elle a soif, il blanchit sous le givre
+func _verdure(c: Color, givre: bool) -> Color:
+	var v := c.lerp(CORDE, 0.42 * _sec)
+	return v.lerp(NEIGE_OMBRE.lightened(0.25), 0.45) if givre else v
+
+
+# un rang de plantes : elles penchent au vent comme l'herbe du lieu, s'affaissent quand elles ont soif, tressautent sous la dent
+func _carre_vif(p, rang: int) -> void:
+	var culture := str(etat.get("culture", ""))
+	var stade := clampf(float(etat.get("stade", 0.0)), 0.0, 3.0)
+	if culture == "" or stade < 0.25:
+		return
+	var r := _hasard(60 + rang)
+	var n := 4 if _mobile else 5
+	var broute := clampf(float(etat.get("broute", 0.0)), 0.0, 1.0)
+	var givre := bool(etat.get("gel", false)) or _neige > 0.3
+	var yr: float = CARRE_RANGS[rang]
+	var mur := smoothstep(2.6, 3.0, stade)
+	for i in n:
+		# (en quinconce d'un rang à l'autre ; chacune a son avance, sa taille, son côté où tomber)
+		var x := lerpf(-18.0, 18.0, (i + 0.5) / n) + r.randf_range(-1.3, 1.3) + (1.8 if rang == 1 else 0.0)
+		var q := _carre_pt(x, yr + r.randf_range(-0.7, 0.7))
+		var s := clampf(stade + (r.randf() - 0.62) * 0.36 * (1.0 - mur), 0.0, 3.0)
+		var k := r.randf_range(0.88, 1.12) * (1.0 - 0.14 * _sec)
+		var cote := 1.0 if r.randf() < 0.5 else -1.0
+		var g := r.randf()
+		if s < 0.25:
+			continue
+		var bal := sin(_t * (1.7 + 1.5 * _vent) + x * 0.13 + rang * 1.1) * (0.03 + 0.2 * _vent) + 0.15 * _vent + cote * 0.4 * _sec
+		if broute > 0.0:
+			bal += sin(_tr * 37.0 + i * 2.3 + rang) * 0.3 * broute
+			k *= 1.0 + 0.07 * broute * sin(_tr * 29.0 + i * 1.7)
+		match culture:
+			"baie":
+				_plant_baie(p, q, s, k, bal, g, givre)
+			"lin":
+				_plant_lin(p, q, s, k, bal, g, givre)
+			"simple":
+				_plant_simple(p, q, s, k, bal, g, givre)
+
+
+# les baies : deux feuilles rondes, puis un buisson bas et sombre, ses fleurs pâles, ses baies qui rougissent
+func _plant_baie(p, q: Vector2, s: float, k: float, bal: float, g: float, givre: bool) -> void:
+	var vert := _verdure(P.MOUSSE.lerp(P.FEUILLE_SOMBRE, 0.3), givre)
+	if s < 1.0:
+		var u0 := (s - 0.25) / 0.75
+		var h := (1.0 + 3.4 * u0) * k
+		var haut := q + Vector2(bal * h, -h)
+		var f := 0.7 + 1.0 * u0
+		p.tracer(PackedVector2Array([q, haut]), 0.9, vert.lightened(0.2), false, PackedFloat32Array(), not _mobile)
+		_pastille(p, haut + Vector2(-f, -0.2), f, f * 0.7, vert.lightened(0.3))
+		_pastille(p, haut + Vector2(f, -0.4), f, f * 0.7, vert.lightened(0.2))
+		return
+	var u := clampf(s - 1.0, 0.0, 1.0)
+	var rx := (2.3 + 2.1 * u) * k
+	var ry := (2.0 + 1.8 * u) * k
+	var c := q + Vector2(bal * ry * 1.5, -ry - 0.3)
+	var touffes := [Vector2(-0.52 * rx, 0.3 * ry), Vector2(0.52 * rx, 0.24 * ry), Vector2(bal * ry * 0.9, -0.42 * ry)]
+	if _mobile:
+		p.eventail(c + Vector2(0.0, -0.06 * ry), rx * 1.2 + 0.8, ry * 1.06 + 0.8, ENCRE, ENCRE, 10)
+	else:
+		for o in touffes:
+			_pastille(p, c + o, rx * 0.68 + 0.8, ry * 0.7 + 0.8, ENCRE)
+	for j in 3:
+		var o: Vector2 = touffes[j]
+		p.eventail(c + o, rx * 0.68, ry * 0.7, vert.lightened(0.06 * j), vert.lightened(0.06 * j), 9, Pinceau.FEUILLAGE)
+	if givre:
+		_pastille(p, c + Vector2(-0.25 * rx, -0.75 * ry), rx * 0.5, ry * 0.26, Color(NEIGE, 0.8))
+	# (les fleurs passent, les baies viennent : vertes d'abord, puis rouges)
+	var fleur := smoothstep(1.5, 1.95, s) * (1.0 - smoothstep(2.2, 2.55, s))
+	var fruit := smoothstep(2.15, 3.0, s)
+	if fleur <= 0.05 and fruit <= 0.05:
+		return
+	var rouge := vert.lightened(0.35).lerp(BAIE.lerp(P.BRAISE_ROUGE, 0.6), smoothstep(0.2, 0.8, fruit))
+	for j in (3 if _mobile else 5):
+		var a := g * TAU + j * 2.4
+		var o := Vector2(cos(a) * rx * (0.5 + 0.12 * (j % 3)), sin(a) * ry * 0.42 - ry * 0.1)
+		if fruit > 0.05:
+			_pastille(p, c + o, 0.55 + 0.45 * fruit, 0.55 + 0.4 * fruit, rouge)
+		elif j < 4:
+			_pastille(p, c + o, 0.9 * fleur, 0.8 * fleur, P.PAPIER.lerp(P.ECHARPE, 0.14))
+
+
+# le lin : des brins fins et hauts, clairs, qui ploient ensemble ; leurs fleurs bleues, puis leurs capsules dorées
+func _plant_lin(p, q: Vector2, s: float, k: float, bal: float, g: float, givre: bool) -> void:
+	var mur := smoothstep(2.1, 3.0, s)
+	var vert := _verdure(P.MOUSSE.lerp(CORDE, 0.34).lightened(0.14).lerp(CORDE, 0.5 * mur), givre)
+	var bleu := P.LUNE.lerp(P.ECHO, 0.22)
+	var n := 3 if (_mobile or s < 1.0) else 5
+	var h0 := (1.5 + 4.0 * clampf((s - 0.25) / 0.75, 0.0, 1.0) + 9.0 * clampf(s - 1.0, 0.0, 1.0)) * k
+	var fleur := smoothstep(1.5, 2.0, s)
+	for j in n:
+		var e := j - (n - 1) * 0.5
+		var h1 := fposmod(g * 5.3 + j * 0.61, 1.0)
+		var hj := h0 * (0.7 + 0.3 * h1)
+		var pied := q + Vector2(e * 1.15 + (h1 - 0.5) * 0.9, 0.0)
+		var pen := bal * 1.3 + e * 0.1 + (fposmod(g * 9.1 + j * 0.37, 1.0) - 0.5) * 0.2
+		var haut := pied + Vector2(pen * hj, -hj + absf(pen) * hj * 0.3)
+		p.tracer(PackedVector2Array([pied, pied + Vector2(pen * hj * 0.3, -hj * 0.55), haut]), 1.0, vert.lightened(0.1 * (j % 2)), false, PackedFloat32Array([1.25, 0.95, 0.6]), not _mobile)
+		if fleur <= 0.05:
+			continue
+		if mur > 0.05 and j % 2 == 0:
+			_pastille(p, haut, 0.55 + 0.6 * mur, 0.55 + 0.65 * mur, CORDE.darkened(0.12).lerp(CUIVRE, 0.25))
+		else:
+			_pastille(p, haut, 1.2 * fleur, 1.05 * fleur, bleu)
+	if givre:
+		_pastille(p, q + Vector2(bal * h0 * 0.5, -h0 * 0.55), 1.6, 0.6, Color(NEIGE, 0.7))
+
+
+# les simples : une rosette gris-vert au ras du sol, deux hampes, leurs ombelles plates qui pâlissent en mûrissant
+func _plant_simple(p, q: Vector2, s: float, k: float, bal: float, g: float, givre: bool) -> void:
+	var vert := _verdure(P.MOUSSE.lerp(P.IVOIRE, 0.36), givre)
+	var u0 := clampf((s - 0.25) / 0.75, 0.0, 1.0)
+	var u1 := clampf(s - 1.0, 0.0, 1.0)
+	var nf := 3 if (s < 1.0 or _mobile) else 5
+	var lf := (1.4 + 2.2 * u0 + 1.9 * u1) * k
+	for j in nf:
+		var a := -PI * 0.5 + (j - (nf - 1) * 0.5) * (0.66 if nf == 5 else 0.8) + (g - 0.5) * 0.3
+		var bout := q + Vector2(cos(a) * lf + bal * 1.2, sin(a) * lf * 0.55 - 0.2)
+		p.tracer(PackedVector2Array([q, q.lerp(bout, 0.55) + Vector2(0.0, -0.7), bout]), 1.5 if nf == 5 else 1.9, vert.lightened(0.05 * (j % 2)), true, PackedFloat32Array(), not _mobile)
+	if s <= 1.15:
+		return
+	var fl := smoothstep(1.45, 2.0, s)
+	var mur := smoothstep(2.1, 3.0, s)
+	for j in 2:
+		var hj := (2.0 + (9.6 - j * 3.2) * u1) * k
+		var pied := q + Vector2(-0.9 + j * 1.9, -0.5)
+		var pen := bal + (j - 0.5) * 0.24
+		var haut := pied + Vector2(pen * hj, -hj)
+		p.tracer(PackedVector2Array([pied, pied.lerp(haut, 0.5) + Vector2(-pen * hj * 0.12, 0.0), haut]), 0.85, vert.darkened(0.15), false, PackedFloat32Array(), not _mobile)
+		if fl <= 0.05:
+			continue
+		# (une ombelle : trois bouquets plats, serrés, sur leur ombre d'encre)
+		var rx := (1.1 + 1.6 * mur) * (0.45 + 0.55 * fl) * k
+		var ry := rx * 0.3 + 0.3
+		var pale := vert.lightened(0.2).lerp(P.PAPIER, 0.3 + 0.7 * mur)
+		p.eventail(haut + Vector2(0.0, 0.2), rx + 0.7, ry + 0.75, Color(ENCRE, 0.85), Color(ENCRE, 0.85), 10)
+		if _mobile:
+			p.eventail(haut + Vector2(0.0, -0.1), rx, ry, pale.darkened(0.03), pale.darkened(0.03), 9)
+			continue
+		_pastille(p, haut + Vector2(-rx * 0.45, 0.1), rx * 0.55, ry * 0.8, pale.darkened(0.1))
+		_pastille(p, haut + Vector2(rx * 0.45, 0.15), rx * 0.55, ry * 0.8, pale.darkened(0.04))
+		_pastille(p, haut + Vector2(0.0, -ry * 0.45), rx * 0.6, ry * 0.75, pale)
+	if givre:
+		_pastille(p, q + Vector2(0.0, -1.2), lf * 0.6, 0.6, Color(NEIGE, 0.7))
+
+
+# --- l'épouvantail : une croix de perches habillée de bâche, bourrée de fibres ; une tête de toile, deux trous pour les yeux ---
+
+# le regard qu'on lui dit (un angle du lieu) ; sans lui, il regarde devant lui : vers nous
+func _regard_voulu() -> float:
+	return float(etat["regard"]) if etat.has("regard") else PI * 0.5
+
+
+# un point de son corps (de côté, en hauteur) : sa perche penche un rien, et tremble d'autant plus qu'on est haut
+func _ep(x: float, z: float) -> Vector2:
+	return Vector2(x + 0.025 * z, -z) + _secousse * pow(clampf(z / 40.0, 0.0, 1.2), 1.4)
+
+
+# son pied : la perche plantée, calée de pierres, les brins qui en sont tombés
+func _epouvantail(p) -> void:
+	var r := _hasard(31)
+	var neige := _neige_cran()
+	var mouille := _mouille_cran()
+	var pierre := _pierre_du_lieu().darkened(0.06 + 0.16 * mouille)
+	var paille := CORDE.lightened(0.12).darkened(0.22 * mouille)
+	_ombre(p, Vector2(2.5, 1.0), 13.0, 4.0, 0.34)
+	for i in 5:
+		var q := Vector2(r.randf_range(-9.0, 10.0), r.randf_range(-0.5, 3.6))
+		var d := Vector2.from_angle(r.randf_range(-0.5, 0.5)) * r.randf_range(1.6, 2.8)
+		p.tracer(PackedVector2Array([q - d, q + d]), 0.9, paille.darkened(r.randf_range(0.0, 0.2)))
+	_perche(p, Vector2(0.0, 0.8), Vector2(0.3, -15.0), 3.1, 2.7, BOIS.darkened(0.12 + 0.2 * mouille))
+	_caillou(p, Vector2(-3.0, 0.9), 2.7, 1.9, pierre, r, 0.9)
+	_caillou(p, Vector2(3.1, 1.3), 2.3, 1.7, pierre.lightened(0.07), r, 0.9)
+	for i in 3:
+		var x := -6.5 + i * 5.6 + r.randf_range(-0.8, 0.8)
+		p.tracer(PackedVector2Array([Vector2(x, 2.4), Vector2(x + r.randf_range(-1.2, 1.2), -r.randf_range(1.6, 4.2))]), 1.2, P.MOUSSE.lightened(r.randf_range(0.0, 0.12)))
+	if neige > 0.2:
+		p.disque(Vector2(0.6, 1.4), 3.0 + 2.6 * neige, 0.8 + 0.8 * neige, NEIGE, Pinceau.DOME)
+
+
+# une bande de toile qui pend d'un point, et bat au vent
+func _pan(p, a: Vector2, long: float, w: float, c: Color, phase: float) -> void:
+	var pousse := 0.5 * _vent + 0.42 * sin(_t * 5.6 + phase) * _vent + 0.05 * sin(phase * 3.0) + 0.3 * _secousse.x
+	var m := a + Vector2(pousse * long * 0.3, long * 0.52)
+	var b := a + Vector2(pousse * long * 0.9, long * (1.0 - 0.22 * absf(pousse)))
+	var ligne := PackedVector2Array([a, m, b])
+	p.tracer(ligne, w + 1.0, ENCRE, false, PackedFloat32Array([w + 1.1, w + 1.0, w * 0.5 + 0.8]))
+	p.tracer(ligne, w, c, false, PackedFloat32Array([w, w * 0.9, w * 0.4]))
+
+
+# ce qui tient en l'air : ses bras, sa bâche, ses brins, son écharpe, sa tête et son chapeau. De jour, tout cela bat au vent ;
+# la nuit, sa tête a tourné
+func _epouvantail_vif(p) -> void:
+	var r := _hasard(32)
+	var neige := _neige_cran()
+	var mouille := _mouille_cran()
+	var alerte := clampf(float(etat.get("alerte", 0.0)), 0.0, 1.0)
+	var toile := TOILE.darkened(0.26 * mouille)
+	var paille := CORDE.lightened(0.14).darkened(0.22 * mouille)
+	var bois := BOIS.darkened(0.2 * mouille)
+	# il tremble : à peine d'abord, puis de tout son bois
+	_secousse = Vector2(sin(_tr * (29.0 + 26.0 * alerte)), 0.45 * sin(_tr * (41.0 + 19.0 * alerte) + 1.3)) * (0.25 * alerte + 1.15 * alerte * alerte)
+	# de combien sa tête a tourné (0 : vers nous ; son buste la suit d'un tiers)
+	var tour := angle_difference(PI * 0.5, _tete)
+	var buste := clampf(tour * 0.32, -0.8, 0.8)
+	var bras := Vector2(cos(buste), sin(buste) * PROF)
+	var large := 0.84 + 0.16 * cos(buste)
+	_perche(p, _ep(0.3, 13.5), _ep(0.0, 43.0), 2.7, 2.2, bois.darkened(0.12))
+	# les brins qui sortent par le bas, là où seraient ses jambes
+	for i in 6:
+		var x := -3.4 + i * 1.4 + r.randf_range(-0.4, 0.4)
+		var bas := _ep(x * 1.5, r.randf_range(8.0, 10.5)) + Vector2(_vent * 1.6 + 0.8 * sin(_t * 4.8 + i) * _vent, 0.0)
+		p.tracer(PackedVector2Array([_ep(x, 15.5), bas]), 1.1, paille.darkened(0.08 * (i % 3)))
+	# ses bras : une traverse, un bout plus bas que l'autre ; au bout, une poignée de brins pour main
+	var epaule := _ep(0.0, 29.6)
+	var mains := [epaule - bras * 13.2 + Vector2(0.0, 1.1), epaule + bras * 13.2 + Vector2(0.0, -1.3)]
+	_baton(p, PackedVector2Array([mains[0], mains[1]]), 1.9, bois)
+	for k in 2:
+		var cote := -1.0 if k == 0 else 1.0
+		var main: Vector2 = mains[k]
+		for i in 4:
+			var a := (0.0 if cote > 0.0 else PI) + (i - 1.5) * 0.42 + r.randf_range(-0.12, 0.12) + 0.25 * _vent * sin(_t * 5.0 + i + k)
+			p.tracer(PackedVector2Array([main - Vector2(cote * 1.0, 0.0), main + Vector2(cos(a), sin(a) * 0.9) * r.randf_range(3.2, 4.6)]), 1.0, paille.darkened(0.06 * i))
+	# ses manches : la bâche jetée sur la traverse, qui pend dessous ; un lambeau à chaque poignet
+	for k in 2:
+		var cote := -1.0 if k == 0 else 1.0
+		var main: Vector2 = mains[k]
+		var poignet := main.lerp(epaule, 0.14)
+		var pend := Vector2(0.9 * _vent + 0.5 * sin(_t * 4.4 + k * 2.0) * _vent, 0.0)
+		var manche := PackedVector2Array([_ep(cote * 2.6, 32.6), poignet + Vector2(0.0, -1.7), poignet + Vector2(cote * 0.5, 2.2), main.lerp(epaule, 0.5) + Vector2(0.0, 6.8) + pend,
+			_ep(cote * 4.8 * large, 23.6)])
+		p.aplat(manche, toile.darkened(0.1 + (0.12 if cote * buste < -0.05 else 0.0)))
+		manche.append(manche[0])
+		p.tracer(manche, 1.0, ENCRE, false)
+		_pan(p, poignet + Vector2(cote * 0.3, 1.6), 5.6, 2.3, toile.darkened(0.16), 1.7 + k * 2.6)
+	# son buste : une bâche serrée d'une corde, rapiécée ; le bas en dents, et ses lambeaux
+	var corps := PackedVector2Array([_ep(-4.2, 32.6), _ep(4.2, 32.6), _ep(6.5 * large, 24.0), _ep(7.1 * large, 16.0)])
+	for i in 7:
+		corps.append(_ep(lerpf(7.0, -7.0, i / 6.0) * large, (13.2 if i % 2 == 0 else 15.6) + r.randf_range(-0.5, 0.5)))
+	corps.append(_ep(-7.1 * large, 16.0))
+	corps.append(_ep(-6.5 * large, 24.0))
+	for i in 4:
+		_pan(p, _ep((-5.2 + i * 3.4) * large, 14.6), 5.0 + (i % 2) * 1.6, 2.4, toile.darkened(0.2), i * 1.9)
+	p.aplat(corps, toile)
+	p.aplat(PackedVector2Array([_ep(1.8, 32.4), _ep(4.2, 32.6), _ep(6.5 * large, 24.0), _ep(7.1 * large, 16.0), _ep(5.2 * large, 14.2), _ep(2.8, 15.0)]), toile.darkened(0.17))
+	p.tracer(PackedVector2Array([_ep(-2.2, 30.5), _ep(-2.9, 24.5), _ep(-2.4, 16.5)]), 0.7, Color(ENCRE, 0.42))
+	p.tracer(PackedVector2Array([_ep(1.4, 29.0), _ep(1.9, 17.5)]), 0.7, Color(ENCRE, 0.36))
+	var piece := PackedVector2Array([_ep(-5.0 * large, 29.0), _ep(-1.6 * large, 29.6), _ep(-1.3 * large, 25.8), _ep(-4.8 * large, 25.4)])
+	p.aplat(piece, CUIR_CLAIR.darkened(0.08 + 0.2 * mouille))
+	piece.append(piece[0])
+	p.tracer(piece, 0.7, Color(ENCRE, 0.8), false)
+	corps.append(corps[0])
+	p.tracer(corps, 1.1, ENCRE, false)
+	_corde(p, PackedVector2Array([_ep(-6.8 * large, 22.3), _ep(0.0, 21.5), _ep(6.8 * large, 22.6)]), 1.0)
+	_corde(p, _courbe(_ep(2.0, 21.6), _ep(3.8, 18.6), _ep(2.6 + 1.4 * _vent, 16.2), 5), 0.8)
+	p.disque(_ep(2.0, 21.6), 1.1, 1.0, CORDE.darkened(0.15))
+	if neige > 0.2:
+		for k in 2:
+			var main: Vector2 = mains[k]
+			p.tracer(PackedVector2Array([main.lerp(epaule, 0.1) + Vector2(0.0, -2.0), main.lerp(epaule, 0.8) + Vector2(0.0, -2.6)]), 1.0 + 1.4 * neige, NEIGE)
+	# sa tête : un sac de toile bourré, noué au cou ; l'écharpe qu'elle lui a laissée
+	var tete := _ep(0.2, 37.2)
+	var clair := TOILE_CLAIR.darkened(0.24 * mouille)
+	var echarpe := P.ECHARPE.lerp(P.IVOIRE, 0.12).darkened(0.1 + 0.2 * mouille)
+	for i in 4:
+		var x := -2.7 + i * 1.8
+		p.tracer(PackedVector2Array([_ep(x * 0.6, 33.4), _ep(x * 1.3, 30.4 - (i % 2) * 0.8)]), 1.5, clair.darkened(0.2))
+	p.disque(tete, 5.9, 6.4, ENCRE)
+	p.disque(tete, 5.0, 5.6, clair, Pinceau.DOME)
+	# (la couture de l'arrière du sac : on la voit quand il nous tourne le dos)
+	if sin(_tete) < -0.15:
+		var x := -cos(_tete) * 4.6
+		p.tracer(_courbe(tete + Vector2(x, -4.6), tete + Vector2(x * 1.2, 0.0), tete + Vector2(x, 4.4), 6), 0.7, Color(ENCRE, 0.6), false)
+		for i in 3:
+			var q := tete + Vector2(x * 1.08, -2.4 + i * 2.3)
+			p.tracer(PackedVector2Array([q + Vector2(-1.1, -0.3), q + Vector2(1.1, 0.3)]), 0.6, Color(ENCRE, 0.6), false)
+	# (deux trous, l'un plus grand que l'autre : ils ne brillent pas ; ils sont seulement là où il regarde)
+	for k in 2:
+		var cote := -1.0 if k == 0 else 1.0
+		var a := _tete + cote * 0.5
+		var face := sin(a)
+		if face < -0.1:
+			continue
+		var q := tete + Vector2(cos(a) * 4.5, -0.6 + 0.5 * face)
+		_pastille(p, q, (1.3 if k == 0 else 1.0) * clampf(0.3 + 0.7 * face, 0.3, 1.0), 1.65 if k == 0 else 1.3, Color("17130f"))
+	p.tracer(PackedVector2Array([_ep(-3.9, 32.9), _ep(0.0, 31.8), _ep(3.9, 33.0)]), 3.0, ENCRE, false)
+	p.tracer(PackedVector2Array([_ep(-3.7, 32.9), _ep(0.0, 31.9), _ep(3.7, 33.0)]), 2.0, echarpe, false)
+	var bout := _ep(3.0, 32.3)
+	var ligne := PackedVector2Array([bout])
+	for k in 5:
+		var ang := lerpf(1.45, 0.3, pow(_vent, 0.6)) + 0.5 * sin(_t * 6.5 - k * 0.95) * _vent * (0.4 + k * 0.12) + 0.06 * k * (1.0 - _vent) + 0.3 * alerte * sin(_tr * 43.0 + k)
+		bout += Vector2.from_angle(ang) * 2.5
+		ligne.append(bout)
+	p.tracer(ligne, 2.8, ENCRE, false, PackedFloat32Array([3.2, 3.6, 3.5, 3.2, 2.7, 2.0]))
+	p.tracer(ligne, 1.8, echarpe, false, PackedFloat32Array([2.0, 2.4, 2.3, 2.0, 1.5, 0.8]))
+	# son chapeau de fibres tressées, de travers
+	var m := Transform2D(-0.16, _ep(0.5, 41.4))
+	p.aplat(m * Pinceau.ellipse(Vector2.ZERO, 9.3, 3.3, 16), ENCRE)
+	p.aplat(m * Pinceau.ellipse(Vector2.ZERO, 8.5, 2.6, 16), paille.darkened(0.1))
+	p.aplat(m * Pinceau.ellipse(Vector2(-0.6, -0.4), 6.6, 1.7, 14), paille.lightened(0.08))
+	var calotte: PackedVector2Array = m * PackedVector2Array([Vector2(-4.4, 0.2), Vector2(-3.7, -3.4), Vector2(-0.8, -4.9), Vector2(2.6, -4.3), Vector2(4.3, 0.2), Vector2(0.0, 1.3)])
+	p.aplat(calotte, paille.darkened(0.04))
+	p.tracer(m * PackedVector2Array([Vector2(-4.1, -0.9), Vector2(0.0, 0.2), Vector2(4.1, -0.8)]), 1.1, echarpe.darkened(0.25), false)
+	p.tracer(m * PackedVector2Array([Vector2(-4.4, 0.2), Vector2(-3.7, -3.4), Vector2(-0.8, -4.9), Vector2(2.6, -4.3), Vector2(4.3, 0.2)]), 1.0, ENCRE, false)
+	for i in 3:
+		var q: Vector2 = m * Vector2([-8.3, 7.6, 3.4][i], [0.3, 0.9, 2.3][i])
+		p.tracer(PackedVector2Array([q, q + Vector2([-2.2, 2.4, 1.0][i], [1.2, 0.6, 1.9][i])]), 0.8, paille)
+	if neige > 0.2:
+		p.aplat(m * Pinceau.ellipse(Vector2(-0.4, -4.0), 3.6, 0.8 + 1.0 * neige, 10), NEIGE)
+		p.aplat(m * Pinceau.ellipse(Vector2(-4.6, -0.6), 3.0, 0.5 + 0.6 * neige, 8), NEIGE)
+
+
+# --- le piquet d'attache : un pieu court, enfoncé au maillet ; son anneau de corde ---
+
+func _pieu(p) -> void:
+	var r := _hasard(36)
+	var neige := _neige_cran()
+	var mouille := _mouille_cran()
+	var attache := bool(etat.get("attache", false))
+	var bois := BOIS.darkened(0.2 * mouille)
+	var pied := Vector2(0.0, 0.8)
+	var tete := Vector2(-1.2, -13.6)
+	# la terre foulée autour de lui (plus encore quand une bête y tourne)
+	p.eventail(Vector2(0.6, 0.9), 14.0 if attache else 8.5, 5.4 if attache else 3.3, Color(P.TERRE.darkened(0.2), 0.55 if attache else 0.4), Color(P.TERRE, 0.0), 14)
+	_ombre(p, Vector2(1.8, 0.9), 6.5, 2.4, 0.42)
+	_perche(p, pied, tete, 4.2, 3.6, bois)
+	# (un reste d'écorce au pied ; la tête écrasée par le maillet, ses éclats)
+	var reste := PackedVector2Array([pied + Vector2(-2.0, -0.2), pied + Vector2(2.0, -0.2), Vector2(1.6, -3.4), Vector2(0.4, -2.6), Vector2(-0.8, -4.8), Vector2(-2.3, -3.2)])
+	p.aplat(reste, ECORCE.darkened(0.2 * mouille))
+	p.tracer(PackedVector2Array([Vector2(1.6, -3.4), Vector2(0.4, -2.6), Vector2(-0.8, -4.8), Vector2(-2.3, -3.2)]), 0.6, Color(ENCRE, 0.7), false)
+	p.tracer(PackedVector2Array([pied + Vector2(2.0, -0.2), Vector2(1.6, -3.6)]), 1.4, ENCRE, false)
+	p.disque(tete, 2.6, 1.3, ENCRE)
+	p.disque(tete + Vector2(0.0, -0.1), 1.9, 0.8, BOIS_CLAIR.darkened(0.1 + 0.2 * mouille))
+	p.tracer(PackedVector2Array([tete + Vector2(-2.1, 0.3), tete + Vector2(-3.3, 1.9)]), 0.9, BOIS_CLAIR.darkened(0.2 * mouille))
+	p.tracer(PackedVector2Array([tete + Vector2(2.0, 0.5), tete + Vector2(2.9, 2.4)]), 0.9, BOIS_CLAIR.darkened(0.15 + 0.2 * mouille))
+	_caillou(p, Vector2(-3.4, 1.2), 2.0, 1.4, _pierre_du_lieu().darkened(0.06 + 0.16 * mouille), r, 0.9)
+	for i in 3:
+		_pastille(p, Vector2(r.randf_range(2.0, 6.5), r.randf_range(0.6, 2.4)), r.randf_range(0.8, 1.3), 0.6, P.TERRE.lightened(r.randf_range(0.0, 0.12)))
+	# l'anneau de corde : deux tours sur le pieu, et sa boucle, qui pend ; tenue par une longe, elle se serre sur un nœud
+	var haut := pied.lerp(tete, 0.7)
+	for k in (3 if attache else 2):
+		var c := pied.lerp(tete, 0.72 - k * 0.09)
+		_corde(p, PackedVector2Array([c + Vector2(-2.4, -0.3), c + Vector2(2.3, 0.5)]), 1.0)
+	if attache:
+		var noeud := haut + Vector2(2.6, 0.3)
+		var anneau: PackedVector2Array = Transform2D(-0.2, noeud + Vector2(2.4, -0.4)) * Pinceau.ellipse(Vector2.ZERO, 2.3, 1.5, 10)
+		anneau.append(anneau[0])
+		_corde(p, anneau, 0.9)
+		p.disque(noeud, 1.7, 1.5, ENCRE)
+		p.disque(noeud, 1.1, 0.95, CORDE.darkened(0.1))
+	else:
+		var boucle: PackedVector2Array = Transform2D(0.5, Vector2(5.0, -4.2)) * Pinceau.ellipse(Vector2.ZERO, 2.5, 5.2, 12)
+		boucle.append(boucle[0])
+		_corde(p, boucle, 0.9)
+		_corde(p, PackedVector2Array([haut + Vector2(2.2, 0.4), Vector2(3.4, -8.6)]), 0.9)
+	if neige > 0.2:
+		p.disque(tete + Vector2(0.0, -0.9), 2.3, 0.9 + 0.8 * neige, NEIGE, Pinceau.DOME)
+
+
+# --- la mangeoire : une auge de deux rondins fendus, le plat en dedans, couchée dans deux croix de pieux liés ---
+
+# un point de la mangeoire : le long de l'auge (vers la droite et vers nous), en travers (vers nous, à gauche), en hauteur
+static func _mg(l: float, w: float, z: float) -> Vector2:
+	return Vector2(l * 0.87 - w * 0.5, l * 0.25 + w * 0.43 - z)
+
+
+# le dos du tas de foin, au-dessus du bord de devant (u : le long de l'auge, de 0 à 1 ; foin : de 0, vide, à 1, comble)
+static func _foin_dos(u: float, foin: float) -> float:
+	return (0.8 + 7.4 * foin) * (0.3 + 0.7 * sin(PI * clampf(u, 0.0, 1.0)))
+
+
+func _mangeoire(p) -> void:
+	var r := _hasard(41)
+	var neige := _neige_cran()
+	var mouille := _mouille_cran()
+	var foin := clampf(float(etat.get("foin", 0)) / 12.0, 0.0, 1.0)
+	var ecorce := ECORCE.darkened(0.2 * mouille)
+	var clair := BOIS_CLAIR.darkened(0.24 * mouille)
+	var paille := CORDE.lightened(0.16).darkened(0.25 * mouille)
+	_ombre(p, Vector2(0.0, 1.5), 21.0, 8.5, 0.36)
+	# les brins tombés dessous, de la dernière fois
+	for i in 6:
+		var q := Vector2(r.randf_range(-13.0, 12.0), r.randf_range(-2.0, 5.0))
+		var d := Vector2.from_angle(r.randf_range(-0.6, 0.6)) * r.randf_range(1.5, 2.6)
+		p.tracer(PackedVector2Array([q - d, q + d]), 0.9, paille.darkened(r.randf_range(0.05, 0.25)))
+	# de chaque croix, le pieu qui passe derrière l'auge
+	for l in [-12.0, 12.0]:
+		_perche(p, _mg(float(l), 8.0, 0.0), _mg(float(l), -7.0, 17.0), 2.7, 2.2, ecorce.darkened(0.15))
+	# l'auge : le plat du rondin du fond, son creux
+	var fa := _mg(-16.0, 0.0, 9.5)
+	var fb := _mg(16.0, 0.0, 9.5)
+	var ra := _mg(-16.0, -5.5, 16.0)
+	var rb := _mg(16.0, -5.5, 16.0)
+	var na := _mg(-16.0, 5.5, 16.0)
+	var nb := _mg(16.0, 5.5, 16.0)
+	p.aplat(PackedVector2Array([ra, rb, fb, fa]), clair.darkened(0.14))
+	p.aplat(PackedVector2Array([fa, fb, fb.lerp(rb, 0.42), fa.lerp(ra, 0.42)]), Color("1d1915").lerp(clair, 0.12))
+	for i in 3:
+		var u := r.randf_range(0.1, 0.8)
+		p.tracer(PackedVector2Array([ra.lerp(rb, u) + Vector2(0.0, 1.6 + i), ra.lerp(rb, u + 0.14) + Vector2(0.0, 1.6 + i)]), 0.5, Color(ENCRE, 0.4))
+	p.tracer(PackedVector2Array([ra, rb]), 0.9, ENCRE, false)
+	p.tracer(PackedVector2Array([ra + Vector2(0.2, 0.9), rb + Vector2(-0.4, 0.9)]), 0.6, Color(clair.lightened(0.2), 0.8), false)
+	# la planchette qui la ferme, au bout qui vient vers nous
+	var bout := PackedVector2Array([nb, rb, fb])
+	p.aplat(bout, BOIS.darkened(0.1 + 0.2 * mouille))
+	p.tracer(PackedVector2Array([nb.lerp(rb, 0.5), fb + Vector2(-0.2, -1.2)]), 0.5, Color(ENCRE, 0.45), false)
+	# le foin : des fibres en tas, qui dépassent du bord ; vide, on voit le fond
+	if foin > 0.0:
+		var tas := PackedVector2Array([na + Vector2(0.6, -0.2)])
+		for k in 9:
+			var u := k / 8.0
+			tas.append(na.lerp(nb, 0.03 + 0.94 * u) + Vector2(1.3, -_foin_dos(u, foin) + r.randf_range(-0.5, 0.5)))
+		tas.append(nb + Vector2(-0.4, -0.2))
+		p.aplat(tas, paille)
+		var dos := tas.slice(1, 10)
+		p.tracer(dos, 1.0, ENCRE, false)
+		for i in 5 + int(foin * 9.0):
+			var u := r.randf_range(0.06, 0.94)
+			var q := na.lerp(nb, u) + Vector2(1.3, -r.randf_range(0.1, 0.85) * _foin_dos(u, foin))
+			var d := Vector2.from_angle(r.randf_range(-0.9, 0.9)) * r.randf_range(1.4, 2.8)
+			p.tracer(PackedVector2Array([q - d, q + d]), 0.7, paille.darkened(0.3) if i % 3 == 0 else paille.lightened(0.16))
+	# le rondin de devant : son écorce vers nous, la tranche claire de son plat
+	var devant := PackedVector2Array([na, nb, fb + Vector2(0.0, 0.7), fa + Vector2(0.0, 0.7)])
+	p.aplat(devant, ecorce.lightened(0.05))
+	p.tracer(PackedVector2Array([na.lerp(fa, 0.3) + Vector2(1.0, 0.0), nb.lerp(fb, 0.3) + Vector2(-1.0, 0.0)]), 0.8, Color(ecorce.lightened(0.26), 0.8), false)
+	for i in 5:
+		var u := r.randf_range(0.05, 0.92)
+		p.tracer(PackedVector2Array([na.lerp(nb, u) + Vector2(0.4, 1.3), na.lerp(nb, u) + Vector2(0.9, 3.6)]), 0.6, Color(ENCRE, 0.5))
+	var tranche := Vector2(0.7, -0.6)
+	p.aplat(PackedVector2Array([na, nb, nb + tranche, na + tranche]), clair)
+	p.tracer(PackedVector2Array([na, nb]), 0.9, ENCRE, false)
+	p.tracer(PackedVector2Array([na, fa + Vector2(0.0, 0.7)]), 1.0, ENCRE, false)
+	p.tracer(PackedVector2Array([fa + Vector2(0.0, 0.7), fb + Vector2(0.0, 0.7)]), 1.5, ENCRE, false)
+	p.tracer(PackedVector2Array([nb, fb + Vector2(0.0, 0.7), rb, nb]), 1.1, ENCRE, false)
+	if neige > 0.2:
+		p.tracer(PackedVector2Array([ra + Vector2(1.0, -0.6), rb + Vector2(-1.0, -0.6)]), 0.8 + 1.2 * neige, NEIGE)
+		p.tracer(PackedVector2Array([na + Vector2(1.5, -0.9), nb + Vector2(-0.5, -0.9)]), 0.8 + 1.4 * neige, NEIGE)
+		if foin > 0.0:
+			var cime := na.lerp(nb, 0.5) + Vector2(1.3, -_foin_dos(0.5, foin) + 0.5)
+			p.aplat(Transform2D(0.28, cime) * Pinceau.ellipse(Vector2.ZERO, 3.0 + 3.6 * neige, 0.7 + 0.9 * neige, 10), NEIGE)
+	# de chaque croix, le pieu qui passe devant ; la ligature, là où ils se croisent
+	for l in [-12.0, 12.0]:
+		_perche(p, _mg(float(l), -8.0, 0.0), _mg(float(l), 7.0, 17.0), 2.9, 2.3, ecorce.lightened(0.04))
+		var c := _mg(float(l), 0.0, 9.0)
+		_corde(p, PackedVector2Array([c + Vector2(-2.3, -1.3), c + Vector2(2.2, 1.0)]), 0.9)
+		_corde(p, PackedVector2Array([c + Vector2(-2.2, 0.9), c + Vector2(2.3, -1.2)]), 0.9)
+		if neige > 0.2:
+			p.disque(_mg(float(l), 7.0, 17.6), 1.6, 0.7 + 0.5 * neige, NEIGE, Pinceau.DOME)
+
+
+# les brins qui dépassent du tas, et que le vent tire
+func _mangeoire_vif(p) -> void:
+	var foin := clampf(float(etat.get("foin", 0)) / 12.0, 0.0, 1.0)
+	if foin <= 0.0:
+		return
+	var r := _hasard(43)
+	var paille := CORDE.lightened(0.2).darkened(0.25 * _mouille_cran())
+	var na := _mg(-16.0, 5.5, 16.0)
+	var nb := _mg(16.0, 5.5, 16.0)
+	for i in (3 if _mobile else 6):
+		var u := r.randf_range(0.12, 0.88)
+		var pied := na.lerp(nb, u) + Vector2(1.3, -_foin_dos(u, foin) + 0.6)
+		var h := r.randf_range(2.2, 4.4)
+		var pen := r.randf_range(-0.5, 0.5) + 0.6 * _vent + 0.4 * sin(_t * 5.2 + i * 1.9) * _vent
+		p.tracer(PackedVector2Array([pied, pied + Vector2(pen * h * 0.4, -h * 0.6), pied + Vector2(pen * h, -h)]), 0.85, paille.darkened(0.08 * (i % 3)))
+
+
+# --- l'appât : une poignée de baies, sur une feuille ---
+
+# ce qu'il en reste, en baies
+func _appat_baies() -> int:
+	return int(ceil(clampf(float(etat.get("reste", 1.0)), 0.0, 1.0) * 7.0 - 0.001))
+
+
+func _appat(p) -> void:
+	var r := _hasard(51)
+	var n := _appat_baies()
+	var vert := P.MOUSSE.lightened(0.24)
+	_ombre(p, Vector2(0.4, 1.4), 9.0, 3.4, 0.34)
+	# la feuille : large, un peu roulée, sa nervure pâle
+	var feuille := PackedVector2Array([Vector2(-8.0, 0.9), Vector2(-5.0, -2.0), Vector2(-0.6, -3.2), Vector2(3.9, -2.6), Vector2(6.8, -0.5), Vector2(4.2, 2.2), Vector2(-0.4, 3.2),
+		Vector2(-4.8, 2.7)])
+	p.aplat(feuille, vert)
+	p.aplat(PackedVector2Array([Vector2(-8.0, 0.9), Vector2(-0.6, 0.4), Vector2(6.8, -0.5), Vector2(4.2, 2.2), Vector2(-0.4, 3.2), Vector2(-4.8, 2.7)]), vert.darkened(0.2))
+	p.tracer(PackedVector2Array([Vector2(-7.4, 0.8), Vector2(-0.6, 0.3), Vector2(6.4, -0.5)]), 0.7, Color(P.PAPIER, 0.6), false)
+	for x in [-4.2, -1.0, 2.4]:
+		p.tracer(PackedVector2Array([Vector2(float(x), 0.5), Vector2(float(x) + 1.6, -1.9)]), 0.5, Color(P.PAPIER, 0.4))
+	p.contour(feuille, 1.0, ENCRE, r, 3)
+	_baton(p, PackedVector2Array([Vector2(6.6, -0.5), Vector2(9.2, -1.7)]), 0.8, vert.darkened(0.3), 0.8)
+	# ce qu'on y a déjà mangé : le jus, deux queues
+	if n < 7:
+		for q in [Vector2(-3.2, 1.5), Vector2(2.6, 1.0), Vector2(0.2, -1.4)]:
+			_pastille(p, q, 1.0, 0.6, Color(P.SANG, 0.5))
+		p.tracer(PackedVector2Array([Vector2(3.4, 1.4), Vector2(4.6, 0.2)]), 0.6, CUIR_OMBRE)
+	# les baies, en tas : celles du dessus partent les premières
+	var places := [Vector2(-3.4, 0.5), Vector2(-1.1, 1.0), Vector2(1.3, 0.8), Vector2(3.4, 0.2), Vector2(-2.2, -1.5), Vector2(2.2, -1.6), Vector2(0.0, -2.3)]
+	var rouge := BAIE.lerp(P.BRAISE_ROUGE, 0.7)
+	for i in n:
+		var q: Vector2 = places[i]
+		_pastille(p, q, 2.1, 2.0, ENCRE)
+		_pastille(p, q, 1.45, 1.35, rouge.darkened(0.12 * (i % 2)))
+		_pastille(p, q + Vector2(-0.45, -0.45), 0.45, 0.4, Color(P.PAPIER, 0.75))
+	if _neige_cran() > 0.3:
+		_pastille(p, Vector2(-5.2, -0.4), 2.0, 0.8, Color(NEIGE, 0.9))
+
+
 # --- la popote, sur le feu : une marmite de ferraille noircie, posée sur trois pierres ; son bouillon frémit, sa vapeur monte ---
 
 # dessinée à l'origine de ci (le pied du feu), d'un seul appel ; t : le temps qui passe
@@ -1919,6 +2692,7 @@ static func popote(ci: CanvasItem, t: float) -> void:
 class Calque extends Node2D:
 	var hote
 	var quoi := ""
+	var rang := 0               # (un rang de plantes du carré : lequel)
 
 	func _draw() -> void:
 		if hote != null and is_instance_valid(hote):

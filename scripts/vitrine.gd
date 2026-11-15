@@ -173,6 +173,15 @@ func _lancer() -> void:
 			j.inventaire[k3] = 14
 		j.inventaire["eau"] = 3
 		jeu.atelier.objets = {"tente": 1, "gourde": 1, "sac_a_dos": 1, "lampe": 1, "piles": 1, "duvet": 1}
+		# (--jardin : et de quoi jardiner, harnacher)
+		if ar2.has("--jardin"):
+			for k4 in ["houe", "arrosoir", "licol", "selle", "sacoche", "epouvantail"]:
+				jeu.atelier.objets[k4] = 1
+			for k4 in ["graine_baie", "graine_lin", "graine_simple"]:
+				j.inventaire[k4] = 4
+			j.inventaire["simples"] = 2
+			j.inventaire["lait"] = 1
+			j.inventaire["arrosages"] = 2
 		jeu.atelier.portes = {"sac_a_dos": true}
 		jeu.atelier.charge = 62.0
 		jeu.atelier._tenue()
@@ -236,11 +245,14 @@ func _lancer() -> void:
 						if _etats.has("fouille"):
 							s.etat["fouille"] = true
 					"carre":
-						# (--etat baie|lin|simple, et semis|pousse|fleur|mur ; eau : la terre humide ; gel)
+						# (--etat baie|lin|simple, et semis|pousse|fleur|mur ; eau : la terre humide ; gel ; sans culture
+						# dite, chaque carré a la sienne, et sans stade dit, chacun le sien)
+						var rang: int = jeu.atelier.poses.filter(func(x): return str(x.genre) == "carre").find(s)
+						s.etat["culture"] = ["baie", "lin", "simple"][rang % 3]
 						for c in ["baie", "lin", "simple"]:
 							if _etats.has(c):
 								s.etat["culture"] = c
-						s.etat["stade"] = 3.0 if _etats.has("mur") else (2.0 if _etats.has("fleur") else (1.0 if _etats.has("pousse") else 0.2))
+						s.etat["stade"] = 3.0 if _etats.has("mur") else (2.0 if _etats.has("fleur") else (1.0 if _etats.has("pousse") else (0.2 if _etats.has("semis") else clampf(3.0 - 0.6 * float(rang / 3), 0.4, 3.0))))
 						s.etat["eau"] = 1.0 if _etats.has("eau") else 0.0
 						s.etat["gel"] = _etats.has("gel")
 					"epouvantail":
