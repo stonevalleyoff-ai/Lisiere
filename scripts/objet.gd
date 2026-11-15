@@ -17,6 +17,7 @@ const LUISANT := Color(0.42, 0.95, 0.82)    # la lueur des champignons lumineux 
 const OCRE := Color(0.65, 0.48, 0.19)       # le chapeau des autres champignons (l'ocre de l'herbier)
 const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
 const Botanique := preload("res://scripts/botanique.gd")
+const Herbe := preload("res://scripts/herbe.gd")
 const R_BAIES := preload("res://scripts/regles.gd").BAIES_PAR_BUISSON
 const R_REPOUSSE_BAIES := preload("res://scripts/regles.gd").REPOUSSE_BAIES
 const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
@@ -456,6 +457,9 @@ func _process(delta: float) -> void:
 			if brule <= 0.0:
 				material = _matiere_au_repos()
 	if _repousse > 0.0:
+		# (une herbe repousse à vue : elle se redessine à chaque quart du chemin)
+		if genre == "herbe" and int(_repousse / R_REPOUSSE_BAIES * 4.0) != int((_repousse - delta) / R_REPOUSSE_BAIES * 4.0):
+			queue_redraw()
 		_repousse -= delta
 		anime = true
 		if _repousse <= 0.0:
@@ -1170,18 +1174,14 @@ func porter_herbe(type: String) -> void:
 	herbe = Botanique.espece_de(type, graine)
 
 
-# (une marque provisoire : une tige, sa fleur de la couleur de l'espèce ; son vrai dessin : scripts/herbe.gd)
+# une herbe de l'herbier : son dessin est dans scripts/herbe.gd (sept formes ; son espèce, son lieu et sa graine font le reste).
+# Entière, cueillie (la tige coupée), puis qui repousse, par quarts ; son signe s'y voit (Botanique.signe)
 func _herbe(p, _r: RandomNumberGenerator) -> void:
-	var fleur: Color = Botanique.couleur(herbe) if herbe != "" else P.IVOIRE
-	var vert := P.MOUSSE.lightened(0.1)
-	if reste <= 0:
-		p.tracer(PackedVector2Array([Vector2(-2, 0), Vector2(-1, -3)]), 1.2, vert.darkened(0.2), false)
-		p.tracer(PackedVector2Array([Vector2(2, 0), Vector2(2, -2.5)]), 1.2, vert.darkened(0.2), false)
-		return
-	for k in 3:
-		var x := -3.0 + 3.0 * k
-		p.tracer(PackedVector2Array([Vector2(x * 0.4, 0), Vector2(x, -9.0 - 2.0 * (k % 2))]), 1.4, vert, false)
-		p.disque(Vector2(x, -10.0 - 2.0 * (k % 2)), 2.2, 2.2, fleur)
+	var pousse := 1.0 - clampf(_repousse / R_REPOUSSE_BAIES, 0.0, 1.0)
+	Herbe.dessiner(p, herbe, graine, reste > 0, pousse, _climat, roussi)
+	if reste > 0 and Botanique.signe(herbe) == "miel":
+		# (elle sent le miel : deux ou trois insectes tournent autour, sur leur propre nœud)
+		Herbe.essaim(self, graine, Herbe.cime(herbe))
 
 
 func _touffe(p, r: RandomNumberGenerator) -> void:

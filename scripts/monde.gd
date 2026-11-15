@@ -24,7 +24,7 @@ const EFFACE := 0.35           # l'opacité d'une couronne qui cache la veilleus
 # un lieu sans bord (MONDE-OUVERT.md) : il se fabrique par morceaux autour de la veilleuse
 const MORCEAU := 700.0         # le côté d'un morceau
 const PORTEE := 1400.0         # jusqu'où le lieu existe autour d'elle
-const HERBES := 52             # les plants d'herbes d'un lieu (les six espèces de son herbier : scripts/botanique.gd)
+const HERBES := 110            # les plants d'herbes d'un lieu (les six espèces de son herbier : scripts/botanique.gd) : cinq ou six par écran
 const OUBLI := 2300.0          # plus loin, un morceau est défait : on ne garde que ce qu'on y a changé
 
 var jeu

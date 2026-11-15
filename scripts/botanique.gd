@@ -97,6 +97,7 @@ var dernier_gout := ""            # la vertu de la dernière herbe goûtée (le 
 var _vertus := {}                 # le lieu → [la vertu de chacune de ses six herbes]
 var _indices := {}                # l'espèce → son indice
 var _dit := {}
+var _guet := 0.0
 
 
 # --- les espèces ---
@@ -557,6 +558,15 @@ func maj(delta: float) -> void:
 	if calme > 0.0:
 		calme = maxf(0.0, calme - delta)
 		j.peur = maxf(0.0, float(j.peur) - 1.4 * delta)
+	# (une herbe qu'elle ne connaît pas, à quelques pas : le jeu le dit, une fois par espèce — elles sont petites, on passe à côté)
+	_guet -= delta
+	if _guet <= 0.0 and jeu.monde != null:
+		_guet = 0.6
+		for o in jeu.monde.autour(j.position, 120.0):
+			if str(o.genre) == "herbe" and int(o.reste) > 0 and not connue(str(o.herbe)) and not _dit.has("pres:" + str(o.herbe)):
+				_dit["pres:" + str(o.herbe)] = true
+				jeu.ui.message("Une herbe que tu ne connais pas, à quelques pas. « Agir » la cueille.", TEINTE)
+				break
 	for f in fumees.keys():
 		if not is_instance_valid(f) or not f.allume():
 			fumees.erase(f)
