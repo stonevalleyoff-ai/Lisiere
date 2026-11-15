@@ -876,7 +876,7 @@ func ouvrir_page(quelle: String) -> void:
 	if not en_partie or _mort >= 0.0 or page != "" or en_pause:
 		return
 	# (la partie n'attend que si la page s'est ouverte)
-	if not (ui.montrer_etabli(true) if quelle == "etabli" else ui.montrer_sac(true)):
+	if not ui._montrer_page(quelle if quelle in ["etabli", "herbier"] else "sac", true):
 		return
 	page = quelle
 	en_pause = true
@@ -887,6 +887,7 @@ func fermer_page() -> void:
 		return
 	ui.montrer_etabli(false)
 	ui.montrer_sac(false)
+	ui._montrer_page("herbier", false)
 	page = ""
 	en_pause = false
 

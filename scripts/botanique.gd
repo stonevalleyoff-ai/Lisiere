@@ -534,7 +534,8 @@ func mangee(b, s, delta: float) -> void:
 		if b.position.distance_to(jeu.joueur.position) < 700.0:
 			jeu.ui.message("%s s'est endormie sur l'appât." % str(b.nom), TEINTE)
 	elif sorte == "poison":
-		b.empoisonner(POISON_BETE)
+		# (un peu plus longtemps que ce que le poison met à l'éteindre : il va jusqu'au bout)
+		b.empoisonner(POISON_BETE * 1.2)
 		if b.position.distance_to(jeu.joueur.position) < 700.0:
 			jeu.ui.message("%s a mangé l'appât. Le poison fera le reste." % str(b.nom), TEINTE)
 

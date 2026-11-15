@@ -90,8 +90,24 @@ func becher() -> bool:
 	return true
 
 
+# une herbe de l'herbier, semée (« foret:ombelle » : scripts/botanique.gd) ?
+static func est_une_herbe(culture: String) -> bool:
+	return culture.contains(":")
+
+
+# ce qu'on sait d'une culture : son nom, ce qu'on sème, ce qu'elle rend, ses jours ({} : ce n'en est pas une). Une herbe
+# reconnue se sème de ses propres plants (deux), et en rend cinq
+func info(culture: String) -> Dictionary:
+	if CULTURES.has(culture):
+		return CULTURES[culture]
+	if not est_une_herbe(culture) or jeu.get("botanique") == null:
+		return {}
+	var B = jeu.botanique
+	return {"nom": B.nom(culture), "graine": B.cle(culture), "donne": {B.cle(culture): int(B.RECOLTE_JARDIN)}, "jours": 1.5}
+
+
 func graines(culture: String) -> int:
-	return int(jeu.joueur.inventaire.get(str(CULTURES[culture]["graine"]), 0))
+	return int(jeu.joueur.inventaire.get(str(info(culture)["graine"]), 0))
 
 
 # ce qu'elle sèmerait là, sans choisir : ce dont elle a le plus de graines ("" : elle n'en a pas assez)
@@ -106,19 +122,22 @@ func culture_par_defaut() -> String:
 
 
 func semer(s, culture: String) -> bool:
-	if s == null or not CULTURES.has(culture) or str(s.etat.get("culture", "")) != "":
+	if s == null or info(culture).is_empty() or str(s.etat.get("culture", "")) != "":
+		return false
+	if est_une_herbe(culture) and str(jeu.botanique.empeche_semer(culture)) != "":
+		jeu.ui.message(str(jeu.botanique.empeche_semer(culture)), GRIS)
 		return false
 	if graines(culture) < GRAINES:
-		jeu.ui.message("Il te faut %d %s." % [GRAINES, str(NOMS_GRAINES[CULTURES[culture]["graine"]])], GRIS)
+		jeu.ui.message("Il te faut %d %s." % [GRAINES, str(NOMS_GRAINES.get(info(culture)["graine"], "plants"))], GRIS)
 		return false
 	var inv: Dictionary = jeu.joueur.inventaire
-	var g := str(CULTURES[culture]["graine"])
+	var g := str(info(culture)["graine"])
 	inv[g] = int(inv[g]) - GRAINES
 	s.etat["culture"] = culture
 	s.etat["stade"] = 0.0
 	jeu.joueur.geste_atelier("semer")
 	jeu.sons.atelier("tresse", -6.0, 1.3, s.position)
-	jeu.ui.message("%s : semé. %s" % [str(CULTURES[culture]["nom"]), "La terre est humide." if float(s.etat.get("eau", 0.0)) > 0.15 else "La terre est sèche : il lui faut de l'eau."], TEINTE)
+	jeu.ui.message("%s : semé. %s" % [str(info(culture)["nom"]), "La terre est humide." if float(s.etat.get("eau", 0.0)) > 0.15 else "La terre est sèche : il lui faut de l'eau."], TEINTE)
 	return true
 
 
@@ -168,13 +187,22 @@ func mur(s) -> bool:
 func recolter(s) -> bool:
 	if s == null or not mur(s):
 		return false
-	var c: Dictionary = CULTURES[str(s.etat["culture"])]
+	var culture := str(s.etat["culture"])
+	var c: Dictionary = info(culture)
 	var A = _atelier()
 	var dits := PackedStringArray()
 	for k in c["donne"]:
 		var n: int = A.ranger(k, int(c["donne"][k]))
-		dits.append("+%d %s" % [n, str(R.NOMS.get(k, A.NOMS_MATIERES.get(k, k)))])
+		dits.append("+%d %s" % [n, str(c["nom"]).to_lower() if est_une_herbe(culture) else str(R.NOMS.get(k, A.NOMS_MATIERES.get(k, k)))])
 	var inv: Dictionary = jeu.joueur.inventaire
+	if est_une_herbe(culture):
+		# (une herbe : ses plants se ressèment d'eux-mêmes, on en garde pour le prochain carré)
+		s.etat["culture"] = ""
+		s.etat["stade"] = 0.0
+		jeu.joueur.geste_atelier("fouiller")
+		jeu.sons.jouer("herbe", -4.0, 1.0)
+		jeu.ui.message("%s." % ", ".join(dits), TEINTE)
+		return true
 	inv[str(c["graine"])] = int(inv.get(str(c["graine"]), 0)) + RENDUES
 	s.etat["culture"] = ""
 	s.etat["stade"] = 0.0
@@ -208,7 +236,7 @@ func dire(s) -> String:
 	var culture := str(s.etat.get("culture", ""))
 	if culture == "":
 		return "Un carré vide."
-	var nom := str(CULTURES[culture]["nom"])
+	var nom := str(info(culture)["nom"])
 	var stade := float(s.etat.get("stade", 0.0))
 	if stade >= 3.0:
 		return "%s : mûr." % nom
@@ -265,7 +293,11 @@ func tentation(b):
 	var mieux = null
 	var d0: float = float(b.flair) * 1.3
 	for s in carres():
-		if str(s.etat.get("culture", "")) == "" or float(s.etat.get("stade", 0.0)) < 1.0:
+		var culture := str(s.etat.get("culture", ""))
+		if culture == "" or float(s.etat.get("stade", 0.0)) < 1.0:
+			continue
+		# (une herbe vénéneuse ou âcre : elles n'y touchent pas — un carré qui se garde tout seul)
+		if est_une_herbe(culture) and not bool(jeu.botanique.se_broute(culture)):
 			continue
 		var d: float = s.position.distance_to(b.position)
 		if d < d0 and not garde(s.position):
@@ -311,10 +343,10 @@ func maj(delta: float) -> void:
 				var culture := str(s.etat.get("culture", ""))
 				if culture != "" and eau > 0.15 and not gel and float(s.etat.get("broute", 0.0)) <= 0.0:
 					var avant: float = float(s.etat.get("stade", 0.0))
-					var apres := minf(3.0, avant + delta * 3.0 / (float(CULTURES[culture]["jours"]) * R.DUREE))
+					var apres := minf(3.0, avant + delta * 3.0 / (float(info(culture)["jours"]) * R.DUREE))
 					s.etat["stade"] = apres
 					if avant < 3.0 and apres >= 3.0 and jeu.joueur.position.distance_to(s.position) < 900.0:
-						jeu.ui.message("%s : c'est mûr." % str(CULTURES[culture]["nom"]), TEINTE)
+						jeu.ui.message("%s : c'est mûr." % str(info(culture)["nom"]), TEINTE)
 			"epouvantail":
 				# (la nuit, il regarde d'où vient la Noire ; plus elle est près, plus il tremble)
 				var alerte := 0.0
