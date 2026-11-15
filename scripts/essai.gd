@@ -2353,6 +2353,35 @@ func _l_atelier(F: Dictionary) -> void:
 	verif(posee and str(tente.genre) == "tente" and A.abri(tente.position) == 1.0 and C.abri(tente.position) == 1.0 and A.abri(tente.position + Vector2(90.0, 0.0)) == 0.0,
 		"posée, la tente abrite qui s'y tient (de la pluie, du vent), pas ce qui est à côté")
 
+	# ce qu'on entend à l'établi et au camp (scripts/sons_atelier.gd)
+	var SA = load("res://scripts/sons_atelier.gd")
+	var rs := RandomNumberGenerator.new()
+	rs.seed = 7
+	var sonnent := true
+	var le_pire := ""
+	for nom in SA.NOMS:
+		var a: Array = SA.fabriquer(nom, rs)
+		var crete := 0.0
+		if a.size() == 2:
+			for x in a[0]:
+				crete = maxf(crete, absf(x))
+		if a.size() != 2 or a[0].size() < 200 or crete < 0.05 or crete > 1.0 or is_nan(crete):
+			sonnent = false
+			le_pire = str(nom)
+	var journal_a = jeu.sons.journal
+	jeu.sons.journal = []
+	donner.call({"fibre": 12, "corde": 2})
+	var ou_a: Vector2 = j.position
+	j.position = ici
+	A.fabriquer("corde")
+	j.position = ou_a
+	A.basculer("sac_a_dos")
+	A.basculer("sac_a_dos")
+	var entendus_a: Array = jeu.sons.journal.map(func(x): return str(x[1]).rstrip("0123456789"))
+	jeu.sons.journal = journal_a
+	verif(sonnent and entendus_a.has("tresse") and entendus_a.has("sangle") and jeu.sons._couches.has("bouillon") and jeu.sons._couches.has("fil"),
+		"les %d sons de l'atelier se fabriquent, sans crête folle%s ; une corde qu'on tresse, un sac qu'on boucle s'entendent" % [SA.NOMS.size(), "" if le_pire == "" else " (sauf « %s »)" % le_pire])
+
 	# ce qui est posé tient sa place dans le lieu
 	var Camp = load("res://scripts/campement.gd")
 	var ouvrage: float = float(etabli.etat.get("travail", 0.0))

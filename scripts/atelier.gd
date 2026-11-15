@@ -163,12 +163,21 @@ func fabriquer(id: String) -> bool:
 		objets[id] = int(objets.get(id, 0)) + 1
 		if bool(o.get("porte", false)) and id != "lampe":
 			portes[id] = true
-	jeu.joueur.geste_atelier("coudre" if str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet"] else "marteler")
+	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet"]
+	jeu.joueur.geste_atelier("coudre" if cousu else "marteler")
+	# (ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; sinon la scie, puis le maillet)
+	if id == "corde" or id == "filet":
+		jeu.sons.atelier("tresse")
+	elif id == "bache":
+		jeu.sons.atelier("toile", -3.0)
+	elif cousu:
+		jeu.sons.atelier("couture")
+	else:
+		jeu.sons.atelier("scie" if o["cout"].has("bois") else "marteau")
 	# (à l'établi : des copeaux en volent, le temps de l'ouvrage)
 	var e = _proche("etabli", PORTEE * 1.3)
 	if e != null:
 		e.etat["travail"] = 1.0
-	jeu.sons.jouer("bois", -6.0, 1.1)
 	jeu.ui.message("%s. %s" % [str(o["nom"]), str(o["dit"])], TEINTE)
 	_tenue()
 	return true
@@ -187,9 +196,10 @@ func basculer(id: String) -> void:
 				jeu.ui.message("Les piles sont vides. Le cerf-volant les charge, par grand vent.", Color(0.75, 0.7, 0.66))
 				return
 		portes["lampe"] = not porte("lampe")
-		jeu.sons.jouer("pierre", -12.0, 1.9)
+		jeu.sons.atelier("clic", 0.0, 1.0 if porte("lampe") else 0.86)
 	else:
 		portes[id] = not porte(id)
+		jeu.sons.atelier("sangle")
 	_tenue()
 
 
@@ -252,7 +262,7 @@ func poser(id: String) -> bool:
 			jeu.monde.retirer(o)
 	_creer(id, p, {})
 	j.geste_atelier("monter")
-	jeu.sons.jouer("bois", -4.0, 0.85)
+	_son_de_pose(id, p)
 	return true
 
 
@@ -267,9 +277,22 @@ func replier() -> bool:
 		reveiller("")
 	objets[str(s.genre)] = possede(str(s.genre)) + 1
 	poses.erase(s)
+	jeu.sons.atelier("corde" if str(s.genre) in ["hamac", "filet", "etabli"] else "toile", -2.0, 1.0, s.position)
 	s.queue_free()
 	jeu.joueur.geste_atelier("monter")
 	return true
+
+
+# ce qu'on entend quand elle monte une chose : la corde qu'on tend, la toile qu'on déplie, le piquet qu'on enfonce
+func _son_de_pose(id: String, p: Vector2) -> void:
+	match id:
+		"hamac", "filet":
+			jeu.sons.atelier("corde", 0.0, 1.0, p)
+		"etabli":
+			jeu.sons.atelier("marteau", 0.0, 0.9, p)
+		_:
+			jeu.sons.atelier("toile", 0.0, 1.0, p)
+			jeu.sons.atelier("piquet", -2.0, 1.0, p)
 
 
 # une gorgée (la canicule pèse moins), et elle le dit
@@ -282,6 +305,7 @@ func boire() -> bool:
 	jeu.joueur.temperature = move_toward(float(jeu.joueur.temperature), 50.0, 9.0)
 	jeu.joueur.faim = minf(100.0, float(jeu.joueur.faim) + 2.0)
 	jeu.joueur.geste_atelier("boire")
+	jeu.sons.atelier("gorgee")
 	jeu.ui.message("Une gorgée d'eau.", TEINTE)
 	return true
 
@@ -587,6 +611,7 @@ func _puiser(s) -> void:
 	s.etat["eau"] = float(s.etat.get("eau", 0.0)) - pris
 	inv["eau"] = int(inv.get("eau", 0)) + pris
 	jeu.joueur.geste_atelier("boire")
+	jeu.sons.atelier("gourde")
 	jeu.ui.message("Tu remplis ta gourde : %d gorgée%s." % [pris, "s" if pris > 1 else ""], TEINTE)
 
 
@@ -599,6 +624,7 @@ func _guetter(s) -> void:
 			continue
 		s.etat["prise"] = {"id": str(b.id), "nom": str(b.nom), "masse": float(b.masse)}
 		jeu.bete_prise(b)
+		jeu.sons.atelier("filet", 0.0, 1.0, s.position)
 		if jeu.joueur.position.distance_to(s.position) < 600.0:
 			jeu.ui.message("Quelque chose s'est pris dans ton filet.", TEINTE)
 		return
@@ -615,6 +641,7 @@ func _relever(s) -> void:
 	ranger("viande", viande)
 	ranger("peau", 1)
 	jeu.joueur.geste_atelier("monter")
+	jeu.sons.atelier("filet", -4.0, 0.9)
 	jeu.ui.message("%s : +%d viande, +1 peau." % [str(prise["nom"]), viande], Color(0.85, 0.72, 0.6))
 
 
@@ -633,6 +660,7 @@ func _brancher(s) -> void:
 			_tenue()
 		jeu.ui.message("Tes piles sont au fil du cerf-volant. Il lui faut du vent.", TEINTE)
 	jeu.joueur.geste_atelier("monter")
+	jeu.sons.atelier("clic", -2.0, 1.15)
 
 
 # un vestige : ce qu'une autre veilleuse a laissé
@@ -644,6 +672,7 @@ func _fouiller(s) -> void:
 	var n := 2 + int(s.etat.get("riche", 0))
 	ranger("ferraille", n)
 	jeu.joueur.geste_atelier("fouiller")
+	jeu.sons.atelier("fouille")
 	jeu.ui.message("Un camp abandonné. Tu y trouves de la ferraille (%d)." % n, TEINTE)
 
 
