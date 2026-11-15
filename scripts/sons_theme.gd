@@ -1,14 +1,14 @@
 extends RefCounted
 # Lisière — le thème de l'écran-titre (scripts/sons_theme.gd)
-# Une berceuse à trois temps, en ré mineur, d'une quarantaine de secondes, qui revient : un chant de flûte, lié (les notes
-# glissent l'une dans l'autre, un souffle les porte, un vibrato vient aux notes tenues), sur des cordes pincées en arpèges,
-# et un écho qui les fond. Seize mesures : quatre phrases de quatre ; la troisième monte, la quatrième redescend et pose.
+# Une berceuse à trois temps, en ré mineur, d'une quarantaine de secondes, qui revient : un chant grave et boisé (une flûte
+# basse, presque un chalumeau : entre le sol grave et le do du milieu, jamais aigu), lié (les notes glissent l'une dans
+# l'autre, un souffle les porte, un vibrato vient aux notes tenues), sur des cordes pincées en arpèges, et un écho qui les fond. Seize mesures : quatre phrases de quatre ; la troisième monte, la quatrième redescend et pose.
 # Le morceau est fait d'un seul tenant, en une fois, puis joué tel quel : sa mesure ne dépend pas des images du jeu (un
 # thème joué note à note, image par image, boite dès qu'une image tarde). Il se fabrique par petits pas (Chantier.avancer),
 # pour ne pas figer l'écran-titre ; sons.gd le garde ensuite sur le disque (user://), pour les fois suivantes.
 
 const O := preload("res://scripts/sons_outils.gd")
-const VERSION := 2                 # à changer quand le morceau change : la copie gardée sur le disque est refaite
+const VERSION := 3                 # à changer quand le morceau change : la copie gardée sur le disque est refaite
 const TAUX := O.LENT
 const TEMPS := 0.8                 # un temps : 75 à la minute
 const MESURE := 3.0 * TEMPS
@@ -20,10 +20,10 @@ const NIVEAU := -6.0               # son niveau (dB), sur le bus de la musique
 
 # le chant : quatre phrases ; chaque note [hauteur (en demi-tons, le la 440 vaut 69 ; -1 : un silence), temps]
 const CHANT := [
-	[[69, 2.0], [74, 1.0], [77, 2.0], [76, 0.5], [74, 0.5], [72, 1.0], [77, 1.0], [81, 1.0], [79, 2.0], [76, 0.7], [-1, 0.3]],
-	[[77, 2.0], [74, 1.0], [70, 1.0], [74, 1.0], [77, 1.0], [79, 1.5], [77, 0.5], [74, 1.0], [76, 2.5], [-1, 0.5]],
-	[[81, 2.0], [79, 1.0], [76, 1.0], [79, 1.0], [84, 1.0], [82, 1.5], [81, 0.5], [79, 1.0], [81, 2.5], [-1, 0.5]],
-	[[77, 1.0], [74, 1.0], [70, 1.0], [67, 1.0], [70, 1.0], [74, 1.0], [76, 2.0], [73, 1.0], [74, 3.0]],
+	[[57, 2.0], [62, 1.0], [65, 2.0], [64, 0.5], [62, 0.5], [60, 1.0], [65, 1.0], [69, 1.0], [67, 2.0], [64, 0.7], [-1, 0.3]],
+	[[65, 2.0], [62, 1.0], [58, 1.0], [62, 1.0], [65, 1.0], [67, 1.5], [65, 0.5], [62, 1.0], [64, 2.5], [-1, 0.5]],
+	[[69, 2.0], [67, 1.0], [64, 1.0], [67, 1.0], [72, 1.0], [70, 1.5], [69, 0.5], [67, 1.0], [69, 2.5], [-1, 0.5]],
+	[[65, 1.0], [62, 1.0], [58, 1.0], [55, 1.0], [58, 1.0], [62, 1.0], [64, 2.0], [61, 1.0], [62, 3.0]],
 ]
 # les cordes : un accord par mesure, égrené en six croches (la basse, puis l'accord qui monte et retombe)
 const ACCORDS := {
@@ -68,7 +68,8 @@ class Chantier:
 	func _init() -> void:
 		_r.seed = 7
 		s = O.vide(DUREE + QUEUE, TAUX)
-		_table = O.table([[1.0, 1.0], [2.0, 0.2], [3.0, 0.085], [4.0, 0.03]])
+		# (son timbre : creux et chaud, des harmoniques impaires surtout, comme un tuyau de bois ; rien qui siffle)
+		_table = O.table([[1.0, 1.0], [2.0, 0.1], [3.0, 0.3], [4.0, 0.04], [5.0, 0.11], [7.0, 0.035]])
 		var c := 0.0
 		for x in _table:
 			c = maxf(c, absf(x))
@@ -186,7 +187,7 @@ class Chantier:
 			if t < t0 or t >= float(e[4]):
 				# (entre deux phrases : elle reprend son souffle)
 				if bool(e[5]):
-					_f = float(e[2]) * 0.982
+					_f = float(e[2]) * 0.985
 				continue
 			_f += (float(e[2]) - _f) * glisse
 			var a := minf(1.0, (t - float(e[3])) / 0.09) * minf(1.0, (float(e[4]) - t) / 0.3)
@@ -211,7 +212,7 @@ class Chantier:
 			_souffle += (_r.randf_range(-1.0, 1.0) - _souffle) * 0.42
 			var air := _souffle * (0.022 + 0.09 * exp(-(t - float(e[3])) / 0.035))
 			# (les notes hautes chantent moins fort : une flûte qui monte ne doit pas percer)
-			var doux := 1.0 - 0.32 * clampf((_f - 587.0) / 460.0, 0.0, 1.0)
+			var doux := 1.0 - 0.3 * clampf((_f - 330.0) / 200.0, 0.0, 1.0)
 			s[i] += (x * lie * enfle * doux + air) * a * 0.3
 		_k = i1
 		if _k >= total:

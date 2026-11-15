@@ -1138,6 +1138,12 @@ func _theme_maj(dt: float) -> void:
 		if f != null:
 			f.store_buffer(_theme_chantier.pcm)
 			f.close()
+			# (les versions d'avant ne servent plus)
+			var dossier := DirAccess.open("user://")
+			if dossier != null:
+				for nom in dossier.get_files():
+					if nom.begins_with("theme_") and nom.ends_with(".pcm") and "user://" + nom != ThemeTitre.fichier():
+						dossier.remove(nom)
 		_theme_chantier = null
 	if _titre and _theme_flux != null:
 		_theme_dans -= dt
