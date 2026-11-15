@@ -203,7 +203,7 @@ func _ready() -> void:
 			c.lecteurs.append(p2)
 		_couches[nom] = c
 	_file = FILE.duplicate()
-	# (l'atelier : ses sons se préparent en dernier, on ne fabrique rien avant d'avoir un établi)
+	# (l'atelier : ses sons se préparent en dernier ; sur un téléphone, avec les autres, avant la partie)
 	_file.append_array(SA.NOMS)
 	if _web:
 		_file.append_array(["queue_sourde", "queue_claire", "queue_voix"])
@@ -263,7 +263,8 @@ func atelier(nom: String, volume_db: float = 0.0, hauteur: float = 1.0, ou = nul
 		var d: float = _joueur.position.distance_to(ou)
 		pan = pan_de(ou)
 		vol += linear_to_db(clampf(1.0 - d / 620.0, 0.02, 1.0)) * 1.3
-	_son(nom, vol, hauteur * _r.randf_range(0.97, 1.03), pan, float(SA.MOUILLE.get(base, 0.0)) * _espace, B_MONDE, true)
+	# (sur un téléphone, un son qui n'est pas prêt est sauté : le fabriquer là figerait l'image ; il le sera à la prochaine pause)
+	_son(nom, vol, hauteur * _r.randf_range(0.97, 1.03), pan, float(SA.MOUILLE.get(base, 0.0)) * _espace, B_MONDE, not mobile)
 
 
 # un pied posé (le signal « pas » de la veilleuse, ou la cadence de maj), en p : le sol du lieu, et ce que le temps en a fait
@@ -387,7 +388,8 @@ func _process(delta: float) -> void:
 	var en_partie: bool = jeu != null and "en_partie" in jeu and jeu.en_partie
 	# la file : plus large hors partie (titre, chargement), étroite en partie (un son par image au plus)
 	_repos = maxf(0.0, _repos - dt)
-	if not (mobile and en_partie):
+	# (sur un téléphone, rien ne se fabrique pendant qu'on joue ; mais la pause, une page ouverte, ne craignent pas un à-coup)
+	if not (mobile and en_partie and not jeu.en_pause):
 		_preparer(8000 if not en_partie else 2500, en_partie)
 	var t0 := Time.get_ticks_usec()
 	# l'écran-titre : le vent, et le thème
