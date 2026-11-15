@@ -521,6 +521,10 @@ func repousser(p: Vector2, r: float) -> Vector2:
 		var l := d.length()
 		if l < m:
 			p = (o.position + d / l * m) if l > 0.001 else p + Vector2(m, 0)
+	# (ni dans ce qu'elle a posé : la tente, l'établi ; scripts/atelier.gd)
+	var camp = jeu.get("atelier") if jeu != null else null
+	if camp != null:
+		p = camp.buter(p, r)
 	if ouvert:
 		# (ni dans l'eau, ni dans une crête : scripts/carte.gd)
 		return carte.retenir(p) if carte != null else p

@@ -17,6 +17,11 @@ extends Node
 #   --sans-feu : la nuit, pas de feu de camp (les chasseurs autour de la seule torche)
 #   --noire 2|3|4 : la Noire à cet acte (scripts/noire.gd) ; --noire dort, --noire piste : de jour, sa tanière, sa piste ;
 #   --noire reveil : de jour, endormie puis réveillée (sa charge, sa morsure, son départ, en pleine lumière)
+#   l'atelier (scripts/atelier.gd) : --pose etabli,tente,hamac,recuperateur,filet,cerf_volant,vestige : ces choses, posées
+#   autour d'elle dans une clairière ; --etat travail,occupe,eau,prise,branche,foudre,fouille,popote : dans cet état ;
+#   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac ;
+#   --fabrique tente,popote : à l'établi, elle fabrique ces choses l'une après l'autre ; --aupres tente : elle se tient
+#   près de cette chose (avec --dort : elle s'y couche)
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -43,6 +48,13 @@ var appels := false
 var _appels_max := 0
 var _appels_somme := 0.0
 var _appels_n := 0
+var _geste_atelier := ""
+var _page := ""
+var _etats := {}
+var _fabrique: PackedStringArray = PackedStringArray()
+var _fabrique_k := 0
+var _dormir_dans = null
+var _geste_atelier_t := 0.0
 var _brules: Array = []
 
 
@@ -134,6 +146,93 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	# (l'atelier, scripts/atelier.gd : --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --dort : elle dort ; --geste marteler :
+	# ce geste d'atelier, repris sans cesse (marteler, scier, coudre, monter, fouiller, boire, remuer) ; --pose etabli,tente : ces
+	# choses du camp, posées autour d'elle)
+	var ar2 := OS.get_cmdline_user_args()
+	var i_t := ar2.find("--tenue")
+	if i_t >= 0 and i_t + 1 < ar2.size():
+		var portee := {}
+		for k in ar2[i_t + 1].split(","):
+			portee[k] = true
+		j.tenue = portee
+	if ar2.has("--dort"):
+		j.endormie = true
+		_plan = [[0.0, 1.0, "attendre"]]
+	var i_g := ar2.find("--geste")
+	if i_g >= 0 and i_g + 1 < ar2.size():
+		_geste_atelier = ar2[i_g + 1]
+		_plan = [[0.0, 1.0, "attendre"]]
+	# (--page etabli|sac : de quoi fabriquer, un établi posé à côté d'elle, puis cette page ouverte à mi-temps)
+	var i_pg := ar2.find("--page")
+	if i_pg >= 0 and i_pg + 1 < ar2.size() and jeu.atelier != null:
+		_page = ar2[i_pg + 1]
+		for k3 in ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache"]:
+			j.inventaire[k3] = 14
+		j.inventaire["eau"] = 3
+		jeu.atelier.objets = {"tente": 1, "gourde": 1, "sac_a_dos": 1, "lampe": 1, "piles": 1, "duvet": 1}
+		jeu.atelier.portes = {"sac_a_dos": true}
+		jeu.atelier.charge = 62.0
+		jeu.atelier._tenue()
+		jeu.atelier._creer("etabli", j.position + Vector2(60.0, 10.0), {})
+		_plan = [[0.0, 1.0, "attendre"]]
+	var i_p := ar2.find("--pose")
+	if i_p >= 0 and i_p + 1 < ar2.size() and jeu.atelier != null:
+		var k2 := 0
+		var quoi: PackedStringArray = ar2[i_p + 1].split(",")
+		_plan = [[0.0, 1.0, "attendre"]]
+		# (une clairière, que rien ne les cache ; un arbre y reste, pour le hamac)
+		var garde = jeu.atelier._l_arbre(j.position + Vector2(-200.0, 30.0), 260.0) if quoi.has("hamac") else null
+		for o in jeu.monde.autour(j.position, 330.0):
+			if o != garde and (float(o.rayon) > 0.0 or str(o.genre) == "buisson"):
+				jeu.monde.retirer(o)
+		for g in quoi:
+			var tour := Vector2.from_angle(-0.5 + TAU * float(k2) / float(quoi.size()))
+			var ou: Vector2 = j.position + Vector2(tour.x * 150.0, tour.y * 105.0)
+			if g == "hamac" and garde != null:
+				ou = garde.position + Vector2(58.0, 12.0)
+			jeu.atelier._creer(g, ou, {})
+			k2 += 1
+		# (--fabrique tente,popote,pelisse… : elle se tient à l'établi, et y fabrique ces choses l'une après l'autre ;
+		# --aupres tente : elle se tient près de cette chose, pour un geste, pour y dormir)
+		var i_f := ar2.find("--fabrique")
+		var i_au := ar2.find("--aupres")
+		var aupres := "etabli" if i_f >= 0 else (ar2[i_au + 1] if i_au >= 0 and i_au + 1 < ar2.size() else "")
+		if i_f >= 0 and i_f + 1 < ar2.size():
+			_fabrique = ar2[i_f + 1].split(",")
+		for s in jeu.atelier.poses:
+			if aupres != "" and str(s.genre) == aupres:
+				j.position = s.position + Vector2(-38.0, 12.0)
+				j.regard = 1.0
+				if ar2.has("--dort") and aupres in ["tente", "hamac"]:
+					j.endormie = false
+					jeu.atelier.objets["duvet"] = 1
+					_dormir_dans = s
+		# (--etat occupe,eau,prise,branche,foudre,fouille,travail,popote : ces choses dans cet état, pour le voir)
+		var i_e := ar2.find("--etat")
+		if i_e >= 0 and i_e + 1 < ar2.size():
+			for e in ar2[i_e + 1].split(","):
+				_etats[e] = true
+			for s in jeu.atelier.poses:
+				match str(s.genre):
+					"tente", "hamac":
+						if _etats.has("occupe"):
+							s.etat["occupe"] = true
+					"recuperateur":
+						if _etats.has("eau"):
+							s.etat["eau"] = 4.6
+					"filet":
+						if _etats.has("prise"):
+							s.etat["prise"] = {"id": "", "nom": "une bête", "masse": 2.4}
+					"cerf_volant":
+						if _etats.has("branche") or _etats.has("foudre"):
+							jeu.atelier.objets["piles"] = 1
+							jeu.atelier.fil = s
+							jeu.atelier.charge = 35.0
+							jeu.atelier.vent_force = 0.8
+					"vestige":
+						if _etats.has("fouille"):
+							s.etat["fouille"] = true
 	# (--affut : elle ne bouge pas, pour regarder l'œil de l'affût s'ouvrir sur une bête ; scripts/pistage.gd)
 	if OS.get_cmdline_user_args().has("--affut"):
 		_plan = [[0.0, 1.0, "attendre"]]
@@ -415,6 +514,44 @@ func _process(delta: float) -> void:
 							jeu.decouvertes[w] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
+	if _page != "" and u > 0.5 and not _fait.has("page"):
+		_fait["page"] = true
+		jeu.ouvrir_page(_page)
+	if not _etats.is_empty() and jeu.atelier != null:
+		for s in jeu.atelier.poses:
+			if _etats.has("travail") and str(s.genre) == "etabli":
+				s.etat["travail"] = 1.0
+			if _etats.has("foudre") and str(s.genre) == "cerf_volant" and u > 0.5 and not _fait.has("foudre"):
+				_fait["foudre"] = true
+				jeu.atelier.foudre(s.position)
+		if _etats.has("popote") and u > 0.2 and not _fait.has("popote") and not jeu.feux.is_empty():
+			_fait["popote"] = true
+			jeu.atelier.objets["popote"] = 1
+			jeu.joueur.inventaire["eau"] = 2
+			jeu.joueur.inventaire["viande"] = 2
+			jeu.atelier.cuisiner(jeu.feux[0])
+	if _dormir_dans != null and u > 0.3 and not _fait.has("dort"):
+		_fait["dort"] = true
+		for b in get_tree().get_nodes_in_group("betes"):
+			if str(b.role) != "proie":
+				b.queue_free()
+		jeu.atelier.dormir(_dormir_dans)
+	if not _fabrique.is_empty() and jeu.atelier != null:
+		# (--fabrique : elle fabrique pour de bon, à l'établi, une chose après l'autre : son geste, son bruit, les copeaux)
+		_geste_atelier_t -= delta
+		if _geste_atelier_t <= 0.0:
+			_geste_atelier_t = 2.1
+			var id: String = _fabrique[_fabrique_k % _fabrique.size()]
+			_fabrique_k += 1
+			for k3 in ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache"]:
+				jeu.joueur.inventaire[k3] = 14
+			jeu.atelier.objets.erase(id)
+			jeu.atelier.fabriquer(id)
+	elif _geste_atelier != "":
+		_geste_atelier_t -= delta
+		if _geste_atelier_t <= 0.0:
+			_geste_atelier_t = 1.8
+			jeu.joueur.geste_atelier(_geste_atelier)
 	# (--noire reveil : de jour, couchée à deux pas, puis réveillée au quart du temps : elle se lève, charge, mord, s'en va)
 	if u > 0.25 and not _fait.has("reveil") and OS.get_cmdline_user_args().has("reveil") and jeu.noire.corps != null:
 		_fait["reveil"] = true

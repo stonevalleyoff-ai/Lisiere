@@ -38,6 +38,7 @@ const IncendieFlammes := preload("res://scripts/incendie_flammes.gd")
 const Noire := preload("res://scripts/noire.gd")
 const Traces := preload("res://scripts/traces.gd")
 const Pistage := preload("res://scripts/pistage.gd")
+const Atelier := preload("res://scripts/atelier.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -90,6 +91,8 @@ var _maj_cherchee := 60.0     # avant de chercher de nouveau une version nouvell
 var noire                     # la Noire : son scénario, d'une nuit à l'autre (scripts/noire.gd)
 var traces                    # les empreintes laissées sur le sol (scripts/traces.gd)
 var pistage                   # l'affût et la lecture des pistes (scripts/pistage.gd)
+var atelier                   # ce qu'elle fabrique, porte et pose (scripts/atelier.gd)
+var page := ""                # la page d'atelier ouverte : « etabli », « sac » ("" : aucune) ; la partie attend, comme en pause
 var savoir: Dictionary = {}   # ce qu'elle a appris de chaque lignée, en secondes d'affût (le carnet des bêtes)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
 var _pont_vu := 0.0
@@ -293,6 +296,8 @@ func _actions() -> void:
 		"haut": [KEY_W, KEY_UP], "bas": [KEY_S, KEY_DOWN], "gauche": [KEY_A, KEY_LEFT], "droite": [KEY_D, KEY_RIGHT],
 		"agir": [KEY_SPACE], "feu": [KEY_1, KEY_KP_1], "torche": [KEY_2, KEY_KP_2], "lance": [KEY_3, KEY_KP_3], "pont": [KEY_4, KEY_KP_4],
 		"manger": [KEY_E], "nourrir": [KEY_F], "cuire": [KEY_C], "pause": [KEY_ESCAPE, KEY_P], "valider": [KEY_ENTER, KEY_KP_ENTER],
+		# (l'atelier : son sac, où elle fabrique l'établi, pose son camp, met sa tenue ; sa lampe)
+		"sac": [KEY_B, KEY_TAB], "lampe": [KEY_L],
 	}
 	for a in touches:
 		if not InputMap.has_action(a):
@@ -559,6 +564,10 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	if noire == null:
 		noire = Noire.new()
 		noire.jeu = self
+	if atelier == null:
+		atelier = Atelier.new()
+		atelier.jeu = self
+	atelier.commencer()
 	# (l'œil de l'affût : au-dessus du lieu)
 	pistage = Pistage.new()
 	pistage.jeu = self
@@ -592,6 +601,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		PartieGardee.appliquer(self, gardee)
 		noire.commencer()
 		noire.reprendre(gardee.get("noire", {}))
+		atelier.reprendre(gardee.get("atelier", {}))
 		if ouvert:
 			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
 			monde.suivre(joueur.position, true)
@@ -601,6 +611,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		return
 	partie_id = ""
 	noire.commencer()
+	atelier.semer_vestiges()
 	if essai == null:
 		PartieGardee.effacer()
 		_ouvrir_au_tableau()
@@ -639,6 +650,9 @@ func _vider() -> void:
 	yeux = null
 	traces = null
 	pistage = null
+	page = ""
+	if atelier != null:
+		atelier.vider()
 	if noire != null:
 		noire.corps = null
 	effets.vider()
@@ -707,6 +721,9 @@ func eclairage(p: Vector2) -> float:
 	if joueur != null and joueur.torche > 0.0:
 		var d: float = p.distance_to(joueur.position)
 		l = maxf(l, clampf((R.RAYON_TORCHE - d) / (R.RAYON_TORCHE * 0.4), 0.0, 1.0))
+	# (sa lampe : un faisceau, devant elle ; scripts/atelier.gd)
+	if atelier != null and joueur != null:
+		l = maxf(l, atelier.eclaire(p))
 	return l
 
 
@@ -767,9 +784,13 @@ func _process(delta: float) -> void:
 			JavaScriptBridge.eval("if (window.lisiereMaj) window.lisiereMaj.chercher();")
 	if not en_partie:
 		return
-	if Input.is_action_just_pressed("pause"):
-		en_pause = not en_pause
-		ui.montrer_pause(en_pause)
+	if Input.is_action_just_pressed("pause") or (page != "" and Input.is_action_just_pressed("sac")):
+		if page != "":
+			# (une page d'atelier est ouverte : la touche la referme)
+			fermer_page()
+		else:
+			en_pause = not en_pause
+			ui.montrer_pause(en_pause)
 	if en_pause:
 		if not _pause_vue:
 			_garder()
@@ -819,6 +840,7 @@ func _process(delta: float) -> void:
 		climat.toit = sous_terre
 	_directeur_passe(delta)
 	noire.maj(delta)
+	atelier.maj(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
 	ui.maj_hud(self)
@@ -826,8 +848,40 @@ func _process(delta: float) -> void:
 		_tomber()
 
 
+# une page d'atelier s'ouvre (l'établi, le sac) : la partie attend, comme en pause ; elle se referme par son bouton, par la
+# touche du sac ou celle de la pause
+func ouvrir_page(quelle: String) -> void:
+	if not en_partie or _mort >= 0.0 or page != "" or en_pause:
+		return
+	# (la partie n'attend que si la page s'est ouverte)
+	if not (ui.montrer_etabli(true) if quelle == "etabli" else ui.montrer_sac(true)):
+		return
+	page = quelle
+	en_pause = true
+
+
+func fermer_page() -> void:
+	if page == "":
+		return
+	ui.montrer_etabli(false)
+	ui.montrer_sac(false)
+	page = ""
+	en_pause = false
+
+
 func _gestes(delta: float) -> void:
-	joueur.deplacer(Input.get_vector("gauche", "droite", "haut", "bas"), delta, monde)
+	var va := Input.get_vector("gauche", "droite", "haut", "bas")
+	if atelier.endormie:
+		# (elle dort : un geste la réveille)
+		if va.length() > 0.3:
+			atelier.reveiller("Tu te lèves.")
+		va = Vector2.ZERO
+	joueur.deplacer(va, delta, monde)
+	if Input.is_action_just_pressed("sac"):
+		ouvrir_page("sac")
+		return
+	if Input.is_action_just_pressed("lampe"):
+		atelier.basculer("lampe")
 	_agir = maxf(0.0, _agir - delta)
 	if Input.is_action_pressed("agir") and _agir <= 0.0:
 		_agir = R.CADENCE
@@ -845,6 +899,9 @@ func _gestes(delta: float) -> void:
 
 # frapper la bête la plus proche à portée ; sinon, prendre ce qui est à portée
 func agir() -> void:
+	if atelier.endormie:
+		atelier.reveiller("Tu te lèves.")
+		return
 	var p: Vector2 = joueur.position
 	var cible = null
 	var d0 := R.PORTEE_COUP
@@ -865,6 +922,9 @@ func agir() -> void:
 		_viser({"bete": true, "son": "coup", "db": -2.0, "p": cible.position + Vector2(0, -cible.largeur * 0.3), "c": cible.robe})
 		cible.blesser(degats, p)
 		return
+	# (une chose de son camp, un vestige : elle s'en sert ; scripts/atelier.gd)
+	if atelier.agir():
+		return
 	var o = monde.plus_proche(p, R.PORTEE_RECOLTE)
 	if o == null:
 		return
@@ -878,8 +938,10 @@ func agir() -> void:
 		son = "herbe"
 	_viser({"son": son, "db": -4.0, "p": o.position, "genre": genre})
 	for k in g:
-		joueur.inventaire[k] = int(joueur.inventaire.get(k, 0)) + int(g[k])
-		ui.ramasse(k, int(g[k]), o.position)
+		# (ce qui entre dans son sac : elle ne porte pas tout ; scripts/atelier.gd)
+		var pris: int = atelier.ranger(k, int(g[k]))
+		if pris > 0:
+			ui.ramasse(k, pris, o.position)
 	if genre == "brindille" and o.epuise():
 		monde.retirer(o)
 	_conseil("feu", peut_fabriquer("feu") and feux.is_empty(), "Tu as de quoi faire un feu : touche 1.")
@@ -911,7 +973,11 @@ func _toucher_vise() -> void:
 			effets.arret(0.02)
 
 
-func _sur_impact(_p: Vector2, _genre: String) -> void:
+func _sur_impact(p: Vector2, genre: String) -> void:
+	# (un geste d'atelier : le maillet, le piquet ; scripts/atelier.gd)
+	if atelier != null and Atelier.GESTES.has(genre):
+		atelier.coup(genre, p)
+		return
 	_toucher_vise()
 
 
@@ -1021,7 +1087,16 @@ func _voir_les_ponts(delta: float) -> void:
 
 func manger() -> void:
 	var inv: Dictionary = joueur.inventaire
-	if int(inv["viande_cuite"]) > 0:
+	if int(inv.get("bouillon", 0)) > 0:
+		# (le bouillon de la popote : il nourrit et réchauffe mieux que tout le reste)
+		inv["bouillon"] = int(inv["bouillon"]) - 1
+		joueur.faim = minf(100.0, joueur.faim + 50.0)
+		joueur.sante = minf(100.0, joueur.sante + 8.0)
+		joueur.peur = maxf(0.0, joueur.peur - 10.0)
+		if joueur.temperature < 58.0:
+			joueur.temperature = minf(58.0, joueur.temperature + 12.0)
+		ui.message("Un bouillon chaud. Il réchauffe jusqu'aux os.")
+	elif int(inv["viande_cuite"]) > 0:
 		inv["viande_cuite"] = int(inv["viande_cuite"]) - 1
 		joueur.faim = minf(100.0, joueur.faim + 35.0)
 		joueur.sante = minf(100.0, joueur.sante + 6.0)
@@ -1067,6 +1142,10 @@ func cuire() -> void:
 		return
 	if int(joueur.inventaire["viande"]) <= 0:
 		ui.message("Rien à cuire.", Color(0.75, 0.7, 0.66))
+		return
+	# (avec une popote et de l'eau : un bouillon ; scripts/atelier.gd)
+	if atelier.cuisiner(f):
+		sons.jouer("allume", -9.0, 0.6)
 		return
 	joueur.inventaire["viande"] = int(joueur.inventaire["viande"]) - 1
 	joueur.inventaire["viande_cuite"] = int(joueur.inventaire["viande_cuite"]) + 1
@@ -1158,7 +1237,9 @@ func bete_tuee(b) -> void:
 	prelevements[b.id] = int(prelevements.get(b.id, 0)) + 1
 	var viande := clampi(int(round(pow(b.masse, 0.4))), 1, 6)
 	joueur.inventaire["viande"] = int(joueur.inventaire["viande"]) + viande
-	ui.message("%s : +%d viande" % [b.nom, viande], Color(0.85, 0.72, 0.6))
+	# (et sa peau : de quoi coudre un sac, une pelisse, un duvet ; scripts/atelier.gd)
+	var peaux: int = atelier.ranger("peau", atelier.peaux_de(float(b.masse)))
+	ui.message(("%s : +%d viande, +%d peau%s" % [b.nom, viande, peaux, "x" if peaux > 1 else ""]) if peaux > 0 else ("%s : +%d viande" % [b.nom, viande]), Color(0.85, 0.72, 0.6))
 	ui.ramasse("viande", viande, b.position)
 	if _coup_vise.has("bete"):
 		_coup_vise["mort"] = [b.position, b.robe, b.largeur]
@@ -1319,6 +1400,15 @@ func _choisir(liste: Array):
 		if x <= 0.0:
 			return e
 	return liste.back()
+
+
+# une bête s'est prise dans un filet (scripts/atelier.gd) : elle quitte le lieu ; c'est un prélèvement, sans combat
+func bete_prise(b) -> void:
+	Orvane.compter(b.id, str(b.get_meta("biome", biome)), "prelevement", 1.0, "", str(b.get_meta("parcelle", "")), "", "piege")
+	prelevements[b.id] = int(prelevements.get(b.id, 0)) + 1
+	chassees += 1
+	b.remove_from_group("betes")
+	b.queue_free()
 
 
 # une bête, ou une petite bande si la lignée vit en groupe, hors de vue
@@ -1507,7 +1597,8 @@ func _temps_du_corps(delta: float) -> void:
 	var brasier: float = incendie.chaleur(p)
 	# --- trempée ---
 	# (ce qui tombe sur elle : presque rien sous un feuillage. Tant qu'il lui pleut dessus, elle ne sèche guère)
-	var expose: float = climat.pluie * lerpf(1.0, R.TREMPE_ABRI, abri)
+	# (la cape de pluie : presque plus rien ne passe ; scripts/atelier.gd)
+	var expose: float = climat.pluie * lerpf(1.0, R.TREMPE_ABRI, abri) * atelier.pluie_k()
 	var mouille: float = R.TREMPE_PLUIE * expose + 2.0 * climat.neige * (1.0 - abri)
 	if eau > 0.15:
 		mouille += R.TREMPE_EAU * eau
@@ -1530,6 +1621,9 @@ func _temps_du_corps(delta: float) -> void:
 	cible += 34.0 * feu + (22.0 if tout_pres else 0.0)
 	cible += 6.0 if j.torche > 0.0 else 0.0
 	cible += 70.0 * brasier
+	# (sa tenue : la pelisse coupe le froid de moitié, et pèse sous la chaleur ; un duvet tient chaud à qui dort ; une tente aussi)
+	cible += 6.0 * atelier.abri(p)
+	cible = 50.0 + (cible - 50.0) * (atelier.froid_k() if cible < 50.0 else atelier.chaud_k())
 	if j.en_feu > 0.0:
 		cible = 110.0
 	var k := 1.0 - exp(-delta * R.TEMPERATURE_ALLURE * (3.0 if (j.en_feu > 0.0 or brasier > 0.5) else 1.0))
@@ -1590,6 +1684,7 @@ func foudre_tombee(p: Vector2, sur) -> void:
 		return
 	var d: float = joueur.position.distance_to(p)
 	effets.secousse(clampf(1.2 - d / 500.0, 0.0, 1.0))
+	atelier.foudre(p)
 	var dans_l_eau: bool = climat.eau(joueur.position) > 0.2 and climat.eau(p) > 0.05
 	var rayon: float = R.FOUDRE_RAYON * (1.9 if dans_l_eau else 1.0)
 	if d < rayon and _mort < 0.0:
@@ -1633,6 +1728,9 @@ func _regions() -> void:
 	if i != _region:
 		var avant := _region
 		_region = i
+		if not decouvertes.has(i):
+			# (une région nouvelle : une autre veilleuse y a peut-être laissé quelque chose ; scripts/atelier.gd)
+			atelier.vestige_de(i)
 		decouvertes[i] = true
 		if avant < 0 or str(carte.regions[avant]["type"]) != str(carte.regions[i]["type"]):
 			_entrer_dans(carte.regions[i], avant >= 0)

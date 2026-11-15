@@ -10,6 +10,7 @@ extends CanvasLayer
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/interface_theme.gd")
 const I := preload("res://scripts/interface_icones.gd")
+const IconesAtelier := preload("res://scripts/atelier_icones.gd")
 const Trace := preload("res://scripts/interface_trace.gd")
 const ENCRE := P.IVOIRE
 const BRAISE := P.BRAISE
@@ -27,9 +28,11 @@ const BOUTONS := [
 	["manger", "Manger", Vector2(-120, -306), 29.0],
 	# (le pont de fortune : seulement au bord d'une rivière, là où il peut se poser)
 	["pont", "Pont", Vector2(-318, -56), 29.0],
+	# (son sac : elle y fabrique l'établi, pose son camp, met sa tenue ; scripts/atelier.gd)
+	["sac", "Sac", Vector2(-336, -244), 29.0],
 ]
 const MARCHE := {"droite": Vector2.RIGHT, "gauche": Vector2.LEFT, "bas": Vector2.DOWN, "haut": Vector2.UP}
-const ICONES := {"feu": "feu", "torche": "torche", "lance": "lance", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger", "pont": "pont"}
+const ICONES := {"feu": "feu", "torche": "torche", "lance": "lance", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger", "pont": "pont", "sac": "fibre"}
 
 
 func _montre(action: String) -> bool:
@@ -206,7 +209,7 @@ func _disponible(action: String) -> bool:
 		"feu", "torche", "lance", "pont":
 			return jeu.peut_fabriquer(action)
 		"manger":
-			return int(inv["baies"]) + int(inv["viande"]) + int(inv["viande_cuite"]) > 0
+			return int(inv["baies"]) + int(inv["viande"]) + int(inv["viande_cuite"]) + int(inv.get("bouillon", 0)) > 0
 		"nourrir":
 			return int(inv["bois"]) > 0 and not jeu.feux.is_empty()
 		"cuire":
@@ -265,7 +268,11 @@ func _dessiner() -> void:
 			_dessin.draw_string_outline(f, p + Vector2(-lw2 * 0.5, 9), b[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 5, Color(P.ENCRE, 0.7))
 			_dessin.draw_string(f, p + Vector2(-lw2 * 0.5, 9), b[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 26, P.PAPIER.lerp(P.BRAISE_COEUR, appui))
 		else:
-			I.icone(_dessin, ICONES[b[0]], p + Vector2(0, -r * 0.18), r * 1.08, m, 1.0, Transform2D(0.0, Vector2(k, k), 0.0, p * (1.0 - k)))
+			if b[0] == "sac":
+				# (son sac : l'icône du sac à dos, de l'atelier)
+				IconesAtelier.icone(_dessin, "sac_a_dos", p + Vector2(0, -r * 0.18), r * 1.08, m, Transform2D(0.0, Vector2(k, k), 0.0, p * (1.0 - k)))
+			else:
+				I.icone(_dessin, ICONES[b[0]], p + Vector2(0, -r * 0.18), r * 1.08, m, 1.0, Transform2D(0.0, Vector2(k, k), 0.0, p * (1.0 - k)))
 			var g2 := T.texte_gras()
 			var lw3 := g2.get_string_size(b[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
 			var q2 := p + Vector2(-lw3 * 0.5, r * 0.66)

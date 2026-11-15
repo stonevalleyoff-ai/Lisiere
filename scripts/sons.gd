@@ -21,6 +21,7 @@ const F := preload("res://scripts/sons_recettes.gd")
 const Ambiance := preload("res://scripts/sons_ambiance.gd")
 const Musique := preload("res://scripts/sons_musique.gd")
 const Temps := preload("res://scripts/sons_temps.gd")
+const SA := preload("res://scripts/sons_atelier.gd")
 
 const B_LISIERE := "Lisiere"
 const B_MONDE := "Lisiere-monde"          # tout le lieu : la peur l'assourdit (hors navigateur, par un passe-bas), la fin le tait
@@ -45,6 +46,8 @@ const COUCHES := {
 	# le temps qu'il fait (sons_temps.gd)
 	"pluie_drue": [B_AMBIANCE, -2.0, 1, 0.8], "pluie_fine": [B_AMBIANCE, -12.0, 2, 0.8], "pluie_feuilles": [B_AMBIANCE, -9.0, 2, 0.8],
 	"pluie_eau": [B_AMBIANCE, -12.0, 1, 0.8], "vent_hurle": [B_AMBIANCE, -13.0, 1, 0.9], "brasier": [B_MONDE, -4.0, 1, 1.5, true],
+	# l'atelier (sons_atelier.gd) : la popote qui frémit sur un feu, le fil du cerf-volant qui chante au vent
+	"bouillon": [B_MONDE, float(SA.NIVEAUX["bouillon"]), 2, 1.5, true], "fil": [B_MONDE, float(SA.NIVEAUX["fil"]), 2, 1.2, true],
 }
 # les anciens noms de boucles, pour niveau()
 const ALIAS := {"vent": ["vent_grave", "vent_clair"], "nuit": ["bourdon"], "feu": ["feu_souffle", "feu_braise"]}
@@ -105,6 +108,8 @@ var _joueur
 var _sol := "herbe"
 var _sol2 := "herbe"
 var _dernier_pas := {}            # la dernière variante jouée, par sol
+var _dernier_atelier := {}        # la dernière variante jouée, par son de l'atelier
+var _etincelle_t := 0.0
 var _pas_signal := false
 var _pas_t := 0.0
 var _coeur_t := 0.0
@@ -182,7 +187,8 @@ func _ready() -> void:
 		c.gain_db = COUCHES[nom][1]
 		c.variantes = COUCHES[nom][2]
 		c.vitesse = COUCHES[nom][3]
-		c.periode = F.TUILES[nom][0] - F.TUILES[nom][1]
+		var tuile: Array = SA.TUILES[nom] if SA.TUILES.has(nom) else F.TUILES[nom]
+		c.periode = float(tuile[0]) - float(tuile[1])
 		c.place = COUCHES[nom].size() > 4 and bool(COUCHES[nom][4])
 		for k in 2:
 			var p2: Node = AudioStreamPlayer.new()
@@ -197,6 +203,8 @@ func _ready() -> void:
 			c.lecteurs.append(p2)
 		_couches[nom] = c
 	_file = FILE.duplicate()
+	# (l'atelier : ses sons se préparent en dernier ; sur un téléphone, avec les autres, avant la partie)
+	_file.append_array(SA.NOMS)
 	if _web:
 		_file.append_array(["queue_sourde", "queue_claire", "queue_voix"])
 	_ambiance = Ambiance.new(self)
@@ -208,6 +216,9 @@ func _ready() -> void:
 # --- ce que le jeu appelle ---
 
 func jouer(nom: String, volume_db: float = 0.0, hauteur: float = 1.0) -> void:
+	if SA.TAUX.has(nom.rstrip("0123456789")):
+		atelier(nom, volume_db, hauteur)
+		return
 	if not F.TAUX.has(nom.rstrip("0123456789")):
 		return
 	var pan := 0.0
@@ -227,6 +238,33 @@ func jouer(nom: String, volume_db: float = 0.0, hauteur: float = 1.0) -> void:
 	# (la viande qui cuit : le jeu joue « allume », grave ; on y ajoute le grésillement)
 	if nom == "allume" and hauteur < 0.8:
 		_son("gresille", volume_db + float(GAINS["gresille"]) + 3.0, 1.0, 0.0, 0.0, B_MONDE, true)
+
+
+# un son de l'atelier (sons_atelier.gd), à son niveau propre : « marteau », « scie », « couture », « tresse », « toile »,
+# « piquet », « corde », « fouille », « gourde », « gorgee », « clic », « etincelle », « filet », « sangle ». Sans chiffre au
+# bout, une variante au hasard (jamais deux fois la même de suite). ou : où il se fait, s'il n'est pas dans ses mains
+func atelier(nom: String, volume_db: float = 0.0, hauteur: float = 1.0, ou = null) -> void:
+	var base := nom.rstrip("0123456789")
+	if not SA.TAUX.has(base) or SA.TUILES.has(base):
+		return
+	if nom == base and SA.NOMS.has(base + "0"):
+		var n := 0
+		while SA.NOMS.has("%s%d" % [base, n]):
+			n += 1
+		var k := _r.randi() % n
+		if n > 1 and k == int(_dernier_atelier.get(base, -1)):
+			k = (k + 1) % n
+		_dernier_atelier[base] = k
+		nom = "%s%d" % [base, k]
+	var pan := 0.0
+	var vol := volume_db + float(SA.NIVEAUX.get(base, -12.0))
+	if ou != null and _joueur != null and is_instance_valid(_joueur):
+		# (au loin : plus faible, et du côté où c'est)
+		var d: float = _joueur.position.distance_to(ou)
+		pan = pan_de(ou)
+		vol += linear_to_db(clampf(1.0 - d / 620.0, 0.02, 1.0)) * 1.3
+	# (sur un téléphone, un son qui n'est pas prêt est sauté : le fabriquer là figerait l'image ; il le sera à la prochaine pause)
+	_son(nom, vol, hauteur * _r.randf_range(0.97, 1.03), pan, float(SA.MOUILLE.get(base, 0.0)) * _espace, B_MONDE, not mobile)
 
 
 # un pied posé (le signal « pas » de la veilleuse, ou la cadence de maj), en p : le sol du lieu, et ce que le temps en a fait
@@ -350,7 +388,8 @@ func _process(delta: float) -> void:
 	var en_partie: bool = jeu != null and "en_partie" in jeu and jeu.en_partie
 	# la file : plus large hors partie (titre, chargement), étroite en partie (un son par image au plus)
 	_repos = maxf(0.0, _repos - dt)
-	if not (mobile and en_partie):
+	# (sur un téléphone, rien ne se fabrique pendant qu'on joue ; mais la pause, une page ouverte, ne craignent pas un à-coup)
+	if not (mobile and en_partie and not jeu.en_pause):
 		_preparer(8000 if not en_partie else 2500, en_partie)
 	var t0 := Time.get_ticks_usec()
 	# l'écran-titre : le vent, et le thème
@@ -428,6 +467,7 @@ func maj(jeu, delta: float) -> void:
 	# le temps qu'il fait (sons_temps.gd) : la pluie, la foudre, l'incendie, le corps ; et ce qu'il fait taire : les bêtes sous la
 	# pluie et l'orage (les grenouilles tiennent sous la pluie, pas sous l'orage), tout ce qui est clair et l'écho sous la neige
 	_temps.maj(jeu, j, dt, morte, comble)
+	_camp(jeu, j, dt, morte)
 	var sec: float = _temps.sec
 	clair *= 1.0 - 0.45 * float(_temps.etouffe)
 	_espace *= 1.0 - 0.8 * float(_temps.etouffe)
@@ -907,6 +947,47 @@ func _bus_maj(dt: float) -> void:
 		_filtre.cutoff_hz = exp(lerpf(log(_filtre.cutoff_hz), log(_coupure), 1.0 - exp(-dt * 4.0)))
 
 
+# le camp (scripts/atelier.gd) : la popote qui frémit sur son feu, le fil du cerf-volant qui chante au vent, et ses
+# étincelles quand il charge les piles ; plus faibles avec la distance, du côté où ils sont
+func _camp(jeu, j, dt: float, morte: bool) -> void:
+	var bouillon: float = 0.0
+	var pan_b := 0.0
+	var fil: float = 0.0
+	var pan_f := 0.0
+	var charge = null
+	var A = jeu.get("atelier")
+	if not morte and A != null:
+		for f in jeu.feux:
+			if not is_instance_valid(f) or f.get_node_or_null("Popote") == null:
+				continue
+			var a: float = pow(clampf(1.0 - j.position.distance_to(f.position) / 420.0, 0.0, 1.0), 1.6)
+			if a > bouillon:
+				bouillon = a
+				pan_b = pan_de(f.position)
+		for s in A.poses:
+			if not is_instance_valid(s) or str(s.genre) != "cerf_volant":
+				continue
+			var vent: float = float(s.etat.get("vent", 0.0))
+			if vent < float(A.VENT_MIN):
+				continue
+			var a2: float = pow(clampf(1.0 - j.position.distance_to(s.position) / 560.0, 0.0, 1.0), 1.4) * clampf(0.45 + 0.7 * vent, 0.0, 1.0)
+			if a2 > fil:
+				fil = a2
+				pan_f = pan_de(s.position)
+				charge = s if bool(s.etat.get("branche", false)) and float(s.etat.get("charge", 0.0)) < 0.999 else null
+	var cb = _couches["bouillon"]
+	cb.cible = bouillon
+	cb.pan = pan_b
+	var cf = _couches["fil"]
+	cf.cible = fil
+	cf.pan = pan_f
+	if charge != null:
+		_etincelle_t -= dt
+		if _etincelle_t <= 0.0:
+			_etincelle_t = _r.randf_range(0.35, 1.3)
+			atelier("etincelle", _r.randf_range(-5.0, 0.0), _r.randf_range(0.9, 1.2), charge.position)
+
+
 # --- la file : chaque son est fait une fois, quand il le faut ---
 
 func _flux(nom: String, maintenant: bool) -> AudioStreamWAV:
@@ -971,10 +1052,10 @@ func _prochain() -> String:
 
 
 func _fabriquer(nom: String, d_un_coup: bool) -> void:
-	var a: Array = F.fabriquer(nom, _r)
+	var base := nom.rstrip("0123456789")
+	var a: Array = SA.fabriquer(nom, _r) if SA.TAUX.has(base) else F.fabriquer(nom, _r)
 	if a.is_empty():
 		return
-	var base := nom.rstrip("0123456789")
 	if not F.LOINTAINS.has(base):
 		_prets[nom] = O.vers_wav(a[0], a[1])
 		return

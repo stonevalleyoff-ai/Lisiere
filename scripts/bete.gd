@@ -1024,7 +1024,8 @@ func _chasseur(delta: float) -> void:
 		# (arrivé à la lisière d'un feu de camp, il est tenu : Orvane le retiendra ; un incendie n'est le fait de personne)
 		if _effarouchee != int(jeu.jour) and ici.length() < feu.rayon() * _lisiere() + 40.0 and jeu.feux.has(feu):
 			_effaroucher("feu")
-	elif j.torche > 0.0:
+	elif j.torche > 0.0 or (jeu.get("atelier") != null and float(jeu.atelier.eclaire(position)) > 0.4):
+		# (la torche ; ou le faisceau de sa lampe, tant qu'il est sur lui : hors du faisceau, rien ne le tient)
 		var tenue := _tenue_torche()
 		var tient := audace < 0.75 + 0.2 * maxf(peur_feu, 0.0)
 		# (il a appris à passer la torche : il s'aplatit et gronde d'abord, le temps qu'on le voie venir)

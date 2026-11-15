@@ -51,6 +51,7 @@ var _entrer
 var _etat_titre: Label
 var _record: Label
 var _bas_titre: VBoxContainer
+var _pages := {}              # les pages de l'atelier déjà faites : « etabli », « sac »
 var _aide_titre: Label
 var _pied: Label
 var _centre_titre: CenterContainer
@@ -354,7 +355,7 @@ func _construire_hud() -> void:
 		_recettes.append([k, r])
 	_sac = Hud.Sac.new()
 	_cadre.add_child(_sac)
-	_aide = T.libelle("Espace : récolter, frapper · E : manger · F : nourrir le feu · C : cuire · Échap : pause", T.texte_moyen(), 13, Color(P.IVOIRE, 0.6))
+	_aide = T.libelle("Espace : récolter, frapper · E : manger · F : nourrir le feu · C : cuire · B : le sac · Échap : pause", T.texte_moyen(), 13, Color(P.IVOIRE, 0.6))
 	_aide.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_cadre.add_child(_aide)
 	_notes = _plein()
@@ -573,6 +574,45 @@ func passer_au_tactile() -> void:
 	_pause.mettre_tactile(true)
 	_fin.mettre_compact(true)
 	_disposer()
+
+
+# la page de l'établi et celle du sac (scripts/interface_atelier.gd), faites à leur première ouverture. Vrai si la page est
+# là (principal.gd ne met la partie en attente que si elle s'est ouverte).
+func montrer_etabli(oui: bool) -> bool:
+	return _montrer_page("etabli", oui)
+
+
+func montrer_sac(oui: bool) -> bool:
+	return _montrer_page("sac", oui)
+
+
+func _montrer_page(quelle: String, oui: bool) -> bool:
+	if not _pages.has(quelle):
+		if not oui or not ResourceLoader.exists("res://scripts/interface_atelier.gd"):
+			return false
+		var pages = load("res://scripts/interface_atelier.gd")
+		var p: Control = pages.Etabli.new() if quelle == "etabli" else pages.Sac.new()
+		p.theme = T.theme()
+		p.visible = false
+		p.fermer.connect(_fermer_page)
+		add_child(p)
+		if tactile and p.has_method("mettre_tactile"):
+			p.mettre_tactile(true)
+		_pages[quelle] = p
+	var page: Control = _pages[quelle]
+	if oui:
+		page.ouvrir(get_parent())
+		page.visible = true
+	else:
+		page.visible = false
+	return true
+
+
+# le bouton « fermer » d'une page d'atelier : la partie reprend (principal.gd)
+func _fermer_page() -> void:
+	var jeu = get_parent()
+	if jeu != null and jeu.has_method("fermer_page"):
+		jeu.fermer_page()
 
 
 func montrer_pause(oui: bool) -> void:

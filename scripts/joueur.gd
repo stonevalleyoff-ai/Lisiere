@@ -8,6 +8,9 @@ extends Node2D
 # Le temps qu'il fait se lit sur elle (_etat_du_temps) : trempée, elle est plus sombre, son écharpe pend, des gouttes tombent
 # d'elle ; dans l'eau, ses jambes disparaissent, un sillage la suit ; dans la boue, elle peine ; transie, elle grelotte, se voûte,
 # bleuit, son souffle fait de la buée ; accablée de chaleur, elle rougit ; en feu, des flammes courent sur elle et elle se débat.
+# L'atelier (scripts/atelier.gd) : sa tenue se voit sur elle (le sac à dos, la pelisse, la cape de pluie) ; sa lampe éclaire en
+# faisceau, du côté où elle regarde ; ses gestes d'atelier (ATELIER : marteler, scier, coudre, monter, fouiller, boire, remuer)
+# ont chacun leur attaque, leur temps fort et leur retour ; et elle dort (endormie), couchée dans son duvet.
 
 signal pas(position: Vector2)                    # un pied se pose (dans le monde) : le son des pas, la poussière
 signal impact(position: Vector2, genre: String)  # un geste touche ce qu'il visait (son genre : arbre…, lance, poing)
@@ -78,6 +81,98 @@ const GESTES := {
 		[1.0, 0.0, Vector3(3.4, 7.4, 18.0), 0.0, 0.0, 0.0, 0.0]]},
 }
 
+# les gestes d'atelier : leur durée ; les instants où ils frappent (le signal impact part, avec le nom du geste : le son en
+# dépend) : chaque coup de maillet de « marteler », le premier des trois coups de « monter » (les autres : MONTER_COUPS)
+const ATELIER := {"marteler": 1.2, "scier": 1.3, "coudre": 1.5, "monter": 1.6, "fouiller": 1.35, "boire": 1.2, "remuer": 1.5}
+const ATELIER_COUPS := {"marteler": [0.36, 0.64, 0.92], "monter": [0.36]}
+const MONTER_COUPS := [0.36, 0.54, 0.72]
+const SCIER_TRAITS := [0.32, 0.62, 0.92]
+const FOUILLER_GESTES := [0.4, 0.7]
+# leurs clés : [l'instant (en secondes), vif (elle arrive d'un coup), le poids du geste, se baisse, se penche, torsion du buste,
+# élan, la tête baissée, puis deux mesures propres au geste]
+const CLES_ATELIER := {
+	# (le maillet : de levé, 0, à frappé, 1 ; la hauteur de la levée)
+	"marteler": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0],
+		[0.14, false, 1.0, 1.0, 1.6, 0.0, 0.0, 0.6, 0.8, 0.0],
+		[0.3, false, 1.0, 0.3, -0.6, -0.3, -0.6, -0.3, 0.0, 1.0],
+		[0.36, true, 1.0, 2.0, 3.4, 0.22, 1.3, 1.4, 1.0, 1.0],
+		[0.44, false, 1.0, 1.6, 2.8, 0.15, 1.0, 1.0, 0.84, 1.0],
+		[0.58, false, 1.0, 0.5, 0.0, -0.22, -0.4, -0.1, 0.0, 0.7],
+		[0.64, true, 1.0, 2.0, 3.4, 0.22, 1.3, 1.4, 1.0, 0.7],
+		[0.72, false, 1.0, 1.6, 2.8, 0.15, 1.0, 1.0, 0.84, 0.7],
+		[0.86, false, 1.0, 0.2, -0.9, -0.34, -0.8, -0.4, 0.0, 1.2],
+		[0.92, true, 1.0, 2.5, 3.9, 0.26, 1.6, 1.7, 1.0, 1.2],
+		[1.02, false, 1.0, 2.0, 3.2, 0.2, 1.2, 1.3, 0.9, 1.0],
+		[1.2, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0]],
+	# (la scie : de tirée, 0, à poussée, 1)
+	"scier": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.18, false, 1.0, 2.2, 3.8, 0.0, 0.0, 1.8, 0.0, 0.0],
+		[0.32, true, 1.0, 2.4, 4.2, 0.14, 0.9, 1.9, 1.0, 0.0],
+		[0.48, false, 1.0, 2.1, 3.7, -0.1, 0.0, 1.8, 0.0, 0.0],
+		[0.62, true, 1.0, 2.4, 4.2, 0.14, 0.9, 1.9, 1.0, 0.0],
+		[0.78, false, 1.0, 2.1, 3.7, -0.1, 0.0, 1.8, 0.0, 0.0],
+		[0.92, true, 1.0, 2.5, 4.3, 0.16, 1.0, 2.0, 1.0, 0.0],
+		[1.06, false, 1.0, 2.0, 3.4, 0.0, 0.2, 1.4, 0.3, 0.0],
+		[1.3, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.0]],
+	# (l'aiguille : de piquée, 0, à tirée, 1)
+	"coudre": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.24, false, 1.0, 7.0, 1.6, 0.0, 0.0, 2.2, 0.0, 0.0],
+		[0.44, true, 1.0, 6.8, 1.2, -0.12, 0.0, 1.6, 1.0, 0.0],
+		[0.6, false, 1.0, 7.0, 1.6, 0.0, 0.0, 2.2, 0.0, 0.0],
+		[0.8, true, 1.0, 6.8, 1.2, -0.12, 0.0, 1.6, 1.0, 0.0],
+		[0.96, false, 1.0, 7.0, 1.6, 0.0, 0.0, 2.2, 0.0, 0.0],
+		[1.16, true, 1.0, 6.8, 1.2, -0.12, 0.0, 1.6, 1.0, 0.0],
+		[1.28, false, 1.0, 7.0, 1.6, 0.0, 0.0, 2.0, 0.2, 0.0],
+		[1.5, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+	# (le maillet sur le piquet, de levé à frappé ; puis la corde, de prise, 0, à tendue, 1)
+	"monter": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6, 0.0],
+		[0.22, false, 1.0, 6.4, 2.6, 0.0, 0.0, 1.6, 0.0, 0.0],
+		[0.3, false, 1.0, 6.2, 2.0, -0.2, -0.3, 1.2, 0.0, 0.0],
+		[0.36, true, 1.0, 6.8, 3.4, 0.15, 0.6, 2.0, 1.0, 0.0],
+		[0.48, false, 1.0, 6.3, 2.2, -0.18, -0.2, 1.3, 0.0, 0.0],
+		[0.54, true, 1.0, 6.8, 3.4, 0.15, 0.6, 2.0, 1.0, 0.0],
+		[0.66, false, 1.0, 6.3, 2.2, -0.18, -0.2, 1.3, 0.0, 0.0],
+		[0.72, true, 1.0, 6.9, 3.6, 0.15, 0.7, 2.1, 1.0, 0.0],
+		[0.88, false, 1.0, 6.0, 2.6, 0.0, 0.2, 1.4, 0.8, 0.0],
+		[1.18, false, 1.0, 1.2, -2.2, 0.0, -1.6, -0.4, 0.8, 1.0],
+		[1.34, false, 1.0, 0.9, -2.6, 0.0, -1.8, -0.5, 0.8, 1.0],
+		[1.6, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 1.0]],
+	# (les mains : de jointes, 0, à écartées, 1 ; puis ce qu'elle trouve, levé)
+	"fouiller": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.24, false, 1.0, 5.6, 3.6, 0.0, 0.4, 2.0, 0.0, 0.0],
+		[0.4, true, 1.0, 5.8, 3.9, 0.0, 0.6, 2.2, 1.0, 0.0],
+		[0.54, false, 1.0, 5.6, 3.6, 0.0, 0.4, 2.0, 0.1, 0.0],
+		[0.7, true, 1.0, 5.8, 3.9, 0.0, 0.6, 2.2, 1.0, 0.0],
+		[0.82, false, 1.0, 5.6, 3.5, 0.0, 0.4, 2.0, 0.3, 0.0],
+		[1.0, true, 1.0, 5.0, 2.2, -0.15, 0.0, 0.2, 0.3, 1.0],
+		[1.14, false, 1.0, 5.0, 2.2, -0.15, 0.0, 0.3, 0.3, 1.0],
+		[1.35, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]],
+	# (la gourde : de la ceinture, 0, à la bouche, 1 ; les gorgées)
+	"boire": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.14, false, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.38, false, 1.0, 0.0, -1.0, 0.0, -0.4, -1.5, 1.0, 0.0],
+		[0.5, false, 1.0, 0.0, -1.3, 0.0, -0.5, -1.9, 1.0, 1.0],
+		[0.6, false, 1.0, 0.0, -1.0, 0.0, -0.4, -1.5, 1.0, 0.0],
+		[0.72, false, 1.0, 0.0, -1.3, 0.0, -0.5, -1.9, 1.0, 1.0],
+		[0.84, false, 1.0, 0.0, -1.0, 0.0, -0.4, -1.5, 1.0, 0.0],
+		[1.06, false, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[1.2, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+	# (la cuiller : ses tours dans la popote ; puis elle goûte)
+	"remuer": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.22, false, 1.0, 2.4, 4.4, 0.0, 0.6, 1.6, 0.0, 0.0],
+		[0.98, false, 1.0, 2.4, 4.4, 0.0, 0.6, 1.6, 2.0, 0.0],
+		[1.18, false, 1.0, 1.4, 2.4, 0.0, 0.2, 0.4, 2.0, 1.0],
+		[1.3, false, 1.0, 1.4, 2.4, 0.0, 0.2, 0.5, 2.0, 1.0],
+		[1.5, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 1.0]],
+}
+
 var sante := 100.0
 var faim := 100.0
 var peur := 0.0
@@ -92,7 +187,71 @@ var torche := 0.0
 var regard := 1.0
 var en_mouvement := false
 var lumiere: PointLight2D
+var faisceau: PointLight2D      # le faisceau de sa lampe (allumé quand elle la tient : tenue.lampe, sans torche)
 var morte := false
+# l'atelier (scripts/atelier.gd) : ce qu'elle porte et ce qu'elle fait de ses mains ; son corps le montre
+var tenue := {}                 # « sac », « chaud », « pluie », « lampe » : vrai quand elle le porte (la lampe : allumée)
+var endormie := false           # elle dort : couchée, les yeux clos
+var atelier := ""               # le geste d'atelier en cours : marteler, scier, coudre, monter, fouiller, boire, remuer ("" : aucun)
+var atelier_t := 0.0            # depuis quand
+var couchage := ""              # où elle dort : "" (son duvet, à même le sol), « tente », « hamac » (on ne la dessine plus : elle est dedans)
+
+
+# un geste d'atelier commence (atelier.gd) : il dure ce que son dessin dure (ATELIER), puis s'efface. Elle se tourne vers ce
+# qu'elle travaille (l'établi, la chose posée, le feu), un peu de biais, pour qu'on voie ses mains
+func geste_atelier(nom: String) -> void:
+	if morte or not ATELIER.has(nom):
+		atelier = ""
+		return
+	atelier = nom
+	atelier_t = 0.0
+	_at_nom = nom
+	_at_t = 0.0
+	_at_coups = 0
+	var a := _cap
+	var chose = _chose_d_atelier(nom)
+	if chose != null and chose.position.distance_to(position) > 4.0:
+		var d: Vector2 = chose.position - position
+		a = atan2(d.x, d.y)
+		if absf(d.x) > 4.0:
+			regard = signf(d.x)
+		var biais := 0.5 if cos(a) > -0.75 else 0.9
+		a += biais if cos(a + biais) >= cos(a - biais) else -biais
+	elif cos(a) < -0.1:
+		# (de dos, on ne verrait rien : elle se met de profil)
+		a = (signf(sin(a)) if absf(sin(a)) > 0.05 else regard) * (PI * 0.5 - 0.25)
+	_cap_cible = wrapf(a, -PI, PI)
+	_vitesse_tour = 16.0
+	# (elle travaille de la main qu'on voit : la gauche, quand elle est tournée vers la gauche)
+	_at_miroir = sin(_cap_cible) < -0.15
+
+
+# ce vers quoi elle se tourne pour ce geste : l'établi, la chose posée la plus proche, le feu (null : rien à portée)
+func _chose_d_atelier(nom: String):
+	if not is_inside_tree() or nom == "boire":
+		return null
+	var meilleur = null
+	var d0 := 100.0
+	if nom == "remuer":
+		var jeu = _jeu()
+		var feux: Array = jeu.get("feux") if jeu != null and jeu.get("feux") != null else []
+		for f in feux:
+			if is_instance_valid(f) and position.distance_to(f.position) < d0:
+				d0 = position.distance_to(f.position)
+				meilleur = f
+		return meilleur
+	for s in get_tree().get_nodes_in_group("campement"):
+		if not (s is Node2D) or s.get_parent() != get_parent():
+			continue
+		var d: float = position.distance_to(s.position)
+		# (pour fabriquer, c'est l'établi qui compte)
+		if nom in ["marteler", "scier", "coudre"] and str(s.get("genre")) != "etabli":
+			continue
+		if d < d0:
+			d0 = d
+			meilleur = s
+	return meilleur
+
 
 var _corps := Corps.new()
 var _trace := Trace.new()
@@ -140,6 +299,23 @@ var _feu_k := 0.0
 var _brulait := false
 var _brasier: Flamme                # les flammes sur elle
 var _halo: PointLight2D
+var _pluie_k := 0.0                 # la pluie qu'il fait, sans à-coup (la cape de pluie luit)
+var _sac_y := 0.0                   # le sac à dos, en retard sur le pas : un ressort
+var _sac_v := 0.0
+var _godet := 0.0                   # le gobelet pendu au sac : un pendule
+var _godet_v := 0.0
+# le geste d'atelier qu'on voit (il s'efface sans à-coup quand elle l'abandonne pour marcher ou se défendre)
+var _at_nom := ""
+var _at_t := 0.0
+var _at_w := 0.0
+var _at_coups := 0
+var _at_miroir := false
+# le sommeil : de debout (0) à couchée (1) en une demi-seconde, au temps vrai (le jeu passe plus vite quand elle dort)
+var _sommeil := 0.0
+var _t_vrai := 0.0
+var _dormait := false
+var _faisceau_x := 1.0              # de quel côté va le faisceau (de -1 à 1 : il passe par devant elle quand elle se retourne)
+static var _tex_faisceau: ImageTexture
 
 
 func _ready() -> void:
@@ -151,6 +327,11 @@ func _ready() -> void:
 	lumiere.position = Vector2(0, -26)
 	lumiere.enabled = false
 	add_child(lumiere)
+	# (le faisceau de la lampe : sa texture, un cône, n'est faite que le jour où elle l'allume)
+	faisceau = PointLight2D.new()
+	faisceau.color = Color(1.0, 0.94, 0.78)
+	faisceau.enabled = false
+	add_child(faisceau)
 	# (un halo très faible, couleur de lune : on voit ses pieds dans le noir, rien de plus ; il ne compte pas comme une lumière)
 	var halo := PointLight2D.new()
 	halo.texture = Feu.texture_lumiere()
@@ -180,7 +361,13 @@ func deplacer(dir: Vector2, delta: float, monde) -> void:
 	en_mouvement = dir.length() > 0.1
 	_deplace = true
 	_v_mesure = Vector2.ZERO
+	# (couchée, elle ne va nulle part : le jeu la réveille d'abord, et elle se relève)
+	if en_mouvement and _sommeil > 0.4:
+		return
 	if en_mouvement:
+		# (elle part : le geste d'atelier s'arrête là ; boire, on le fait en marchant)
+		if atelier != "" and atelier != "boire":
+			atelier = ""
 		if absf(dir.x) > 0.1:
 			regard = signf(dir.x)
 		# (la faim ralentit ; la boue, l'eau, la neige aussi : scripts/climat.gd ; le froid engourdit)
@@ -199,6 +386,7 @@ func blesser(n: float) -> void:
 	sante = maxf(0.0, sante - n)
 	peur = minf(100.0, peur + 6.0)
 	_blesse = 0.0
+	atelier = ""
 	var b = _bete_proche(160.0)
 	_recul = (position - b.position).normalized() if b != null else -_devant()
 	_cape_v += _recul * 60.0
@@ -230,12 +418,14 @@ func mourir() -> void:
 	_mort = 0.0
 	_blesse = 0.0
 	_geste = ""
+	atelier = ""
 	en_mouvement = false
 
 
 func _commencer(g: String, d: Vector2) -> void:
 	if morte:
 		return
+	atelier = ""
 	_geste = g
 	_geste_t = 0.0
 	_touche_fait = false
@@ -252,6 +442,11 @@ func _commencer(g: String, d: Vector2) -> void:
 
 func _devant() -> Vector2:
 	return Vector2(sin(_cap), cos(_cap))
+
+
+# sa lampe est-elle dans sa main ? (allumée ; jamais avec la torche : si les deux sont là, c'est la torche)
+func _lampe_tenue() -> bool:
+	return bool(tenue.get("lampe", false)) and torche <= 0.0 and not morte
 
 
 func _jeu():
@@ -290,6 +485,10 @@ func _process(delta: float) -> void:
 		return
 	var dt := minf(delta, 0.05)
 	_t += dt
+	# (le temps vrai : quand elle dort, le jeu passe plus vite ; elle, elle se couche et respire à son rythme)
+	var vrai := minf(delta / maxf(0.05, Engine.time_scale), 0.05)
+	_t_vrai += vrai
+	_dormir(vrai)
 	var mobile: bool = jeu != null and str(jeu.get("qualite")) == "mobile"
 	# la vitesse vraie (après les troncs) ; un saut (l'essai la pose ailleurs) n'est pas une marche
 	var v := _v_mesure if _deplace else Vector2.ZERO
@@ -313,6 +512,13 @@ func _process(delta: float) -> void:
 	_cape += _cape_v * dt
 	_pan_v += (((-_vit.x * 0.012 + _vent().x * 0.05) * leger - _pan) * 80.0 - _pan_v * 6.0) * dt
 	_pan = clampf(_pan + _pan_v * dt, -3.0, 3.0)
+	if bool(tenue.get("sac", false)):
+		# le sac à dos pèse : il retombe un rien après chaque pas ; son gobelet balance
+		var pas_y := -cos(2.0 * _phase) * 0.9 * _marche
+		_sac_v += ((pas_y - _sac_y) * 150.0 - _sac_v * 9.0) * dt
+		_sac_y = clampf(_sac_y + _sac_v * dt, -1.6, 1.6)
+		_godet_v += ((-_vit.x * 0.004 - sin(_godet)) * 70.0 - _godet_v * 2.2) * dt
+		_godet = clampf(_godet + _godet_v * dt, -1.1, 1.1)
 	# le geste en cours, la blessure, la chute
 	if _geste != "":
 		var g: Dictionary = GESTES[_geste]
@@ -325,6 +531,7 @@ func _process(delta: float) -> void:
 		if u >= 1.0:
 			_geste = ""
 			_vitesse_tour = 14.0
+	_avancer_atelier(dt)
 	if _blesse >= 0.0:
 		_blesse += dt
 		if _blesse > BLESSURE:
@@ -344,13 +551,15 @@ func _process(delta: float) -> void:
 		e.append(to_local(p))
 	_corps.echarpe = e
 	_torche(dt, mobile)
+	_lampe(dt, jeu)
 	_bruler(dt, mobile)
 	# l'éclair d'une morsure ; la nuit, le liseré de lune (là où rien ne l'éclaire)
 	_lueur.eclair = clampf(1.0 - _blesse / 0.16, 0.0, 1.0) if _blesse >= 0.0 else 0.0
 	var noir := 0.0
 	if jeu != null and jeu.has_method("eclairage"):
 		noir = 1.0 - clampf(jeu.eclairage(position), 0.0, 1.0)
-	_lueur.lune = noir
+	_lueur.lune = noir * (1.0 - _corps_cache())
+	_lueur.lampe = faisceau.energy if faisceau.enabled and _corps.prof_lampe > -4.0 else 0.0
 	_lueur.queue_redraw()
 	queue_redraw()
 
@@ -427,6 +636,7 @@ func _etat_du_temps(dt: float, jeu) -> void:
 			# (la boue : d'autant plus qu'elle freine là où elle marche)
 			boue = clampf((1.0 - float(climat.allure(position))) / 0.3, 0.0, 1.0)
 	_mouille_k = move_toward(_mouille_k, clampf(trempe / 100.0, 0.0, 1.0), dt * 0.9)
+	_pluie_k = move_toward(_pluie_k, clampf(pluie, 0.0, 1.0), dt * 1.5)
 	_eau_k = move_toward(_eau_k, eau, dt * 2.5)
 	_boue_k = move_toward(_boue_k, boue, dt * 1.5)
 	# (la boue reste aux bottes, sèche lentement ; l'eau les lave)
@@ -439,11 +649,11 @@ func _etat_du_temps(dt: float, jeu) -> void:
 		# (ses flammes s'éteignent : dans l'eau, sous la pluie, une bouffée de vapeur ; sinon un peu de fumée)
 		jeu.effets.flammes_eteintes(position + Vector2(0.0, -20.0), eau > 0.3 or pluie > 0.25 or trempe > 45.0)
 	_brulait = brule
-	var ton := Color.WHITE.lerp(Color(0.7, 0.74, 0.85), _mouille_k)
+	var ton := Color.WHITE.lerp(Corps.TON_MOUILLE, _mouille_k)
 	ton *= Color.WHITE.lerp(Color(0.84, 0.93, 1.1), _froid_k)
 	ton *= Color.WHITE.lerp(Color(1.1, 0.9, 0.86), _chaud_k)
 	ton *= Color.WHITE.lerp(Color(1.3, 0.98, 0.72), _feu_k)
-	self_modulate = Color(ton.r, ton.g, ton.b, 1.0)
+	self_modulate = Color(ton.r, ton.g, ton.b, 1.0 - _corps_cache())
 
 
 # en feu : des langues à l'épaule, à la capuche, au dos, au bas du manteau ; sa lueur (le halo à ses pieds devient un brasier)
@@ -476,7 +686,12 @@ func _poser() -> void:
 	var amp := clampf(_vit.length() / R.VITESSE, 0.5, 1.1)
 	var ph := _phase
 	var k := _peur_k
-	var tenue := torche > 0.0 and _torche_sol.is_empty()
+	var en_main := torche > 0.0 and _torche_sol.is_empty()
+	# (sa tenue : le sac à dos, la pelisse, la cape de pluie ; la lampe, si la torche ne prend pas déjà sa main gauche)
+	c.sac_a_dos = bool(tenue.get("sac", false))
+	c.pelisse = bool(tenue.get("chaud", false))
+	c.cire = bool(tenue.get("pluie", false))
+	var lampe_en_main := _lampe_tenue()
 	c.cap = _cap
 	c.buste = _cap
 	c.tete = _cap + _tete
@@ -510,9 +725,10 @@ func _poser() -> void:
 	var serre := maxf(k * 0.7 * (1.0 - m * 0.6), fr * 0.85 * (1.0 - m * 0.4))
 	c.main_d = (Corps.MAIN_D + Vector3(-bal, 0.0, absf(bal) * 0.2)).lerp(Vector3(5.0, 3.2, 21.5), serre)
 	c.main_g = (Corps.MAIN_G + Vector3(bal, 0.0, absf(bal) * 0.2)).lerp(Vector3(5.0, -3.0, 20.5), serre)
-	c.torche = tenue
+	c.torche = en_main
+	c.lampe = lampe_en_main
 	c.lance = lance > 0 or _geste == "lance"
-	c.lance_main = 1.0 if tenue else -1.0
+	c.lance_main = 1.0 if en_main or lampe_en_main else -1.0
 	c.lance_dir = LANCE_REPOS
 	if c.lance:
 		var repos := MAIN_LANCE + Vector3(-bal * 0.35 * c.lance_main, 0.0, 0.0)
@@ -522,7 +738,7 @@ func _poser() -> void:
 			c.main_d = repos.lerp(c.main_d, serre)
 		else:
 			c.main_g = repos.lerp(c.main_g, serre)
-	if tenue:
+	if en_main:
 		# la torche, tenue haut ; la peur la tend vers le noir
 		c.main_g = MAIN_TORCHE + Vector3(bal * 0.15 + k * 2.4, 0.0, cos(2.0 * ph) * 0.3 * m + k * 1.2)
 	c.objet = ""
@@ -540,14 +756,342 @@ func _poser() -> void:
 	c.froid = fr
 	c.chaud = _chaud_k
 	c.boue = _bottes
+	c.pluie = _pluie_k
+	c.ballant = Vector2(_cape.x * 0.22, _sac_y)
+	c.godet = _godet
+	c.outil = ""
+	c.ouvrage = ""
+	c.eclats = -1.0
+	c.fil = 0.0
+	c.lance_pose = 0.0
+	c.dort = 0.0
+	if lampe_en_main:
+		# (la lampe pointe où va le faisceau, quel que soit le sens de son corps)
+		var fa := PI * (1.0 - _faisceau_x) * 0.5
+		var vers := Vector3(cos(fa) * sin(_cap) + sin(fa) * cos(_cap), -cos(fa) * cos(_cap) + sin(fa) * sin(_cap), -0.1).normalized()
+		c.lampe_dir = vers
+		c.main_g = Vector3(1.2, -4.6, 19.4) + vers * 6.0 + Vector3(bal * 0.12, 0.0, cos(2.0 * ph) * 0.35 * m + k * 2.2)
 	if _geste != "":
-		_poser_geste(c, tenue)
+		_poser_geste(c, en_main or lampe_en_main)
+	elif _at_w > 0.0 and _at_nom != "":
+		_poser_atelier(c, en_main or lampe_en_main)
+	if _sommeil > 0.0 and not morte:
+		_poser_sommeil(c)
 	if _feu_k > 0.0:
-		_poser_feu(c, tenue)
+		_poser_feu(c, en_main or lampe_en_main)
 	if _blesse >= 0.0:
 		_poser_blessure(c)
 	if morte:
 		_poser_mort(c)
+
+
+# --- ses gestes d'atelier ---
+
+# le temps du geste passe (un geste de récolte, un coup de lance passent d'abord) ; ses coups partent ; fini, il s'efface
+func _avancer_atelier(dt: float) -> void:
+	if atelier != "":
+		if not ATELIER.has(atelier):
+			atelier = ""
+		elif _geste == "":
+			_at_nom = atelier
+			atelier_t += dt
+			_at_t = atelier_t
+			var coups: Array = ATELIER_COUPS.get(atelier, [])
+			while _at_coups < coups.size() and atelier_t >= float(coups[_at_coups]):
+				_at_coups += 1
+				_cape_v -= Vector2(sin(_cap), cos(_cap) * Corps.INCL) * 30.0
+				impact.emit(to_global(_corps.sol(_corps.ouvrage_ou)), atelier)
+			if atelier_t >= float(ATELIER[atelier]):
+				atelier = ""
+	_at_w = move_toward(_at_w, 1.0 if atelier != "" else 0.0, dt * (12.0 if atelier != "" else 7.0))
+
+
+# où en est un geste d'atelier entre ses clés : [poids, se baisse, se penche, torsion, élan, tête baissée, mesure, mesure]
+static func _entre(t: float, cles: Array) -> Array:
+	var i := 1
+	while i < cles.size() - 1 and t > float(cles[i][0]):
+		i += 1
+	var a: Array = cles[i - 1]
+	var b: Array = cles[i]
+	var x := clampf((t - float(a[0])) / maxf(0.0001, float(b[0]) - float(a[0])), 0.0, 1.0)
+	x = 1.0 - pow(1.0 - x, 3.0) if bool(b[1]) else x * x * (3.0 - 2.0 * x)
+	var out := []
+	for k in range(2, a.size()):
+		out.append(lerpf(float(a[k]), float(b[k]), x))
+	return out
+
+
+# depuis le dernier de ces instants (-1 : aucun n'est passé, ou il y a trop longtemps)
+static func _depuis(t: float, instants: Array) -> float:
+	var d := -1.0
+	for x in instants:
+		if t >= float(x):
+			d = t - float(x)
+	return d if d < 0.4 else -1.0
+
+
+# la pose d'un geste d'atelier : le corps d'abord (il se baisse, se penche), puis les mains, posées sur l'ouvrage qui, lui, ne
+# bouge pas. Tout est écrit pour la main droite ; tournée vers la gauche, elle fait le même geste en miroir (prise : sa main
+# gauche tient déjà la torche ou la lampe, elle ne sert pas)
+func _poser_atelier(c, prise: bool) -> void:
+	var t := _at_t
+	var k: Array = _entre(t, CLES_ATELIER[_at_nom])
+	var w: float = float(k[0]) * _at_w
+	var miroir := _at_miroir and not prise
+	var sens := -1.0 if miroir else 1.0
+	var a: float = k[6]
+	var b: float = k[7]
+	c.bas += float(k[1]) * w
+	c.penche += float(k[2]) * w
+	c.buste = _cap + float(k[3]) * w * sens
+	c.tete = c.buste + _tete * (1.0 - w)
+	c.elan = float(k[4]) * w
+	c.tete_baisse += float(k[5]) * w
+	c.hanche *= 1.0 - w
+	var md: Vector3 = Corps.MAIN_D
+	var mg: Vector3 = Corps.MAIN_G
+	var od := Vector3(0, 0, 1)
+	var outil := ""
+	var ouvrage := ""
+	var ou := Vector3.ZERO
+	var deux := true
+	var pieds := 0.0
+	match _at_nom:
+		"marteler":
+			# la pièce sur le billot, tenue de la main gauche ; le maillet se lève, tombe, rebondit
+			ou = Vector3(11.5, 0.5, 13.6)
+			outil = "maillet"
+			ouvrage = "piece"
+			var frappe := Vector3(0.8, -0.15, -0.58).normalized()
+			var leve := Vector3(0.0, 9.0, 29.5 + 5.5 * b)
+			var pose: Vector3 = c.depose(ou + Vector3(0.0, 0.0, 1.9) - frappe * 6.5)
+			md = leve.lerp(pose, a)
+			od = Vector3(-0.35, 0.1, 0.93).lerp(frappe, a)
+			mg = c.depose(ou + Vector3(-0.6, -2.8, 1.0))
+			c.eclats = _depuis(t, ATELIER_COUPS["marteler"])
+		"scier":
+			# le rondin en travers, tenu de la main gauche ; la scie va et vient, le bout tombe au dernier trait
+			ou = Vector3(11.0, 0.0, 12.6)
+			outil = "scie"
+			ouvrage = "rondin"
+			md = c.depose(Vector3(3.2 + 6.4 * a, 2.8, 16.2 - 1.5 * a))
+			od = Vector3(0.97, 0.0, -0.24)
+			mg = c.depose(ou + Vector3(-0.6, -3.8, 1.5))
+			c.eclats = _depuis(t, SCIER_TRAITS)
+			c.ouvrage_u = clampf((t - 0.92) / 0.3, 0.0, 1.0)
+		"coudre":
+			# assise sur ses talons, la peau sur les genoux : l'aiguille pique, puis tire le fil, haut et loin
+			ou = Vector3(7.6, -0.4, 9.4)
+			outil = "aiguille"
+			ouvrage = "peau"
+			var pique := ou + Vector3(0.6, 1.2, 1.0)
+			var tire := Vector3(4.2, 9.6, 17.6)
+			md = c.depose(pique.lerp(tire, a) + Vector3(0.0, 0.0, 1.6 * sin(PI * a)))
+			od = (tire - pique).normalized().lerp(Vector3(0.3, -0.4, -0.86), 1.0 - a)
+			mg = c.depose(ou + Vector3(-0.4, -2.7, 0.6))
+			c.fil = clampf(a * 6.0, 0.0, 1.0)
+			c.ouvrage_u = (1.0 if t > 1.16 else (0.67 if t > 0.8 else (0.34 if t > 0.44 else 0.0)))
+			c.tete = c.buste - 0.4 * a * w * sens
+			pieds = 1.0
+		"monter":
+			# accroupie : le piquet tenu de la main gauche, trois coups de maillet ; puis la corde, qu'elle tend en se relevant
+			var coups := 0.0
+			for x in MONTER_COUPS:
+				coups += smoothstep(float(x) - 0.01, float(x) + 0.03, t)
+			ou = Vector3(12.5, 0.0, 10.0 - 1.15 * coups)
+			ouvrage = "piquet"
+			c.ouvrage_u = coups / 3.0
+			if t < 0.8:
+				outil = "maillet"
+				var frappe := Vector3(0.75, -0.1, -0.65).normalized()
+				var pose: Vector3 = c.depose(ou + Vector3(0.0, 0.0, 1.9) - frappe * 6.5)
+				md = Vector3(3.5, 7.0, 26.5).lerp(pose, a)
+				od = Vector3(-0.3, 0.1, 0.95).lerp(frappe, a)
+				mg = c.depose(ou + Vector3(-0.5, -1.7, -2.4))
+				c.eclats = _depuis(t, MONTER_COUPS)
+			else:
+				var pris: Vector3 = c.depose(ou + Vector3(-2.6, 1.0, 1.6))
+				md = pris.lerp(Vector3(4.6, 2.4, 20.5), b)
+				mg = c.depose(ou + Vector3(-2.2, -1.0, 1.2)).lerp(Vector3(5.4, -2.0, 19.5), b)
+				c.fil = smoothstep(0.8, 0.9, t) * (1.0 - smoothstep(1.36, 1.5, t))
+			pieds = 1.0 - b
+		"fouiller":
+			# un genou à terre : ses mains écartent ce qui couvre, deux fois ; puis elle lève ce qu'elle a trouvé
+			ou = Vector3(11.5, 0.0, 0.0)
+			ouvrage = "fouille"
+			var bas_main := Vector3(11.0, 1.2 + 5.2 * a, 3.2 + 0.9 * a)
+			md = c.depose(bas_main).lerp(Vector3(7.0, 4.5, 23.5), b)
+			mg = c.depose(Vector3(bas_main.x, -bas_main.y, bas_main.z))
+			if b > 0.12 and t < 1.26:
+				outil = "trouvaille"
+			c.eclats = _depuis(t, FOUILLER_GESTES)
+			pieds = 2.0
+		"boire":
+			# la gourde, de sa ceinture à sa bouche ; la tête part en arrière, deux gorgées
+			deux = false
+			var bouche := Vector3(4.7, 2.3, 33.6 + 0.5 * b)
+			md = Vector3(3.0, 6.2, 18.0).lerp(bouche, a) + Vector3(0.0, 1.6 * sin(PI * a), 0.0)
+			od = Vector3(0.1, 0.2, -0.97).lerp(Vector3(0.42 - 0.2 * b, 0.1, 0.9), smoothstep(0.15, 0.8, a))
+			if t > 0.1 and t < 1.1:
+				outil = "gourde"
+		"remuer":
+			# penchée sur la popote : la cuiller tourne, deux tours ; puis elle la porte à sa bouche, et goûte
+			var tour := TAU * a
+			var dans := Vector3(10.5 + 2.2 * cos(tour), 1.0 + 2.2 * sin(tour), 18.0)
+			md = dans.lerp(Vector3(7.6, 2.4, 28.8), b)
+			od = Vector3(0.1 - 0.14 * cos(tour), -0.14 * sin(tour), -1.0).normalized().lerp(Vector3(-0.55, -0.25, 0.8), b)
+			# (de l'autre main, elle retient les pans de son écharpe)
+			mg = Vector3(4.8, -1.4, 23.0)
+			if t > 0.12 and t < 1.42:
+				outil = "cuiller"
+	if miroir:
+		var x := md
+		md = Vector3(mg.x, -mg.y, mg.z)
+		mg = Vector3(x.x, -x.y, x.z)
+		od.y = -od.y
+		ou.y = -ou.y
+	c.outil = outil if w > 0.3 else ""
+	c.outil_main = sens
+	c.outil_dir = od.normalized()
+	c.ouvrage = ouvrage if w > 0.25 else ""
+	c.ouvrage_ou = ou
+	if miroir:
+		c.main_g = c.main_g.lerp(mg, w)
+		if deux:
+			c.main_d = c.main_d.lerp(md, w)
+	else:
+		c.main_d = c.main_d.lerp(md, w)
+		if deux and not prise:
+			c.main_g = c.main_g.lerp(mg, w)
+	# les pieds : sur ses talons (1), un genou à terre (2)
+	if pieds > 0.0:
+		var p := minf(pieds, 1.0) * w
+		var avance := 3.6 if pieds > 1.5 else -1.5
+		c.pied_d = c.pied_d.lerp(Vector3(-4.4 if pieds > 1.5 else -1.5, 2.6, 0.0), p)
+		c.pied_g = c.pied_g.lerp(Vector3(avance, -2.6, 0.0), p)
+		if miroir:
+			var pd: Vector3 = c.pied_d
+			c.pied_d = Vector3(c.pied_g.x, 2.6, 0.0)
+			c.pied_g = Vector3(pd.x, -2.6, 0.0)
+	# sa lance : posée au sol le temps du geste, du côté de la main qui la tenait (pour boire, une main suffit)
+	if c.lance and (deux or c.lance_main * sens > 0.0):
+		c.lance_pose = smoothstep(0.0, 0.7, w)
+		var cote: float = c.lance_main
+		c.lance_sol = PackedVector2Array([c.sol(Vector3(-11.0, cote * 11.5, 0.5)), c.sol(Vector3(14.0, cote * 11.5, 0.5))])
+
+
+# --- son sommeil ---
+
+# elle se couche, elle se relève : une demi-seconde chacun ; en s'endormant, elle se tourne vers nous
+func _dormir(vrai: float) -> void:
+	var veut := endormie and not morte
+	if veut and not _dormait:
+		atelier = ""
+		_cap_cible = regard * 0.5
+		_vitesse_tour = 12.0
+	_dormait = veut
+	_sommeil = move_toward(_sommeil, 1.0 if veut else 0.0, vrai / 0.5)
+
+
+# dans la tente, dans le hamac, on ne la dessine plus (de 0 à 1 : elle y disparaît en se baissant)
+func _corps_cache() -> float:
+	if morte or not (couchage == "tente" or couchage == "hamac"):
+		return 0.0
+	return smoothstep(0.2, 0.85, _sommeil)
+
+
+# elle s'accroupit, bascule sur le côté, tire son duvet jusqu'à ses épaules ; puis son souffle, lent
+func _poser_sommeil(c) -> void:
+	var s := _sommeil
+	var genoux := smoothstep(0.0, 0.55, s)
+	var couche := smoothstep(0.35, 1.0, s)
+	var souffle := sin(_t_vrai * 1.5)
+	c.bas = lerpf(c.bas, 7.6, genoux)
+	c.penche = lerpf(c.penche, 2.2, genoux)
+	c.tete_baisse = lerpf(c.tete_baisse, 1.8, genoux)
+	c.epaules = lerpf(c.epaules, 0.6, genoux)
+	c.decal *= 1.0 - genoux
+	c.souffle = c.souffle * (1.0 - genoux) + 0.5 * souffle * couche
+	c.tete = lerp_angle(c.tete, c.buste, genoux)
+	c.pied_d = c.pied_d.lerp(Vector3(-3.0, 2.6, 0.0), genoux)
+	c.pied_g = c.pied_g.lerp(Vector3(-3.4, -2.6, 0.0), genoux)
+	c.main_d = c.main_d.lerp(Vector3(5.0, 3.0, 22.0), genoux)
+	if not c.torche:
+		c.main_g = c.main_g.lerp(Vector3(5.4, -2.4, 24.0), genoux)
+	if s > 0.3:
+		c.yeux = 0.0
+	if c.lance:
+		c.lance_pose = maxf(c.lance_pose, genoux)
+		c.lance_sol = PackedVector2Array([Vector2(-regard * 9.0, 9.5), Vector2(regard * 16.0, 10.5)])
+	if couchage == "tente" or couchage == "hamac":
+		return
+	var ang := couche * (PI * 0.5 - 0.1) * regard
+	var sy := lerpf(1.0, 0.62, couche)
+	var pivot := Vector2(0.0, -2.0)
+	c.chute = Transform2D(0.0, pivot) * Transform2D(Vector2(1, 0), Vector2(0, sy), Vector2.ZERO) * Transform2D(ang, Vector2.ZERO) * Transform2D(0.0, -pivot)
+	c.allonge = couche
+	c.sens_chute = regard
+	c.dort = smoothstep(0.5, 1.0, s)
+	c.respire = souffle
+
+
+# --- sa lampe ---
+
+# la texture du faisceau : un cône doux (plein jusqu'à 30 degrés de part et d'autre, éteint à 44 : ce que les règles éclairent,
+# scripts/atelier.gd), plus vif en son milieu, qui naît un peu devant elle et s'éteint au bout de sa portée ; et une lueur
+# autour de la lampe. Son sommet est à 14 points du bord gauche, à mi-hauteur.
+const FAISCEAU := Vector2i(128, 160)
+const RAYON_LAMPE := 330.0          # sa portée : celle des règles (Atelier.RAYON_LAMPE, scripts/atelier.gd)
+const FAISCEAU_SOMMET := 14
+
+static func texture_faisceau() -> ImageTexture:
+	if _tex_faisceau == null:
+		var img := Image.create(FAISCEAU.x, FAISCEAU.y, false, Image.FORMAT_RGBA8)
+		var portee := float(FAISCEAU.x - FAISCEAU_SOMMET - 2)
+		for y in FAISCEAU.y:
+			for x in FAISCEAU.x:
+				var d := Vector2(x + 0.5 - FAISCEAU_SOMMET, y + 0.5 - FAISCEAU.y * 0.5) / portee
+				var r := d.length()
+				var ang := absf(d.angle())
+				var le_long := smoothstep(0.02, 0.16, r) * (1.0 - smoothstep(0.62, 1.0, r))
+				var cone := (1.0 - smoothstep(0.5, 0.76, ang)) * le_long * lerpf(0.72, 0.42, r)
+				cone += 0.28 * (1.0 - smoothstep(0.0, 0.32, ang)) * le_long
+				var lueur := 0.42 * (1.0 - smoothstep(0.0, 0.13, r))
+				img.set_pixel(x, y, Color(1, 1, 1, clampf(maxf(cone, lueur), 0.0, 1.0)))
+		_tex_faisceau = ImageTexture.create_from_image(img)
+	return _tex_faisceau
+
+
+# le faisceau : du côté où elle regarde (regard), comme le veulent les règles ; quand elle se retourne, il passe par devant
+# elle. Des piles presque vides : il faiblit et tressaute. En plein jour, il se voit à peine.
+func _lampe(dt: float, jeu) -> void:
+	var allumee := _lampe_tenue() and _sommeil < 0.3
+	faisceau.enabled = allumee
+	if not allumee:
+		return
+	if faisceau.texture == null:
+		var echelle := RAYON_LAMPE / float(FAISCEAU.x - FAISCEAU_SOMMET - 2)
+		faisceau.texture = texture_faisceau()
+		faisceau.texture_scale = echelle
+		faisceau.offset = Vector2((FAISCEAU.x * 0.5 - FAISCEAU_SOMMET) * echelle, 0.0)
+	_faisceau_x = move_toward(_faisceau_x, 1.0 if regard >= 0.0 else -1.0, dt * 7.0)
+	var a := PI * (1.0 - _faisceau_x) * 0.5
+	faisceau.rotation = a
+	faisceau.position = Vector2(cos(a) * 9.0, -9.0 + sin(a) * 5.0)
+	var force := 1.5
+	var at = jeu.get("atelier") if jeu != null else null
+	if at != null and at.get("charge") != null and float(at.charge) < 14.0:
+		# (les piles s'épuisent)
+		var reste := clampf(float(at.charge) / 14.0, 0.0, 1.0)
+		force *= lerpf(0.45, 1.0, reste) * (1.0 - 0.35 * (1.0 - reste) * maxf(0.0, sin(_t * 31.0) * sin(_t * 7.3)))
+	if jeu != null and jeu.has_method("lumiere_du_jour"):
+		force *= lerpf(1.0, 0.3, jeu.lumiere_du_jour())
+	faisceau.energy = force
+
+
+# où va son faisceau, dans le lieu (un vecteur de longueur 1) : pour qui veut savoir ce que la lampe éclaire
+func sens_du_faisceau() -> Vector2:
+	return Vector2(1.0 if regard >= 0.0 else -1.0, 0.0)
 
 
 # où en est un geste entre ses clés : [poids, main, se baisse, se penche, torsion, élan]
@@ -569,7 +1113,7 @@ static func _vers_corps(v: Vector3, delta: float) -> Vector3:
 	return Vector3(v.x * cos(delta) + v.y * sin(delta), v.y * cos(delta) - v.x * sin(delta), v.z)
 
 
-func _poser_geste(c, tenue: bool) -> void:
+func _poser_geste(c, prise: bool) -> void:
 	var g: Dictionary = GESTES[_geste]
 	var u := clampf(_geste_t / float(g["duree"]), 0.0, 1.0)
 	var k: Array = _cles(u, g["cles"])
@@ -597,7 +1141,7 @@ func _poser_geste(c, tenue: bool) -> void:
 		c.lance_dir = dir
 		return
 	c.main_d = c.main_d.lerp(main, w)
-	if g["deux_mains"] and not tenue and not (c.lance and c.lance_main < 0.0):
+	if g["deux_mains"] and not prise and not (c.lance and c.lance_main < 0.0):
 		c.main_g = c.main_g.lerp(c.main_d + _vers_corps(Vector3(-0.8, -3.2, -1.2), delta), w * 0.85)
 
 
@@ -614,7 +1158,7 @@ func _poser_blessure(c) -> void:
 
 
 # en feu : elle se débat (les bras battent ses épaules, le buste se tord, elle se baisse et se relève)
-func _poser_feu(c, tenue: bool) -> void:
+func _poser_feu(c, prise: bool) -> void:
 	var k := _feu_k
 	var t := _t
 	c.buste += 0.55 * sin(t * 11.0) * k
@@ -624,7 +1168,7 @@ func _poser_feu(c, tenue: bool) -> void:
 	c.epaules += 1.2 * k
 	c.decal += Vector2(sin(t * 31.0), cos(t * 27.0)) * 0.7 * k
 	c.main_d = c.main_d.lerp(Vector3(4.0 + 3.0 * sin(t * 15.0), 7.5, 29.0 + 6.0 * sin(t * 12.0 + 1.0)), k * 0.9)
-	if not tenue and not (c.lance and c.lance_main < 0.0):
+	if not prise and not (c.lance and c.lance_main < 0.0):
 		c.main_g = c.main_g.lerp(Vector3(4.0 + 3.0 * sin(t * 14.0 + 2.0), -7.5, 29.0 + 6.0 * sin(t * 13.0 + 2.5)), k * 0.9)
 
 
@@ -768,6 +1312,7 @@ class Lueur extends Node2D:
 	var joueur
 	var eclair := 0.0
 	var lune := 0.0
+	var lampe := 0.0            # la force de la lampe (0 : éteinte, ou cachée derrière elle)
 
 	func _ready() -> void:
 		var m := CanvasItemMaterial.new()
@@ -781,6 +1326,11 @@ class Lueur extends Node2D:
 		c.ci = self
 		if lune > 0.02:
 			c.lisere_lune(Color(LUNE, 0.32 * lune))
+		if lampe > 0.0:
+			# (le verre de la lampe, qui brille même dans le noir)
+			var v: Vector2 = c.bout_lampe
+			draw_texture_rect(Corps.doux(), Rect2(v - Vector2(8.0, 8.0), Vector2(16.0, 16.0)), false, Color(1.0, 0.93, 0.72, 0.42 * minf(1.0, lampe)))
+			draw_circle(v, 1.5, Color(1.0, 0.97, 0.84, 0.95 * minf(1.0, lampe + 0.3)))
 		if eclair > 0.0:
 			c.silhouette(Color(ROUGE, 0.72 * eclair))
 		c.ci = joueur
