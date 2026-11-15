@@ -84,6 +84,7 @@ const GESTES := {
 # les gestes d'atelier : leur durée ; les instants où ils frappent (le signal impact part, avec le nom du geste : le son en
 # dépend) : chaque coup de maillet de « marteler », le premier des trois coups de « monter » (les autres : MONTER_COUPS)
 const ATELIER := {"marteler": 1.2, "scier": 1.3, "coudre": 1.5, "monter": 1.6, "fouiller": 1.35, "boire": 1.2, "remuer": 1.5}
+const ATELIER_REPLI := {"becher": "monter", "semer": "fouiller", "arroser": "boire", "caresser": "fouiller", "seller": "monter", "traire": "fouiller"}
 const ATELIER_COUPS := {"marteler": [0.36, 0.64, 0.92], "monter": [0.36]}
 const MONTER_COUPS := [0.36, 0.54, 0.72]
 const SCIER_TRAITS := [0.32, 0.62, 0.92]
@@ -195,11 +196,14 @@ var endormie := false           # elle dort : couchée, les yeux clos
 var atelier := ""               # le geste d'atelier en cours : marteler, scier, coudre, monter, fouiller, boire, remuer ("" : aucun)
 var atelier_t := 0.0            # depuis quand
 var couchage := ""              # où elle dort : "" (son duvet, à même le sol), « tente », « hamac » (on ne la dessine plus : elle est dedans)
+var monture = null              # la bête qu'elle monte (scripts/elevage.gd) : elle est assise sur son dos (monture.siege())
 
 
 # un geste d'atelier commence (atelier.gd) : il dure ce que son dessin dure (ATELIER), puis s'efface. Elle se tourne vers ce
 # qu'elle travaille (l'établi, la chose posée, le feu), un peu de biais, pour qu'on voie ses mains
 func geste_atelier(nom: String) -> void:
+	# (en attendant leur dessin : les gestes du jardin et de l'élevage empruntent ceux de l'atelier)
+	nom = str(ATELIER_REPLI.get(nom, nom)) if not ATELIER.has(nom) else nom
 	if morte or not ATELIER.has(nom):
 		atelier = ""
 		return
@@ -372,6 +376,9 @@ func deplacer(dir: Vector2, delta: float, monde) -> void:
 			regard = signf(dir.x)
 		# (la faim ralentit ; la boue, l'eau, la neige aussi : scripts/climat.gd ; le froid engourdit)
 		var allure: float = (0.7 if faim <= 0.0 else 1.0) * (float(monde.jeu.allure_sol(position)) if monde.jeu != null else 1.0)
+		# (en selle, on va bien plus vite : scripts/elevage.gd)
+		if monture != null and monde.jeu != null and monde.jeu.get("elevage") != null:
+			allure *= float(monde.jeu.elevage.allure())
 		if temperature < 25.0:
 			allure *= lerpf(0.82, 1.0, temperature / 25.0)
 		var avant := position

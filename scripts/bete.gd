@@ -107,6 +107,16 @@ var de_face := 0.0               # de 0 à 1 : elle regarde la veilleuse en face
 var _claque := -1.0              # son coup de gueule, de 0 à 1 (-1 : rien) : le corps se jette en avant, la tête claque
 var _tic := 0.0                  # un mouvement de tête brusque, qui retombe
 var _tic_t := 2.0
+# la bête apprivoisée (rôle « compagne », scripts/elevage.gd), et ce qui tente une proie (un appât, un jardin)
+var harnais := {}                # « licol », « selle », « sacoche » : vrai quand elle le porte (son dessin les montre)
+var longe = null                 # où tient le bout de sa longe, dans le lieu (la main de la veilleuse, un piquet) ; null : aucune
+var montee := false              # la veilleuse est en selle : c'est elle qui la mène
+var mange := 0.0                 # de 0 à 1 : la tête au sol, elle mange (un appât, une mangeoire, un carré de jardin, l'herbe)
+var suit_la := true              # (compagne) elle suit la veilleuse ; faux : elle reste là où on l'a laissée (maison)
+var faim := 100.0                # (compagne) de 0 à 100 : affamée trop longtemps, elle s'en va
+var lait := 0.0                  # (compagne) de 0 à 1 : à 1, on peut la traire
+var _tentation = null            # ce qui la tente (une chose posée : scripts/campement.gd)
+var _tentation_t := 0.0
 # ses empreintes (scripts/traces.gd) : là où chaque pied se pose, quand on la voit de profil ; sinon une à chaque foulée
 const PIEDS := {"coussinet": 0, "doigts": 1, "sabot": 3, "main": 4, "griffes": 5}
 var _trace_ou: Array[Vector2] = []   # où chaque pied a laissé sa dernière empreinte
@@ -830,6 +840,8 @@ func _conduire(delta: float) -> void:
 			_process_sillage(delta)
 		"noire":
 			_noire(delta)
+		"compagne":
+			_compagne(delta)
 
 
 func _aller(vers: Vector2, v: float, delta: float) -> void:
@@ -847,7 +859,7 @@ func _aller(vers: Vector2, v: float, delta: float) -> void:
 		regard = signf(pas.x)
 	if jeu != null and jeu.monde != null and jeu.monde.ouvert:
 		# (un lieu sans bord : celle qu'on a laissée loin derrière s'en va)
-		if role != "echo" and role != "noire" and etat != "mort" and jeu.joueur != null and position.distance_to(jeu.joueur.position) > 2600.0:
+		if role != "echo" and role != "noire" and role != "compagne" and etat != "mort" and jeu.joueur != null and position.distance_to(jeu.joueur.position) > 2600.0:
 			queue_free()
 		elif role != "echo" and jeu.monde.carte != null:
 			position = jeu.monde.carte.retenir(position)
@@ -897,6 +909,9 @@ func _suivre() -> void:
 # Craintive, de plus loin, mais jamais hors de l'écran (420 pixels) ; habituée, de plus près (60 au moins, si l'on marche vers
 # elle), et qui ne bouge pas la voit venir brouter à ses pieds.
 func _distance_fuite(en_marche: bool) -> float:
+	# (la tête dans un appât, elle laisse venir : c'est là qu'on lui passe le licol ; scripts/elevage.gd)
+	if mange > 0.6 and _tentation != null and is_instance_valid(_tentation) and str(_tentation.genre) == "appat":
+		return 26.0
 	if crainte <= 0.0 and confiance <= 0.0:
 		return flair * (1.0 if en_marche else 0.55)
 	if not en_marche:
@@ -952,8 +967,78 @@ func _proie(delta: float) -> void:
 		if _t > _duree:
 			maison = position
 			_changer("repos", 1.0)
-	else:
+	elif not _tentee(delta):
 		_errer(delta)
+
+
+# un appât, un carré de jardin où ça pousse : elle y vient manger, si rien ne l'inquiète (scripts/elevage.gd, scripts/jardin.gd)
+func _tentee(delta: float) -> bool:
+	_tentation_t -= delta
+	if _tentation_t <= 0.0:
+		_tentation_t = 1.0
+		_tentation = jeu.tentation(self) if jeu.has_method("tentation") else null
+	if _tentation == null or not is_instance_valid(_tentation):
+		_tentation = null
+		mange = move_toward(mange, 0.0, delta * 3.0)
+		return false
+	var vers: Vector2 = _tentation.position - position
+	var pres := 12.0 + largeur * 0.22
+	if vers.length() > pres + 4.0:
+		mange = move_toward(mange, 0.0, delta * 3.0)
+		_aller(_tentation.position - vers.normalized() * pres, vitesse * 0.35, delta)
+	else:
+		# (elle y est : la tête au sol)
+		if absf(vers.x) > 2.0:
+			regard = signf(vers.x)
+		mange = move_toward(mange, 1.0, delta * 2.5)
+		maison = position
+		jeu.mangee(self, _tentation, delta)
+	return true
+
+
+# la bête apprivoisée : en selle, la veilleuse la mène ; « suis-moi », elle marche à ses côtés ; sinon elle reste là où on
+# l'a laissée, et broute autour. Ce qui lui fait peur (le noir, la Noire) : scripts/elevage.gd, qui l'effraie (effrayer)
+func _compagne(delta: float) -> void:
+	var j = jeu.joueur
+	if montee:
+		mange = 0.0
+		return
+	if etat == "fuit":
+		mange = 0.0
+		_aller(_loin_de(_fuite_de), vitesse, delta)
+		if _t > _duree:
+			maison = position
+			_changer("repos", 1.0)
+		return
+	var dj := position.distance_to(j.position)
+	if suit_la:
+		mange = move_toward(mange, 0.0, delta * 3.0)
+		var marge := 58.0 + largeur * 0.4
+		if dj > marge:
+			# (elle tient son pas ; distancée, elle trotte pour revenir)
+			var v := maxf(vitesse, R.VITESSE * 1.2) if dj > marge + 90.0 else R.VITESSE * 0.95
+			_aller(j.position + (position - j.position).normalized() * (marge - 8.0), v, delta)
+			etat = "marche"
+		elif etat != "repos":
+			_changer("repos", 2.0)
+		maison = position
+		return
+	# à l'attache (ou laissée là) : quelques pas autour, la tête dans l'herbe
+	if etat == "repos":
+		mange = move_toward(mange, 1.0 if fmod(_t, 7.0) > 2.5 else 0.0, delta * 2.0)
+		if _t > _duree:
+			_cible = maison + Vector2.from_angle(randf() * TAU) * randf_range(8.0, 40.0)
+			_changer("marche", randf_range(2.0, 4.0))
+	else:
+		mange = move_toward(mange, 0.0, delta * 3.0)
+		_aller(_cible, vitesse * 0.25, delta)
+		if _t > _duree or position.distance_to(_cible) < 4.0:
+			_changer("repos", randf_range(4.0, 9.0))
+
+
+# où s'assied qui la monte, dans le lieu (le creux de son dos)
+func siege() -> Vector2:
+	return global_position + Vector2(0.0, -largeur * 0.42)
 
 
 func _rodeur(delta: float) -> void:

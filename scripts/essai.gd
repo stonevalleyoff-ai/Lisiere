@@ -2290,7 +2290,7 @@ func _l_atelier(F: Dictionary) -> void:
 		for k in o.get("cout", {}):
 			if not A.MATIERES.has(k) or int(o["cout"][k]) <= 0:
 				bon = false
-		if bool(o.get("pose", false)) and str(o["famille"]) != "camp":
+		if bool(o.get("pose", false)) and not (str(o["famille"]) in ["camp", "jardin", "elevage"]):
 			bon = false
 	verif(bon, "l'atelier a %d choses à fabriquer, chacune avec son nom, sa phrase, sa famille et ce qu'elle coûte en matières connues" % A.ORDRE.size())
 
