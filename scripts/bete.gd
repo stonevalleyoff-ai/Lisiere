@@ -1659,6 +1659,14 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	var ampleur := (0.026 + 0.02 * _essouffle) * (0.35 + 0.65 * repos) * (1.5 if noire else 1.0)
 	sy *= 1.0 + ampleur * sin(_souffle)
 	sx *= 1.0 + ampleur * 0.3 * sin(_souffle)
+	# (les herbes, scripts/botanique.gd — le dessin seulement) endormie par un appât : son souffle se voit, plus ample ;
+	# empoisonnée : elle titube (son poids part d'un côté, puis de l'autre, son dos tangue) et tremble
+	if not noire and _mort < 0.0:
+		sy *= 1.0 + 0.032 * sin(_souffle) * couchee
+		if empoisonnee > 0.0:
+			x += H * (0.07 * sin(_anim * 2.1) + 0.03 * sin(_anim * 5.3))
+			tang += 0.05 * sin(_anim * 1.7 + 0.6) + 0.006 * sin(_anim * 37.0)
+			y += H * 0.05
 	# frappée : elle s'écrase, ses pattes se dérobent
 	sy *= 1.0 + _ressort
 	sx *= 1.0 - _ressort * 0.55
@@ -1795,6 +1803,15 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 				rot += 0.5 * sin(TAU * _claque) * (1.0 - _claque)
 				d += Vector2(0.12, 0.0) * H * sin(PI * _claque)
 		raide = 1.0 - exp(-delta * 12.0)
+	# (les herbes — le dessin seulement) endormie : la tête posée au sol, qui se soulève à peine à son souffle ; empoisonnée :
+	# la tête basse, qui ballotte
+	if not noire and _mort < 0.0 and _tete != null:
+		if couchee > 0.01:
+			rot += (0.34 + 0.03 * sin(_souffle)) * couchee
+			d += Vector2(0.04, 0.24) * H * couchee
+		if empoisonnee > 0.0:
+			rot += 0.24 + 0.08 * sin(_anim * 2.3)
+			d += Vector2(0.03 + 0.02 * sin(_anim * 1.1), 0.13) * H
 	_tete_rot = lerpf(_tete_rot, rot * souple, raide)
 	_tete_d = _tete_d.lerp(d * souple, raide)
 	var td := _tete_d

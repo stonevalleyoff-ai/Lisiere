@@ -410,7 +410,10 @@ func preparer(p: String) -> bool:
 		jeu.sons.jouer("allume", -10.0, 0.6)
 	else:
 		jeu.joueur.geste_atelier("piler")
-		jeu.sons.atelier("tresse", -2.0, 0.8)
+		# (le pilon dans la pierre : trois coups, au rythme du geste — Joueur.PILER_COUPS —, puis les herbes qu'on broie)
+		for t in [1.1, 1.32, 1.54]:
+			jeu.get_tree().create_timer(float(t)).timeout.connect(func(): jeu.sons.jouer("pierre", -13.0, 1.45))
+		jeu.sons.atelier("tresse", -4.0, 0.8)
 	jeu.ui.message("%s. %s" % [str(o["nom"]), str(o["dit"])], TEINTE)
 	return true
 

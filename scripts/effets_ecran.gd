@@ -1,16 +1,20 @@
 extends CanvasLayer
 # Lisière — ce qui couvre l'écran (scripts/effets_ecran.gd)
 # Une couche au-dessus du lieu et des yeux, sous l'interface (layer 5 ; l'interface est à 10, les boutons tactiles à 11) : un
-# voile de tout l'écran, qui ne lit pas l'image (shaders/ecran_voile.gdshader : la vignette, la nuit, la morsure, le grain…),
-# et, en qualité haute seulement, dessous, une passe qui la lit pour en retirer la couleur (shaders/ecran_post.gdshader) ;
-# elle ne s'allume que quand elle sert (la peur, un écho, la fin, un choc) : une copie de l'écran coûte cher.
+# voile de tout l'écran, qui ne lit pas l'image (shaders/ecran_voile_herbes.gdshader : la vignette, la nuit, la morsure, le
+# grain… et les herbes : le poison, les paupières, les visions, la voyance), et, en qualité haute seulement, dessous, une passe
+# qui la lit pour en retirer la couleur, la dédoubler, la flouter (shaders/ecran_post_herbes.gdshader) ;
+# elle ne s'allume que quand elle sert (la peur, un écho, la fin, un choc, une herbe) : une copie de l'écran coûte cher.
 # Les effets (scripts/effets.gd) les règlent chaque image.
 # Ses particules (le souffle de la tombée, le frisson d'un écho) vivent ici, en coordonnées de l'écran.
 
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/effets_textures.gd")
-const POST := preload("res://shaders/ecran_post.gdshader")
-const VOILE := preload("res://shaders/ecran_voile.gdshader")
+# (les deux shaders de toujours, et dans le même passage ce que les herbes font voir : scripts/effets_herbes.gd)
+const POST := preload("res://shaders/ecran_post_herbes.gdshader")
+const VOILE := preload("res://shaders/ecran_voile_herbes.gdshader")
+const C_POISON := Color(0.45, 0.55, 0.17)
+const C_VOYANCE := Color(0.53, 0.72, 0.95)
 
 var haute := true
 var voile: ShaderMaterial
@@ -18,6 +22,9 @@ var post: ShaderMaterial
 var _voile: ColorRect
 var _post: ColorRect
 var _air: Node2D
+# entre la passe qui lit l'image et le voile : ce qui se tient au bord de l'écran et que le voile recouvre (les guetteurs des
+# visions, scripts/effets_herbes.gd)
+var dessous: Node2D
 
 
 func preparer(qualite: String) -> void:
@@ -28,6 +35,8 @@ func preparer(qualite: String) -> void:
 		post.shader = POST
 		_post = _plein(post)
 		_post.visible = false
+	dessous = Node2D.new()
+	add_child(dessous)
 	voile = ShaderMaterial.new()
 	voile.shader = VOILE
 	voile.set_shader_parameter("seul", 0.0 if haute else 1.0)
@@ -43,6 +52,8 @@ func preparer(qualite: String) -> void:
 		m.set_shader_parameter("c_froid", P.LUNE)
 		m.set_shader_parameter("c_aube", P.AUBE)
 		m.set_shader_parameter("c_echo", P.ECHO)
+		m.set_shader_parameter("c_poison", C_POISON)
+		m.set_shader_parameter("c_voyance", C_VOYANCE)
 	_air = Node2D.new()
 	add_child(_air)
 	visible = false
@@ -131,6 +142,7 @@ func frisson(couleur: Color, n: int) -> void:
 func vider() -> void:
 	visible = false
 	# (la partie suivante commence sur un écran propre : rien de la fin d'avant)
-	regler({"peur": 0.0, "coeur": 0.0, "blessure": 0.0, "froid": 0.0, "aube": 0.0, "echo": 0.0, "fin": 0.0, "noir": 0.0})
+	regler({"peur": 0.0, "coeur": 0.0, "blessure": 0.0, "froid": 0.0, "aube": 0.0, "echo": 0.0, "fin": 0.0, "noir": 0.0,
+		"poison": 0.0, "pouls": 0.0, "torpeur": 0.0, "paupiere": 0.0, "flou": 0.0, "visions": 0.0, "voyance": 0.0})
 	for g in _air.get_children():
 		g.queue_free()

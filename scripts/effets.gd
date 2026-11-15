@@ -11,6 +11,7 @@ const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/effets_textures.gd")
 const Lieu := preload("res://scripts/effets_lieu.gd")
 const Ecran := preload("res://scripts/effets_ecran.gd")
+const Herbes := preload("res://scripts/effets_herbes.gd")
 const ARRET_LENT := 0.04         # le temps, pendant un arrêt d'image
 const FIN_LENT := 0.55           # le temps, quand la veilleuse tombe
 
@@ -30,6 +31,8 @@ var nuit_monde := P.NUIT_BLEUE.lerp(P.LUNE, 0.06)
 var nuit_roche := nuit_monde * Color(0.5, 0.5, 0.52)      # sous terre : plus noir que la nuit (ni lune, ni étoiles)
 var _lieu
 var _ecran
+# ce que les herbes font voir (scripts/effets_herbes.gd) : le corps de la veilleuse, les yeux, les feux le lisent ici
+var herbes
 var _bruit := FastNoiseLite.new()
 var _horloge := 0.0
 var _q := 1.0
@@ -73,6 +76,8 @@ func _ready() -> void:
 	_ecran = Ecran.new()
 	add_child(_ecran)
 	_ecran.preparer(jeu.qualite if jeu != null else "haute")
+	herbes = Herbes.new()
+	herbes.jeu = jeu
 
 
 # une partie commence : la scène du lieu, sa caméra, son obscurité
@@ -104,6 +109,7 @@ func nouvelle_partie(s: Node2D, c: Camera2D, o: CanvasModulate) -> void:
 	if jeu != null and jeu.monde != null:
 		_lieu.poser(s, jeu.monde, jeu.qualite, axes, palette)
 		sol = _lieu.sol
+	herbes.commencer(_ecran.dessous)
 	_ecran.visible = true
 
 
@@ -121,6 +127,7 @@ func vider() -> void:
 	_lent = 1.0
 	_fin = -1.0
 	_temps()
+	herbes.vider()
 	_ecran.vider()
 
 
@@ -147,6 +154,8 @@ func maj(delta: float) -> void:
 		fin = smoothstep(0.0, 0.5, u)
 		noir = smoothstep(0.5, 0.97, u)
 		_lent = lerpf(1.0, FIN_LENT, smoothstep(0.0, 0.2, u))
+	# (les herbes d'abord : la caméra tangue avec elles)
+	var h: Dictionary = herbes.maj(delta, nuit)
 	_camera(delta, nuit, fin)
 	var vue := _vue()
 	if _lieu != null and camera != null:
@@ -165,10 +174,11 @@ func maj(delta: float) -> void:
 	e["givre"] = _givre if _givre > 0.01 else 0.0
 	e["fournaise"] = _fournaise if _fournaise > 0.01 else 0.0
 	e["grain"] = (0.035 + 0.02 * nuit) * (1.0 if _ecran.haute else 0.6)
+	e.merge(h)
 	if _ecran.haute:
 		e["aberration"] = smoothstep(0.82, 1.0, _peur) * 0.8 + _choc
 		# (la passe qui lit l'écran ne s'allume que pour retirer la couleur, ou dédoubler l'image)
-		_ecran.lire(_peur > 0.3 or _echo > 0.01 or fin > 0.0 or e["aberration"] > 0.01)
+		_ecran.lire(_peur > 0.3 or _echo > 0.01 or fin > 0.0 or e["aberration"] > 0.01 or herbes.lit())
 	_ecran.regler(e)
 
 
@@ -188,6 +198,10 @@ func teinter(o: CanvasModulate, l: float) -> void:
 		_:
 			# (une grotte à l'écran : tout est dans sa nuit, et le jour du dehors est une lumière — voir _jour_dehors)
 			o.color = nuit_roche
+	# (la voyance, scripts/effets_herbes.gd : le noir s'ouvre, froid et bleu ; ce qui se teint soi-même le suit)
+	if herbes != null and herbes.voyance > 0.01:
+		o.color = herbes.ouvrir_le_noir(o.color)
+		teinte = herbes.ouvrir_le_noir(teinte)
 
 
 # --- le jour n'entre pas sous terre ---
@@ -334,6 +348,10 @@ func _camera(delta: float, nuit: float, fin: float) -> void:
 	var t := _horloge * 22.0
 	camera.offset = Vector2(_bruit.get_noise_2d(t, 3.0), _bruit.get_noise_2d(7.0, t)) * 15.0 * s
 	camera.rotation = _bruit.get_noise_2d(t, 40.0) * 0.03 * s
+	# (le poison la fait tanguer, la torpeur pencher : scripts/effets_herbes.gd)
+	if herbes != null:
+		camera.offset += herbes.derive
+		camera.rotation += herbes.tangage
 	# la nuit, elle se rapproche un peu (le monde se resserre autour du feu) ; la peur la fait reculer ; la fin, s'approcher
 	var cible := 1.0 + 0.045 * nuit - 0.035 * smoothstep(0.6, 1.0, _peur) + 0.14 * fin
 	# (sur les hauteurs, elle recule : on voit plus loin, d'un palier à l'autre)

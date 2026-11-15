@@ -1093,6 +1093,8 @@ func _la_botanique(F: Dictionary) -> void:
 	for i in 10:
 		B.maj(0.5)
 	var empoisonnee: bool = B.poison > 0.0 and j.sante < s0 - 6.0 and B.sue(str(par_vertu["veneneuse"]))
+	# (le poison fait dévier ses pas : on l'ôte pour mesurer la torpeur seule)
+	B.poison = 0.0
 	B.gouter(str(par_vertu["somnifere"]))
 	# (le même pas, du même endroit dégagé, avec et sans la torpeur)
 	var depart: Vector2 = j.position
