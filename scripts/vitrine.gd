@@ -22,6 +22,8 @@ extends Node
 #   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac ;
 #   --fabrique tente,popote : à l'établi, elle fabrique ces choses l'une après l'autre ; --aupres tente : elle se tient
 #   près de cette chose (avec --dort : elle s'y couche)
+#   le jardin, l'élevage : --pose carre,epouvantail,piquet,mangeoire,appat ; --etat lin,fleur,eau (ou baie, simple ; semis,
+#   pousse, mur ; gel ; regard, alerte ; foin ; attache) ; --compagne licol,selle,sacoche,grande,reste,monte : une bête à elle
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -233,6 +235,48 @@ func _lancer() -> void:
 					"vestige":
 						if _etats.has("fouille"):
 							s.etat["fouille"] = true
+					"carre":
+						# (--etat baie|lin|simple, et semis|pousse|fleur|mur ; eau : la terre humide ; gel)
+						for c in ["baie", "lin", "simple"]:
+							if _etats.has(c):
+								s.etat["culture"] = c
+						s.etat["stade"] = 3.0 if _etats.has("mur") else (2.0 if _etats.has("fleur") else (1.0 if _etats.has("pousse") else 0.2))
+						s.etat["eau"] = 1.0 if _etats.has("eau") else 0.0
+						s.etat["gel"] = _etats.has("gel")
+					"epouvantail":
+						if _etats.has("regard"):
+							s.etat["regard"] = PI
+						s.etat["alerte"] = 1.0 if _etats.has("alerte") else 0.0
+					"mangeoire":
+						s.etat["foin"] = 9 if _etats.has("foin") else 0
+					"piquet":
+						s.etat["attache"] = _etats.has("attache")
+	# (--compagne [licol,selle,sacoche,grande,reste,monte] : une bête à elle, près d'elle ; scripts/elevage.gd)
+	var i_c := ar2.find("--compagne")
+	if i_c >= 0 and jeu.elevage != null:
+		var veut: PackedStringArray = ar2[i_c + 1].split(",") if i_c + 1 < ar2.size() and not ar2[i_c + 1].begins_with("--") else PackedStringArray()
+		for e in jeu.faune["proies_jour"] + jeu.faune["proies_nuit"]:
+			var x: Dictionary = e.duplicate()
+			if veut.has("grande"):
+				x["masse"] = 240.0
+				x.erase("largeur")
+			var b = jeu._creer(x, "proie", j.position + Vector2(70.0, 16.0))
+			if not jeu.elevage.apprivoisable(b):
+				b.remove_from_group("betes")
+				b.queue_free()
+				continue
+			jeu.atelier.objets["licol"] = 1
+			jeu.elevage.apprivoiser(b)
+			for k in ["selle", "sacoche"]:
+				if veut.has(k):
+					b.harnais[k] = true
+			if veut.has("reste"):
+				b.suit_la = false
+				b.maison = b.position
+			if veut.has("monte"):
+				b.harnais["selle"] = true
+				jeu.elevage.monter(b)
+			break
 	# (--affut : elle ne bouge pas, pour regarder l'œil de l'affût s'ouvrir sur une bête ; scripts/pistage.gd)
 	if OS.get_cmdline_user_args().has("--affut"):
 		_plan = [[0.0, 1.0, "attendre"]]

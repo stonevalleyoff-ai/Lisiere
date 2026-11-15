@@ -336,6 +336,10 @@ func coup(geste: String, p: Vector2) -> void:
 				e.coup(1.0)
 		"monter":
 			jeu.sons.atelier("piquet", 0.0, 1.0, p)
+		"becher":
+			# (la houe entre dans la terre)
+			jeu.sons.jouer("pierre", -10.0, 0.62)
+			jeu.sons.jouer("herbe", -6.0, 0.8)
 
 
 # une gorgée (la canicule pèse moins), et elle le dit

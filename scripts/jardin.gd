@@ -86,7 +86,6 @@ func becher() -> bool:
 			jeu.monde.retirer(o)
 	A._creer("carre", p, {"culture": "", "stade": 0.0, "eau": 0.3 + 0.7 * float(jeu.climat.boue)})
 	jeu.joueur.geste_atelier("becher")
-	jeu.sons.atelier("fouille", -4.0, 0.8, p)
 	jeu.ui.message("Un carré de terre retournée. Il lui faut des graines, et de l'eau.", TEINTE)
 	return true
 
