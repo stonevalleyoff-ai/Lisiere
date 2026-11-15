@@ -302,7 +302,7 @@ static func _toile(r: RandomNumberGenerator) -> PackedFloat32Array:
 # un piquet qu'on enfonce : trois coups de maillet. La terre le serre de plus en plus : le bois sonne moins, moins haut,
 # et le coup dans le sol prend le dessus (de plus en plus sourd)
 static func _piquet(r: RandomNumberGenerator) -> PackedFloat32Array:
-	var s := O.vide(0.92, VIF)
+	var s := O.vide(0.72, VIF)
 	var t := T0
 	var k := r.randf_range(0.94, 1.06)
 	for p in 3:
@@ -318,7 +318,8 @@ static func _piquet(r: RandomNumberGenerator) -> PackedFloat32Array:
 		O.mode(b, 0.0, lerpf(430.0, 330.0, u), 0.024, lerpf(0.2, 0.5, u), VIF, 0.88)
 		O.bas(b, lerpf(4600.0, 1500.0, u), VIF)
 		_mettre(s, b, t, lerpf(1.0, 0.86, u), VIF)
-		t += r.randf_range(0.27, 0.31)
+		# (au rythme de son geste : les trois coups de « monter », scripts/joueur.gd, MONTER_COUPS)
+		t += 0.18
 	O.niveau(s, 0.07, CRETE)
 	return O.bords(s, VIF)
 

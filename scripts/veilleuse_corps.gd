@@ -50,11 +50,13 @@ const CIRE := Color("8e8b70")
 const CIRE_OMBRE := Color("656350")
 const CIRE_LISERE := Color("bab696")
 const CIRE_PLI := Color("48463a")
+const DUVET := Color("7f6748")
+const DUVET_OMBRE := Color("58462f")
+const DUVET_CLAIR := Color("a08763")
 const IVOIRE_OS := Color("b3a88f")
 const CHANVRE := Color("9c9168")
 const FERRAILLE := Color("8b8a84")
 const ROUILLE := Color("8a5433")
-const MAIN_LAMPE := Vector3(7.2, -6.0, 19.6)
 const DIR_LAMPE := Vector3(0.992, 0.0, -0.125)
 # trempée, elle s'assombrit (le joueur en teinte tout son dessin) ; la toile cirée, non : sa couleur est relevée d'autant
 const TON_MOUILLE := Color(0.7, 0.74, 0.85)
@@ -282,7 +284,7 @@ func dessiner() -> void:
 		# (sa tête repose sur le côté, moins couchée que son corps : on voit son visage, ses yeux clos)
 		var c0 := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste)
 		var haut := chute * pt(Vector3(0.0, 0.0, 26.8 + epaules), buste)
-		var pied := chute * pt(Vector3(0.0, 0.0, -4.0), cap)
+		var pied := chute * pt(Vector3(0.0, 0.0, -7.5), cap)
 		var le_long := (haut - pied).normalized()
 		var repos := Transform2D(0.6 * sens_chute, haut + le_long * 6.6 + Vector2(0.0, -1.4)) * Transform2D(0.0, -c0)
 		ci.draw_set_transform_matrix(chute.interpolate_with(repos, dort))
@@ -1178,9 +1180,13 @@ func _ouvrage() -> void:
 			var b := sol(o + Vector3(0.0, 6.2, 0.0))
 			var de_bout := a.distance_to(b) < 5.0
 			if de_bout:
-				# (vu par le bout : une rondelle)
-				_forme(_ellipse(sol(o), 2.6, 2.4, 10), BOIS)
-				ci.draw_arc(sol(o), 1.2, 0.0, TAU, 8, grain, 0.6, true)
+				# (vu par le bout : ses cernes ; la rondelle sciée s'en détache et tombe)
+				var c := sol(o)
+				_forme(_ellipse(c, 3.1, 2.9, 10), BOIS)
+				ci.draw_arc(c, 1.5, 0.0, TAU, 8, grain, 0.7, true)
+				if ouvrage_u > 0.0:
+					var q := c + Vector2(2.2 * ouvrage_u, minf(10.0 * ouvrage_u * ouvrage_u, o.z - 1.0))
+					_forme(_ellipse(q, 3.0, 2.8 * (1.0 - 0.6 * ouvrage_u), 10), grain, 0.8)
 			else:
 				var chu := ouvrage_u * ouvrage_u
 				var tombe := Vector2(signf(b.x - m.x) * 2.5 * ouvrage_u, minf(9.0 * chu, o.z - 1.5))
@@ -1241,7 +1247,7 @@ func _ouvrage() -> void:
 # le duvet : une peau roulée autour d'elle, des pieds aux épaules (on y devine la hanche, l'épaule), cousue le long, son bord
 # retourné sur sa fourrure ; il se soulève à son souffle
 func _duvet() -> void:
-	var pied := chute * pt(Vector3(0.0, 0.0, -4.0), cap)
+	var pied := chute * pt(Vector3(0.0, 0.0, -7.5), cap)
 	var haut := chute * pt(Vector3(0.0, 0.0, 26.8 + epaules), buste)
 	var axe := haut - pied
 	var l := axe.length()
@@ -1253,8 +1259,8 @@ func _duvet() -> void:
 		n = -n
 	# (le long du corps : où, son épaisseur au-dessus, au-dessous ; les pieds, les genoux, la hanche, la taille, l'épaule)
 	var gonfle := 0.5 * respire
-	var profil := [[0.0, 2.4, 2.2], [0.05, 5.0, 4.2], [0.14, 5.9, 4.9], [0.28, 5.6, 5.2], [0.44, 7.5 + 0.3 * gonfle, 5.6], [0.62, 6.3 + 0.5 * gonfle, 5.4],
-		[0.84, 8.1 + gonfle, 5.8], [1.0, 7.3 + 0.7 * gonfle, 5.5]]
+	var profil := [[0.0, 1.8, 1.6], [0.05, 4.0, 3.4], [0.13, 5.6, 4.4], [0.24, 5.0, 4.9], [0.36, 6.3, 5.3], [0.5, 7.6 + 0.3 * gonfle, 5.6], [0.66, 6.3 + 0.5 * gonfle, 5.4],
+		[0.86, 8.1 + gonfle, 5.8], [1.0, 7.3 + 0.7 * gonfle, 5.5]]
 	var dessus := PackedVector2Array()
 	var dessous := PackedVector2Array()
 	var jusque := dort
@@ -1270,29 +1276,29 @@ func _duvet() -> void:
 	corps.append_array(dessus)
 	corps.append_array(retour)
 	corps = _arrondi(corps, 2)
-	_remplir(corps, PEAU)
+	_remplir(corps, DUVET)
 	# (l'ombre : le dessous, contre le sol ; la lumière : une ligne sur le dessus)
 	var ombre := PackedVector2Array()
 	for i in dessous.size():
 		ombre.append(dessous[i].lerp(dessus[i], 0.36))
 	ombre.append_array(retour)
-	_remplir(_simple(ombre), PEAU_OMBRE)
+	_remplir(_simple(ombre), DUVET_OMBRE)
 	var clair := PackedVector2Array()
 	for i in range(1, dessus.size()):
 		clair.append(dessus[i].lerp(dessous[i], 0.17))
 	if clair.size() > 1:
-		ci.draw_polyline(clair, PEAU_CLAIR, 1.1, true)
+		ci.draw_polyline(clair, DUVET_CLAIR, 1.1, true)
 	# la couture, le long ; deux plis où le corps se creuse
 	if not mobile:
 		for k in 8:
 			var f := 0.1 + 0.1 * k
 			if f < jusque - 0.06:
 				var c := pied + u * l * f + n * 0.6
-				ci.draw_line(c - u * 0.9, c + u * 0.9 + n * 0.5, PEAU_OMBRE.darkened(0.35), 0.8, true)
+				ci.draw_line(c - u * 0.9, c + u * 0.9 + n * 0.5, DUVET_OMBRE.darkened(0.35), 0.8, true)
 		for f in [0.33, 0.7]:
 			if f < jusque - 0.06:
 				var c: Vector2 = pied + u * l * float(f)
-				ci.draw_polyline(PackedVector2Array([c + n * 6.0, c + n * 3.2 + u * 1.2, c + n * 1.6 + u * 0.6]), PEAU_OMBRE.darkened(0.3), 0.8, true)
+				ci.draw_polyline(PackedVector2Array([c + n * 6.0, c + n * 3.2 + u * 1.2, c + n * 1.6 + u * 0.6]), DUVET_OMBRE.darkened(0.3), 0.8, true)
 	_encre(corps)
 	if jusque > 0.9:
 		# le bord, retourné sur sa fourrure, sous son menton

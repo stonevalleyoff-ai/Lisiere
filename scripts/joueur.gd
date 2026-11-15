@@ -1078,7 +1078,7 @@ func _lampe(dt: float, jeu) -> void:
 	var a := PI * (1.0 - _faisceau_x) * 0.5
 	faisceau.rotation = a
 	faisceau.position = Vector2(cos(a) * 9.0, -9.0 + sin(a) * 5.0)
-	var force := 1.15
+	var force := 1.5
 	var at = jeu.get("atelier") if jeu != null else null
 	if at != null and at.get("charge") != null and float(at.charge) < 14.0:
 		# (les piles s'épuisent)
