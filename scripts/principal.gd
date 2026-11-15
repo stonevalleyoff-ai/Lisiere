@@ -39,6 +39,8 @@ const Noire := preload("res://scripts/noire.gd")
 const Traces := preload("res://scripts/traces.gd")
 const Pistage := preload("res://scripts/pistage.gd")
 const Atelier := preload("res://scripts/atelier.gd")
+const Jardin := preload("res://scripts/jardin.gd")
+const Elevage := preload("res://scripts/elevage.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -92,6 +94,8 @@ var noire                     # la Noire : son scénario, d'une nuit à l'autre 
 var traces                    # les empreintes laissées sur le sol (scripts/traces.gd)
 var pistage                   # l'affût et la lecture des pistes (scripts/pistage.gd)
 var atelier                   # ce qu'elle fabrique, porte et pose (scripts/atelier.gd)
+var jardin                      # ce qu'elle sème et récolte (scripts/jardin.gd)
+var elevage                     # les bêtes qu'elle apprivoise (scripts/elevage.gd)
 var page := ""                # la page d'atelier ouverte : « etabli », « sac » ("" : aucune) ; la partie attend, comme en pause
 var savoir: Dictionary = {}   # ce qu'elle a appris de chaque lignée, en secondes d'affût (le carnet des bêtes)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
@@ -567,7 +571,12 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	if atelier == null:
 		atelier = Atelier.new()
 		atelier.jeu = self
+		jardin = Jardin.new()
+		jardin.jeu = self
+		elevage = Elevage.new()
+		elevage.jeu = self
 	atelier.commencer()
+	elevage.vider()
 	# (l'œil de l'affût : au-dessus du lieu)
 	pistage = Pistage.new()
 	pistage.jeu = self
@@ -602,6 +611,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		noire.commencer()
 		noire.reprendre(gardee.get("noire", {}))
 		atelier.reprendre(gardee.get("atelier", {}))
+		elevage.reprendre(gardee.get("elevage", {}))
 		if ouvert:
 			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
 			monde.suivre(joueur.position, true)
@@ -653,6 +663,7 @@ func _vider() -> void:
 	page = ""
 	if atelier != null:
 		atelier.vider()
+		elevage.vider()
 	if noire != null:
 		noire.corps = null
 	effets.vider()
@@ -841,6 +852,8 @@ func _process(delta: float) -> void:
 	_directeur_passe(delta)
 	noire.maj(delta)
 	atelier.maj(delta)
+	jardin.maj(delta)
+	elevage.maj(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
 	ui.maj_hud(self)
@@ -902,11 +915,14 @@ func agir() -> void:
 	if atelier.endormie:
 		atelier.reveiller("Tu te lèves.")
 		return
+	# (en selle, elle descend ; une bête qui mange dans sa main, un licol ; une bête à elle : scripts/elevage.gd)
+	if elevage.agir():
+		return
 	var p: Vector2 = joueur.position
 	var cible = null
 	var d0 := R.PORTEE_COUP
 	for b in get_tree().get_nodes_in_group("betes"):
-		if b.role == "echo":
+		if b.role == "echo" or b.role == "compagne":
 			continue
 		var d: float = p.distance_to(b.position) - b.largeur * 0.3
 		if d < d0:
@@ -942,6 +958,9 @@ func agir() -> void:
 		var pris: int = atelier.ranger(k, int(g[k]))
 		if pris > 0:
 			ui.ramasse(k, pris, o.position)
+	# (cueillir rend parfois des graines : scripts/jardin.gd)
+	if not g.is_empty():
+		jardin.cueilli(genre)
 	if genre == "brindille" and o.epuise():
 		monde.retirer(o)
 	_conseil("feu", peut_fabriquer("feu") and feux.is_empty(), "Tu as de quoi faire un feu : touche 1.")
@@ -971,6 +990,22 @@ func _toucher_vise() -> void:
 		effets.recolte(d["p"], str(d["genre"]))
 		if ["arbre", "sapin", "rocher"].has(d["genre"]):
 			effets.arret(0.02)
+
+
+# ce qui tente cette proie, dans ce que la veilleuse a posé : un appât, un carré de jardin où ça pousse (null : rien)
+func tentation(b):
+	if elevage == null or float(joueur.position.distance_to(b.position)) < float(b._distance_fuite(joueur.en_mouvement)) * 0.8:
+		return null
+	var t = elevage.tentation(b)
+	return t if t != null else jardin.tentation(b)
+
+
+# elle y mange
+func mangee(_b, quoi, delta: float) -> void:
+	if str(quoi.genre) == "appat":
+		elevage.mangee(quoi, delta)
+	else:
+		jardin.mangee(quoi, delta)
 
 
 func _sur_impact(p: Vector2, genre: String) -> void:

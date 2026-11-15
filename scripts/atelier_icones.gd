@@ -2,6 +2,9 @@ extends RefCounted
 # Lisière — les icônes de l'atelier, dessinées à l'encre (scripts/atelier_icones.gd)
 # Une par chose qui se fabrique (les seize de scripts/atelier.gd, ORDRE), une par matière nouvelle (la peau, la ferraille, la
 # corde, la bâche, l'eau), et le bouillon : pour la page de l'établi, celle du sac, et partout où le jeu les montre.
+# Et celles du jardin et de l'élevage : la houe, l'arrosoir, l'épouvantail, le licol, le piquet, la mangeoire, les sacoches, la
+# selle ; pour la page du sac, le carré, l'appât, les trois sachets de graines (on les distingue à leur lien et à ce qui est
+# peint dessus), les simples, le lait, et « bete » (une tête de bête à licol : tes bêtes).
 # Dans le trait de scripts/interface_icones.gd : une boîte de 100 unités, centrée, mise à la taille voulue ; des aplats de la
 # palette cernés d'encre, l'ombre en bas à droite (la lumière vient d'en haut à gauche), une touche de papier pour l'éclat.
 # Chacune est tracée une fois dans un maillage gardé (scripts/interface_trace.gd), puis dessinée d'un seul appel.
@@ -12,7 +15,9 @@ const P := preload("res://scripts/palette.gd")
 const I := preload("res://scripts/interface_icones.gd")
 const Trace := preload("res://scripts/interface_trace.gd")
 const NOMS := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
-	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "peau", "ferraille", "eau", "bouillon"]
+	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "peau", "ferraille", "eau", "bouillon",
+	"houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire", "sacoche", "selle",
+	"carre", "appat", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "bete"]
 
 const TOILE := Color("aba888")          # (la bâche : une toile écrue, enduite, entre l'ivoire et la mousse)
 const TOILE_CLAIRE := Color("cbc6a4")
@@ -32,6 +37,11 @@ const MANCHE := Color("8a6a48")
 const ECORCE := Color("6b5238")
 const PIERRE := Color("9d968a")
 const BOUILLON := Color("c99a52")
+const VERT := Color("5f7d44")           # (la feuille : la mousse, un peu plus claire)
+const ROUGE := Color("a8321f")          # (les baies : celles du HUD)
+const BLEU := Color("7f97c6")           # (la fleur du lin : la lune, éclaircie)
+const LAIT := Color("efe8d6")           # (le papier, plus blanc)
+const PELAGE := Color("ac9e83")         # (le poil d'une bête : l'ivoire, tiré vers la terre)
 
 static var _pales := {}
 
@@ -144,6 +154,38 @@ static func _icone(ci, id: String, w: float, m: Color) -> void:
 			_eau(ci, w, m)
 		"bouillon":
 			_bouillon(ci, w, m)
+		"houe":
+			_houe(ci, w, m)
+		"arrosoir":
+			_arrosoir(ci, w, m)
+		"epouvantail":
+			_epouvantail(ci, w, m)
+		"licol":
+			_licol(ci, w, m)
+		"piquet":
+			_piquet(ci, w, m)
+		"mangeoire":
+			_mangeoire(ci, w, m)
+		"sacoche":
+			_sacoche(ci, w, m)
+		"selle":
+			_selle(ci, w, m)
+		"carre":
+			_carre(ci, w, m)
+		"appat":
+			_appat(ci, w, m)
+		"graine_baie":
+			_graine_baie(ci, w, m)
+		"graine_lin":
+			_graine_lin(ci, w, m)
+		"graine_simple":
+			_graine_simple(ci, w, m)
+		"simples":
+			_simples(ci, w, m)
+		"lait":
+			_lait(ci, w, m)
+		"bete":
+			_bete(ci, w, m)
 
 
 # --- les briques ---
@@ -735,3 +777,319 @@ static func _pile(ci, w: float, m: Color, tr: Transform2D, eclair: bool) -> void
 		ci.draw_line(tr * Vector2(-4, -22.5), tr * Vector2(4, -22.5), P.PAPIER * m, w * 0.75, true)
 		ci.draw_line(tr * Vector2(0, -26.5), tr * Vector2(0, -18.5), P.PAPIER * m, w * 0.75, true)
 		_forme(ci, tr * PackedVector2Array([Vector2(4, -7), Vector2(-7, 11), Vector2(-1, 11), Vector2(-5, 28), Vector2(8, 6), Vector2(2, 6)]), P.BRAISE_COEUR, w * 0.7, m)
+
+
+# --- le jardin ---
+
+# la houe : un manche, une lame de pierre en travers, liée de corde ; un peu de terre y colle encore
+static func _houe(ci, w: float, m: Color) -> void:
+	var a := Vector2(-38, 42)
+	var b := Vector2(21, -31)
+	var d := (b - a).normalized()
+	var n := Vector2(-d.y, d.x)
+	_cordon(ci, PackedVector2Array([a, b + d * 9.0]), 6.5, MANCHE, w, m)
+	var lame := _lisse(PackedVector2Array([b - d * 7.0 - n * 5.0, b + d * 7.0 - n * 5.0, b + d * 11.0 + n * 25.0, b - d * 11.0 + n * 29.0]), 1)
+	_volume(ci, lame, PIERRE, w, m, 4.0, 0.3)
+	ci.draw_line(b + d * 8.0 + n * 21.0, b - d * 8.0 + n * 24.0, Color(P.PAPIER, 0.55) * m, w * 0.6, true)
+	for k in 3:
+		var q := b + d * (-5.0 + k * 5.0)
+		ci.draw_line(q - n * 7.0, q + n * 6.0, P.ENCRE * m, w * 1.6, true)
+		ci.draw_line(q - n * 6.5, q + n * 5.5, CHANVRE * m, w * 0.7, true)
+	for q in [Vector2(45, -8), Vector2(36, 5), Vector2(47, 6)]:
+		ci.draw_circle(q, 3.2, P.ENCRE * m)
+		ci.draw_circle(q, 2.0, P.TERRE.lightened(0.15) * m)
+
+
+# l'arrosoir : une outre de peau ventrue, son anse de corde, son bec de bois ; l'eau en tombe goutte à goutte
+static func _arrosoir(ci, w: float, m: Color) -> void:
+	_cordon(ci, _bezier(Vector2(-30, -6), Vector2(-16, -54), Vector2(6, -18), 12), 3.6, CHANVRE, w, m)
+	var bec: PackedVector2Array = Transform2D(-0.72, Vector2(14, 6)) * PackedVector2Array([Vector2(0, -7), Vector2(38, -4.5), Vector2(38, 4.5), Vector2(0, 7)])
+	_volume(ci, bec, BOIS, w, m, 3.0, 0.28)
+	_forme(ci, _ellipse(Vector2(42.5, -19), 2.6, 4.6, -0.72, 12), ECORCE, w * 0.7, m)
+	var corps := _lisse(PackedVector2Array([Vector2(-12, -22), Vector2(2, -20), Vector2(19, -6), Vector2(25, 16), Vector2(17, 36), Vector2(-6, 44), Vector2(-28, 38), Vector2(-38, 18),
+		Vector2(-34, -4), Vector2(-22, -18)]), 2)
+	_volume(ci, corps, CUIR, w, m, 7.0, 0.3)
+	# (le col noué, la couture du flanc, un reflet)
+	_forme(ci, PackedVector2Array([Vector2(-21, -21), Vector2(-1, -23), Vector2(2, -32), Vector2(-9, -37), Vector2(-22, -32)]), CUIR_SOMBRE, w, m)
+	ci.draw_line(Vector2(-22, -22), Vector2(0, -23.5), P.ENCRE * m, w * 1.7, true)
+	ci.draw_line(Vector2(-21, -22), Vector2(-1, -23.5), CHANVRE * m, w * 0.8, true)
+	var couture := _bezier(Vector2(4, -10), Vector2(18, 14), Vector2(4, 36), 10)
+	for i in range(0, couture.size() - 1, 2):
+		ci.draw_line(couture[i], couture[i + 1], Color(FOURRURE, 0.85) * m, w * 0.5, true)
+	ci.draw_polyline(_bezier(Vector2(-29, 18), Vector2(-31, 2), Vector2(-19, -9), 8), Color(P.PAPIER, 0.55) * m, w * 0.8, true)
+	_goutte(ci, Vector2(45, -1), 3.8, w * 0.7, m)
+	_goutte(ci, Vector2(39, 16), 3.4, w * 0.7, m)
+	_goutte(ci, Vector2(46, 31), 3.0, w * 0.7, m)
+
+
+# l'épouvantail : une croix de perches sous une bâche, une tête de toile à deux trous, un chapeau de fibres, une écharpe
+static func _epouvantail(ci, w: float, m: Color) -> void:
+	_cordon(ci, PackedVector2Array([Vector2(0, 46), Vector2(0, 12)]), 5.0, MANCHE, w, m)
+	_cordon(ci, PackedVector2Array([Vector2(-38, -3), Vector2(38, -8)]), 4.5, MANCHE, w, m)
+	for sx in [-1.0, 1.0]:
+		var main := Vector2(float(sx) * 38.0, -3.0 if sx < 0.0 else -8.0)
+		for k in 3:
+			var bout := main + Vector2.from_angle((PI if sx < 0.0 else 0.0) + (k - 1) * 0.55) * 9.0
+			ci.draw_line(main, bout, P.ENCRE * m, w * 1.5, true)
+			ci.draw_line(main, bout, CHANVRE * m, w * 0.65, true)
+	var bache := PackedVector2Array([Vector2(-33, -9), Vector2(-9, -13), Vector2(9, -14), Vector2(33, -14), Vector2(34, -2), Vector2(13, 1), Vector2(17, 29), Vector2(10, 22), Vector2(5, 32),
+		Vector2(0, 23), Vector2(-6, 32), Vector2(-11, 22), Vector2(-17, 30), Vector2(-13, 4), Vector2(-34, 3)])
+	_volume(ci, bache, TOILE, w, m, 5.0, 0.28)
+	ci.draw_line(Vector2(-14, 12), Vector2(15, 11), P.ENCRE * m, w * 1.6, true)
+	ci.draw_line(Vector2(-13, 12), Vector2(14, 11), CHANVRE * m, w * 0.75, true)
+	_forme(ci, _rect(-9, -7, -1, 2), CUIR_CLAIR, w * 0.6, m)
+	_volume(ci, _ellipse(Vector2(0, -26), 13.0, 13.5, 0.0, 24), TOILE_CLAIRE, w, m, 4.0, 0.28)
+	ci.draw_circle(Vector2(-5, -25), 3.0, P.ENCRE * m)
+	ci.draw_circle(Vector2(5.5, -25.5), 2.3, P.ENCRE * m)
+	_forme(ci, PackedVector2Array([Vector2(-11, -16), Vector2(11, -17), Vector2(12, -10), Vector2(23, 6), Vector2(15, 8), Vector2(4, -9), Vector2(-11, -9)]), ROUILLE, w * 0.8, m)
+	_forme(ci, _ellipse(Vector2(0, -36), 23.0, 6.0, -0.1, 24), CHANVRE, w, m)
+	_forme(ci, _lisse(PackedVector2Array([Vector2(-12, -36), Vector2(-9, -46), Vector2(1, -49), Vector2(10, -46), Vector2(12, -38), Vector2(0, -35)]), 1), CHANVRE.darkened(0.12), w, m)
+
+
+# le carré de jardin : une planche de terre entre deux rondins, ses sillons, ses pousses
+static func _carre(ci, w: float, m: Color) -> void:
+	_volume(ci, _capsule(Vector2(-35, -25), Vector2(37, -29), 5.5), ECORCE, w, m, 2.5, 0.3)
+	var terre := PackedVector2Array([Vector2(-38, -21), Vector2(40, -25), Vector2(45, 23), Vector2(-43, 27)])
+	_forme(ci, terre, P.TERRE, w, m)
+	for k in 2:
+		var y := -9.0 + k * 21.0
+		ci.draw_line(Vector2(-39.0 - k * 2.0, y + 9.5), Vector2(41.0 + k * 2.0, y + 5.5), Color(P.ENCRE, 0.55) * m, w * 1.0, true)
+		ci.draw_line(Vector2(-37.0 - k * 2.0, y - 8.5), Vector2(39.0 + k * 2.0, y - 12.5), Color(P.IVOIRE, 0.2) * m, w * 0.8, true)
+		for i in 3:
+			var q := Vector2(-25.0 + i * 25.0 + k * 5.0, y - i * 1.3)
+			ci.draw_line(q + Vector2(0, 6), q + Vector2(0, -2), P.ENCRE * m, w * 1.4, true)
+			_forme(ci, _ellipse(q + Vector2(-6.2, -4.6), 7.0, 4.0, 0.5, 12), VERT, w * 0.7, m)
+			_forme(ci, _ellipse(q + Vector2(6.2, -5.4), 7.0, 4.0, -0.5, 12), VERT.lightened(0.14), w * 0.7, m)
+	_volume(ci, _capsule(Vector2(-39, 37), Vector2(42, 33), 7.0), ECORCE, w, m, 3.0, 0.3)
+	_forme(ci, _ellipse(Vector2(-41, 37), 4.5, 7.0, 0.0, 14), BOIS, w * 0.8, m)
+
+
+# un sachet de graines : une bourse de toile nouée d'un lien de couleur ; ce qu'on y a mis est peint dessus
+static func _sachet(ci, w: float, m: Color, lien: Color) -> void:
+	_forme(ci, PackedVector2Array([Vector2(-18, -30), Vector2(-7, -35), Vector2(6, -34), Vector2(18, -29), Vector2(9, -15), Vector2(-9, -15)]), TOILE_CLAIRE, w, m)
+	ci.draw_line(Vector2(-6, -31), Vector2(-3, -18), Color(P.ENCRE, 0.45) * m, w * 0.45, true)
+	ci.draw_line(Vector2(6, -30), Vector2(3, -18), Color(P.ENCRE, 0.45) * m, w * 0.45, true)
+	var corps := _lisse(PackedVector2Array([Vector2(-10, -17), Vector2(10, -17), Vector2(29, 4), Vector2(32, 27), Vector2(19, 42), Vector2(-19, 42), Vector2(-32, 27), Vector2(-29, 4)]), 2)
+	_volume(ci, corps, TOILE, w, m, 6.0, 0.28)
+	_cordon(ci, _bezier(Vector2(9, -15), Vector2(22, -14), Vector2(21, -2), 6), 2.6, lien, w * 0.8, m)
+	ci.draw_line(Vector2(-11, -15.5), Vector2(11, -15.5), P.ENCRE * m, w * 2.1, true)
+	ci.draw_line(Vector2(-10, -15.5), Vector2(10, -15.5), lien * m, w * 1.1, true)
+
+
+# les graines tombées du sachet
+static func _semis(ci, w: float, m: Color, c: Color) -> void:
+	for q in [Vector2(-40, 43), Vector2(38, 38), Vector2(45, 27), Vector2(-45, 31)]:
+		_forme(ci, _ellipse(q, 3.6, 2.6, 0.6, 10), c, w * 0.6, m)
+
+
+# les graines de baies : le sachet au lien rouille, deux baies peintes
+static func _graine_baie(ci, w: float, m: Color) -> void:
+	_sachet(ci, w, m, ROUILLE)
+	ci.draw_polyline(_bezier(Vector2(-7, 14), Vector2(-4, 4), Vector2(3, 1), 6), P.ENCRE * m, w * 1.3, true)
+	ci.draw_polyline(_bezier(Vector2(9, 12), Vector2(8, 5), Vector2(3, 1), 6), P.ENCRE * m, w * 1.3, true)
+	for b in [[Vector2(-8, 22), 9.5], [Vector2(10, 19), 8.5]]:
+		_forme(ci, _ellipse(b[0], b[1], b[1], 0.0, 16), ROUGE, w * 0.8, m)
+		ci.draw_circle(b[0] + Vector2(-b[1] * 0.35, -b[1] * 0.35), b[1] * 0.22, Color(P.PAPIER, 0.85) * m)
+	_semis(ci, w, m, ROUGE.darkened(0.35))
+
+
+# les graines de lin : le sachet au lien bleu, une fleur à cinq pétales
+static func _graine_lin(ci, w: float, m: Color) -> void:
+	_sachet(ci, w, m, BLEU)
+	var c := Vector2(0, 16)
+	for k in 5:
+		var ang := -PI * 0.5 + k * TAU / 5.0
+		_forme(ci, _ellipse(c + Vector2.from_angle(ang) * 8.4, 7.4, 5.4, ang, 12), BLEU, w * 0.6, m)
+	ci.draw_circle(c, 4.0, P.ENCRE * m)
+	ci.draw_circle(c, 2.7, P.BRAISE_COEUR * m)
+	_semis(ci, w, m, Color("b98a4a"))
+
+
+# les graines de simples : le sachet au lien vert, une ombelle pâle
+static func _graine_simple(ci, w: float, m: Color) -> void:
+	_sachet(ci, w, m, VERT)
+	var pied := Vector2(0, 36)
+	var bouquets := [Vector2(-14, 12), Vector2(0, 5), Vector2(14, 12)]
+	for q in bouquets:
+		ci.draw_line(pied, q, P.ENCRE * m, w * 1.3, true)
+		ci.draw_line(pied, q, VERT * m, w * 0.6, true)
+	for q in bouquets:
+		_forme(ci, _touffe(q, 7.6, 5.0, 0.0, 4), LAIT, w * 0.6, m)
+	_semis(ci, w, m, P.IVOIRE)
+
+
+# les simples : un bouquet d'herbes lié, ses feuilles en éventail, ses ombelles pâles
+static func _simples(ci, w: float, m: Color) -> void:
+	for k in 4:
+		var pied := Vector2(-9.0 + k * 6.5, 47)
+		ci.draw_line(Vector2(-4.5 + k * 3.0, 20), pied, P.ENCRE * m, w * 1.7, true)
+		ci.draw_line(Vector2(-4.5 + k * 3.0, 20), pied, VERT.darkened(0.15) * m, w * 0.75, true)
+	var noeud := Vector2(0, 18)
+	var hampes := [Vector2(-22, -28), Vector2(1, -39), Vector2(24, -26)]
+	for q in hampes:
+		ci.draw_polyline(_bezier(noeud, Vector2(q.x * 0.3, -6), q, 8), P.ENCRE * m, w * 1.5, true)
+		ci.draw_polyline(_bezier(noeud, Vector2(q.x * 0.3, -6), q, 8), VERT.darkened(0.1) * m, w * 0.65, true)
+	var k2 := 0
+	for f in [[-1.05, 37.0], [-0.42, 34.0], [0.45, 35.0], [1.08, 36.0]]:
+		var d := Vector2.from_angle(-PI * 0.5 + float(f[0]))
+		var bout := noeud + d * float(f[1])
+		var cote := Vector2(-d.y, d.x) * 8.5
+		var mi := noeud.lerp(bout, 0.55)
+		var feuille := _bezier(noeud, mi + cote, bout, 8) + _bezier(bout, mi - cote, noeud, 8).slice(1, 8)
+		_forme(ci, feuille, VERT.lightened(0.1) if k2 % 2 == 0 else VERT.darkened(0.08), w * 0.8, m)
+		ci.draw_line(noeud.lerp(bout, 0.2), noeud.lerp(bout, 0.85), Color(P.ENCRE, 0.45) * m, w * 0.45, true)
+		k2 += 1
+	for q in hampes:
+		_forme(ci, _touffe(q, 12.5, 7.0, 0.0, 5), LAIT, w * 0.8, m)
+		ci.draw_line(q + Vector2(-6, 3), q + Vector2(6, 3), Color(P.NUIT_BLEUE, 0.25) * m, w * 0.6, true)
+	_forme(ci, Transform2D(0.06, noeud) * _rect(-9.5, -4.5, 9.5, 5.5), ROUILLE, w * 0.9, m)
+	ci.draw_line(noeud + Vector2(-8, 0.5), noeud + Vector2(8, 1.5), Color(P.ENCRE, 0.5) * m, w * 0.5, true)
+
+
+# l'appât : une poignée de baies, sur une feuille
+static func _appat(ci, w: float, m: Color) -> void:
+	var feuille := _bezier(Vector2(-47, 24), Vector2(-8, -16), Vector2(47, 8), 14) + _bezier(Vector2(47, 8), Vector2(8, 54), Vector2(-47, 24), 14).slice(1, 14)
+	_volume(ci, feuille, VERT, w, m, 5.0, 0.25)
+	ci.draw_polyline(_bezier(Vector2(-41, 23), Vector2(0, 17), Vector2(43, 9), 10), Color(P.PAPIER, 0.5) * m, w * 0.6, true)
+	for b in [[Vector2(-6, -6), 11.0], [Vector2(15, -7), 10.5], [Vector2(-18, 11), 11.0], [Vector2(5, 14), 11.5], [Vector2(25, 9), 10.0]]:
+		_forme(ci, _ellipse(b[0], b[1], b[1], 0.0, 18), ROUGE, w * 0.9, m)
+		ci.draw_circle(b[0] + Vector2(b[1] * 0.25, b[1] * 0.3), b[1] * 0.55, Color(P.SANG, 0.45) * m)
+		ci.draw_circle(b[0] + Vector2(-b[1] * 0.35, -b[1] * 0.35), b[1] * 0.22, Color(P.PAPIER, 0.85) * m)
+
+
+# --- l'élevage ---
+
+# le licol : une têtière de corde (la petite boucle autour du museau, la grande derrière les oreilles, deux montants entre
+# elles), son anneau sous le menton, sa longe
+static func _licol(ci, w: float, m: Color) -> void:
+	_cordon(ci, _bezier(Vector2(-26, 37), Vector2(-22, 53), Vector2(2, 45), 10) + _bezier(Vector2(2, 45), Vector2(24, 38), Vector2(41, 46), 8).slice(1), 4.0, CHANVRE, w, m)
+	var tetiere := _ellipse(Vector2(22, -14), 12.0, 26.0, 0.3, 26)
+	tetiere.append(tetiere[0])
+	_cordon(ci, tetiere, 5.0, CHANVRE, w, m)
+	_cordon(ci, PackedVector2Array([Vector2(-18, -7.5), Vector2(29, -38)]), 5.0, CHANVRE, w, m)
+	_cordon(ci, PackedVector2Array([Vector2(-26, 27.5), Vector2(14.5, 10.5)]), 5.0, CHANVRE, w, m)
+	var muserolle := _ellipse(Vector2(-22, 10), 9.5, 18.0, 0.22, 22)
+	muserolle.append(muserolle[0])
+	_cordon(ci, muserolle, 5.0, CHANVRE, w, m)
+	# (les torons de la corde, les nœuds où les brins se tiennent)
+	for k in 4:
+		var q := Vector2(-18, -7.5).lerp(Vector2(29, -38), 0.2 + k * 0.2)
+		ci.draw_line(q + Vector2(-1.0, -2.8), q + Vector2(1.0, 2.8), Color(P.ENCRE, 0.55) * m, w * 0.45, true)
+	for q in [Vector2(-18, -7.5), Vector2(29, -38), Vector2(14.5, 10.5)]:
+		ci.draw_circle(q, 5.2, P.ENCRE * m)
+		ci.draw_circle(q, 3.4, CHANVRE.darkened(0.15) * m)
+	ci.draw_arc(Vector2(-26, 31), 6.0, 0.0, TAU, 20, P.ENCRE * m, w * 2.2, true)
+	ci.draw_arc(Vector2(-26, 31), 6.0, 0.0, TAU, 20, FER_CLAIR * m, w * 0.9, true)
+
+
+# le piquet d'attache : un pieu enfoncé au maillet, deux tours de corde, la boucle qui pend
+static func _piquet(ci, w: float, m: Color) -> void:
+	_forme(ci, _ellipse(Vector2(0, 37), 31.0, 8.0, 0.0, 24), P.TERRE.lightened(0.1), w, m)
+	var boucle := _ellipse(Vector2(27, 9), 11.0, 21.0, 0.36, 26)
+	boucle.append(boucle[0])
+	_cordon(ci, boucle, 4.4, CHANVRE, w, m)
+	var pieu := PackedVector2Array([Vector2(-12, -35), Vector2(8, -39), Vector2(11, 37), Vector2(-9, 37)])
+	_volume(ci, pieu, BOIS, w, m, 5.0, 0.3)
+	_forme(ci, PackedVector2Array([Vector2(-9.7, 14), Vector2(-3, 8), Vector2(3, 17), Vector2(10.2, 11), Vector2(11, 37), Vector2(-9, 37)]), ECORCE, w * 0.8, m)
+	ci.draw_line(Vector2(-4, -26), Vector2(-3, -4), Color(P.ENCRE, 0.4) * m, w * 0.45, true)
+	ci.draw_line(Vector2(3, -20), Vector2(4, 2), Color(P.ENCRE, 0.4) * m, w * 0.45, true)
+	_forme(ci, _ellipse(Vector2(-2, -37), 12.5, 4.6, -0.2, 18), BOIS.lightened(0.12), w, m)
+	for y in [-17.0, -8.0]:
+		_cordon(ci, PackedVector2Array([Vector2(-13, float(y)), Vector2(12, float(y) - 2.0)]), 4.0, CHANVRE, w, m)
+
+
+# la mangeoire : une auge de bois sur deux croix de pieux, pleine de foin
+static func _mangeoire(ci, w: float, m: Color) -> void:
+	for sx in [-1.0, 1.0]:
+		var x := float(sx) * 27.0
+		_volume(ci, _capsule(Vector2(x - 13.0, 44), Vector2(x + 9.0, 0), 4.4), ECORCE, w, m, 2.5, 0.3)
+		_volume(ci, _capsule(Vector2(x + 13.0, 44), Vector2(x - 9.0, 0), 4.4), ECORCE, w, m, 2.5, 0.3)
+	for b in [[Vector2(-22, -22), Vector2(-28, -38)], [Vector2(-4, -30), Vector2(-7, -46)], [Vector2(12, -30), Vector2(19, -44)], [Vector2(26, -20), Vector2(37, -31)]]:
+		ci.draw_line(b[0], b[1], P.ENCRE * m, w * 1.5, true)
+		ci.draw_line(b[0], b[1], CHANVRE * m, w * 0.65, true)
+	var foin := _lisse(PackedVector2Array([Vector2(-38, -4), Vector2(-33, -19), Vector2(-14, -31), Vector2(6, -35), Vector2(25, -27), Vector2(38, -6)]), 2)
+	_forme(ci, foin, CHANVRE, w, m)
+	for b in [[Vector2(-24, -14), Vector2(-12, -24)], [Vector2(-4, -16), Vector2(8, -27)], [Vector2(14, -13), Vector2(24, -20)]]:
+		ci.draw_line(b[0], b[1], Color(P.ENCRE, 0.5) * m, w * 0.5, true)
+	var auge := PackedVector2Array([Vector2(-45, -8), Vector2(45, -8), Vector2(37, 15), Vector2(-37, 15)])
+	_volume(ci, auge, BOIS, w, m, 5.0, 0.28)
+	ci.draw_line(Vector2(-39, -3), Vector2(30, -3), Color(P.PAPIER, 0.5) * m, w * 0.6, true)
+	ci.draw_line(Vector2(-30, 6), Vector2(12, 6), Color(P.ENCRE, 0.4) * m, w * 0.45, true)
+	for sx in [-1.0, 1.0]:
+		var c := Vector2(float(sx) * 27.0, 24.5)
+		ci.draw_line(c + Vector2(-6, -2.5), c + Vector2(6, 2.5), P.ENCRE * m, w * 1.7, true)
+		ci.draw_line(c + Vector2(-5.5, -2.3), c + Vector2(5.5, 2.3), CHANVRE * m, w * 0.8, true)
+
+
+# les sacoches : deux poches de peau à rabat, tenues par la sangle qui passe sur le dos de la bête
+static func _sacoche(ci, w: float, m: Color) -> void:
+	_cordon(ci, _bezier(Vector2(-27, 2), Vector2(0, -58), Vector2(27, 2), 14), 9.0, CUIR_SOMBRE, w, m)
+	ci.draw_polyline(_bezier(Vector2(-24, -6), Vector2(0, -50), Vector2(24, -6), 12), Color(FOURRURE, 0.6) * m, w * 0.4, true)
+	for sx in [-1.0, 1.0]:
+		var tr := Transform2D(float(sx) * -0.09, Vector2(float(sx) * 27.0, 17))
+		_volume(ci, tr * _arrondi(-18, -22, 18, 27, 8.0), CUIR, w, m, 5.0, 0.3)
+		ci.draw_polyline(tr * _bezier(Vector2(-13, 15), Vector2(0, 23), Vector2(13, 15), 8), Color(FOURRURE, 0.7) * m, w * 0.45, true)
+		var rabat: PackedVector2Array = tr * _contour([[Vector2(-14, -23)], [Vector2(14, -23)], [Vector2(14, -23), Vector2(19, -22), Vector2(19, -15)], [Vector2(19, -15), Vector2(19, -6), Vector2(0, 7)],
+			[Vector2(0, 7), Vector2(-19, -6), Vector2(-19, -15)], [Vector2(-19, -15), Vector2(-19, -22), Vector2(-14, -23)]], 6)
+		_forme(ci, rabat, CUIR_SOMBRE, w, m)
+		_forme(ci, tr * _rect(-3, -6, 3, 15), CUIR_CLAIR, w * 0.7, m)
+		_forme(ci, tr * _rect(-5.5, 3, 5.5, 10), FER_CLAIR, w * 0.7, m)
+
+
+# la selle : un siège de peau entre son pommeau et son troussequin, sur un tapis ; la sangle, un étrier de corde
+static func _selle(ci, w: float, m: Color) -> void:
+	_volume(ci, _lisse(PackedVector2Array([Vector2(-41, -9), Vector2(41, -11), Vector2(43, 15), Vector2(-39, 17)]), 1), FOURRURE, w, m, 4.0, 0.25)
+	_forme(ci, _rect(-8, 12, 4, 47), CUIR_SOMBRE, w, m)
+	_forme(ci, _rect(-10.5, 30, 6.5, 38), FER_CLAIR, w * 0.8, m)
+	_cordon(ci, PackedVector2Array([Vector2(22, 8), Vector2(15, 38)]), 3.0, CHANVRE, w, m)
+	_cordon(ci, PackedVector2Array([Vector2(25, 8), Vector2(32, 38)]), 3.0, CHANVRE, w, m)
+	_forme(ci, _capsule(Vector2(12, 41), Vector2(35, 41), 3.8), BOIS, w * 0.9, m)
+	var siege := _contour([[Vector2(-37, -7), Vector2(-42, -30), Vector2(-27, -37)], [Vector2(-27, -37), Vector2(-15, -20), Vector2(4, -20)], [Vector2(4, -20), Vector2(26, -22), Vector2(35, -42)],
+		[Vector2(35, -42), Vector2(48, -24), Vector2(39, -3)], [Vector2(39, -3), Vector2(0, 7), Vector2(-37, -7)]], 8)
+	_volume(ci, siege, CUIR, w, m, 6.0, 0.3)
+	ci.draw_polyline(_bezier(Vector2(-30, -26), Vector2(-18, -13), Vector2(2, -13), 8), Color(P.PAPIER, 0.5) * m, w * 0.7, true)
+	var quartier := _lisse(PackedVector2Array([Vector2(-21, -8), Vector2(27, -9), Vector2(31, 13), Vector2(17, 25), Vector2(-13, 25), Vector2(-25, 12)]), 2)
+	_volume(ci, quartier, CUIR_SOMBRE, w, m, 4.0, 0.25)
+	ci.draw_polyline(_bezier(Vector2(-18, 10), Vector2(2, 22), Vector2(24, 10), 8), Color(FOURRURE, 0.7) * m, w * 0.45, true)
+
+
+# le lait : un bol de bois plein, une goutte qui y tombe
+static func _lait(ci, w: float, m: Color) -> void:
+	var bol := _contour([[Vector2(-39, -3)], [Vector2(-39, -3), Vector2(-37, 41), Vector2(0, 41)], [Vector2(0, 41), Vector2(37, 41), Vector2(39, -3)]], 10)
+	_volume(ci, bol, BOIS, w, m, 7.0, 0.3)
+	ci.draw_polyline(_bezier(Vector2(-29, 10), Vector2(-22, 29), Vector2(-3, 33), 8), Color(P.ENCRE, 0.35) * m, w * 0.45, true)
+	ci.draw_polyline(_bezier(Vector2(-18, 8), Vector2(-12, 20), Vector2(2, 23), 8), Color(P.ENCRE, 0.3) * m, w * 0.45, true)
+	_forme(ci, _ellipse(Vector2(0, -3), 39.0, 11.5, 0.0, 30), BOIS.lightened(0.14), w, m)
+	_forme(ci, _ellipse(Vector2(0, -2), 31.5, 7.6, 0.0, 26), LAIT, w * 0.7, m)
+	_ombre(ci, _ellipse(Vector2(0, -2), 31.5, 7.6, 0.0, 26), m, 3.0, 0.16)
+	var rond := _ellipse(Vector2(5, -1.5), 10.0, 2.6, 0.0, 16)
+	rond.append(rond[0])
+	ci.draw_polyline(rond, Color(P.ENCRE, 0.35) * m, w * 0.45, true)
+	var goutte := PackedVector2Array([Vector2(5, -44)])
+	for i in 15:
+		goutte.append(Vector2(5, -26) + Vector2.from_angle(-PI * 0.2 + PI * 1.4 * i / 14.0) * 7.0)
+	_forme(ci, goutte, LAIT, w * 0.8, m)
+
+
+# tes bêtes : une tête de bête, de profil, son licol de corde et sa longe
+static func _bete(ci, w: float, m: Color) -> void:
+	var cou := _lisse(PackedVector2Array([Vector2(8, 6), Vector2(30, -14), Vector2(46, 10), Vector2(48, 47), Vector2(8, 47), Vector2(2, 24)]), 2)
+	_volume(ci, cou, PELAGE.darkened(0.1), w, m, 6.0, 0.3)
+	_forme(ci, _lisse(PackedVector2Array([Vector2(22, -26), Vector2(31, -49), Vector2(41, -30), Vector2(35, -19)]), 1), PELAGE.darkened(0.22), w, m)
+	var tete := _lisse(PackedVector2Array([Vector2(-45, 10), Vector2(-37, -2), Vector2(-14, -20), Vector2(4, -32), Vector2(24, -30), Vector2(36, -14), Vector2(34, 6), Vector2(20, 20), Vector2(-4, 20),
+		Vector2(-26, 27), Vector2(-41, 25)]), 2)
+	_volume(ci, tete, PELAGE, w, m, 6.0, 0.3)
+	var oreille := _lisse(PackedVector2Array([Vector2(7, -27), Vector2(5, -50), Vector2(22, -39), Vector2(23, -24)]), 1)
+	_forme(ci, oreille, PELAGE, w, m)
+	ci.draw_colored_polygon(_lisse(PackedVector2Array([Vector2(11, -29), Vector2(9, -43), Vector2(18, -36), Vector2(19, -27)]), 1), Color(CUIR_CLAIR, 0.6) * m)
+	ci.draw_circle(Vector2(6, -10), 5.0, P.ENCRE * m)
+	ci.draw_circle(Vector2(4.4, -11.6), 1.5, Color(P.PAPIER, 0.9) * m)
+	ci.draw_circle(Vector2(-38, 10), 2.3, P.ENCRE * m)
+	ci.draw_polyline(_bezier(Vector2(-43, 20), Vector2(-35, 21), Vector2(-29, 18), 6), Color(P.ENCRE, 0.7) * m, w * 0.6, true)
+	# (le licol : la muserolle autour du museau, le montant le long de la joue, la têtière derrière l'oreille)
+	_cordon(ci, _bezier(Vector2(-23, -13), Vector2(-14, 6), Vector2(-20, 26), 8), 4.2, CHANVRE, w, m)
+	_cordon(ci, _bezier(Vector2(-19, 23), Vector2(8, 15), Vector2(28, -8), 10) + _bezier(Vector2(28, -8), Vector2(31, -20), Vector2(23, -27), 6).slice(1), 4.2, CHANVRE, w, m)
+	_cordon(ci, _bezier(Vector2(-20, 31), Vector2(-25, 46), Vector2(-8, 48), 8), 3.6, CHANVRE, w, m)
+	ci.draw_circle(Vector2(-20, 27), 5.6, P.ENCRE * m)
+	ci.draw_circle(Vector2(-20, 27), 3.7, FER_CLAIR * m)
+	ci.draw_circle(Vector2(-20, 27), 1.5, P.ENCRE * m)

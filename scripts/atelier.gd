@@ -20,7 +20,8 @@ const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bac
 const NOMS_MATIERES := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "peau": "peau", "ferraille": "ferraille",
 	"corde": "corde", "bache": "bâche", "eau": "eau"}
 # les familles, dans l'ordre de la page de l'établi : [la clé, son titre]
-const FAMILLES := [["matiere", "Les matières"], ["camp", "Le camp"], ["tenue", "La tenue"], ["outil", "Les outils"]]
+const FAMILLES := [["matiere", "Les matières"], ["camp", "Le camp"], ["tenue", "La tenue"], ["outil", "Les outils"],
+	["jardin", "Le jardin"], ["elevage", "L'élevage"]]
 # chaque chose : son nom, sa famille, ce qu'elle coûte, où elle se fait (« main » : n'importe où ; « etabli » : à portée d'un
 # établi), ce qu'on en dit (une phrase : à quoi elle sert). « pose » : elle se pose dans le lieu ; « porte » : elle se porte.
 const OBJETS := {
@@ -56,10 +57,29 @@ const OBJETS := {
 		"dit": "Un faisceau, loin devant soi. Il lui faut des piles chargées."},
 	"piles": {"nom": "Piles", "famille": "outil", "ou": "etabli", "cout": {"ferraille": 2},
 		"dit": "Vides quand on les fait. Le cerf-volant les charge."},
+	# le jardin (scripts/jardin.gd)
+	"houe": {"nom": "Houe", "famille": "jardin", "ou": "etabli", "unique": true, "cout": {"bois": 2, "pierre": 1, "corde": 1},
+		"dit": "Elle retourne la terre : un carré de jardin, où l'on sème."},
+	"arrosoir": {"nom": "Arrosoir", "famille": "jardin", "ou": "etabli", "unique": true, "cout": {"peau": 1, "bois": 1, "corde": 1},
+		"dit": "Une outre à bec : quatre arrosages. Il se remplit au récupérateur, ou les pieds dans l'eau."},
+	"epouvantail": {"nom": "Épouvantail", "famille": "jardin", "ou": "etabli", "pose": true, "cout": {"bois": 3, "fibre": 4, "bache": 1},
+		"dit": "Les bêtes qui broutent n'approchent pas du jardin qu'il garde. La nuit, il regarde d'où vient ce qui vient."},
+	# l'élevage (scripts/elevage.gd)
+	"licol": {"nom": "Licol", "famille": "elevage", "ou": "etabli", "cout": {"corde": 2, "peau": 1},
+		"dit": "Passé au cou d'une bête qui mange dans ta main, il en fait la tienne."},
+	"piquet": {"nom": "Piquet d'attache", "famille": "elevage", "ou": "etabli", "pose": true, "cout": {"bois": 2, "corde": 1},
+		"dit": "Une bête qu'on y laisse y reste, et broute autour. Près d'un feu, la nuit : le noir les rend folles."},
+	"mangeoire": {"nom": "Mangeoire", "famille": "elevage", "ou": "etabli", "pose": true, "cout": {"bois": 4, "corde": 1},
+		"dit": "On y met des fibres : les bêtes à l'attache s'y nourrissent, et donnent leur lait."},
+	"sacoche": {"nom": "Sacoches", "famille": "elevage", "ou": "etabli", "cout": {"peau": 2, "corde": 2},
+		"dit": "Sur le dos d'une bête : à ses côtés, tu portes vingt de plus de chaque chose."},
+	"selle": {"nom": "Selle", "famille": "elevage", "ou": "etabli", "cout": {"peau": 3, "corde": 2, "bois": 1},
+		"dit": "Sur une bête assez forte, on la monte : on va bien plus vite. Elle te jette à terre quand elle a peur."},
 }
 const ORDRE := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
-	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles"]
-const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer"]
+	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire",
+	"sacoche", "selle"]
+const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
 const TEINTE := Color(0.86, 0.8, 0.66)
 const PORTEE := 54.0              # à quelle distance on se sert d'une chose posée, d'un établi
 const PORTER := 20                # ce qu'elle porte de chaque matière, sans sac à dos
@@ -106,7 +126,8 @@ func porte(id: String) -> bool:
 
 # ce qu'elle peut porter de chaque matière
 func capacite() -> int:
-	return PORTER_SAC if porte("sac_a_dos") else PORTER
+	var plus: int = int(jeu.elevage.porte_en_plus()) if jeu.get("elevage") != null else 0
+	return (PORTER_SAC if porte("sac_a_dos") else PORTER) + plus
 
 
 func pres_d_un_etabli() -> bool:
@@ -137,7 +158,7 @@ func empeche(id: String) -> String:
 		return "Il te manque %s." % ", ".join(dits)
 	if id == "piles" and possede("piles") > 0:
 		return "Tu as déjà des piles."
-	if (bool(o.get("porte", false)) or id in ["gourde", "popote", "duvet"]) and possede(id) > 0:
+	if (bool(o.get("porte", false)) or bool(o.get("unique", false)) or id in ["gourde", "popote", "duvet"]) and possede(id) > 0:
 		return "Tu en as déjà."
 	if MATIERES.has(id) and possede(id) >= capacite():
 		return "Tu n'en porterais pas davantage."
@@ -166,7 +187,7 @@ func fabriquer(id: String) -> bool:
 			portes[id] = true
 	# (son geste, et ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; le bois se scie ; le reste se
 	# martèle, et chaque coup de maillet sonne quand il tombe : coup())
-	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet"]
+	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet", "licol", "sacoche", "selle", "arrosoir"]
 	var scie: bool = not cousu and o["cout"].has("bois")
 	jeu.joueur.geste_atelier("coudre" if cousu else ("scier" if scie else "marteler"))
 	if id == "corde" or id == "filet":
@@ -272,8 +293,14 @@ func poser(id: String) -> bool:
 # elle replie la chose posée la plus proche, et la reprend dans son sac
 func replier() -> bool:
 	var s = _la_plus_proche(PORTEE)
-	if s == null or str(s.genre) == "vestige":
+	if s == null or str(s.genre) in ["vestige", "appat"]:
 		return false
+	if str(s.genre) == "carre":
+		# (un carré se comble : la terre reprend sa place, ce qui y poussait est perdu)
+		poses.erase(s)
+		s.queue_free()
+		jeu.joueur.geste_atelier("fouiller")
+		return true
 	if fil == s:
 		fil = null
 	if lit == s:
@@ -309,6 +336,10 @@ func coup(geste: String, p: Vector2) -> void:
 				e.coup(1.0)
 		"monter":
 			jeu.sons.atelier("piquet", 0.0, 1.0, p)
+		"becher":
+			# (la houe entre dans la terre)
+			jeu.sons.jouer("pierre", -10.0, 0.62)
+			jeu.sons.jouer("herbe", -6.0, 0.8)
 
 
 # une gorgée (la canicule pèse moins), et elle le dit
@@ -394,7 +425,15 @@ func agir() -> bool:
 		"tente", "hamac":
 			dormir(s)
 		"recuperateur":
-			_puiser(s)
+			# (l'arrosoir d'abord, s'il est vide ; puis la gourde)
+			if possede("arrosoir") > 0 and jeu.jardin.arrosages() <= 0 and float(s.etat.get("eau", 0.0)) >= 1.0:
+				jeu.jardin.remplir(s)
+			else:
+				_puiser(s)
+		"carre":
+			jeu.jardin.agir(s)
+		"mangeoire":
+			jeu.elevage.garnir(s)
 		"filet":
 			_relever(s)
 		"cerf_volant":
@@ -694,9 +733,12 @@ func _fouiller(s) -> void:
 	s.etat["fouille"] = true
 	var n := 2 + int(s.etat.get("riche", 0))
 	ranger("ferraille", n)
+	# (et un sachet de graines : des simples, qu'on ne trouve pas dans le lieu ; scripts/jardin.gd)
+	var inv: Dictionary = jeu.joueur.inventaire
+	inv["graine_simple"] = int(inv.get("graine_simple", 0)) + 2
 	jeu.joueur.geste_atelier("fouiller")
 	jeu.sons.atelier("fouille")
-	jeu.ui.message("Un camp abandonné. Tu y trouves de la ferraille (%d)." % n, TEINTE)
+	jeu.ui.message("Un camp abandonné. Tu y trouves de la ferraille (%d), et un sachet de graines : des simples." % n, TEINTE)
 
 
 # sa tenue a changé : le corps de la veilleuse la lit (scripts/joueur.gd)
@@ -787,7 +829,7 @@ func commencer() -> void:
 	lit = null
 	_dit = {}
 	var inv: Dictionary = jeu.joueur.inventaire
-	for k in ["peau", "ferraille", "corde", "bache", "eau", "bouillon"]:
+	for k in ["peau", "ferraille", "corde", "bache", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages"]:
 		if not inv.has(k):
 			inv[k] = 0
 	_tenue()

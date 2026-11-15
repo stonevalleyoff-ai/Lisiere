@@ -10,6 +10,9 @@ extends RefCounted
 # Ses gestes d'atelier : l'outil dans sa main (un maillet, une scie d'os, une aiguille, sa gourde, une cuiller), et l'ouvrage
 # posé devant elle, qui ne bouge pas avec son corps (la pièce martelée, le rondin scié, la peau cousue, le piquet et sa corde).
 # Son sommeil : couchée sur le côté, son duvet de peau jusqu'aux épaules, la capuche qui dépasse.
+# Le jardin et l'élevage : la houe, le sachet de graines, l'outre à bec, le licol, la selle qu'elle porte, le bol ; la terre
+# retournée, les graines à la volée, le filet d'eau, le lait. En selle : la cuisse sur le flanc de la bête, le genou en avant,
+# la jambe de l'autre côté cachée par la bête ; pas d'ombre à ses pieds (c'est la bête qui la porte).
 
 const P := preload("res://scripts/palette.gd")
 const INCL := 0.45            # la vue de trois quarts : ce qui avance vers nous d'un pixel descend d'autant
@@ -124,6 +127,8 @@ var fil := 0.0                # un fil, une corde, de l'ouvrage à sa main (de 0
 var lance_pose := 0.0         # la lance : 0 dans sa main, 1 posée au sol près d'elle
 var lance_sol := PackedVector2Array([Vector2(-10, 6), Vector2(15, 8)])   # où (à l'écran) : son talon, sa pointe
 # --- son sommeil ---
+var filet := 0.0              # le filet d'eau de l'outre, de 0 à 1
+var selle := 0.0              # de 0 (à pied) à 1 (en selle : assise, une jambe de chaque côté)
 var dort := 0.0               # le duvet qui la couvre, de 0 à 1
 var respire := 0.0            # son souffle de dormeuse, de -1 à 1
 var c_visage := VISAGE
@@ -244,17 +249,26 @@ func preparer() -> void:
 # --- le dessin ---
 
 func dessiner() -> void:
-	_ombres()
+	if selle < 0.5:
+		_ombres()
 	if lance and lance_pose > 0.5:
 		_lance_posee()
 	ci.draw_set_transform_matrix(chute)
 	# les jambes d'abord : la cape les couvre
 	var jambes := [[prof(pied_d, cap), pied_d, 1.0], [prof(pied_g, cap), pied_g, -1.0]]
 	jambes.sort_custom(func(a, b): return a[0] < b[0])
-	for j in jambes:
-		_jambe(j[1], j[2])
 	var couchee := dort > 0.01
 	var parts := []
+	for j in jambes:
+		# (en selle : la jambe de l'autre flanc est derrière la bête ; celle qu'on voit passe par-dessus le manteau, la cuisse
+		# à plat sur la selle)
+		if selle > 0.5:
+			if float(j[0]) > 0.5:
+				parts.append([0.05, _jambe.bind(j[1], j[2])])
+			elif float(j[0]) >= -0.5:
+				_jambe(j[1], j[2])
+			continue
+		_jambe(j[1], j[2])
 	parts.append([-0.5, _manteau])
 	if not couchee:
 		parts.append([0.2, _capuche])
@@ -358,6 +372,8 @@ static func _au_dessus(pts: PackedVector2Array, y0: float) -> PackedVector2Array
 func _jambe(pied: Vector3, cote: float) -> void:
 	var hanche_ := Vector3(0.0, cote * 2.6, 9.5)
 	var genou := Vector3(pied.x * 0.5 + 0.7 + bas * 0.35, cote * 2.6, 5.2 + pied.z * 0.5)
+	# (en selle : la cuisse à plat sur le flanc, le genou en avant et écarté)
+	genou = genou.lerp(Vector3(3.8, cote * 4.7, 7.9), selle)
 	var cheville := Vector3(pied.x, pied.y, pied.z + 1.4)
 	var pts := PackedVector2Array([pt(hanche_, cap), pt(genou, cap), pt(cheville, cap)])
 	# la botte : la tige, puis le pied qui pointe où elle va
@@ -1153,6 +1169,57 @@ func _outil(main: Vector3) -> void:
 			for k in 4:
 				var r := Vector2.from_angle(k * PI * 0.5 + 0.4)
 				ci.draw_line(c + Vector2(0.6, -1.4) + r * 1.4, c + Vector2(0.6, -1.4) + r * (2.6 + vif), Color(P.PAPIER, 0.75), 0.7, true)
+		"houe":
+			# un long manche, une lame de pierre liée en travers, qui revient vers elle
+			var bout := pt(main + d * 12.0, buste)
+			var cul := pt(main - d * 2.2, buste)
+			ci.draw_line(cul, bout, P.ENCRE, 2.8, true)
+			ci.draw_line(cul, bout, BOIS, 1.4, true)
+			var u := (bout - cul).normalized()
+			if u == Vector2.ZERO:
+				u = Vector2.DOWN
+			var n := Vector2(-u.y, u.x) * (1.0 if sin(buste) >= 0.0 else -1.0)
+			var lame := PackedVector2Array([bout - u * 1.3 - n * 0.6, bout + u * 1.3 - n * 0.4, bout + u * 0.3 + n * 4.6, bout - u * 1.6 + n * 4.2])
+			_forme(lame, PIERRE)
+			ci.draw_line(bout - u * 0.6 + n * 0.8, bout - u * 1.0 + n * 3.6, PIERRE.lightened(0.25), 0.8, true)
+			ci.draw_line(bout - u * 1.5, bout + u * 1.5, ROULEAU.darkened(0.25), 1.1, true)
+		"sachet":
+			# le sachet de graines, ouvert, tenu par le col
+			var c := p + Vector2(0.0, 1.9)
+			_forme(PackedVector2Array([c + Vector2(-1.5, -2.0), c + Vector2(1.5, -2.0), c + Vector2(2.4, 0.6), c + Vector2(1.4, 2.4), c + Vector2(-1.4, 2.4), c + Vector2(-2.4, 0.6)]), PEAU, 0.9)
+			ci.draw_line(c + Vector2(-1.5, -1.3), c + Vector2(1.5, -1.3), CHANVRE, 0.8, true)
+			ci.draw_line(c + Vector2(-0.9, -2.1), c + Vector2(0.9, -2.1), IVOIRE_OS.lightened(0.15), 0.9, true)
+		"outre":
+			# l'outre de peau, son bec de bois : la panse sous la main, le bec vers où elle verse
+			var panse := pt(main - d * 1.6, buste)
+			var bec := pt(main + d * 6.6, buste)
+			var u := (bec - panse).normalized()
+			if u == Vector2.ZERO:
+				u = Vector2.RIGHT
+			var n := Vector2(-u.y, u.x)
+			_forme(_ellipse(panse, 4.3, 3.1, 12, u.angle()), PEAU)
+			ci.draw_line(panse - u * 2.4 - n * 1.4, panse + u * 1.6 - n * 1.4, PEAU_CLAIR, 0.9, true)
+			ci.draw_line(panse + u * 3.6, bec, P.ENCRE, 2.6, true)
+			ci.draw_line(panse + u * 3.6, bec, BOIS.lightened(0.08), 1.3, true)
+			ci.draw_line(panse + u * 3.5 + n * 1.5, panse + u * 3.5 - n * 1.5, CHANVRE, 1.0, true)
+		"licol":
+			# le licol : une boucle de corde et son bout, qui pendent de sa main
+			var boucle := PackedVector2Array([p, p + Vector2(1.9, 2.4), p + Vector2(0.8, 5.6), p + Vector2(-1.5, 4.6), p + Vector2(-1.3, 1.8), p])
+			ci.draw_polyline(boucle, P.ENCRE, 1.8, true)
+			ci.draw_polyline(boucle, CHANVRE, 0.85, true)
+			ci.draw_line(p + Vector2(0.3, 0.6), p + Vector2(0.9, 7.4), P.ENCRE, 1.6, true)
+			ci.draw_line(p + Vector2(0.3, 0.6), p + Vector2(0.9, 7.4), CHANVRE, 0.75, true)
+		"selle":
+			# la charge, entre ses deux mains : la selle sur son tapis plié
+			var q := (pt(main_d, buste) + pt(main_g, buste)) * 0.5 + Vector2(0.0, 1.2)
+			_forme(PackedVector2Array([q + Vector2(-4.6, 1.8), q + Vector2(-4.2, -0.6), q + Vector2(4.2, -0.6), q + Vector2(4.6, 1.8), q + Vector2(0.0, 2.6)]), ROULEAU, 0.9)
+			ci.draw_line(q + Vector2(-4.2, 1.5), q + Vector2(4.2, 1.5), ECHARPE, 0.8, true)
+			_forme(PackedVector2Array([q + Vector2(-4.0, -0.8), q + Vector2(-3.4, -3.4), q + Vector2(-0.8, -2.4), q + Vector2(2.0, -2.6), q + Vector2(3.6, -3.6), q + Vector2(4.2, -0.8)]), PEAU, 0.9)
+			ci.draw_line(q + Vector2(-2.8, -2.6), q + Vector2(2.6, -2.0), PEAU_CLAIR, 0.8, true)
+		"bol":
+			# le bol de bois, plein de lait
+			_forme(PackedVector2Array([p + Vector2(-2.9, -0.9), p + Vector2(2.9, -0.9), p + Vector2(1.9, 1.9), p + Vector2(-1.9, 1.9)]), BOIS, 0.9)
+			ci.draw_line(p + Vector2(-2.1, -0.7), p + Vector2(2.1, -0.7), P.PAPIER, 1.1, true)
 
 
 # l'ouvrage, posé devant elle (il ne suit pas son corps) ; ce qui en saute quand elle frappe, le fil qui le lie à sa main
@@ -1222,6 +1289,57 @@ func _ouvrage() -> void:
 			for k in 3:
 				var q := c + Vector2(-3.0 + 3.0 * k, 0.4 - 0.5 * (k % 2))
 				_forme(_ellipse(q, 1.9, 1.1, 6, 0.4 * k), P.TERRE.darkened(0.25) if k != 1 else FERRAILLE.darkened(0.35), 0.8)
+		"terre":
+			# la terre qu'elle retourne : une plaie sombre qui s'élargit à chaque coup de houe, ses mottes
+			var c := sol(Vector3(o.x, o.y, 0.0))
+			var u := ouvrage_u
+			if u > 0.02:
+				_remplir(_ellipse(c + Vector2(-1.0, 0.3), 2.5 + 4.6 * u, 1.2 + 1.5 * u, 10), Color(P.TERRE.darkened(0.42), 0.9))
+				for k in int(ceil(u * 3.0)) * 2:
+					var q := c + Vector2(-5.0 + 2.6 * k + 1.2 * sin(k * 2.1), -0.4 + 1.1 * cos(k * 1.7))
+					_forme(_ellipse(q, 1.5 - 0.2 * (k % 2), 1.0, 6, 0.5 * k), P.TERRE.darkened(0.12 + 0.1 * (k % 3)), 0.7)
+		"semis":
+			# les graines : à la volée, de sa main au sol, où elles restent (deux jets, l'un après l'autre)
+			var c := sol(Vector3(o.x, o.y, 0.0))
+			var depart := pt(Vector3(10.6, -6.2 * outil_main, 19.4), buste)
+			var jets := int(round(ouvrage_u * 2.0))
+			var vol := eclats >= 0.0 and eclats < 0.36
+			for k in 9:
+				var but := c + Vector2(6.5 * cos(k * 2.4), 2.2 * sin(k * 1.7 + 0.5))
+				var jet := 1 if k % 2 == 1 else 2
+				if vol and jet == jets:
+					var x := eclats / 0.36
+					var q := depart.lerp(but, x) + Vector2(0.0, -7.0 * sin(PI * x) * (0.6 + 0.08 * k))
+					ci.draw_circle(q, 0.6, IVOIRE_OS.lightened(0.2))
+				elif jet <= jets:
+					ci.draw_circle(but, 0.5, Color(IVOIRE_OS, 0.75))
+		"arrose":
+			# l'eau : la terre qui fonce là où elle tombe, le filet du bec au sol, ses éclaboussures
+			var c := sol(Vector3(o.x, o.y, 0.0))
+			if ouvrage_u > 0.02:
+				_remplir(_ellipse(sol(Vector3(o.x, 0.0, 0.0)), 3.0 + 4.5 * ouvrage_u, 1.3 + 1.6 * ouvrage_u, 10), Color(P.ENCRE_DOUCE, 0.3 * minf(1.0, ouvrage_u * 2.0)))
+			if filet > 0.02:
+				var bec := pt((main_d if outil_main > 0.0 else main_g) + outil_dir.normalized() * 6.6, buste)
+				var ton := P.ECHO.lerp(P.PAPIER, 0.35)
+				var jet := PackedVector2Array()
+				for k in 6:
+					var x := k / 5.0
+					jet.append(Vector2(lerpf(bec.x, c.x, x) + 0.25 * sin(horloge * 31.0 + k * 1.7) * x, lerpf(bec.y, c.y, x * x)))
+				ci.draw_polyline(jet, Color(ton, 0.6 * filet), 0.7, true)
+				for k in 3:
+					var e := fposmod(horloge * 3.1 + k * 0.37, 1.0)
+					ci.draw_circle(c + Vector2((k - 1) * 2.4 * e, -2.4 * sin(PI * e)), 0.5, Color(ton, 0.7 * filet * (1.0 - e)))
+		"bol":
+			# le bol sous elle : le lait y file, d'une main puis de l'autre, et monte
+			var c := sol(Vector3(o.x, o.y, 0.0))
+			_forme(PackedVector2Array([c + Vector2(-3.0, -1.6), c + Vector2(3.0, -1.6), c + Vector2(2.0, 1.2), c + Vector2(-2.0, 1.2)]), BOIS, 0.9)
+			var niveau := clampf(ouvrage_u / 4.0, 0.0, 1.0)
+			if niveau > 0.05:
+				ci.draw_line(c + Vector2(-2.3 - 0.4 * niveau, -0.2 - 1.2 * niveau), c + Vector2(2.3 + 0.4 * niveau, -0.2 - 1.2 * niveau), P.PAPIER, 1.0, true)
+			var tire := sin(TAU * ouvrage_u)
+			if ouvrage_u > 0.05 and ouvrage_u < 3.95 and absf(tire) > 0.25:
+				var m := pt(main_d if tire * outil_main < 0.0 else main_g, buste)
+				ci.draw_line(m + Vector2(0.0, 1.6), c + Vector2(signf(m.x - c.x) * 0.8, -1.2), Color(P.PAPIER, 0.6), 0.5, true)
 	if fil > 0.01:
 		var depart := sol(o)
 		if ouvrage == "peau":
@@ -1234,14 +1352,18 @@ func _ouvrage() -> void:
 			var corde := PackedVector2Array([depart + Vector2(0.0, 1.0), milieu, main])
 			ci.draw_polyline(corde, Color(P.ENCRE, fil), 1.7, true)
 			ci.draw_polyline(corde, Color(CHANVRE, fil), 0.8, true)
-	if eclats >= 0.0 and eclats < 0.34 and not mobile:
-		# ce qui saute : des copeaux, de la sciure, de la terre
-		var c := sol(o) + (Vector2(0.0, -1.5) if ouvrage != "fouille" else Vector2.ZERO)
-		var teinte := grain if ouvrage != "fouille" else P.TERRE.lightened(0.15)
-		for k in 4:
-			var v := Vector2(-16.0 + 11.0 * k + 5.0 * sin(k * 2.3), -26.0 - 7.0 * cos(k * 1.7))
+	if eclats >= 0.0 and eclats < 0.34 and not mobile and ouvrage != "semis":
+		# ce qui saute : des copeaux, de la sciure, de la terre (sous la houe : des mottes, et davantage)
+		var terre := ouvrage == "fouille" or ouvrage == "terre"
+		var c := sol(o) + (Vector2(0.0, -1.5) if not terre else Vector2.ZERO)
+		var teinte := grain if not terre else P.TERRE.lightened(0.15)
+		var n := 7 if ouvrage == "terre" else 4
+		for k in n:
+			var v := Vector2(-16.0 + 44.0 * k / n + 5.0 * sin(k * 2.3), -26.0 - 7.0 * cos(k * 1.7))
 			var q := c + v * eclats + Vector2(0.0, 150.0 * eclats * eclats)
 			ci.draw_line(q, q + v.normalized() * 1.5, Color(teinte, 1.0 - eclats / 0.34), 0.9, true)
+			if ouvrage == "terre" and k % 2 == 0:
+				ci.draw_circle(q + Vector2(1.5, -1.0), 0.8, Color(P.TERRE.darkened(0.25), 1.0 - eclats / 0.34))
 
 
 # le duvet : une peau roulée autour d'elle, des pieds aux épaules (on y devine la hanche, l'épaule), cousue le long, son bord

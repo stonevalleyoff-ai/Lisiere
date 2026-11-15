@@ -563,6 +563,7 @@ func _lancer() -> void:
 	_le_pistage(F)
 	_les_empreintes(F)
 	_l_atelier(F)
+	_le_jardin_et_les_betes(F)
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -625,6 +626,333 @@ func _lancer() -> void:
 
 # une bête de cette lignée, dont la population aurait appris cela (les autres dispositions à leur valeur neutre) ; elle est la
 # bête moyenne de sa population (ecart 0), sauf si l'entrée dit son écart d'audace
+# le jardin (scripts/jardin.gd) et l'élevage (scripts/elevage.gd)
+func _le_jardin_et_les_betes(F: Dictionary) -> void:
+	print("Le jardin et les bêtes")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var J = jeu.jardin
+	var E = jeu.elevage
+	var C = jeu.climat
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "p": j.position, "inv": j.inventaire.duplicate(), "sante": j.sante, "faim": j.faim, "peur": j.peur, "torche": j.torche,
+		"pluie": C.pluie, "air": C.air, "neige": C.neige_sol, "feux": jeu.feux.duplicate(), "regard": j.regard, "acte": jeu.noire.acte}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	var base: float = floorf(jeu.horloge / RR.DUREE) * RR.DUREE
+	var jour_h: float = base + RR.DUREE * 0.3
+	var nuit_h: float = base + RR.DUREE * (1.0 - jeu.part_nuit) + 2.0
+	jeu.horloge = jour_h
+	jeu.feux.clear()
+	C.pluie = 0.0
+	C.air = 0.5
+	C.neige_sol = 0.0
+	j.torche = 0.0
+	j.regard = 1.0
+	A.commencer()
+	E.vider()
+	var inv: Dictionary = j.inventaire
+	# (un endroit dégagé : ni eau, ni tronc, ni buisson)
+	var ici := Vector2.ZERO
+	for k in 200:
+		var q := Vector2(-300.0 + 90.0 * (k % 14), -300.0 + 90.0 * (k / 14))
+		j.position = q
+		A.objets["houe"] = 1
+		if J.empeche_becher() == "" and float(C.eau(q)) < 0.05:
+			ici = q
+			break
+	j.position = ici
+
+	# la houe, un carré, des graines
+	A.objets.erase("houe")
+	var sans_houe: String = J.empeche_becher()
+	A.objets["houe"] = 1
+	var beche: bool = J.becher()
+	var carre = J.carres()[0] if J.carres().size() == 1 else null
+	verif(sans_houe.contains("houe") and beche and carre != null and str(carre.etat.get("culture", "x")) == "" and carre.position.distance_to(j.position) < 80.0,
+		"avec une houe, elle retourne un carré de terre devant elle ; sans houe, non (« %s »)" % sans_houe)
+	var rien: bool = not J.semer(carre, "lin")
+	inv["graine_lin"] = 2
+	inv["graine_baie"] = 1
+	var choix: String = J.culture_par_defaut()
+	jeu.atelier.agir()
+	verif(rien and choix == "lin" and str(carre.etat["culture"]) == "lin" and int(inv["graine_lin"]) == 0,
+		"« Agir » devant un carré vide y sème ce dont elle a assez de graines (deux) ; sans graines, rien")
+
+	# ça pousse si la terre est humide ; l'arrosoir, la pluie
+	carre.etat["eau"] = 0.0
+	for i in 60:
+		J.maj(2.0)
+	var a_sec: float = carre.etat["stade"]
+	var sans_arrosoir: bool = not J.arroser(carre)
+	A.objets["arrosoir"] = 1
+	var vide: bool = not J.arroser(carre)
+	var cuve = A._creer("recuperateur", ici + Vector2(0.0, -140.0), {"eau": 4.0})
+	var rempli: bool = J.remplir(cuve)
+	var arrose: bool = J.arroser(carre)
+	for i in 60:
+		J.maj(2.0)
+	var humide: float = carre.etat["stade"]
+	verif(a_sec == 0.0 and sans_arrosoir and vide and rempli and absf(float(cuve.etat["eau"]) - 2.0) < 0.01 and arrose and J.arrosages() == J.ARROSAGES - 1 and humide > 1.0 and humide < 2.0,
+		"la terre sèche, rien ne pousse ; l'arrosoir se remplit au récupérateur (quatre arrosages pour deux gorgées), et arrosé, le lin lève : stade %.1f en une demi-journée" % humide)
+	carre.etat["eau"] = 0.0
+	C.pluie = 1.0
+	for i in 10:
+		J.maj(1.0)
+	C.pluie = 0.0
+	var mouille: float = carre.etat["eau"]
+	C.neige_sol = 1.0
+	var avant_gel: float = carre.etat["stade"]
+	for i in 30:
+		J.maj(2.0)
+	C.neige_sol = 0.0
+	verif(mouille > 0.9 and absf(float(carre.etat["stade"]) - avant_gel) < 0.001 and bool(carre.etat["gel"]),
+		"la pluie arrose le jardin ; sous la neige, il ne pousse plus")
+	carre.etat["eau"] = 1.0
+	carre.etat["stade"] = 2.95
+	J.maj(8.0)
+	inv["fibre"] = 0
+	var mur: bool = J.mur(carre)
+	jeu.atelier.agir()
+	verif(mur and int(inv["fibre"]) == 8 and int(inv["graine_lin"]) == J.RENDUES and str(carre.etat["culture"]) == "",
+		"mûr, le lin se récolte : huit fibres, et trois graines pour le resemer")
+
+	# les bêtes le mangent, sauf sous la garde d'un épouvantail
+	var espece: Dictionary = {}
+	for e in F["proies_jour"] + F["proies_nuit"]:
+		var essai_b = _bete(e, "proie", ici + Vector2(900.0, 0.0), {})
+		var bonne: bool = E.apprivoisable(essai_b)
+		_oter(essai_b)
+		if bonne:
+			espece = e
+			break
+	if espece.is_empty():
+		print("  (aucune proie à quatre pattes dans ce lieu : le reste n'est pas essayé)")
+	else:
+		inv["graine_baie"] = 2
+		J.semer(carre, "baie")
+		carre.etat["stade"] = 2.0
+		carre.etat["eau"] = 1.0
+		j.position = ici + Vector2(-700.0, 0.0)
+		var brouteuse = _bete(espece, "proie", carre.position + Vector2(120.0, 20.0), {})
+		var tentee: bool = jeu.tentation(brouteuse) == carre
+		var tete := 0.0
+		for i in 240:
+			brouteuse._conduire(0.1)
+			tete = maxf(tete, float(brouteuse.mange))
+		var mange: float = 2.0 - float(carre.etat.get("stade", 0.0))
+		carre.etat["culture"] = "baie"
+		carre.etat["stade"] = 2.0
+		var epouvantail = A._creer("epouvantail", carre.position + Vector2(60.0, -30.0), {})
+		brouteuse._tentation_t = 0.0
+		for i in 60:
+			brouteuse._conduire(0.1)
+		verif(tentee and mange > 0.5 and tete > 0.6 and jeu.tentation(brouteuse) == null and J.garde(carre.position) and float(carre.etat["stade"]) == 2.0,
+			"une bête qui broute vient manger ce qui pousse (la tête au sol : le carré a perdu %.1f stade) ; l'épouvantail posé, elle n'y touche plus" % mange)
+		_oter(brouteuse)
+		# la nuit, l'épouvantail regarde d'où vient la Noire
+		jeu.horloge = jour_h
+		J.maj(0.1)
+		var de_jour: bool = not epouvantail.etat.has("regard")
+		jeu.horloge = nuit_h
+		jeu.noire.acte = 2
+		J.maj(0.1)
+		var vers: Vector2 = Vector2(jeu.noire.taniere) - epouvantail.position
+		verif(de_jour and epouvantail.etat.has("regard") and absf(angle_difference(float(epouvantail.etat["regard"]), vers.angle())) < 0.01,
+			"de jour l'épouvantail ne regarde rien ; la nuit, il est tourné vers d'où vient la Noire")
+		jeu.horloge = jour_h
+
+		# des simples : la santé, la peur
+		inv["simples"] = 1
+		j.sante = 50.0
+		j.peur = 60.0
+		var panse: bool = J.panser()
+		verif(panse and j.sante == 50.0 + J.SIMPLES_SANTE and j.peur == 60.0 - J.SIMPLES_PEUR and not J.panser(), "des simples : la santé revient, la peur s'apaise")
+
+		# l'appât, le licol
+		j.position = ici
+		inv["baies"] = 1
+		var sans_baies: bool = not E.poser_appat()
+		inv["baies"] = 4
+		var pose: bool = E.poser_appat()
+		var appat = A.poses[A.poses.size() - 1]
+		j.position = ici + Vector2(-700.0, 0.0)
+		var grande: Dictionary = espece.duplicate()
+		grande["masse"] = 220.0
+		grande.erase("largeur")
+		var bete = _bete(grande, "proie", appat.position + Vector2(150.0, 30.0), {})
+		for i in 120:
+			bete._conduire(0.1)
+		var a_l_appat: bool = bete.mange > 0.6 and bete.position.distance_to(appat.position) < 60.0
+		# (la tête dedans, elle laisse venir ; sans licol, rien)
+		j.position = bete.position + Vector2(-40.0 - bete.largeur * 0.25, 0.0)
+		bete._conduire(0.1)
+		var reste_la: bool = str(bete.etat) != "fuit"
+		var sans_licol: bool = not E.agir() and E.betes.is_empty()
+		A.objets["licol"] = 1
+		jeu.agir()
+		verif(sans_baies and pose and str(appat.genre) == "appat" and int(inv["baies"]) == 2 and a_l_appat and reste_la and sans_licol and E.betes.has(bete) and str(bete.role) == "compagne"
+			and bool(bete.harnais.get("licol", false)) and A.possede("licol") == 0 and bete.pv == bete.pv_max,
+			"deux baies font un appât ; une proie vient y manger, et la tête dedans laisse venir : « Agir » lui passe le licol (sans la frapper), elle est à elle")
+
+		# elle suit ; elle reste au piquet ; la mangeoire
+		j.position = bete.position + Vector2(400.0, 0.0)
+		for i in 100:
+			bete._conduire(0.1)
+			E.maj(0.1)
+		var suivie: bool = bete.position.distance_to(j.position) < 150.0 and bete.longe != null
+		var piquet = A._creer("piquet", bete.position + Vector2(30.0, 0.0), {})
+		j.position = bete.position + Vector2(-30.0, 0.0)
+		jeu.agir()
+		E.maj(0.1)
+		var liee: bool = not bete.suit_la and bool(piquet.etat.get("attache", false)) and bete.longe != null and Vector2(bete.longe).distance_to(piquet.position) < 14.0
+		j.position = bete.position + Vector2(600.0, 0.0)
+		for i in 100:
+			bete._conduire(0.1)
+		var restee: bool = bete.position.distance_to(piquet.position) < 80.0
+		var auge = A._creer("mangeoire", piquet.position + Vector2(0.0, 50.0), {})
+		inv["fibre"] = 6
+		j.position = auge.position + Vector2(20.0, 0.0)
+		jeu.atelier.agir()
+		bete.faim = 30.0
+		E.maj(0.1)
+		verif(suivie and liee and restee and int(inv["fibre"]) == 2 and int(auge.etat["foin"]) == 3 and bete.faim > 70.0,
+			"sa bête la suit, sa longe dans la main ; laissée près d'un piquet d'attache, elle y reste ; la mangeoire garnie la nourrit")
+
+		# les sacoches, la selle
+		j.position = bete.position + Vector2(-30.0, 0.0)
+		var cap0: int = A.capacite()
+		A.objets["sacoche"] = 1
+		var chargee: bool = E.harnacher(bete, "sacoche")
+		var cap1: int = A.capacite()
+		j.position = bete.position + Vector2(500.0, 0.0)
+		var cap2: int = A.capacite()
+		j.position = bete.position + Vector2(-30.0, 0.0)
+		var petite = _bete(espece, "proie", bete.position + Vector2(0.0, 60.0), {})
+		petite.masse = 12.0
+		var trop_petite: String = E.empeche_harnacher(petite, "selle")
+		_oter(petite)
+		var sans_selle: String = E.empeche_monter(bete)
+		A.objets["selle"] = 1
+		var sellee: bool = E.harnacher(bete, "selle")
+		jeu.agir()
+		var en_selle: bool = E.monture == bete and bete.montee and j.monture == bete
+		var x0: float = j.position.x
+		j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
+		E.maj(0.5)
+		var en_selle_dx: float = j.position.x - x0
+		var dessous: bool = bete.position.distance_to(j.position) < 1.0
+		jeu.agir()
+		var a_pied: bool = E.monture == null and not bete.montee and j.monture == null
+		x0 = j.position.x
+		j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
+		var a_pied_dx: float = j.position.x - x0
+		verif(chargee and cap1 == cap0 + E.SACOCHE and cap2 == cap0 and trop_petite != "" and sans_selle.contains("selle") and sellee and en_selle and dessous and a_pied
+			and en_selle_dx > a_pied_dx * 1.4,
+			"des sacoches : à ses côtés, elle porte %d de plus ; une selle (pas sur une petite bête) : « Agir » la monte, puis la descend ; en selle elle va %.1f fois plus vite" % [E.SACOCHE, en_selle_dx / maxf(a_pied_dx, 0.01)])
+
+		# son harnais se dessine, la selle a son creux ; les six gestes du jardin et de l'élevage existent
+		bete._harnacher()
+		var creux: Vector2 = bete.siege()
+		var gestes_la := true
+		for g in ["becher", "semer", "arroser", "caresser", "seller", "traire"]:
+			if not j.ATELIER.has(g) or not A.GESTES.has(g):
+				gestes_la = false
+		verif(bete._harnais_n != null and creux.y < bete.position.y - 8.0 and absf(creux.x - bete.position.x) < bete.largeur and gestes_la,
+			"son harnais se dessine sur elle, la selle a son creux (à %d pixels au-dessus de ses pieds) ; bêcher, semer, arroser, caresser, seller, traire ont leur geste" % int(bete.position.y - creux.y))
+
+		# le lait
+		bete.lait = 0.0
+		bete.faim = 90.0
+		var pas_encore: String = E.empeche_traire(bete)
+		for i in 125:
+			E.maj(2.0)
+			bete.faim = 90.0
+		var traite: bool = E.traire(bete)
+		j.faim = 40.0
+		var bu: bool = E.boire_lait()
+		verif(pas_encore != "" and traite and bu and absf(j.faim - (40.0 + E.LAIT_FAIM)) < 0.1 and int(inv["lait"]) == 0, "nourrie, elle donne son lait une fois par jour ; il nourrit")
+
+		# la peur : un chasseur près d'elle, on ne la monte pas ; en selle, elle jette à terre
+		j.position = bete.position + Vector2(-30.0, 0.0)
+		jeu.agir()
+		var remontee: bool = E.monture == bete
+		var chasseur = _bete(F["chasseurs_nuit"][0], "chasseur", bete.position + Vector2(90.0, 0.0), {})
+		j.sante = 100.0
+		E.maj(0.1)
+		var jetee: bool = E.monture == null and j.sante < 100.0
+		var refuse: String = E.empeche_monter(bete)
+		_oter(chasseur)
+		verif(remontee and jetee and refuse != "", "un chasseur tout près : sa monture se cabre et la jette à terre, et ne se laisse plus monter (« %s »)" % refuse)
+		bete.etat = "repos"
+
+		# la nuit : dans le noir, elle rompt sa longe ; dans la lumière d'un feu, elle reste ; la Noire prend celle qu'on y laisse
+		jeu.horloge = nuit_h
+		jeu.noire.acte = 1
+		bete.suit_la = false
+		bete.maison = bete.position
+		j.position = bete.position + Vector2(800.0, 0.0)
+		var feu = jeu.Feu.new()
+		feu.jeu = jeu
+		feu.position = bete.position + Vector2(40.0, 0.0)
+		jeu.monde.add_child(feu)
+		jeu.feux.append(feu)
+		for i in 30:
+			E.maj(1.0)
+		var au_feu: bool = E.betes.has(bete)
+		jeu.feux.erase(feu)
+		feu.queue_free()
+		for i in 30:
+			E.maj(1.0)
+		var enfuie: bool = not E.betes.has(bete) and str(bete.role) == "proie" and bete.harnais.is_empty()
+		verif(au_feu and enfuie, "la nuit, près d'un feu, sa bête reste ; dans le noir, au bout de %d secondes, elle rompt sa longe et s'enfuit" % int(E.NOIR))
+		_oter(bete)
+
+		# la partie gardée
+		var b2 = _bete(grande, "proie", ici + Vector2(100.0, 0.0), {})
+		A.objets["licol"] = 1
+		jeu.horloge = jour_h
+		E.apprivoiser(b2)
+		b2.harnais["selle"] = true
+		b2.suit_la = false
+		b2.faim = 61.0
+		var photo: Dictionary = JSON.parse_string(JSON.stringify(E.photo()))
+		var avant_n: int = get_tree().get_nodes_in_group("betes").size()
+		E.vider()
+		E.reprendre(photo)
+		var b3 = E.betes[0] if E.betes.size() == 1 else null
+		verif(b3 != null and b3 != b2 and str(b3.role) == "compagne" and bool(b3.harnais.get("selle", false)) and not b3.suit_la and absf(b3.faim - 61.0) < 0.2
+			and b3.position.distance_to(b2.position) < 1.0 and str(b3.id) == str(b2.id) and get_tree().get_nodes_in_group("betes").size() == avant_n + 1,
+			"la partie gardée retient ses bêtes : l'espèce, où elles sont, leur harnais, leur faim")
+		_oter(b2)
+		if b3 != null:
+			_oter(b3)
+
+	# (tout remis comme avant)
+	for s3 in A.poses:
+		if is_instance_valid(s3):
+			s3.queue_free()
+	A.commencer()
+	E.vider()
+	for k in inv.keys():
+		inv[k] = int(garde["inv"].get(k, 0))
+	jeu.feux.clear()
+	for f in garde["feux"]:
+		jeu.feux.append(f)
+	jeu.horloge = garde["h"]
+	jeu.noire.acte = garde["acte"]
+	j.position = garde["p"]
+	j.regard = garde["regard"]
+	j.sante = garde["sante"]
+	j.faim = garde["faim"]
+	j.peur = garde["peur"]
+	j.torche = garde["torche"]
+	j.monture = null
+	C.pluie = garde["pluie"]
+	C.air = garde["air"]
+	C.neige_sol = garde["neige"]
+
+
 func _bete(e: Dictionary, role: String, p: Vector2, memoire: Dictionary):
 	var x: Dictionary = e.duplicate()
 	if not x.has("ecart"):
@@ -2290,7 +2618,7 @@ func _l_atelier(F: Dictionary) -> void:
 		for k in o.get("cout", {}):
 			if not A.MATIERES.has(k) or int(o["cout"][k]) <= 0:
 				bon = false
-		if bool(o.get("pose", false)) and str(o["famille"]) != "camp":
+		if bool(o.get("pose", false)) and not (str(o["famille"]) in ["camp", "jardin", "elevage"]):
 			bon = false
 	verif(bon, "l'atelier a %d choses à fabriquer, chacune avec son nom, sa phrase, sa famille et ce qu'elle coûte en matières connues" % A.ORDRE.size())
 

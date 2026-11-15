@@ -11,6 +11,10 @@ extends Node2D
 # L'atelier (scripts/atelier.gd) : sa tenue se voit sur elle (le sac à dos, la pelisse, la cape de pluie) ; sa lampe éclaire en
 # faisceau, du côté où elle regarde ; ses gestes d'atelier (ATELIER : marteler, scier, coudre, monter, fouiller, boire, remuer)
 # ont chacun leur attaque, leur temps fort et leur retour ; et elle dort (endormie), couchée dans son duvet.
+# Le jardin et l'élevage (scripts/jardin.gd, scripts/elevage.gd) : six gestes de plus (becher, semer, arroser, caresser, seller,
+# traire) ; la longe d'une compagne dans sa main droite (prise_longe : le harnais de la bête la lui tend) ; et en selle (monture) :
+# assise au creux de la selle, une jambe de chaque côté, les mains aux rênes, le buste qui suit le pas de la bête. C'est alors
+# le harnais de sa monture qui la dessine (peindre_en_selle), par-dessus la bête : les deux ne se croisent jamais.
 
 signal pas(position: Vector2)                    # un pied se pose (dans le monde) : le son des pas, la poussière
 signal impact(position: Vector2, genre: String)  # un geste touche ce qu'il visait (son genre : arbre…, lance, poing)
@@ -83,8 +87,13 @@ const GESTES := {
 
 # les gestes d'atelier : leur durée ; les instants où ils frappent (le signal impact part, avec le nom du geste : le son en
 # dépend) : chaque coup de maillet de « marteler », le premier des trois coups de « monter » (les autres : MONTER_COUPS)
-const ATELIER := {"marteler": 1.2, "scier": 1.3, "coudre": 1.5, "monter": 1.6, "fouiller": 1.35, "boire": 1.2, "remuer": 1.5}
-const ATELIER_COUPS := {"marteler": [0.36, 0.64, 0.92], "monter": [0.36]}
+# ceux du jardin et de l'élevage : chaque coup de houe de « becher » part aussi (impact, genre « becher »)
+const ATELIER := {"marteler": 1.2, "scier": 1.3, "coudre": 1.5, "monter": 1.6, "fouiller": 1.35, "boire": 1.2, "remuer": 1.5,
+	"becher": 1.5, "semer": 1.4, "arroser": 1.7, "caresser": 1.6, "seller": 1.7, "traire": 1.8}
+const ATELIER_COUPS := {"marteler": [0.36, 0.64, 0.92], "monter": [0.36], "becher": [0.4, 0.78, 1.16]}
+const SEMER_JETS := [0.5, 1.0]
+const GESTES_JARDIN := ["becher", "semer", "arroser"]      # elle se tourne vers le carré de jardin
+const GESTES_BETE := ["caresser", "seller", "traire"]      # vers la bête
 const MONTER_COUPS := [0.36, 0.54, 0.72]
 const SCIER_TRAITS := [0.32, 0.62, 0.92]
 const FOUILLER_GESTES := [0.4, 0.7]
@@ -171,6 +180,70 @@ const CLES_ATELIER := {
 		[1.18, false, 1.0, 1.4, 2.4, 0.0, 0.2, 0.4, 2.0, 1.0],
 		[1.3, false, 1.0, 1.4, 2.4, 0.0, 0.2, 0.5, 2.0, 1.0],
 		[1.5, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 1.0]],
+	# (la houe : de levée, 0, à plantée, 1 ; puis tirée vers elle, 1)
+	"becher": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6, 0.0],
+		[0.16, false, 1.0, 0.6, 0.8, 0.0, 0.0, 0.3, 0.6, 0.0],
+		[0.32, false, 1.0, 0.0, -1.0, -0.25, -0.7, -0.5, 0.0, 0.0],
+		[0.4, true, 1.0, 2.6, 4.2, 0.2, 1.4, 1.8, 1.0, 0.0],
+		[0.56, false, 1.0, 2.9, 3.6, 0.1, 0.4, 1.6, 1.0, 1.0],
+		[0.7, false, 1.0, 0.2, -0.9, -0.25, -0.7, -0.4, 0.0, 0.0],
+		[0.78, true, 1.0, 2.6, 4.2, 0.2, 1.4, 1.8, 1.0, 0.0],
+		[0.94, false, 1.0, 2.9, 3.6, 0.1, 0.4, 1.6, 1.0, 1.0],
+		[1.08, false, 1.0, 0.0, -1.1, -0.3, -0.9, -0.5, 0.0, 0.0],
+		[1.16, true, 1.0, 3.0, 4.6, 0.24, 1.7, 2.0, 1.0, 0.0],
+		[1.32, false, 1.0, 2.6, 3.4, 0.1, 0.3, 1.4, 1.0, 1.0],
+		[1.5, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6, 0.0]],
+	# (la main droite : du sachet, 0, au bout de son jet, 1)
+	"semer": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.2, false, 1.0, 0.0, 0.4, -0.3, 0.0, 0.5, 0.0, 0.0],
+		[0.38, false, 1.0, 0.0, 0.2, -0.45, -0.3, 0.3, 0.15, 0.0],
+		[0.52, true, 1.0, 0.4, 1.4, 0.4, 0.6, 0.0, 1.0, 0.0],
+		[0.7, false, 1.0, 0.0, 0.4, -0.3, 0.0, 0.5, 0.0, 0.0],
+		[0.88, false, 1.0, 0.0, 0.2, -0.45, -0.3, 0.3, 0.15, 0.0],
+		[1.02, true, 1.0, 0.4, 1.4, 0.4, 0.6, 0.0, 1.0, 0.0],
+		[1.2, false, 1.0, 0.0, 0.4, 0.0, 0.0, 0.2, 0.4, 0.0],
+		[1.4, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+	# (l'outre : de droite, 0, à penchée, 1 ; où elle la promène, d'un bord du carré, 0, à l'autre, 1)
+	"arroser": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+		[0.22, false, 1.0, 0.8, 1.6, 0.0, 0.2, 1.0, 0.0, 0.5],
+		[0.42, false, 1.0, 1.4, 2.6, 0.0, 0.4, 1.5, 1.0, 0.2],
+		[0.8, false, 1.0, 1.5, 2.8, 0.0, 0.4, 1.6, 1.0, 0.9],
+		[1.2, false, 1.0, 1.4, 2.6, 0.0, 0.4, 1.5, 1.0, 0.1],
+		[1.4, false, 1.0, 0.6, 1.2, 0.0, 0.1, 0.8, 0.0, 0.5],
+		[1.7, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5]],
+	# (la main tendue vers la bête, de 0 à 1, lentement ; puis le licol passé, 1)
+	"caresser": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.3, false, 1.0, 0.8, 0.8, 0.0, 0.0, 0.4, 0.25, 0.0],
+		[0.8, false, 1.0, 1.2, 2.2, 0.0, 0.3, 0.8, 1.0, 0.0],
+		[0.98, false, 1.0, 1.2, 2.2, 0.0, 0.3, 0.9, 1.0, 0.0],
+		[1.2, false, 1.0, 0.8, 2.8, 0.0, 0.6, 0.6, 1.0, 1.0],
+		[1.36, false, 1.0, 0.8, 2.6, 0.0, 0.5, 0.6, 0.9, 1.0],
+		[1.6, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]],
+	# (la charge : de prise au sol, 0, à posée sur le dos, 1 ; puis la sangle, de lâche, 0, à serrée, 1)
+	"seller": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.2, false, 1.0, 2.4, 2.0, 0.0, 0.0, 1.2, 0.0, 0.0],
+		[0.44, false, 1.0, 0.2, -0.6, 0.0, -0.5, -0.4, 0.7, 0.0],
+		[0.6, true, 1.0, 0.6, 2.4, 0.0, 0.8, 0.4, 1.0, 0.0],
+		[0.84, false, 1.0, 3.6, 3.4, 0.0, 0.4, 1.8, 1.0, 0.0],
+		[1.0, false, 1.0, 3.8, 3.6, 0.0, 0.5, 1.9, 1.0, 0.0],
+		[1.08, true, 1.0, 2.4, 2.0, 0.0, -0.9, 1.0, 1.0, 1.0],
+		[1.24, false, 1.0, 3.6, 3.4, 0.0, 0.4, 1.8, 1.0, 0.2],
+		[1.36, true, 1.0, 2.2, 1.8, 0.0, -1.1, 0.9, 1.0, 1.0],
+		[1.5, false, 1.0, 1.0, 1.0, 0.0, 0.0, 0.4, 1.0, 0.6],
+		[1.7, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]],
+	# (ses mains, l'une après l'autre : le compte des traites ; puis le bol, levé, 1)
+	"traire": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.26, false, 1.0, 6.8, 2.4, 0.0, 0.3, 1.4, 0.0, 0.0],
+		[1.3, false, 1.0, 6.8, 2.6, 0.0, 0.3, 1.5, 4.0, 0.0],
+		[1.5, false, 1.0, 5.0, 1.6, 0.0, 0.0, 0.6, 4.0, 1.0],
+		[1.62, false, 1.0, 5.0, 1.6, 0.0, 0.0, 0.6, 4.0, 1.0],
+		[1.8, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 1.0]],
 }
 
 var sante := 100.0
@@ -195,6 +268,7 @@ var endormie := false           # elle dort : couchée, les yeux clos
 var atelier := ""               # le geste d'atelier en cours : marteler, scier, coudre, monter, fouiller, boire, remuer ("" : aucun)
 var atelier_t := 0.0            # depuis quand
 var couchage := ""              # où elle dort : "" (son duvet, à même le sol), « tente », « hamac » (on ne la dessine plus : elle est dedans)
+var monture = null              # la bête qu'elle monte (scripts/elevage.gd) : elle est assise sur son dos (monture.siege())
 
 
 # un geste d'atelier commence (atelier.gd) : il dure ce que son dessin dure (ATELIER), puis s'efface. Elle se tourne vers ce
@@ -230,6 +304,8 @@ func geste_atelier(nom: String) -> void:
 func _chose_d_atelier(nom: String):
 	if not is_inside_tree() or nom == "boire":
 		return null
+	if nom in GESTES_BETE:
+		return _bete_proche(120.0)
 	var meilleur = null
 	var d0 := 100.0
 	if nom == "remuer":
@@ -246,6 +322,8 @@ func _chose_d_atelier(nom: String):
 		var d: float = position.distance_to(s.position)
 		# (pour fabriquer, c'est l'établi qui compte)
 		if nom in ["marteler", "scier", "coudre"] and str(s.get("genre")) != "etabli":
+			continue
+		if nom in GESTES_JARDIN and str(s.get("genre")) != "carre":
 			continue
 		if d < d0:
 			d0 = d
@@ -315,6 +393,16 @@ var _sommeil := 0.0
 var _t_vrai := 0.0
 var _dormait := false
 var _faisceau_x := 1.0              # de quel côté va le faisceau (de -1 à 1 : il passe par devant elle quand elle se retourne)
+# en selle, et la longe
+var _selle_k := 0.0                 # de 0 (à terre) à 1 (assise) : elle monte, elle descend
+var _selle_o := Vector2.ZERO        # le creux de la selle, dans le lieu (gardé le temps de redescendre)
+var _selle_rel := Vector2.ZERO      # le même, depuis les pieds de sa monture (c'est dans son calque qu'elle est dessinée)
+var _selle_y := 0.0                 # son buste, en retard sur la selle : un ressort
+var _selle_v := 0.0
+var _selle_image := -9              # la dernière image où le harnais de sa monture l'a dessinée
+var _longe_t := 0.0                 # elle tient une longe (le harnais l'a dit il y a moins de…)
+var _longe_vers := Vector2.ZERO     # l'anneau du licol, au bout
+var _jetee := -1.0                  # depuis que sa monture l'a jetée à terre (-1 : non)
 static var _tex_faisceau: ImageTexture
 
 
@@ -372,6 +460,9 @@ func deplacer(dir: Vector2, delta: float, monde) -> void:
 			regard = signf(dir.x)
 		# (la faim ralentit ; la boue, l'eau, la neige aussi : scripts/climat.gd ; le froid engourdit)
 		var allure: float = (0.7 if faim <= 0.0 else 1.0) * (float(monde.jeu.allure_sol(position)) if monde.jeu != null else 1.0)
+		# (en selle, on va bien plus vite : scripts/elevage.gd)
+		if monture != null and monde.jeu != null and monde.jeu.get("elevage") != null:
+			allure *= float(monde.jeu.elevage.allure())
 		if temperature < 25.0:
 			allure *= lerpf(0.82, 1.0, temperature / 25.0)
 		var avant := position
@@ -499,8 +590,10 @@ func _process(delta: float) -> void:
 	_derniere = position
 	_vit = _vit.lerp(v, 1.0 - exp(-14.0 * dt))
 	var vitesse := _vit.length()
-	var va := vitesse > 14.0 and not morte
+	# (en selle, ce n'est pas elle qui marche)
+	var va := vitesse > 14.0 and not morte and monture == null
 	_marche = move_toward(_marche, 1.0 if va else 0.0, dt * (9.0 if va else 6.0))
+	_chevaucher(dt)
 	_avancer_pas(dt, vitesse, va)
 	_tourner(dt)
 	_humeurs(dt)
@@ -543,12 +636,18 @@ func _process(delta: float) -> void:
 	_corps.preparer()
 	_torche_tombee(dt)
 	# l'écharpe, simulée dans le monde
-	var ancre := to_global(_corps.ancre_echarpe)
+	# (en selle, dessinée par sa monture : c'est depuis la bête que tout se compte)
+	var base := global_position
+	if monture != null and is_instance_valid(monture) and Engine.get_process_frames() - _selle_image <= 1:
+		base = monture.global_position
+	var ancre := base + _corps.ancre_echarpe
 	var couchee := _mort > 1.3
 	_echarpe.avancer(ancre, dt, _vent() * (0.35 if couchee else 1.0) * leger, (10.0 if couchee else 130.0) + 190.0 * _mouille_k, 9.0 if couchee else 3.0, 2 if mobile else 4)
+	# (en selle, tout son corps est porté plus haut : la queue de l'écharpe, simulée dans le lieu, y est déjà)
+	var porte := _corps.chute.origin if _selle_k > 0.0 and _jetee < 0.0 else Vector2.ZERO
 	var e := PackedVector2Array()
 	for p in _echarpe.points:
-		e.append(to_local(p))
+		e.append(p - base - porte)
 	_corps.echarpe = e
 	_torche(dt, mobile)
 	_lampe(dt, jeu)
@@ -763,6 +862,8 @@ func _poser() -> void:
 	c.ouvrage = ""
 	c.eclats = -1.0
 	c.fil = 0.0
+	c.filet = 0.0
+	c.selle = 0.0
 	c.lance_pose = 0.0
 	c.dort = 0.0
 	if lampe_en_main:
@@ -771,6 +872,15 @@ func _poser() -> void:
 		var vers := Vector3(cos(fa) * sin(_cap) + sin(fa) * cos(_cap), -cos(fa) * cos(_cap) + sin(fa) * sin(_cap), -0.1).normalized()
 		c.lampe_dir = vers
 		c.main_g = Vector3(1.2, -4.6, 19.4) + vers * 6.0 + Vector3(bal * 0.12, 0.0, cos(2.0 * ph) * 0.35 * m + k * 2.2)
+	if _longe_t > 0.0 and _selle_k < 0.05 and not (c.lance and c.lance_main > 0.0):
+		# la longe d'une compagne, dans sa main droite : la main va vers la bête, d'autant plus que la corde est tendue
+		var v := to_local(_longe_vers)
+		var au_sol := Vector2(v.x, v.y / Corps.INCL)
+		var vers := Vector2(au_sol.x * sin(_cap) + au_sol.y * cos(_cap), -au_sol.x * cos(_cap) + au_sol.y * sin(_cap)).normalized()
+		var tendue := smoothstep(60.0, 115.0, v.length())
+		c.main_d = c.main_d.lerp(Vector3(2.0 + vers.x * (2.0 + 4.0 * tendue), 6.0 + vers.y * (1.0 + 3.0 * tendue), 15.6 + 2.4 * tendue), 0.75)
+	if _selle_k > 0.0 or _jetee >= 0.0:
+		_poser_selle(c, en_main or lampe_en_main)
 	if _geste != "":
 		_poser_geste(c, en_main or lampe_en_main)
 	elif _at_w > 0.0 and _at_nom != "":
@@ -856,7 +966,79 @@ func _poser_atelier(c, prise: bool) -> void:
 	var ou := Vector3.ZERO
 	var deux := true
 	var pieds := 0.0
+	var cote_outil := 1.0
 	match _at_nom:
+		"becher":
+			# la houe à deux mains : levée par-dessus l'épaule, plantée devant elle, puis tirée (la terre vient avec)
+			ou = Vector3(13.5, 0.0, 0.0)
+			outil = "houe"
+			ouvrage = "terre"
+			var prise_ := Vector3(6.4 - 2.4 * b, 3.2, 11.2)
+			var plante: Vector3 = c.depose(prise_)
+			md = Vector3(1.6, 4.2, 21.5).lerp(plante, a) + Vector3(0.0, 0.0, 2.5 * sin(PI * a))
+			var vers := (Vector3(ou.x - 2.4 * b, 0.0, 0.6) - prise_).normalized()
+			od = Vector3(-0.22, -0.1, 0.97).lerp(vers, a).normalized()
+			mg = md + od * 5.4 + Vector3(0.0, -1.2, 0.0)
+			var coups := 0.0
+			for x in ATELIER_COUPS["becher"]:
+				coups += smoothstep(float(x) - 0.01, float(x) + 0.05, t)
+			c.ouvrage_u = coups / 3.0
+			c.eclats = _depuis(t, ATELIER_COUPS["becher"])
+		"semer":
+			# le sachet de graines dans la main gauche ; la droite y puise, puis les jette à la volée, d'un grand geste du bras
+			ou = Vector3(15.0, 3.0, 0.0)
+			ouvrage = "semis"
+			outil = "sachet"
+			cote_outil = -1.0
+			mg = Vector3(4.6, -2.6, 18.6)
+			md = Vector3(4.9, -1.6, 20.2).lerp(Vector3(10.6, 6.2, 19.4), a) + Vector3(0.0, 0.0, 2.6 * sin(PI * a))
+			c.eclats = _depuis(t, SEMER_JETS)
+			c.ouvrage_u = (1.0 if t > 1.0 else (0.5 if t > 0.5 else 0.0))
+		"arroser":
+			# l'outre à bec, à deux mains : elle la penche, l'eau file ; elle la promène au-dessus du carré
+			var cote := (b - 0.5) * 5.0
+			ou = Vector3(17.6, cote, 0.0)
+			ouvrage = "arrose"
+			outil = "outre"
+			md = Vector3(8.2, 2.2 + cote * 0.5, 16.6 + 1.2 * a)
+			od = Vector3(0.45, 0.0, 0.89).lerp(Vector3(0.9, 0.0, -0.44), a)
+			mg = md + Vector3(1.4, -3.6, 1.6 - 2.6 * a)
+			c.filet = smoothstep(0.36, 0.46, t) * (1.0 - smoothstep(1.22, 1.34, t))
+			c.ouvrage_u = clampf((t - 0.4) / 0.9, 0.0, 1.0)
+		"caresser":
+			# la main droite tendue vers son museau, lentement, paume ouverte ; puis la gauche, qui tenait le licol contre sa
+			# hanche, le lui passe
+			if t < 1.28:
+				outil = "licol"
+			cote_outil = -1.0
+			od = Vector3(0.0, 0.0, -1.0)
+			md = md.lerp(Vector3(11.6, 2.4, 20.6), a)
+			mg = Vector3(0.6, -6.4, 15.6).lerp(Vector3(11.2, -1.2, 21.6), b)
+		"seller":
+			# la selle (ou les sacoches) à deux mains : prise au sol, hissée, posée sur le dos ; puis elle se baisse et serre la
+			# sangle, deux fois
+			if t < 0.62:
+				outil = "selle"
+				md = Vector3(6.0, 3.0, 11.5).lerp(Vector3(11.4, 3.0, 23.6), a) + Vector3(0.0, 0.0, 2.0 * sin(PI * a))
+				mg = Vector3(md.x, -3.0, md.z)
+			else:
+				ou = Vector3(12.6, 0.0, 8.6)
+				ouvrage = "sangle"
+				md = c.depose(Vector3(10.6 - 1.2 * b, 1.8, 11.6 + 4.2 * b))
+				mg = c.depose(Vector3(10.8 - 1.0 * b, -1.8, 10.8 + 3.8 * b))
+				c.fil = smoothstep(0.8, 0.9, t) * (1.0 - smoothstep(1.44, 1.56, t))
+		"traire":
+			# sur ses talons, contre le flanc : ses deux mains tirent l'une après l'autre, le lait file dans le bol ; puis elle le lève
+			ou = Vector3(10.6, 0.0, 0.0)
+			var tire := sin(TAU * a)
+			md = c.depose(Vector3(10.4, 1.7, 8.4 + 1.3 * tire)).lerp(Vector3(7.4, 2.2, 17.0), b)
+			mg = c.depose(Vector3(10.4, -1.7, 8.4 - 1.3 * tire)).lerp(Vector3(7.8, -1.6, 16.0), b)
+			if b > 0.35:
+				outil = "bol"
+			else:
+				ouvrage = "bol"
+			c.ouvrage_u = a
+			pieds = 1.0 - 0.6 * b
 		"marteler":
 			# la pièce sur le billot, tenue de la main gauche ; le maillet se lève, tombe, rebondit
 			ou = Vector3(11.5, 0.5, 13.6)
@@ -950,8 +1132,9 @@ func _poser_atelier(c, prise: bool) -> void:
 		mg = Vector3(x.x, -x.y, x.z)
 		od.y = -od.y
 		ou.y = -ou.y
-	c.outil = outil if w > 0.3 else ""
-	c.outil_main = sens
+	# (ce qu'elle tient de l'autre main — le sachet, le licol — attend que cette main soit libre)
+	c.outil = outil if w > 0.3 and not (prise and cote_outil < 0.0) else ""
+	c.outil_main = sens * cote_outil
 	c.outil_dir = od.normalized()
 	c.ouvrage = ouvrage if w > 0.25 else ""
 	c.ouvrage_ou = ou
@@ -978,6 +1161,120 @@ func _poser_atelier(c, prise: bool) -> void:
 		c.lance_pose = smoothstep(0.0, 0.7, w)
 		var cote: float = c.lance_main
 		c.lance_sol = PackedVector2Array([c.sol(Vector3(-11.0, cote * 11.5, 0.5)), c.sol(Vector3(14.0, cote * 11.5, 0.5))])
+
+
+# --- la longe, la selle (scripts/elevage.gd, scripts/harnais.gd) ---
+
+# le harnais d'une compagne lui tend sa longe (ou ses rênes), à chaque image : elle la tient de la main droite. Rend où est
+# cette main, dans le lieu ; anneau : l'autre bout, sous la tête de la bête
+func prise_longe(anneau: Vector2, _renes: bool = false) -> Vector2:
+	_longe_t = 0.25
+	_longe_vers = anneau
+	if _renes and monture != null and is_instance_valid(monture):
+		return monture.global_position + _corps.main_d_ecran
+	return to_global(_corps.main_d_ecran)
+
+
+# tout son corps, dessiné dans ce calque (le sien ; ou, en selle, celui du harnais de sa monture, qui l'appelle)
+func peindre_en_selle(ci: CanvasItem) -> void:
+	_selle_image = Engine.get_process_frames()
+	_trace.commencer(ci)
+	_corps.ci = _trace
+	_corps.dessiner()
+	_trace.vider()
+	_corps.ci = self
+
+
+# sa monture l'a jetée à terre (elevage.descendre(true)) : elle roule sur le flanc, et se relève
+func tomber_de_selle() -> void:
+	if not morte:
+		_jetee = 0.0
+
+
+# où se tenir pour ce geste auprès de cette bête, dans le lieu : devant sa tête pour le licol, contre le flanc qu'on voit pour
+# la seller, la traire (les règles peuvent l'y mener avant de lancer le geste : il se lit mieux)
+static func place_pour(nom: String, b) -> Vector2:
+	var sens := signf(float(b.regard))
+	if nom == "caresser":
+		return b.position + Vector2(sens * (float(b.largeur) * 0.5 + 10.0), 5.0)
+	return b.position + Vector2(-sens * float(b.largeur) * 0.04, 10.0)
+
+
+# elle monte (une demi-seconde), elle descend (un tiers) ; assise, elle regarde où va sa bête, et son buste suit la selle
+# avec un temps de retard
+func _chevaucher(dt: float) -> void:
+	if monture != null and not is_instance_valid(monture):
+		monture = null
+	var assise := monture != null and not morte
+	_selle_k = move_toward(_selle_k, 1.0 if assise else 0.0, dt / (0.5 if assise else 0.34))
+	if assise:
+		var s: Vector2 = monture.siege()
+		_selle_o = s
+		_selle_rel = s - monture.global_position
+		var y := _selle_rel.y
+		if _selle_k < 0.1:
+			_selle_y = y
+			_selle_v = 0.0
+		_selle_v += ((y - _selle_y) * 170.0 - _selle_v * 13.0) * dt
+		_selle_y += _selle_v * dt
+		if _geste == "":
+			_cap_cible = signf(float(monture.regard)) * (PI * 0.5 - 0.16)
+			_vitesse_tour = 10.0
+	_longe_t = maxf(0.0, _longe_t - dt)
+	if _jetee >= 0.0:
+		_jetee += dt
+		if _jetee > 0.95:
+			_jetee = -1.0
+
+
+# la pose : elle prend appui des deux mains sur la selle, se hisse, passe la jambe, s'assied ; assise, un pied de chaque
+# côté, les mains aux rênes (celles qui sont libres). Son origine monte au creux de la selle (monture.siege()) ; quand elle
+# descend, elle en revient jusqu'où le jeu l'a posée. Jetée à terre, elle roule
+func _poser_selle(c, prise: bool) -> void:
+	var k := _selle_k
+	var assise := smoothstep(0.4, 1.0, k)
+	# (assise, elle est dessinée dans le calque de sa monture : sa place se compte depuis la bête, pas depuis elle — les deux
+	# ne sont au même point qu'une fois les règles passées)
+	var creux := _selle_rel if monture != null else to_local(_selle_o)
+	var haut := creux + Vector2(0.0, 8.6)
+	var sol := Vector2(-regard * 2.0, 7.0) if monture != null else Vector2.ZERO
+	var o := sol.lerp(haut, smoothstep(0.0, 1.0, k)) + Vector2(0.0, -5.0 * sin(PI * k))
+	c.chute = Transform2D(0.0, o)
+	c.selle = assise
+	var appui := sin(PI * clampf(k / 0.8, 0.0, 1.0)) * (1.0 - assise)
+	c.bas = c.bas * (1.0 - assise) + 2.4 * appui
+	var allure := clampf(_vit.length() / R.VITESSE, 0.0, 1.6)
+	c.penche = lerpf(c.penche, 0.9 + 1.5 * allure, assise) + 1.6 * appui
+	c.hanche *= 1.0 - assise
+	# (le buste accompagne : il se tasse quand la selle monte, se déplie quand elle retombe)
+	var retard := clampf((creux.y - _selle_y) * 0.8, -1.8, 1.8) if monture != null else 0.0
+	# (son manteau est pris sous elle : il vole moins)
+	c.cape = _cape * (1.0 - 0.6 * assise)
+	c.souffle = lerpf(c.souffle, sin(_t * 1.75) * 0.35 + retard, assise)
+	c.tete_baisse += 0.5 * clampf(retard, 0.0, 1.0) * assise
+	var jambe := clampf(_selle_v * 0.03, -1.2, 1.2)
+	c.pied_d = c.pied_d.lerp(Vector3(2.4 - jambe, 5.0, 1.0), assise)
+	c.pied_g = c.pied_g.lerp(Vector3(2.4 - jambe, -5.0, 1.0), assise)
+	c.enfonce *= 1.0 - assise
+	c.eau *= 1.0 - assise
+	c.sillage *= 1.0 - assise
+	var libre_d: bool = not (c.lance and c.lance_main > 0.0)
+	var libre_g: bool = not prise and not (c.lance and c.lance_main < 0.0)
+	var renes := Vector3(6.4, 1.5, 15.9 + 0.5 * retard)
+	var pose := Vector3(5.6, 2.6, 13.0)
+	if libre_d:
+		c.main_d = c.main_d.lerp(pose, appui).lerp(renes, assise)
+	if libre_g:
+		c.main_g = c.main_g.lerp(Vector3(pose.x, -pose.y, pose.z), appui).lerp(Vector3(renes.x + 0.5, -renes.y, renes.z + 0.3), assise)
+	if _jetee >= 0.0:
+		var u := _jetee / 0.95
+		var a := smoothstep(0.0, 0.28, u) * (1.0 - smoothstep(0.62, 1.0, u))
+		var pivot := Vector2(0.0, -2.0)
+		c.chute = c.chute * Transform2D(0.0, pivot) * Transform2D(Vector2(1, 0), Vector2(0, lerpf(1.0, 0.66, a)), Vector2.ZERO) \
+				* Transform2D(a * (PI * 0.5 - 0.2) * -regard, Vector2.ZERO) * Transform2D(0.0, -pivot)
+		c.allonge = a * 0.9
+		c.sens_chute = -regard
+		c.bas = lerpf(c.bas, 6.0, a)
 
 
 # --- son sommeil ---
@@ -1278,12 +1575,11 @@ func _torche(dt: float, mobile: bool) -> void:
 
 
 func _draw() -> void:
-	# (tout le corps d'un seul appel de dessin : la trace recueille ses traits, une centaine, puis les rend d'un coup)
-	_trace.commencer(self)
-	_corps.ci = _trace
-	_corps.dessiner()
-	_trace.vider()
-	_corps.ci = self
+	# (tout le corps d'un seul appel de dessin : la trace recueille ses traits, une centaine, puis les rend d'un coup ;
+	# en selle, c'est le harnais de sa monture qui la dessine, par-dessus la bête : peindre_en_selle)
+	if monture == null or Engine.get_process_frames() - _selle_image > 1:
+		peindre_en_selle(self)
+		_selle_image = -9
 	if not _torche_sol.is_empty():
 		var t := _torche_sol
 		var dir := Vector2(sin(t["a"]), -cos(t["a"]))
