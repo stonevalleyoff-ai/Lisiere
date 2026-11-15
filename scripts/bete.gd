@@ -1038,6 +1038,8 @@ func _compagne(delta: float) -> void:
 
 # où s'assied qui la monte, dans le lieu (le creux de son dos)
 func siege() -> Vector2:
+	if _harnais_n != null:
+		return _harnais_n.siege()
 	return global_position + Vector2(0.0, -largeur * 0.42)
 
 
@@ -1626,6 +1628,9 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	var penche := 0.0
 	if _geste == "broute" or _geste == "flaire":
 		penche = _broute_penche
+	# (elle mange, la tête au sol : ses épaules s'abaissent de ce que son cou ne donne pas ; voir _tete_au_sol)
+	if mange > 0.01 and _mort < 0.0 and _tete != null:
+		penche = lerpf(penche, _tete_au_sol().z, mange)
 	_penche = lerpf(_penche, penche, 1.0 - exp(-delta * 4.0))
 	tang += _penche
 	# le demi-tour : un petit saut chez une bête légère, le temps de se retourner
@@ -1694,6 +1699,11 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			d = Vector2(0.03, -0.05) * H
 		"frisson":
 			rot = 0.05 * frisson
+	if mange > 0.01 and _mort < 0.0 and _tete != null:
+		# (elle mange : le museau au sol, de petits coups de mâchoire ; elle relève la tête comme mange redescend)
+		var au_sol := _tete_au_sol()
+		rot = lerpf(rot, au_sol.x + 0.035 * sin(_anim * 9.0) * mange, mange)
+		d = d.lerp(Vector2(0.03 * H, au_sol.y), mange)
 	rot += 0.12 * _affut + 0.06 * _course + 0.07 * _bond
 	d += Vector2(0.06, 0.12) * H * _affut
 	var raide := 1.0 - exp(-delta * lerpf(6.0, 3.6, _poids))
@@ -2147,6 +2157,8 @@ func _finir(delta: float) -> void:
 
 
 func _redessiner() -> void:
+	if _harnais_n != null or not harnais.is_empty():
+		_harnacher()
 	if not _a_l_ecran:
 		return
 	queue_redraw()
@@ -2339,3 +2351,37 @@ func _ellipse(c: Vector2, rx: float, ry: float, couleur: Color) -> void:
 	draw_set_transform(c, 0.0, Vector2(rx, ry))
 	draw_colored_polygon(_cercle, couleur)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+# --- son harnais (scripts/harnais.gd) : le licol et sa longe, les sacoches, la selle ; la tête au sol quand elle mange ---
+
+const Harnais := preload("res://scripts/harnais.gd")
+var _harnais_n: Harnais          # ce qui dessine son harnais (créé la première fois qu'elle en porte un)
+var _au_sol := Vector3(-1.0, 0.0, 0.0)
+
+
+# son harnais la suit, cette image (il se pose sur elle la première fois : une bête à pattes, qui a sa planche)
+func _harnacher() -> void:
+	if _harnais_n == null:
+		if _pivot == null or sprite == null or _sans or _p_pts.is_empty() or role == "echo":
+			return
+		_harnais_n = Harnais.new()
+		_harnais_n.monter(self)
+	_harnais_n.suivre()
+
+
+# la tête au sol, pour manger : (de combien elle tourne autour de la base du cou, de combien elle descend en plus, de
+# combien les épaules s'abaissent). Le cou donne d'abord ce qu'il peut ; les épaules, puis la tête elle-même, le reste
+func _tete_au_sol() -> Vector3:
+	if _au_sol.x < 0.0:
+		var rt: Rect2 = _sq["tete"]["rect"]
+		var pv_t: Vector2 = _sq["tete"]["pivot"]
+		var museau := Vector2(rt.end.x, rt.position.y + rt.size.y * 0.6) - pv_t
+		var l := maxf(museau.length(), 1.0)
+		var bas := -1.2 - pv_t.y
+		var rot := clampf((asin(bas / l) if bas < l else PI * 0.5) - museau.angle(), 0.2, 1.2)
+		var reste := maxf(0.0, bas - museau.rotated(rot).y)
+		var bras := maxf(pv_t.x - _c.x, _H * 0.5)
+		var epaules := clampf(reste * 0.6 / bras, _broute_penche * 0.6, 0.2)
+		_au_sol = Vector3(rot, clampf(reste - epaules * bras, 0.0, _H * 0.4), epaules)
+	return _au_sol

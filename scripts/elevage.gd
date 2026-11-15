@@ -22,9 +22,10 @@ const APPAT := 2                  # les baies d'un appât
 const APPAT_DUREE := 14.0         # secondes : ce qu'une bête met à le manger
 const PORTEE := 58.0              # à quelle distance on lui passe le licol, on la selle, on la monte
 const MASSE_LICOL := 3.0          # en dessous (kilos), rien à quoi passer un licol
-const MASSE_SACOCHE := 20.0
-const MASSE_SELLE := 90.0
-const MASSE_LAIT := 30.0
+# (les bêtes des lieux sont petites : les plus lourdes de celles qui broutent font de 30 à 60 kilos)
+const MASSE_SACOCHE := 8.0
+const MASSE_SELLE := 25.0
+const MASSE_LAIT := 15.0
 const SACOCHE := 20               # ce qu'on porte de plus de chaque chose, la bête aux sacoches à ses côtés
 const COTES := 150.0              # « à ses côtés »
 const ALLURE := 1.6               # en selle, on va tant de fois plus vite
@@ -139,12 +140,21 @@ func apprivoiser(b) -> bool:
 	b.crainte = 0.0
 	b.confiance = 1.0
 	betes.append(b)
+	_aupres(b, "caresser")
 	jeu.joueur.geste_atelier("caresser")
 	jeu.sons.atelier("sangle", 0.0, 0.9)
 	jeu.ui.message("%s : le licol passé, elle est à toi. Garde-la dans la lumière, la nuit." % str(b.nom), TEINTE)
 	if jeu.has_method("bete_apprivoisee"):
 		jeu.bete_apprivoisee(b)
 	return true
+
+
+# pour un geste sur sa bête, elle se met là où ses mains la touchent (scripts/joueur.gd, place_pour)
+func _aupres(b, geste: String) -> void:
+	var j = jeu.joueur
+	var p: Vector2 = j.place_pour(geste, b)
+	if p.distance_to(j.position) < 90.0:
+		j.position = jeu.monde.repousser(p, 8.0)
 
 
 # « suis-moi », « reste là » (près d'un piquet d'attache : elle y est liée)
@@ -182,6 +192,7 @@ func harnacher(b, quoi: String) -> bool:
 	var A = _atelier()
 	A.objets[quoi] = A.possede(quoi) - 1
 	b.harnais[quoi] = true
+	_aupres(b, "seller")
 	jeu.joueur.geste_atelier("seller")
 	jeu.sons.atelier("sangle", 0.0, 0.85)
 	jeu.ui.message("%s porte %s." % [str(b.nom), "sa selle : « Agir » près d'elle, et tu la montes" if quoi == "selle" else "ses sacoches : à ses côtés, tu portes %d de plus de chaque chose" % SACOCHE], TEINTE)
@@ -252,6 +263,7 @@ func descendre(jetee: bool = false) -> void:
 		if jetee:
 			b.effrayer(jeu.joueur.position, 4.0)
 	if jetee:
+		jeu.joueur.tomber_de_selle()
 		jeu.joueur.sante = maxf(1.0, float(jeu.joueur.sante) - 6.0)
 		jeu.joueur.peur = minf(100.0, float(jeu.joueur.peur) + 12.0)
 		jeu.effets.secousse(0.5)
@@ -286,6 +298,7 @@ func traire(b) -> bool:
 	b.lait = 0.0
 	var inv: Dictionary = jeu.joueur.inventaire
 	inv["lait"] = int(inv.get("lait", 0)) + 1
+	_aupres(b, "traire")
 	jeu.joueur.geste_atelier("traire")
 	jeu.sons.atelier("gourde", -4.0, 1.25)
 	jeu.ui.message("Du lait, tiède.", TEINTE)
