@@ -582,6 +582,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	atelier.commencer()
 	elevage.vider()
 	botanique.commencer(randi())
+	_herbes_a_redessiner()
 	# (l'œil de l'affût : au-dessus du lieu)
 	pistage = Pistage.new()
 	pistage.jeu = self
@@ -618,6 +619,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		atelier.reprendre(gardee.get("atelier", {}))
 		elevage.reprendre(gardee.get("elevage", {}))
 		botanique.reprendre(gardee.get("botanique", {}))
+		_herbes_a_redessiner()
 		if ouvert:
 			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
 			monde.suivre(joueur.position, true)
@@ -1004,6 +1006,15 @@ func _toucher_vise() -> void:
 		effets.recolte(d["p"], str(d["genre"]))
 		if ["arbre", "sapin", "rocher"].has(d["genre"]):
 			effets.arret(0.02)
+
+
+# les vertus de la partie sont tirées : les herbes déjà dessinées montrent leurs traits (une tige rouge, un duvet d'argent)
+func _herbes_a_redessiner() -> void:
+	if monde == null:
+		return
+	for o in monde.objets:
+		if is_instance_valid(o) and str(o.genre) == "herbe":
+			o.queue_redraw()
 
 
 # ce qui tente cette proie, dans ce que la veilleuse a posé : un appât, un carré de jardin où ça pousse (null : rien)

@@ -22,6 +22,8 @@ extends Node
 #   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac ;
 #   --fabrique tente,popote : à l'établi, elle fabrique ces choses l'une après l'autre ; --aupres tente : elle se tient
 #   près de cette chose (avec --dort : elle s'y couche)
+#   les herbes (scripts/botanique.gd) : --botanique poison,torpeur,visions,voyance,calme,fumee : cet état, tenu ; --herbes :
+#   son sac plein des herbes du lieu, la moitié reconnues, un mortier, une popote ; --geste gouter|piler|jeter
 #   le jardin, l'élevage : --pose carre,epouvantail,piquet,mangeoire,appat ; --etat lin,fleur,eau (ou baie, simple ; semis,
 #   pousse, mur ; gel ; regard, alerte ; foin ; attache) ; --compagne licol,selle,sacoche,grande,reste,monte : une bête à elle
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
@@ -56,6 +58,7 @@ var _etats := {}
 var _fabrique: PackedStringArray = PackedStringArray()
 var _fabrique_k := 0
 var _dormir_dans = null
+var _botanique := {}
 var _geste_atelier_t := 0.0
 var _brules: Array = []
 
@@ -289,6 +292,24 @@ func _lancer() -> void:
 				b.harnais["selle"] = true
 				jeu.elevage.monter(b)
 			break
+	# (--botanique poison,torpeur,visions,voyance,calme,fumee : cet état des herbes, tenu ; --herbes : son sac plein d'herbes
+	# du lieu, la moitié reconnues ; scripts/botanique.gd)
+	var i_b := ar2.find("--botanique")
+	if i_b >= 0 and i_b + 1 < ar2.size():
+		for e2 in ar2[i_b + 1].split(","):
+			_botanique[e2] = true
+	if ar2.has("--herbes") and jeu.botanique != null:
+		var k5 := 0
+		for id in jeu.botanique.especes(jeu.monde.lieu if jeu.botanique.FLORE.has(jeu.monde.lieu) else "foret"):
+			j.inventaire[jeu.botanique.cle(id)] = 3
+			jeu.botanique._fiche_savoir(id)["vue"] = true
+			jeu.botanique._fiche_savoir(id)["indice"] = true
+			if k5 % 2 == 0:
+				jeu.botanique._fiche_savoir(id)["sue"] = "goutee"
+			k5 += 1
+		jeu.atelier.objets["mortier"] = 1
+		jeu.atelier.objets["popote"] = 1
+		j.inventaire["eau"] = 3
 	# (--affut : elle ne bouge pas, pour regarder l'œil de l'affût s'ouvrir sur une bête ; scripts/pistage.gd)
 	if OS.get_cmdline_user_args().has("--affut"):
 		_plan = [[0.0, 1.0, "attendre"]]
@@ -586,6 +607,23 @@ func _process(delta: float) -> void:
 			jeu.joueur.inventaire["eau"] = 2
 			jeu.joueur.inventaire["viande"] = 2
 			jeu.atelier.cuisiner(jeu.feux[0])
+	if not _botanique.is_empty() and jeu.botanique != null:
+		var B = jeu.botanique
+		if _botanique.has("poison"):
+			B.poison = maxf(B.poison, 6.0)
+			jeu.joueur.sante = maxf(jeu.joueur.sante, 60.0)
+		if _botanique.has("torpeur"):
+			B.torpeur = maxf(B.torpeur, 6.0)
+		if _botanique.has("visions"):
+			B.visions = maxf(B.visions, 6.0)
+		if _botanique.has("voyance"):
+			B.voyance = maxf(B.voyance, 6.0)
+		if _botanique.has("calme"):
+			B.calme = maxf(B.calme, 6.0)
+		if _botanique.has("fumee"):
+			for f in jeu.feux:
+				if is_instance_valid(f):
+					B.fumees[f] = maxf(float(B.fumees.get(f, 0.0)), 6.0)
 	if _dormir_dans != null and u > 0.3 and not _fait.has("dort"):
 		_fait["dort"] = true
 		for b in get_tree().get_nodes_in_group("betes"):

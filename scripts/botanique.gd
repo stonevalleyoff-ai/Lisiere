@@ -13,7 +13,7 @@ extends RefCounted
 # jeter au feu, un appât empoisonné, un appât dormant (au mortier). Et elle se sème, dans un carré de jardin.
 
 const R := preload("res://scripts/regles.gd")
-const Pistage := preload("res://scripts/pistage.gd")
+const CAPS := ["l'est", "le sud-est", "le sud", "le sud-ouest", "l'ouest", "le nord-ouest", "le nord", "le nord-est"]
 
 const VERTUS := ["cicatrisante", "apaisante", "veneneuse", "acre", "somnifere", "voyante"]
 const NOMS_VERTUS := {"cicatrisante": "cicatrisante", "apaisante": "apaisante", "veneneuse": "vénéneuse", "acre": "âcre",
@@ -80,6 +80,9 @@ const SOMMEIL_BETE := 40.0        # secondes : une bête endormie par un appât
 const POISON_BETE := 22.0         # secondes : ce que met une bête empoisonnée à s'éteindre
 const RECOLTE_JARDIN := 5         # ce qu'un carré rend d'une herbe semée
 const SEMIS := 2                  # ce qu'il faut de plants pour un carré
+
+# la botanique de la partie en cours : le dessin d'une herbe y lit son indice (une tige rouge, un duvet d'argent se voient)
+static var partie = null
 
 var jeu
 var graine := 0                   # celle de la partie : elle tire les vertus
@@ -162,6 +165,15 @@ func indice(id: String) -> String:
 	if not _indices.has(id):
 		_indices[id] = INDICES[vertu(id)][absi(hash("%d|%s" % [graine, id])) % 2]
 	return str(_indices[id])
+
+
+# ce que le dessin d'une herbe montre de son indice, sans qu'on la cueille : « rouge » (sa tige), « duvet » (ses feuilles),
+# « miel » (des insectes autour), « lait » (une goutte blanche, une fois cueillie) ; "" : rien qui se voie (amère, piquante)
+static func signe(id: String) -> String:
+	if partie == null:
+		return ""
+	var i: String = partie.indice(id)
+	return i if i in ["rouge", "duvet", "miel", "lait"] else ""
 
 
 # --- ce qu'on en sait ---
@@ -331,7 +343,7 @@ func _ou_est_la_noire() -> String:
 	if N == null or Vector2(N.taniere) == Vector2.ZERO:
 		return ""
 	var d: Vector2 = Vector2(N.taniere) - jeu.joueur.position
-	return " Quelque chose dort %s." % Pistage.cap(d.angle())
+	return " Quelque chose dort vers %s." % str(CAPS[int(round(fposmod(d.angle(), TAU) / (TAU / 8.0))) % 8])
 
 
 # --- préparer ---
@@ -556,6 +568,7 @@ func maj(delta: float) -> void:
 # --- la partie gardée ---
 
 func commencer(graine_partie: int) -> void:
+	partie = self
 	graine = graine_partie
 	savoir = {}
 	_vertus = {}
