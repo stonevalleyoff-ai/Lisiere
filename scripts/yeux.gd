@@ -10,6 +10,8 @@ extends Node2D
 # torche l'approche, l'œil la renvoie : plus vif, avec un reflet. Ils s'allument et s'éteignent en douceur, mais la règle
 # tient : seulement la nuit, seulement hors de la lumière. Trois images faites par le code, trois appels de dessin pour tous
 # les yeux du lieu. Les échos vivent aussi dans cette couche : la nuit ne les cache pas.
+# Ce que les herbes y ajoutent (scripts/effets_herbes.gd le dessine, ici) : sous la voyance, le contour pâle de chaque bête et
+# le fil vers la tanière de la Noire ; sous les visions, des yeux qui n'existent pas (par paires, violets).
 # La Noire (scripts/noire.gd) a les siens : rouges, plus grands, et qui ne s'éteignent pas dans la lumière ; quand elle guette,
 # elle regarde en face, et l'on voit ses deux yeux.
 
@@ -56,8 +58,26 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+# ce que les herbes font voir (scripts/effets_herbes.gd) ; null hors d'une partie, ou sans les effets
+func _herbes():
+	var e = jeu.get("effets") if jeu != null else null
+	return e.get("herbes") if e != null else null
+
+
 func _draw() -> void:
-	if jeu == null or not jeu.en_partie or _a_voir.is_empty():
+	if jeu == null or not jeu.en_partie:
+		return
+	# les herbes d'abord, sous les vrais yeux : la voyance (le contour pâle de chaque bête, le fil vers la tanière de la Noire),
+	# les visions (des yeux qui n'existent pas)
+	var herbes = _herbes()
+	var voit := 0.0
+	if herbes != null:
+		voit = herbes.voyance
+		if voit > 0.01:
+			herbes.peindre_voyance(self, T.point_doux())
+			herbes.peindre_fil(self, T.point_doux())
+		herbes.peindre_fantomes(self, _oeil_amande(), T.point_doux())
+	if _a_voir.is_empty():
 		return
 	var j = jeu.joueur
 	var yeux: Array = []          # [où, rayon, couleur, lueur, paupière, reflet, axe, chasseur]
@@ -79,6 +99,8 @@ func _draw() -> void:
 		var chasse: bool = b.role == "chasseur" or b.role == "rodeur"
 		# (une lueur qui vit : elle respire à peine)
 		var a: float = e[1] * (0.93 + 0.07 * sin(_t * 2.3 + float(b.get_instance_id() % 97)))
+		# (la voyance : chaque œil renvoie une lumière qu'on ne voit pas)
+		reflet = maxf(reflet, 0.6 * voit)
 		if b.role == "noire":
 			# de profil, un œil ; de face (elle guette), les deux, qui tombent l'un vers l'autre
 			var r: float = float(b.rayon_oeil()) * 1.25

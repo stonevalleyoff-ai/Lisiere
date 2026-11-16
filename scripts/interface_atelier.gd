@@ -24,6 +24,7 @@ const R := preload("res://scripts/regles.gd")
 const NOURRITURE := ["baies", "viande", "viande_cuite", "bouillon"]
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
+const Botanique := preload("res://scripts/botanique.gd")
 # ce que le jardin et les bêtes donnent, dans l'ordre où le sac le montre
 const DU_JARDIN := ["graine_baie", "graine_lin", "graine_simple", "simples", "lait"]
 const NOMS_DU_JARDIN := {"graine_baie": "Graines de baies", "graine_lin": "Graines de lin", "graine_simple": "Graines de simples",
@@ -97,6 +98,12 @@ class Plume:
 		I.trait_encre(ci, r.end + Vector2(d, -0.5), Vector2(r.position.x - d, r.end.y + 0.5), e, c)
 		I.trait_encre(ci, Vector2(r.position.x - 0.5, r.end.y + d), r.position + Vector2(0.5, -d), e, c)
 
+	# les planches de l'herbier, si elles sont là (null : pas encore)
+	static func planches():
+		if not ResourceLoader.exists("res://scripts/herbier_planches.gd"):
+			return null
+		return load("res://scripts/herbier_planches.gd")
+
 	# une coche, d'un coup de plume
 	static func coche(ci: CanvasItem, c: Vector2, s: float, couleur: Color) -> void:
 		I.trait_encre(ci, c + Vector2(-0.5, 0.1) * s, c + Vector2(-0.12, 0.48) * s, s * 0.26, couleur)
@@ -104,6 +111,15 @@ class Plume:
 
 	# une icône de l'atelier ou du HUD ; pâlie (une esquisse) pour ce qu'on n'a pas, ce qu'on ne peut pas encore faire
 	static func icone(ci: CanvasItem, id: String, c: Vector2, s: float, pale: bool = false, base: Transform2D = Transform2D.IDENTITY) -> void:
+		# (une herbe de l'herbier, « h:foret:ombelle » : sa vignette, dessinée par scripts/herbier_planches.gd)
+		if id.begins_with("h:"):
+			var pl = planches()
+			if pl != null:
+				ci.draw_set_transform_matrix(base)
+				pl.vignette(ci, id.substr(2), c, s, not pale)
+				ci.draw_set_transform_matrix(base)
+				return
+			id = "simples"
 		if pale:
 			Icones.esquisse(ci, id, c, s, 0.62, base)
 		else:
@@ -457,11 +473,23 @@ class Planche extends Control:
 			var k := 1.0
 			if _sauts.has(cle):
 				k += clampf(float(_sauts[cle].x) * 0.6, -0.2, 0.6)
-			var cj := c + Vector2(_icone * 0.44, _icone * 0.36)
+			# (une tuile à étiquette : le jeton monte au coin du haut, l'étiquette tient le bas)
+			var cj := c + Vector2(_icone * 0.44, _icone * (-0.34 if str(tu.get("etiquette", "")) != "" else 0.36))
 			var g := T.texte_gras()
 			I.disque(self, cj, 11.0 * k, P.PAPIER)
 			I.disque(self, cj, 9.5 * k, P.ENCRE)
 			Plume.milieu(self, g, cj + Vector2(0.0, 4.6), str(n), 13, P.PAPIER)
+		# (son étiquette : un mot sur un bout de papier, au pied de l'icône — la vertu d'une herbe, qu'un nom long ne chasse pas)
+		var etiquette := str(tu.get("etiquette", ""))
+		if etiquette != "":
+			var fe := T.titre_italique()
+			var le := Plume.large(fe, etiquette, 14) + 12.0
+			var re := Rect2(c.x - le * 0.5, r.position.y + _icone - 9.0, le, 18.0)
+			draw_colored_polygon(Plume.galet(re, 5.0, 1.0), P.PAPIER)
+			var bord_e := Plume.galet(re, 5.0, 1.0)
+			bord_e.append(bord_e[0])
+			draw_polyline(bord_e, Color(P.ENCRE, 0.55), 1.0, true)
+			Plume.milieu(self, fe, Vector2(c.x, re.position.y + 13.5), etiquette, 14, P.SANG)
 		var f := T.texte_moyen()
 		var encre := Color(P.ENCRE_DOUCE, 0.6) if pale else P.ENCRE
 		var y := r.position.y + _icone + 21.0
@@ -481,6 +509,7 @@ class Planche extends Control:
 # une ligne : ["cout", l'icône, le nom, ce qu'on a, ce qu'il faut] · ["jauge", le nom, de 0 à 1, ce qu'on en dit] ·
 # ["gouttes", combien, sur combien] · ["note", une phrase]
 class Fiche extends Control:
+	const PLANCHE := 178.0          # la hauteur d'une planche de l'herbier, dans une fiche
 	signal action
 
 	var d := {}
@@ -601,6 +630,8 @@ class Fiche extends Control:
 			if str(lignes[i][0]) == "note":
 				notes[i] = Plume.lignes(txt, str(lignes[i][1]), 16, w - 8.0)
 				besoin += (notes[i] as PackedStringArray).size() * 20.0 + 6.0
+			elif str(lignes[i][0]) == "planche":
+				besoin += PLANCHE + 8.0
 			else:
 				besoin += 31.0
 		var k := clampf(bas / maxf(1.0, besoin), 0.7, 1.0)
@@ -670,6 +701,18 @@ class Fiche extends Control:
 						Plume.mot(self, txt, Vector2(3.0, y + 16.0), n, 16, P.ENCRE_DOUCE)
 						y += 20.0
 					y += 6.0
+				"planche":
+					# (la planche de l'herbe, à l'encre : scripts/herbier_planches.gd ; dessinée dans le repère de la fiche)
+					var pl = Plume.planches()
+					var decal := Vector2(w * (1.0 - k) * 0.5, 0.0)
+					var cadre := Rect2(decal + Vector2(6.0, y + 2.0) * k, Vector2(w - 12.0, PLANCHE) * k)
+					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+					if pl != null:
+						pl.planche(self, str(l[1]), cadre, str(l[2]), bool(l[3]))
+					else:
+						Plume.icone(self, "simples", cadre.get_center(), minf(cadre.size.x, cadre.size.y) * 0.7, not bool(l[3]))
+					draw_set_transform(decal, 0.0, Vector2(k, k))
+					y += PLANCHE + 8.0
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		# --- ce qui empêche, puis le bouton
 		var yr := bas + 19.0
@@ -1088,6 +1131,10 @@ class Sac extends Feuille:
 			mains.append({"cle": "act:becher", "id": "carre", "nom": "Bêcher un carré", "pale": J.empeche_becher() != ""})
 		if atelier.possede("licol") > 0 or not E.betes.is_empty():
 			mains.append({"cle": "act:appat", "id": "appat", "nom": "Poser un appât", "pale": E.empeche_appat() != ""})
+		# (l'herbier : dès qu'elle a cueilli une herbe)
+		var B = jeu.botanique
+		if not B.savoir.is_empty() or not B.sac().is_empty():
+			mains.append({"cle": "page:herbier", "id": "herbier", "nom": "L'herbier"})
 		out.append({"titre": "De tes mains", "tuiles": mains})
 		# juste là : ce qui se replie, le carré de jardin devant elle, sa bête
 		var la := []
@@ -1100,6 +1147,11 @@ class Sac extends Feuille:
 				for c in Jardin.ORDRE:
 					var g := str(Jardin.CULTURES[c]["graine"])
 					la.append({"cle": "semer:" + c, "id": g, "nom": "Semer : %s" % str(Jardin.CULTURES[c]["nom"]).to_lower(), "pale": J.graines(c) < Jardin.GRAINES, "n": J.graines(c)})
+				# (les herbes reconnues se sèment aussi, de leurs propres plants)
+				var herbes: Dictionary = B.sac()
+				for id in herbes:
+					if B.sue(id):
+						la.append({"cle": "semer:" + id, "id": "h:" + id, "nom": "Semer : %s" % B.nom(id).to_lower(), "pale": int(herbes[id]) < Jardin.GRAINES, "n": int(herbes[id])})
 			elif J.mur(carre):
 				la.append({"cle": "recolter", "id": "carre", "nom": "Récolter", "marque": "mûr"})
 			else:
@@ -1125,8 +1177,12 @@ class Sac extends Feuille:
 			var n := int(inv.get(k, 0))
 			if n > 0:
 				dons.append({"cle": ("use:" if k in ["simples", "lait"] else "graine:") + k, "id": k, "nom": str(NOMS_DU_JARDIN[k]), "n": n})
+		# (et ce qu'elle a préparé de ses herbes : scripts/botanique.gd)
+		for p in Botanique.ORDRE_PREPARATIONS:
+			if int(inv.get(p, 0)) > 0:
+				dons.append({"cle": "prep:" + p, "id": p, "nom": str(Botanique.PREPARATIONS[p]["nom"]), "n": int(inv[p]), "pale": B.empeche_utiliser(p) != ""})
 		if not dons.is_empty():
-			out.append({"titre": "Du jardin, des bêtes", "tuiles": dons, "a_la_ligne": true})
+			out.append({"titre": "Du jardin, des bêtes, des herbes", "tuiles": dons, "a_la_ligne": true})
 		var affaires := []
 		for id in Atelier.ORDRE:
 			if Atelier.MATIERES.has(id) or atelier.possede(id) <= 0:
@@ -1167,6 +1223,18 @@ class Sac extends Feuille:
 			return _carte("appat", "Un appât", "%d baies, posées devant toi." % Elevage.APPAT, "Une bête qui broute viendra y manger, si tu te tiens à l'écart sans bouger. La tête dedans, elle laisse venir : « Agir », et le licol est passé.",
 				"Poser", E.empeche_appat())
 		var carre = _carre()
+		if cle == "page:herbier":
+			return _carte("herbier", "L'herbier", "%d herbes connues." % jeu.botanique.savoir.size(), "Ce que tu sais des herbes de ce lieu : leurs signes, ce qu'elles peuvent être, ce qu'on en prépare.", "Ouvrir")
+		if cle.begins_with("prep:"):
+			var p := cle.trim_prefix("prep:")
+			var op: Dictionary = Botanique.PREPARATIONS[p]
+			var mot: String = {"baume": "Se soigner", "tisane": "Boire", "philtre": "Boire", "botte": "Jeter au feu"}.get(p, "Poser")
+			return _carte(p, str(op["nom"]), "Tu en as %d." % int(inv.get(p, 0)), str(op["dit"]), mot, str(jeu.botanique.empeche_utiliser(p)))
+		if cle.begins_with("semer:") and carre != null and Jardin.est_une_herbe(cle.trim_prefix("semer:")):
+			var h := cle.trim_prefix("semer:")
+			var manque_h := str(jeu.botanique.empeche_semer(h))
+			return _carte("h:" + h, jeu.botanique.nom(h), "Tu en as %d plants ; il en faut %d." % [jeu.botanique.possede(h), Jardin.GRAINES],
+				"Une herbe reconnue se sème de ses propres plants. Mûre en un jour et demi, la terre humide : un carré en rend %d." % Botanique.RECOLTE_JARDIN, "Semer", manque_h)
 		if cle.begins_with("semer:") and carre != null:
 			var c := cle.trim_prefix("semer:")
 			var o: Dictionary = Jardin.CULTURES[c]
@@ -1228,6 +1296,15 @@ class Sac extends Feuille:
 		if cle == "act:becher":
 			J.becher()
 			refermer()
+		elif cle == "page:herbier":
+			# (une page se ferme, l'autre s'ouvre)
+			refermer()
+			jeu.ouvrir_page("herbier")
+		elif cle.begins_with("prep:"):
+			var p := cle.trim_prefix("prep:")
+			jeu.botanique.utiliser(p)
+			if p in ["botte", "appat_poison", "appat_dormant", "philtre"]:
+				refermer()
 		elif cle == "act:appat":
 			E.poser_appat()
 			refermer()
@@ -1389,3 +1466,129 @@ class Sac extends Feuille:
 		elif bool(o.get("porte", false)):
 			atelier.basculer(id)
 		return ""
+
+
+# --- la page de l'herbier : les herbes du lieu, ce qu'on en sait, ce qu'on en prépare (scripts/botanique.gd) ---
+
+class Herbier extends Feuille:
+	func _init() -> void:
+		super("L'herbier", "Ce que tu sais des herbes. Choisis-en une.", "Ce que tu sais des herbes. Touche-en une.", 11.0)
+
+	# le lieu où elle est (le biome de l'herbier ; ailleurs : la forêt)
+	func _ici() -> String:
+		var b := str(jeu.biome)
+		return b if Botanique.FLORE.has(b) else "foret"
+
+	# ce qu'il faut pour préparer, sous les yeux
+	func _groupes() -> Array:
+		var inv: Dictionary = jeu.joueur.inventaire
+		var cases := []
+		for k in ["eau", "viande", "baies", "fibre"]:
+			cases.append({"id": k, "nom": Plume.majuscule(str(R.NOMS.get(k, Atelier.NOMS_MATIERES.get(k, k)))), "n": int(inv.get(k, 0)), "sur": 0})
+		var outils := []
+		for k in ["popote", "mortier"]:
+			outils.append({"id": k, "nom": str(Atelier.OBJETS[k]["nom"]), "n": atelier.possede(k), "sur": 0})
+		return [{"titre": "Pour préparer", "cases": cases}, {"titre": "Tes outils", "cases": outils}]
+
+	func _tuile(id: String) -> Dictionary:
+		var B = jeu.botanique
+		var connue: bool = B.connue(id)
+		var marque := ""
+		if B.sue(id):
+			marque = str(Botanique.NOMS_VERTUS[B.vertu(id)])
+		elif connue:
+			marque = "?"
+		return {"cle": "h:" + id, "id": "h:" + id, "nom": B.nom(id) if connue else "Inconnue", "pale": not connue, "n": B.possede(id), "etiquette": marque}
+
+	func _sections() -> Array:
+		var B = jeu.botanique
+		var inv: Dictionary = jeu.joueur.inventaire
+		var ici := _ici()
+		var out := []
+		var la := []
+		for id in Botanique.especes(ici):
+			la.append(_tuile(id))
+		out.append({"titre": "Les herbes de ce lieu", "tuiles": la})
+		# (celles qu'elle a rapportées d'ailleurs, ou qu'elle y a connues)
+		var ailleurs := []
+		var vues := {}
+		for id in B.savoir:
+			if Botanique.lieu_de(str(id)) != ici and B.connue(str(id)):
+				vues[str(id)] = true
+		for id in B.sac():
+			if Botanique.lieu_de(str(id)) != ici:
+				vues[str(id)] = true
+		for id in vues:
+			ailleurs.append(_tuile(str(id)))
+		if not ailleurs.is_empty():
+			out.append({"titre": "D'ailleurs", "tuiles": ailleurs, "a_la_ligne": true})
+		var prep := []
+		for p in Botanique.ORDRE_PREPARATIONS:
+			prep.append({"cle": "prep:" + p, "id": p, "nom": str(Botanique.PREPARATIONS[p]["nom"]), "pale": B.empeche_preparer(p) != "", "n": int(inv.get(p, 0))})
+		out.append({"titre": "Préparer", "tuiles": prep, "a_la_ligne": true})
+		return out
+
+	# « apaisante ou somnifère », « cicatrisante, vénéneuse ou âcre »
+	static func _ou(vertus: Array) -> String:
+		var noms := PackedStringArray()
+		for v in vertus:
+			noms.append(str(Botanique.NOMS_VERTUS[v]))
+		if noms.size() <= 1:
+			return ", ".join(noms)
+		var debut := noms.slice(0, noms.size() - 1)
+		return "%s ou %s" % [", ".join(debut), noms[noms.size() - 1]]
+
+	func _fiche_de(cle: String) -> Dictionary:
+		var B = jeu.botanique
+		var inv: Dictionary = jeu.joueur.inventaire
+		if cle.begins_with("prep:"):
+			var p := cle.trim_prefix("prep:")
+			var o: Dictionary = Botanique.PREPARATIONS[p]
+			var v := str(o["vertu"])
+			var h: String = B.herbe_pour(v, 1)
+			var lignes := [["cout", "h:" + h if h != "" else "simples", "Une herbe %s" % str(Botanique.NOMS_VERTUS[v]) if h == "" else B.nom(h), B.possede(h) if h != "" else 0, int(o["herbes"])]]
+			for k in o["avec"]:
+				lignes.append(["cout", k, Plume.majuscule(str(R.NOMS.get(k, Atelier.NOMS_MATIERES.get(k, k)))), int(inv.get(k, 0)), int(o["avec"][k])])
+			lignes.append(["note", "À la popote, sur un feu allumé." if str(o["ou"]) == "feu" else "Au mortier."])
+			var pourquoi := str(B.empeche_preparer(p))
+			return {"id": p, "pale": pourquoi != "", "nom": str(o["nom"]), "etat": "Tu en as %d." % int(inv.get(p, 0)) if int(inv.get(p, 0)) > 0 else "Tu n'en as pas.",
+				"dit": str(o["dit"]), "entete": ["Il te faut", "tu as / il faut"], "lignes": lignes, "bouton": "Préparer", "actif": pourquoi == "", "pourquoi": pourquoi}
+		var id := cle.substr(2)
+		var connue: bool = B.connue(id)
+		var n: int = B.possede(id)
+		var f := {"id": cle, "pale": not connue, "nom": B.nom(id) if connue else "Une herbe inconnue",
+			"etat": ("Tu en as %d." % n if n > 0 else "Tu n'en as plus.") if connue else "Elle pousse dans ce lieu.",
+			"dit": "", "lignes": [["planche", id, str(Botanique.signe(id)) if connue else "", connue]], "bouton": "", "actif": true, "pourquoi": ""}
+		if not connue:
+			f["dit"] = "Tu ne l'as pas encore cueillie. Cueillie, elle te dira un de ses signes."
+			return f
+		for l in B.lignes(id):
+			f["lignes"].append(["note", str(l)])
+		if B.sue(id):
+			var v2: String = B.vertu(id)
+			f["dit"] = "Elle est %s. %s" % [str(Botanique.NOMS_VERTUS[v2]), str(Botanique.DIT_VERTU[v2])]
+			if n > 0:
+				f["bouton"] = "Mâcher"
+				if v2 in ["veneneuse", "acre", "somnifere", "voyante"]:
+					f["pourquoi"] = "Crue, elle fait son effet sur toi."
+		else:
+			var c: Array = B.candidates(id)
+			f["dit"] = "Ce peut être : %s." % _ou(c)
+			f["lignes"].append(["note", "Pour savoir : regarde si les bêtes en mangent, reconnais les autres herbes du lieu, ou goûte-la."])
+			if n > 0:
+				f["bouton"] = "Goûter"
+				if c.has("veneneuse"):
+					f["pourquoi"] = "À tes risques : elle peut être vénéneuse."
+				elif c.has("somnifere") or c.has("voyante") or c.has("acre"):
+					f["pourquoi"] = "À tes risques."
+		return f
+
+	func _faire(cle: String) -> String:
+		var B = jeu.botanique
+		if cle.begins_with("prep:"):
+			return "Fait" if B.preparer(cle.trim_prefix("prep:")) else ""
+		# (elle y goûte : on le voit dans la partie, page fermée)
+		if B.gouter(cle.substr(2)):
+			refermer()
+		return ""
+

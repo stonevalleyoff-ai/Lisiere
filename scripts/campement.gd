@@ -39,6 +39,7 @@ extends Node2D
 const P := preload("res://scripts/palette.gd")
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const Objet := preload("res://scripts/objet.gd")
+const Herbe := preload("res://scripts/herbe.gd")
 const T := preload("res://scripts/effets_textures.gd")
 
 const PROF := 0.5                   # la vue de trois quarts : ce qui vient vers nous d'un pixel descend d'un demi
@@ -490,7 +491,7 @@ func _cle_du_fond() -> String:
 		"mangeoire":
 			k += "-%d" % int(clampf(float(etat.get("foin", 0)), 0.0, 12.0))
 		"appat":
-			k += "-%d" % _appat_baies()
+			k += "-%d-%s" % [_appat_baies(), str(etat.get("sorte", ""))]
 	return k
 
 
@@ -2080,6 +2081,9 @@ func _carre(p) -> void:
 			grain = P.IVOIRE.lerp(CUIVRE, 0.4)
 		elif culture == "baie":
 			grain = P.IVOIRE.lerp(BAIE, 0.3)
+		elif culture.contains(":"):
+			# (une herbe de l'herbier : sa graine a un peu de sa couleur)
+			grain = Herbe.graine(culture)
 		for k in 3:
 			for i in 9:
 				_pastille(p, _carre_pt(lerpf(-18.0, 18.0, i / 8.0) + rg.randf_range(-1.0, 1.0), float(CARRE_RANGS[k]) + rg.randf_range(-0.8, 0.5)), 0.65, 0.5, grain)
@@ -2149,6 +2153,10 @@ func _carre_vif(p, rang: int) -> void:
 				_plant_lin(p, q, s, k, bal, g, givre)
 			"simple":
 				_plant_simple(p, q, s, k, bal, g, givre)
+			_:
+				# (une herbe de l'herbier, semée : « foret:ombelle » ; son dessin est celui du lieu, en petit : scripts/herbe.gd)
+				if culture.contains(":"):
+					Herbe.plant(p, culture, q, s, k, bal, g, _sec, givre, _mobile)
 
 
 # les baies : deux feuilles rondes, puis un buisson bas et sombre, ses fleurs pâles, ses baies qui rougissent
@@ -2578,7 +2586,8 @@ func _mangeoire_vif(p) -> void:
 		p.tracer(PackedVector2Array([pied, pied + Vector2(pen * h * 0.4, -h * 0.6), pied + Vector2(pen * h, -h)]), 0.85, paille.darkened(0.08 * (i % 3)))
 
 
-# --- l'appât : une poignée de baies, sur une feuille ---
+# --- l'appât : une poignée de baies, sur une feuille ; sa sorte (« sorte ») : "" (les baies), « dormant » (des baies mêlées
+# d'herbe à dormir), « poison » (un morceau de viande, des feuilles écrasées dessus) ---
 
 # ce qu'il en reste, en baies
 func _appat_baies() -> int:
@@ -2586,6 +2595,10 @@ func _appat_baies() -> int:
 
 
 func _appat(p) -> void:
+	var sorte := str(etat.get("sorte", ""))
+	if sorte == "poison":
+		_appat_poison(p)
+		return
 	var r := _hasard(51)
 	var n := _appat_baies()
 	var vert := P.MOUSSE.lightened(0.24)
@@ -2613,8 +2626,66 @@ func _appat(p) -> void:
 		_pastille(p, q, 2.1, 2.0, ENCRE)
 		_pastille(p, q, 1.45, 1.35, rouge.darkened(0.12 * (i % 2)))
 		_pastille(p, q + Vector2(-0.45, -0.45), 0.45, 0.4, Color(P.PAPIER, 0.75))
+	if sorte == "dormant":
+		# l'herbe à dormir, mêlée aux baies : trois brins pâles qui dépassent, leurs petites feuilles, une fleur
+		var brin := P.MOUSSE.lightened(0.36).lerp(P.IVOIRE, 0.25)
+		for b in [[Vector2(-2.0, 0.6), Vector2(-7.6, -4.4)], [Vector2(0.6, -0.4), Vector2(2.6, -6.2)], [Vector2(2.4, 1.2), Vector2(8.8, -3.2)]]:
+			var a: Vector2 = b[0]
+			var c: Vector2 = b[1]
+			var cote := (c - a).orthogonal().normalized()
+			var mi := a.lerp(c, 0.56)
+			_baton(p, PackedVector2Array([a, a.lerp(c, 0.5) + Vector2(0.0, -0.8), c]), 0.9, brin, 0.8)
+			p.tracer(PackedVector2Array([mi, mi + cote * 2.3 + (c - a) * 0.12]), 1.4, brin.lightened(0.12))
+			p.tracer(PackedVector2Array([mi, mi - cote * 2.1 + (c - a) * 0.12]), 1.4, brin)
+		_pastille(p, Vector2(2.7, -6.5), 1.55, 1.45, ENCRE)
+		_pastille(p, Vector2(2.7, -6.5), 1.0, 0.95, P.PAPIER)
 	if _neige_cran() > 0.3:
 		_pastille(p, Vector2(-5.2, -0.4), 2.0, 0.8, Color(NEIGE, 0.9))
+
+
+# l'appât empoisonné : un morceau de viande sombre, son gras, son bout d'os ; les feuilles écrasées dessus, leur jus ; une
+# mouche. Ce qu'une bête en a mangé y manque
+func _appat_poison(p) -> void:
+	var r := _hasard(52)
+	var n := _appat_baies()
+	_ombre(p, Vector2(0.4, 1.6), 9.5, 3.4, 0.36)
+	if n <= 0:
+		# (il n'en reste qu'une tache, et l'os)
+		_pastille(p, Vector2(-1.0, 1.0), 4.2, 1.7, Color(P.SANG, 0.5))
+		_baton(p, PackedVector2Array([Vector2(1.0, 0.6), Vector2(5.2, -0.6)]), 1.2, P.IVOIRE.lightened(0.15), 0.9)
+		return
+	var k := 0.64 + 0.36 * n / 7.0
+	var chair := P.SANG.lerp(BAIE, 0.3).darkened(0.1)
+	var morceau := PackedVector2Array()
+	for q in [Vector2(-7.6, 0.6), Vector2(-5.6, -2.8), Vector2(-1.0, -4.2), Vector2(4.0, -3.4), Vector2(7.4, -0.6), Vector2(6.6, 2.4), Vector2(2.0, 3.6), Vector2(-3.6, 3.4)]:
+		var v: Vector2 = q
+		morceau.append(Vector2(v.x * k, v.y * lerpf(k, 1.0, 0.5)))
+	# l'os dépasse, derrière
+	_baton(p, PackedVector2Array([Vector2(5.0 * k, -0.6), Vector2(8.8 * k + 0.8, -2.0)]), 1.4, P.IVOIRE.lightened(0.15), 0.9)
+	_pastille(p, Vector2(8.9 * k + 1.0, -2.1), 1.1, 1.0, P.IVOIRE.lightened(0.2))
+	p.aplat(morceau, chair, Pinceau.DOME, Vector2(0.0, -0.4), Vector2(8.2, 4.6) * k)
+	p.contour(morceau, 1.1, ENCRE, r, 3)
+	# le gras, en liseré ; les fibres
+	p.tracer(PackedVector2Array([Vector2(-6.2, 0.0) * k, Vector2(-4.4, -2.2) * k, Vector2(-0.8, -3.3) * k]), 0.9, Color(P.IVOIRE, 0.85))
+	for y in [1.0, 2.3]:
+		p.tracer(PackedVector2Array([Vector2(-4.0 * k, float(y)), Vector2(0.5, float(y) + 0.5), Vector2(4.6 * k, float(y) - 0.2)]), 0.5, Color(ENCRE, 0.45))
+	# les feuilles écrasées : leur jus sombre, leurs lambeaux verts
+	_pastille(p, Vector2(-0.8 * k, -0.9), 3.8 * k, 1.9, Color(P.FEUILLE_SOMBRE, 0.8))
+	var vert := P.MOUSSE.lightened(0.22)
+	for f in [[Vector2(-3.8, -1.3), Vector2(-0.8, -2.6)], [Vector2(-1.8, 0.3), Vector2(1.6, -0.9)], [Vector2(0.6, -2.3), Vector2(3.4, -1.5)]]:
+		var a: Vector2 = f[0]
+		var b: Vector2 = f[1]
+		p.tracer(PackedVector2Array([a * k, b * k]), 1.8, vert.darkened(0.12 * r.randf()))
+	if n < 7:
+		# (ce qu'une dent y a pris)
+		_pastille(p, Vector2(-6.4 * k, 1.5), 1.6, 1.3, P.SANG.darkened(0.4))
+	# la mouche : posée dessus, ses deux ailes
+	var mo := Vector2(3.6 * k, -3.9)
+	p.tracer(PackedVector2Array([mo, mo + Vector2(-1.7, -1.3)]), 1.1, Color(P.PAPIER, 0.8))
+	p.tracer(PackedVector2Array([mo, mo + Vector2(1.6, -1.4)]), 1.1, Color(P.PAPIER, 0.8))
+	_pastille(p, mo, 0.95, 0.8, ENCRE)
+	if _neige_cran() > 0.3:
+		_pastille(p, Vector2(-5.0, -1.8), 2.0, 0.8, Color(NEIGE, 0.9))
 
 
 # --- la popote, sur le feu : une marmite de ferraille noircie, posée sur trois pierres ; son bouillon frémit, sa vapeur monte ---

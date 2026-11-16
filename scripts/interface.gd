@@ -591,7 +591,7 @@ func _montrer_page(quelle: String, oui: bool) -> bool:
 		if not oui or not ResourceLoader.exists("res://scripts/interface_atelier.gd"):
 			return false
 		var pages = load("res://scripts/interface_atelier.gd")
-		var p: Control = pages.Etabli.new() if quelle == "etabli" else pages.Sac.new()
+		var p: Control = pages.Etabli.new() if quelle == "etabli" else (pages.Herbier.new() if quelle == "herbier" else pages.Sac.new())
 		p.theme = T.theme()
 		p.visible = false
 		p.fermer.connect(_fermer_page)

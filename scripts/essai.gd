@@ -564,6 +564,7 @@ func _lancer() -> void:
 	_les_empreintes(F)
 	_l_atelier(F)
 	_le_jardin_et_les_betes(F)
+	_la_botanique(F)
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -747,7 +748,7 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		brouteuse._tentation_t = 0.0
 		for i in 60:
 			brouteuse._conduire(0.1)
-		verif(tentee and mange > 0.5 and tete > 0.6 and jeu.tentation(brouteuse) == null and J.garde(carre.position) and float(carre.etat["stade"]) == 2.0,
+		verif(tentee and mange > 0.5 and tete > 0.6 and jeu.tentation(brouteuse) != carre and J.garde(carre.position) and float(carre.etat["stade"]) == 2.0,
 			"une bête qui broute vient manger ce qui pousse (la tête au sol : le carré a perdu %.1f stade) ; l'épouvantail posé, elle n'y touche plus" % mange)
 		_oter(brouteuse)
 		# la nuit, l'épouvantail regarde d'où vient la Noire
@@ -951,6 +952,324 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 	C.pluie = garde["pluie"]
 	C.air = garde["air"]
 	C.neige_sol = garde["neige"]
+
+
+# la botanique (scripts/botanique.gd) : les herbes, leurs vertus cachées, ce qu'on en apprend, ce qu'on en prépare
+func _la_botanique(F: Dictionary) -> void:
+	print("La botanique")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var J = jeu.jardin
+	var E = jeu.elevage
+	var B = jeu.botanique
+	var C = jeu.climat
+	var RR = jeu.R
+	var garde := {"h": jeu.horloge, "p": j.position, "inv": j.inventaire.duplicate(), "sante": j.sante, "faim": j.faim, "peur": j.peur, "torche": j.torche,
+		"pluie": C.pluie, "feux": jeu.feux.duplicate(), "regard": j.regard, "graine": B.graine, "savoir": B.savoir.duplicate(true), "connue": jeu.noire.taniere_connue}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	var base: float = floorf(jeu.horloge / RR.DUREE) * RR.DUREE
+	jeu.horloge = base + RR.DUREE * 0.3
+	jeu.feux.clear()
+	C.pluie = 0.0
+	j.torche = 0.0
+	A.commencer()
+	E.vider()
+	B.commencer(4242)
+	var inv: Dictionary = j.inventaire
+	var lieu: String = jeu.monde.lieu if B.FLORE.has(jeu.monde.lieu) else "foret"
+	var ids: Array = B.especes(lieu)
+	var par_vertu := {}
+	for id in ids:
+		par_vertu[B.vertu(id)] = id
+
+	# l'herbier se tient : six herbes par lieu, six vertus, une chacune ; les indices vont par deux
+	var bon := true
+	for type in B.FLORE:
+		var formes := {}
+		var vertus := {}
+		for id in B.especes(type):
+			formes[B.forme_de(id)] = true
+			vertus[B.vertu(id)] = true
+			if not B.FORMES.has(B.forme_de(id)) or B.nom(id) == "" or not B.INDICES[B.vertu(id)].has(B.indice(id)):
+				bon = false
+		if formes.size() != 6 or vertus.size() != 6:
+			bon = false
+	var partage := {}
+	for v in B.VERTUS:
+		for i in B.INDICES[v]:
+			partage[i] = int(partage.get(i, 0)) + 1
+	for i in partage:
+		if int(partage[i]) != 2:
+			bon = false
+	var autre = load("res://scripts/botanique.gd").new()
+	autre.jeu = jeu
+	var change := false
+	for g in [1, 2, 3, 4, 5]:
+		autre.graine = g
+		autre._vertus = {}
+		for id in ids:
+			if autre.vertu(id) != B.vertu(id):
+				change = true
+	B.partie = B
+	verif(bon and partage.size() == 6 and change, "chaque lieu a six herbes et six vertus, une chacune ; chaque indice est partagé par deux vertus ; d'une partie à l'autre, les vertus changent de plante")
+
+	# le lieu en est semé
+	var plants := 0
+	var du_lieu := true
+	var un_plant = null
+	for o in jeu.monde.objets:
+		if is_instance_valid(o) and str(o.genre) == "herbe":
+			plants += 1
+			if not ids.has(str(o.herbe)):
+				du_lieu = false
+			if un_plant == null and int(o.reste) > 0:
+				un_plant = o
+	verif(plants >= 30 and du_lieu and un_plant != null, "des herbes poussent dans le lieu : %d plants, tous de son herbier" % plants)
+
+	# cueillir : dans le sac, et un indice, qui laisse deux vertus possibles (la vraie en est)
+	var id0: String = str(un_plant.herbe)
+	j.position = un_plant.position + Vector2(6.0, 4.0)
+	jeu.agir()
+	var c0: Array = B.candidates(id0)
+	verif(B.possede(id0) == 1 and B.connue(id0) and int(un_plant.reste) == 0 and c0.size() == 2 and c0.has(B.vertu(id0)) and not B.sue(id0) and B.lignes(id0).size() >= 1,
+		"« Agir » cueille une herbe : elle entre dans le sac et dans l'herbier, avec un indice (« %s ») qui laisse deux vertus possibles, dont la vraie" % str(B.DIT_INDICE[B.indice(id0)]))
+
+	# les bêtes : celles qui broutent ne touchent ni à la vénéneuse, ni à l'âcre ; ce qu'on leur voit manger se retient
+	var espece: Dictionary = {}
+	for e in F["proies_jour"] + F["proies_nuit"]:
+		var essai_b = _bete(e, "proie", j.position + Vector2(900.0, 0.0), {})
+		var bonne: bool = E.apprivoisable(essai_b)
+		_oter(essai_b)
+		if bonne:
+			espece = e
+			break
+	var herbe_sure = null
+	var herbe_tue = null
+	for o in jeu.monde.objets:
+		if is_instance_valid(o) and str(o.genre) == "herbe" and int(o.reste) > 0:
+			if B.se_broute(str(o.herbe)) and herbe_sure == null:
+				herbe_sure = o
+			if not B.se_broute(str(o.herbe)) and herbe_tue == null:
+				herbe_tue = o
+	if espece.is_empty() or herbe_sure == null or herbe_tue == null:
+		print("  (pas de proie à quatre pattes, ou pas d'herbe des deux sortes dans ce lieu : le reste n'est pas essayé)")
+	else:
+		var id_sure: String = str(herbe_sure.herbe)
+		j.position = herbe_sure.position + Vector2(300.0, 0.0)
+		var brouteuse = _bete(espece, "proie", herbe_sure.position + Vector2(-20.0, 0.0), {})
+		jeu.mangee(brouteuse, herbe_sure, 3.2)
+		var vu: bool = bool(B.savoir.get(id_sure, {}).get("broutee", false)) and int(herbe_sure.reste) == 0
+		var tentantes := true
+		for o in jeu.monde.autour(herbe_tue.position, 150.0):
+			if str(o.genre) == "herbe" and not B.se_broute(str(o.herbe)):
+				brouteuse._tentation = null
+		B.cueillie(id_sure)
+		var apres: Array = B.candidates(id_sure)
+		verif(vu and tentantes and apres.has(B.vertu(id_sure)) and not apres.has("veneneuse") and not apres.has("acre"),
+			"une bête qui broute mange une herbe sous ses yeux : l'herbier le retient, elle n'est ni vénéneuse ni âcre (reste : %s)" % ", ".join(PackedStringArray(apres)))
+		_oter(brouteuse)
+
+	# par élimination : cinq vertus reconnues, la sixième se déduit sans y goûter
+	B.commencer(4242)
+	for k in 5:
+		B._savoir_par(str(ids[k]), "goutee")
+	B.cueillie(str(ids[5]))
+	verif(B.sue(str(ids[5])) and str(B.savoir[ids[5]]["sue"]) == "deduite" and B.candidates(str(ids[5])) == [B.vertu(str(ids[5]))],
+		"cinq herbes reconnues dans un lieu : la sixième se déduit, sans y goûter")
+
+	# goûter : on sait aussitôt, et on en paie le prix
+	B.commencer(4242)
+	for id in ids:
+		inv[B.cle(id)] = 6
+	j.sante = 60.0
+	j.peur = 40.0
+	B.gouter(str(par_vertu["cicatrisante"]))
+	var soigne: bool = j.sante == 68.0
+	B.gouter(str(par_vertu["apaisante"]))
+	var calme: bool = j.peur == 28.0
+	B.gouter(str(par_vertu["veneneuse"]))
+	var s0: float = j.sante
+	for i in 10:
+		B.maj(0.5)
+	var empoisonnee: bool = B.poison > 0.0 and j.sante < s0 - 6.0 and B.sue(str(par_vertu["veneneuse"]))
+	# (le poison fait dévier ses pas : on l'ôte pour mesurer la torpeur seule)
+	B.poison = 0.0
+	B.gouter(str(par_vertu["somnifere"]))
+	# (le même pas, du même endroit dégagé, avec et sans la torpeur)
+	var depart: Vector2 = j.position
+	for k in 80:
+		var q := Vector2(-320.0 + 80.0 * (k % 9), -320.0 + 80.0 * (k / 9))
+		if jeu.monde.repousser(q, 8.0).distance_to(q) < 0.5 and jeu.monde.repousser(q + Vector2(90.0, 0.0), 8.0).distance_to(q + Vector2(90.0, 0.0)) < 0.5 and float(C.eau(q)) < 0.05:
+			depart = q
+			break
+	j.position = depart
+	j.atelier = ""
+	j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
+	var lente: float = j.position.x - depart.x
+	B.torpeur = 0.0
+	j.position = depart
+	j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
+	var vive: float = j.position.x - depart.x
+	B.gouter(str(par_vertu["voyante"]))
+	B.gouter(str(par_vertu["acre"]))
+	verif(soigne and calme and empoisonnee and lente < vive * 0.7 and B.visions > 0.0 and B.dernier_gout == "acre" and B.possede(str(par_vertu["acre"])) == 5,
+		"goûtées : la cicatrisante soigne un peu, l'apaisante calme, la vénéneuse empoisonne (la santé fond), la somnifère alourdit le pas (%d %% de l'allure), la voyante donne des visions"
+		% int(100.0 * lente / maxf(vive, 0.01)))
+
+	# préparer : il faut l'outil, le feu, l'eau ; le baume chasse le poison
+	inv["eau"] = 3
+	inv["fibre"] = 3
+	inv["viande"] = 2
+	inv["baies"] = 4
+	var sans_outil: String = B.empeche_preparer("baume")
+	A.objets["popote"] = 1
+	var sans_feu: String = B.empeche_preparer("baume")
+	var feu = jeu.Feu.new()
+	feu.jeu = jeu
+	feu.position = j.position + Vector2(40.0, 0.0)
+	jeu.monde.add_child(feu)
+	jeu.feux.append(feu)
+	var fait: bool = B.preparer("baume")
+	var sans_mortier: String = B.empeche_preparer("botte")
+	A.objets["mortier"] = 1
+	var botte: bool = B.preparer("botte") and B.preparer("tisane") and B.preparer("philtre") and B.preparer("appat_poison") and B.preparer("appat_dormant")
+	j.sante = 30.0
+	B.poison = 9.0
+	var panse: bool = B.utiliser("baume")
+	verif(sans_outil.contains("popote") and sans_feu.contains("feu") and fait and B.possede(str(par_vertu["cicatrisante"])) == 3 and sans_mortier.contains("mortier") and botte
+		and int(inv["eau"]) == 0 and int(inv["fibre"]) == 2 and int(inv["viande"]) == 1 and int(inv["baies"]) == 2 and panse and j.sante == 75.0 and B.poison == 0.0 and int(inv["baume"]) == 0,
+		"les décoctions se font à la popote, sur un feu, avec de l'eau ; le reste au mortier ; le baume rend 45 de santé et chasse le poison")
+
+	# la tisane, le philtre
+	j.peur = 80.0
+	B.utiliser("tisane")
+	var peur_t: float = j.peur
+	for i in 10:
+		B.maj(1.0)
+	var peur_calme: float = j.peur
+	jeu.noire.taniere_connue = false
+	var philtre: bool = B.utiliser("philtre")
+	verif(peur_t == 30.0 and peur_calme < 20.0 and philtre and B.voyance > 0.0 and (jeu.noire.taniere_connue or Vector2(jeu.noire.taniere) == Vector2.ZERO),
+		"la tisane ôte 50 de peur et la tient basse ; le philtre ouvre la voyance, et dit où dort la Noire")
+
+	# la botte âcre : sa fumée tient les chasseurs moitié plus loin, trois quarts de minute
+	var chasseur = _bete(F["chasseurs_nuit"][0], "chasseur", feu.position + Vector2(300.0, 0.0), {})
+	var avant_f: float = chasseur._lisiere()
+	var jetee: bool = B.utiliser("botte")
+	var pendant: float = chasseur._lisiere()
+	for i in 50:
+		B.maj(1.0)
+	var apres_f: float = chasseur._lisiere()
+	verif(jetee and absf(pendant - avant_f * B.GARDE) < 0.01 and absf(apres_f - avant_f) < 0.01 and B.fumee(feu) == 0.0,
+		"une botte âcre jetée au feu : les chasseurs s'en tiennent %.1f fois plus loin, puis la fumée retombe" % (pendant / maxf(avant_f, 0.01)))
+
+	# l'appât empoisonné : ce qui chasse vient le manger, et en meurt
+	j.position = feu.position + Vector2(-500.0, 0.0)
+	j.regard = 1.0
+	var pose: bool = B.utiliser("appat_poison")
+	var appat = A.poses[A.poses.size() - 1]
+	chasseur.position = appat.position + Vector2(140.0, 20.0)
+	var pv0: float = chasseur.pv
+	var chassees0: int = jeu.chassees
+	for i in 400:
+		if is_instance_valid(chasseur) and chasseur.is_in_group("betes") and chasseur.pv > 0.0:
+			chasseur._conduire(0.1)
+	var mort: bool = not is_instance_valid(chasseur) or chasseur.pv <= 0.0
+	verif(pose and not A.poses.has(appat) and mort and pv0 > 0.0 and jeu.chassees == chassees0,
+		"l'appât empoisonné : un chasseur vient le manger, s'en va, et le poison l'éteint (ce n'est pas une chasse)%s" % ("" if mort and not A.poses.has(appat) and jeu.chassees == chassees0
+		else " [posé %s, mangé %s, mort %s, pv %.1f sur %.1f, empoisonné %.1f, chassées %d → %d]" % [pose, not A.poses.has(appat), mort, chasseur.pv if is_instance_valid(chasseur) else -1.0, pv0,
+		chasseur.empoisonnee if is_instance_valid(chasseur) else -1.0, chassees0, jeu.chassees]))
+	_oter(chasseur)
+
+	# l'appât dormant : une bête qui broute s'endort dessus ; on lui passe le licol ; un coup la réveille
+	if not espece.is_empty():
+		var pose2: bool = B.utiliser("appat_dormant")
+		var appat2 = A.poses[A.poses.size() - 1]
+		j.position = appat2.position + Vector2(-600.0, 0.0)
+		var dormeuse = _bete(espece, "proie", appat2.position + Vector2(120.0, 10.0), {})
+		for i in 150:
+			dormeuse._conduire(0.1)
+		var dort: bool = dormeuse.endormie > 0.0 and dormeuse.couchee > 0.9 and dormeuse.yeux_clos > 0.9
+		j.position = dormeuse.position + Vector2(-30.0 - dormeuse.largeur * 0.25, 0.0)
+		dormeuse._conduire(0.1)
+		var a_portee: bool = E.a_apprivoiser() == dormeuse and str(dormeuse.etat) != "fuit"
+		dormeuse.blesser(1.0, j.position)
+		verif(pose2 and dort and a_portee and dormeuse.endormie == 0.0,
+			"l'appât dormant : la bête qui le mange s'endort, couchée, les yeux clos ; on l'approche pour lui passer un licol ; un coup la réveille")
+		_oter(dormeuse)
+
+		# le jardin : une herbe reconnue se sème de ses plants ; les bêtes ne broutent pas la vénéneuse
+		A.objets["houe"] = 1
+		j.position = feu.position + Vector2(0.0, 420.0)
+		var beche := false
+		for k in 60:
+			j.position = feu.position + Vector2(-600.0 + 80.0 * (k % 12), 300.0 + 80.0 * (k / 12))
+			if J.empeche_becher() == "":
+				beche = J.becher()
+				break
+		var carre = J.carres()[0] if J.carres().size() >= 1 else null
+		var tue: String = str(par_vertu["veneneuse"])
+		var sure: String = str(par_vertu["cicatrisante"])
+		var avant_semis: int = B.possede(tue)
+		var seme: bool = carre != null and J.semer(carre, tue)
+		var reste_h: int = B.possede(tue)
+		var pas_tentee := false
+		var recolte := false
+		if seme:
+			carre.etat["stade"] = 2.0
+			carre.etat["eau"] = 1.0
+			var b3 = _bete(espece, "proie", carre.position + Vector2(100.0, 0.0), {})
+			pas_tentee = J.tentation(b3) == null
+			carre.etat["culture"] = sure
+			var tentee2: bool = J.tentation(b3) == carre
+			pas_tentee = pas_tentee and tentee2
+			_oter(b3)
+			carre.etat["culture"] = tue
+			carre.etat["stade"] = 3.0
+			j.position = carre.position + Vector2(-30.0, 0.0)
+			recolte = J.recolter(carre) and B.possede(tue) == reste_h + B.RECOLTE_JARDIN
+		verif(beche and seme and reste_h == avant_semis - J.GRAINES and pas_tentee and recolte,
+			"une herbe reconnue se sème de deux de ses plants, et un carré mûr en rend %d ; les bêtes ne touchent pas à un carré de vénéneuse" % B.RECOLTE_JARDIN)
+
+	# la partie gardée
+	var photo: Dictionary = JSON.parse_string(JSON.stringify(B.photo()))
+	var B2 = load("res://scripts/botanique.gd").new()
+	B2.jeu = jeu
+	B2.reprendre(photo)
+	var memes_b: bool = B2.graine == B.graine and B2.savoir.size() == B.savoir.size()
+	for id in ids:
+		if B2.vertu(id) != B.vertu(id) or B2.sue(id) != B.sue(id) or B2.indice(id) != B.indice(id):
+			memes_b = false
+	B.partie = B
+	verif(memes_b, "la partie gardée retient les vertus tirées et ce qu'elle sait des herbes")
+
+	# (tout remis comme avant)
+	jeu.feux.erase(feu)
+	feu.queue_free()
+	for s3 in A.poses:
+		if is_instance_valid(s3):
+			s3.queue_free()
+	A.commencer()
+	E.vider()
+	B.commencer(int(garde["graine"]))
+	B.savoir = garde["savoir"]
+	for k in inv.keys():
+		if garde["inv"].has(k):
+			inv[k] = int(garde["inv"][k])
+		else:
+			inv.erase(k)
+	for f in garde["feux"]:
+		jeu.feux.append(f)
+	jeu.horloge = garde["h"]
+	jeu.noire.taniere_connue = garde["connue"]
+	j.position = garde["p"]
+	j.regard = garde["regard"]
+	j.sante = garde["sante"]
+	j.faim = garde["faim"]
+	j.peur = garde["peur"]
+	j.torche = garde["torche"]
+	C.pluie = garde["pluie"]
 
 
 func _bete(e: Dictionary, role: String, p: Vector2, memoire: Dictionary):

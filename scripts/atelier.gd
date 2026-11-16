@@ -57,6 +57,8 @@ const OBJETS := {
 		"dit": "Un faisceau, loin devant soi. Il lui faut des piles chargées."},
 	"piles": {"nom": "Piles", "famille": "outil", "ou": "etabli", "cout": {"ferraille": 2},
 		"dit": "Vides quand on les fait. Le cerf-volant les charge."},
+	"mortier": {"nom": "Mortier", "famille": "outil", "ou": "etabli", "unique": true, "cout": {"pierre": 3, "bois": 1},
+		"dit": "Une pierre creuse et son pilon : on y broie les herbes qu'on a reconnues (l'herbier, dans ton sac)."},
 	# le jardin (scripts/jardin.gd)
 	"houe": {"nom": "Houe", "famille": "jardin", "ou": "etabli", "unique": true, "cout": {"bois": 2, "pierre": 1, "corde": 1},
 		"dit": "Elle retourne la terre : un carré de jardin, où l'on sème."},
@@ -77,7 +79,7 @@ const OBJETS := {
 		"dit": "Sur une bête assez forte, on la monte : on va bien plus vite. Elle te jette à terre quand elle a peur."},
 }
 const ORDRE := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
-	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire",
+	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire",
 	"sacoche", "selle"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
 const TEINTE := Color(0.86, 0.8, 0.66)
@@ -450,21 +452,26 @@ func cuisiner(feu = null) -> bool:
 	var inv: Dictionary = jeu.joueur.inventaire
 	if possede("popote") <= 0 or int(inv.get("eau", 0)) <= 0 or int(inv.get("viande", 0)) <= 0:
 		return false
-	if feu != null and is_instance_valid(feu):
-		# (la popote reste un moment sur ce feu : elle y frémit)
-		var m = feu.get_node_or_null("Popote")
-		if m == null:
-			m = Marmite.new()
-			m.name = "Popote"
-			m.jeu = jeu
-			feu.add_child(m)
-		m.reste = MIJOTE
+	mijoter(feu)
 	inv["eau"] = int(inv["eau"]) - 1
 	inv["viande"] = int(inv["viande"]) - 1
 	inv["bouillon"] = int(inv.get("bouillon", 0)) + 1
 	jeu.joueur.geste_atelier("remuer")
 	jeu.ui.message("Un bouillon frémit dans la popote.", Color(0.95, 0.75, 0.45))
 	return true
+
+
+# la popote reste un moment sur ce feu : elle y frémit (un bouillon, une décoction : scripts/botanique.gd)
+func mijoter(feu) -> void:
+	if feu == null or not is_instance_valid(feu):
+		return
+	var m = feu.get_node_or_null("Popote")
+	if m == null:
+		m = Marmite.new()
+		m.name = "Popote"
+		m.jeu = jeu
+		feu.add_child(m)
+	m.reste = MIJOTE
 
 
 # --- le sommeil ---

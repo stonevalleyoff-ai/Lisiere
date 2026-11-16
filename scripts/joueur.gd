@@ -9,7 +9,8 @@ extends Node2D
 # d'elle ; dans l'eau, ses jambes disparaissent, un sillage la suit ; dans la boue, elle peine ; transie, elle grelotte, se voûte,
 # bleuit, son souffle fait de la buée ; accablée de chaleur, elle rougit ; en feu, des flammes courent sur elle et elle se débat.
 # L'atelier (scripts/atelier.gd) : sa tenue se voit sur elle (le sac à dos, la pelisse, la cape de pluie) ; sa lampe éclaire en
-# faisceau, du côté où elle regarde ; ses gestes d'atelier (ATELIER : marteler, scier, coudre, monter, fouiller, boire, remuer)
+# faisceau, du côté où elle regarde ; ses gestes d'atelier (ATELIER : marteler, scier, coudre, monter, fouiller, boire, remuer ;
+# ceux de l'herbier : gouter, piler, jeter) ; ce que les herbes lui font (le poison, la torpeur : _poser_herbes)
 # ont chacun leur attaque, leur temps fort et leur retour ; et elle dort (endormie), couchée dans son duvet.
 # Le jardin et l'élevage (scripts/jardin.gd, scripts/elevage.gd) : six gestes de plus (becher, semer, arroser, caresser, seller,
 # traire) ; la longe d'une compagne dans sa main droite (prise_longe : le harnais de la bête la lui tend) ; et en selle (monture) :
@@ -89,7 +90,10 @@ const GESTES := {
 # dépend) : chaque coup de maillet de « marteler », le premier des trois coups de « monter » (les autres : MONTER_COUPS)
 # ceux du jardin et de l'élevage : chaque coup de houe de « becher » part aussi (impact, genre « becher »)
 const ATELIER := {"marteler": 1.2, "scier": 1.3, "coudre": 1.5, "monter": 1.6, "fouiller": 1.35, "boire": 1.2, "remuer": 1.5,
-	"becher": 1.5, "semer": 1.4, "arroser": 1.7, "caresser": 1.6, "seller": 1.7, "traire": 1.8}
+	"becher": 1.5, "semer": 1.4, "arroser": 1.7, "caresser": 1.6, "seller": 1.7, "traire": 1.8,
+	"gouter": 2.5, "piler": 2.0, "jeter": 1.25}
+# (un geste sans dessin emprunte celui d'un autre : ceux de l'herbier ont maintenant le leur)
+const ATELIER_REPLI := {}
 const ATELIER_COUPS := {"marteler": [0.36, 0.64, 0.92], "monter": [0.36], "becher": [0.4, 0.78, 1.16]}
 const SEMER_JETS := [0.5, 1.0]
 const GESTES_JARDIN := ["becher", "semer", "arroser"]      # elle se tourne vers le carré de jardin
@@ -97,6 +101,11 @@ const GESTES_BETE := ["caresser", "seller", "traire"]      # vers la bête
 const MONTER_COUPS := [0.36, 0.54, 0.72]
 const SCIER_TRAITS := [0.32, 0.62, 0.92]
 const FOUILLER_GESTES := [0.4, 0.7]
+# les gestes de l'herbier (scripts/botanique.gd) : les trois coups de pilon de « piler » (ils ne partent pas en signal : le
+# jeu prendrait un coup inconnu pour un coup de lance) ; l'instant où elle a fini de mâcher, celui où la botte tombe au feu
+const PILER_COUPS := [1.1, 1.32, 1.54]
+const GOUTER_MACHE := 1.0
+const JETER_CHUTE := 0.86
 # leurs clés : [l'instant (en secondes), vif (elle arrive d'un coup), le poids du geste, se baisse, se penche, torsion du buste,
 # élan, la tête baissée, puis deux mesures propres au geste]
 const CLES_ATELIER := {
@@ -244,6 +253,38 @@ const CLES_ATELIER := {
 		[1.5, false, 1.0, 5.0, 1.6, 0.0, 0.0, 0.6, 4.0, 1.0],
 		[1.62, false, 1.0, 5.0, 1.6, 0.0, 0.0, 0.6, 4.0, 1.0],
 		[1.8, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 1.0]],
+	# (la feuille : de sa main, 0, à sa bouche, 1 ; puis ce que son corps en dit, de 0 à 1 : selon la vertu, voir _poser_atelier)
+	"gouter": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.18, false, 1.0, 0.0, 0.3, 0.0, 0.0, 0.8, 0.0, 0.0],
+		[0.42, false, 1.0, 0.0, 0.0, 0.0, 0.0, 0.2, 1.0, 0.0],
+		[0.5, true, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+		[1.0, false, 1.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.8, 0.0],
+		[1.16, true, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.45, 1.0],
+		[2.1, false, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 1.0],
+		[2.5, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+	# (le pilon : ses tours dans le mortier ; puis levé, -0,6, et écrasé, 1)
+	"piler": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		[0.24, false, 1.0, 6.2, 3.0, 0.0, 0.3, 1.8, 0.0, 0.0],
+		[0.9, false, 1.0, 6.2, 3.2, 0.0, 0.4, 1.9, 2.0, 0.0],
+		[1.02, false, 1.0, 5.8, 2.4, 0.0, 0.0, 1.5, 2.0, -0.6],
+		[1.1, true, 1.0, 6.5, 3.8, 0.0, 0.7, 2.1, 2.0, 1.0],
+		[1.24, false, 1.0, 5.8, 2.4, 0.0, 0.0, 1.5, 2.0, -0.6],
+		[1.32, true, 1.0, 6.5, 3.8, 0.0, 0.7, 2.1, 2.0, 1.0],
+		[1.46, false, 1.0, 5.8, 2.4, 0.0, 0.0, 1.5, 2.0, -0.6],
+		[1.54, true, 1.0, 6.6, 4.0, 0.0, 0.8, 2.2, 2.0, 1.0],
+		[1.72, false, 1.0, 6.0, 3.0, 0.0, 0.2, 1.8, 2.0, 0.0],
+		[2.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0]],
+	# (le bras : d'armé, loin derrière, 0, à lancé, 1 ; puis le vol de la botte, de sa main au feu)
+	"jeter": [
+		[0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.0],
+		[0.14, false, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.0],
+		[0.4, false, 1.0, 0.6, -1.2, -0.5, -0.9, -0.4, 0.0, 0.0],
+		[0.52, true, 1.0, 1.2, 2.6, 0.45, 1.5, 0.6, 1.0, 0.0],
+		[0.86, false, 1.0, 0.8, 1.8, 0.3, 0.8, 0.4, 1.0, 1.0],
+		[1.0, false, 1.0, 0.2, -0.7, 0.0, -0.6, -0.3, 0.6, 1.0],
+		[1.25, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 1.0]],
 }
 
 var sante := 100.0
@@ -268,12 +309,14 @@ var endormie := false           # elle dort : couchée, les yeux clos
 var atelier := ""               # le geste d'atelier en cours : marteler, scier, coudre, monter, fouiller, boire, remuer ("" : aucun)
 var atelier_t := 0.0            # depuis quand
 var couchage := ""              # où elle dort : "" (son duvet, à même le sol), « tente », « hamac » (on ne la dessine plus : elle est dedans)
+var gout := ""                  # la vertu de ce qu'elle goûte (scripts/botanique.gd, dernier_gout) : le geste « gouter » finit par elle
 var monture = null              # la bête qu'elle monte (scripts/elevage.gd) : elle est assise sur son dos (monture.siege())
 
 
 # un geste d'atelier commence (atelier.gd) : il dure ce que son dessin dure (ATELIER), puis s'efface. Elle se tourne vers ce
 # qu'elle travaille (l'établi, la chose posée, le feu), un peu de biais, pour qu'on voie ses mains
 func geste_atelier(nom: String) -> void:
+	nom = str(ATELIER_REPLI.get(nom, nom)) if not ATELIER.has(nom) else nom
 	if morte or not ATELIER.has(nom):
 		atelier = ""
 		return
@@ -284,6 +327,14 @@ func geste_atelier(nom: String) -> void:
 	_at_coups = 0
 	var a := _cap
 	var chose = _chose_d_atelier(nom)
+	# (les gestes de l'herbier : ce qu'elle goûte, le feu où elle jette)
+	_jet_feu = chose if nom == "jeter" else null
+	_jet_fait = false
+	if nom == "gouter":
+		var jeu = _jeu()
+		var B = jeu.get("botanique") if jeu != null else null
+		if B != null:
+			gout = str(B.dernier_gout)
 	if chose != null and chose.position.distance_to(position) > 4.0:
 		var d: Vector2 = chose.position - position
 		a = atan2(d.x, d.y)
@@ -302,13 +353,13 @@ func geste_atelier(nom: String) -> void:
 
 # ce vers quoi elle se tourne pour ce geste : l'établi, la chose posée la plus proche, le feu (null : rien à portée)
 func _chose_d_atelier(nom: String):
-	if not is_inside_tree() or nom == "boire":
+	if not is_inside_tree() or nom == "boire" or nom == "gouter" or nom == "piler":
 		return null
 	if nom in GESTES_BETE:
 		return _bete_proche(120.0)
 	var meilleur = null
 	var d0 := 100.0
-	if nom == "remuer":
+	if nom == "remuer" or nom == "jeter":
 		var jeu = _jeu()
 		var feux: Array = jeu.get("feux") if jeu != null and jeu.get("feux") != null else []
 		for f in feux:
@@ -388,6 +439,8 @@ var _at_t := 0.0
 var _at_w := 0.0
 var _at_coups := 0
 var _at_miroir := false
+var _jet_feu = null             # le feu où elle jette sa botte (le geste « jeter »)
+var _jet_fait := false          # la botte y est tombée : il a répondu
 # le sommeil : de debout (0) à couchée (1) en une demi-seconde, au temps vrai (le jeu passe plus vite quand elle dort)
 var _sommeil := 0.0
 var _t_vrai := 0.0
@@ -463,6 +516,13 @@ func deplacer(dir: Vector2, delta: float, monde) -> void:
 		# (en selle, on va bien plus vite : scripts/elevage.gd)
 		if monture != null and monde.jeu != null and monde.jeu.get("elevage") != null:
 			allure *= float(monde.jeu.elevage.allure())
+		# (le poison : ses pas dévient ; scripts/effets_herbes.gd)
+		var herbes = _herbes()
+		if herbes != null and absf(float(herbes.devie)) > 0.001:
+			dir = dir.rotated(float(herbes.devie))
+		# (la torpeur d'une herbe à dormir : scripts/botanique.gd)
+		if monde.jeu != null and monde.jeu.get("botanique") != null:
+			allure *= float(monde.jeu.botanique.allure())
 		if temperature < 25.0:
 			allure *= lerpf(0.82, 1.0, temperature / 25.0)
 		var avant := position
@@ -879,6 +939,7 @@ func _poser() -> void:
 		var vers := Vector2(au_sol.x * sin(_cap) + au_sol.y * cos(_cap), -au_sol.x * cos(_cap) + au_sol.y * sin(_cap)).normalized()
 		var tendue := smoothstep(60.0, 115.0, v.length())
 		c.main_d = c.main_d.lerp(Vector3(2.0 + vers.x * (2.0 + 4.0 * tendue), 6.0 + vers.y * (1.0 + 3.0 * tendue), 15.6 + 2.4 * tendue), 0.75)
+	_poser_herbes(c)
 	if _selle_k > 0.0 or _jetee >= 0.0:
 		_poser_selle(c, en_main or lampe_en_main)
 	if _geste != "":
@@ -893,6 +954,66 @@ func _poser() -> void:
 		_poser_blessure(c)
 	if morte:
 		_poser_mort(c)
+
+
+# --- ce que les herbes lui font ---
+
+# ce que les herbes font voir (scripts/effets_herbes.gd, tenu par les effets) ; null sans eux (un banc d'essai)
+func _herbes():
+	var jeu = _jeu()
+	var e = jeu.get("effets") if jeu != null else null
+	return e.get("herbes") if e != null else null
+
+
+# Son corps suit le rythme que tient scripts/effets_herbes.gd, pour battre avec l'écran. Le poison : elle se plie, une main au
+# ventre, vacille, verdit ; un haut-le-cœur la casse en deux, l'autre main à la bouche ; quand il la quitte, elle se redresse,
+# les épaules tombent, elle souffle. La torpeur : elle s'affaisse et tangue, sa tête tombe avec ses paupières, et se relève
+# d'un coup, les yeux grands ouverts
+func _poser_herbes(c) -> void:
+	c.malade = 0.0
+	c.soupir = 0.0
+	c.crache = -1.0
+	var h = _herbes()
+	if h == null or morte:
+		return
+	var m := _marche
+	var p: float = h.poison
+	var s: float = h.soupir
+	if p > 0.01 or s > 0.01:
+		var n: float = h.nausee
+		var bat: float = h.pouls
+		c.malade = p
+		c.penche += (2.3 + 0.5 * bat) * p + 3.0 * n
+		c.bas += 1.3 * p + 1.5 * n
+		c.tete_baisse += 1.2 * p + 2.2 * n
+		c.epaules += 0.7 * p + 1.3 * n
+		c.elan += 0.9 * n
+		c.hanche += sin(_t * 1.3) * 0.8 * p * (1.0 - m)
+		c.decal += Vector2(sin(_t * 1.1) * 0.9 * p + sin(_t * 43.0) * 0.5 * n, 0.5 * n)
+		# (la main qui ne tient rien : au ventre ; au haut-le-cœur, l'autre part à sa bouche)
+		if not (c.lance and c.lance_main > 0.0):
+			c.main_d = c.main_d.lerp(Vector3(4.9, 1.4, 17.6 - n), minf(1.0, 0.9 * p + n))
+		if not c.torche and not c.lampe and not (c.lance and c.lance_main < 0.0):
+			c.main_g = c.main_g.lerp(Vector3(4.6, -1.6, 32.0), n)
+		c.soupir = s
+		c.penche -= 0.9 * s
+		c.epaules -= 1.1 * s
+		c.tete_baisse -= 0.8 * s
+		c.souffle += 1.5 * s
+	var to: float = h.torpeur
+	if to > 0.01:
+		var pa: float = h.paupiere
+		var su: float = h.sursaut
+		c.tete_baisse += 3.2 * pa + 0.5 * to - su
+		c.penche += 1.3 * pa + 0.4 * to
+		c.bas += 0.5 * to + 0.9 * pa
+		c.epaules += 1.4 * su - 0.6 * to
+		c.hanche += sin(_t * 0.7 + 0.8) * 0.7 * to * (1.0 - m)
+		c.decal += Vector2(sin(_t * 0.7) * 1.1 * to * (1.0 - m), -0.7 * su)
+		if pa > 0.45:
+			c.yeux = 0.0
+		elif su > 0.5:
+			c.yeux = 2.0
 
 
 # --- ses gestes d'atelier ---
@@ -911,6 +1032,11 @@ func _avancer_atelier(dt: float) -> void:
 				_at_coups += 1
 				_cape_v -= Vector2(sin(_cap), cos(_cap) * Corps.INCL) * 30.0
 				impact.emit(to_global(_corps.sol(_corps.ouvrage_ou)), atelier)
+			# (la botte tombe dans le feu : il répond d'une gerbe)
+			if atelier == "jeter" and not _jet_fait and atelier_t >= JETER_CHUTE:
+				_jet_fait = true
+				if _jet_feu != null and is_instance_valid(_jet_feu) and _jet_feu.has_method("gerbe"):
+					_jet_feu.gerbe(0.85)
 			if atelier_t >= float(ATELIER[atelier]):
 				atelier = ""
 	_at_w = move_toward(_at_w, 1.0 if atelier != "" else 0.0, dt * (12.0 if atelier != "" else 7.0))
@@ -968,6 +1094,101 @@ func _poser_atelier(c, prise: bool) -> void:
 	var pieds := 0.0
 	var cote_outil := 1.0
 	match _at_nom:
+		"gouter":
+			# un brin entre ses doigts : elle le regarde, le porte à sa bouche, mord, mâche à petits coups de tête ; puis son corps
+			# dit ce que c'était (b monte d'un coup quand elle a fini de mâcher)
+			deux = false
+			var bouche := Vector3(4.6, 2.0, 33.4)
+			md = Vector3(4.2, 5.4, 22.0).lerp(bouche, a) + Vector3(0.0, 1.2 * sin(PI * a), 0.0)
+			od = Vector3(0.2, 0.0, 0.98)
+			if t < 0.56:
+				outil = "feuille"
+			var mache := smoothstep(0.5, 0.6, t) * (1.0 - smoothstep(0.94, 1.04, t))
+			c.tete_baisse += 0.4 * mache * sin(t * 26.0) * w
+			var tr := maxf(0.0, t - GOUTER_MACHE)
+			var r := b * w
+			match gout:
+				"cicatrisante", "apaisante":
+					# soulagée : les épaules tombent, la tête se relève, la main vient sur son cœur, un long souffle
+					c.epaules -= 1.0 * r
+					c.tete_baisse -= 0.9 * r
+					c.penche -= 0.5 * r
+					c.souffle += 1.6 * sin(tr * 3.2) * r
+					md = md.lerp(Vector3(4.6, 1.0, 24.0), r)
+				"acre":
+					# elle recrache, et tousse deux fois : le corps part en avant, la main s'écarte
+					var toux := (exp(-(tr - 0.12) * 5.0) if tr > 0.12 else 0.0) + (exp(-(tr - 0.6) * 5.0) if tr > 0.6 else 0.0)
+					c.bas += 1.3 * toux * w
+					c.penche += 4.0 * toux * w
+					c.elan += 0.9 * toux * w
+					c.tete_baisse += 1.6 * toux * w
+					c.epaules += toux * w
+					c.decal += Vector2(sin(t * 51.0) * 0.4 * toux, 0.0)
+					md = md.lerp(Vector3(8.6, 6.4, 19.5), r)
+					if tr > 0.12 and tr < 0.62:
+						c.crache = tr - 0.12
+				"veneneuse":
+					# le ventre se tord : elle se plie, les deux mains au ventre, et tremble (le poison prend la suite)
+					deux = true
+					c.penche += 3.4 * r
+					c.bas += 1.8 * r
+					c.tete_baisse += 2.0 * r
+					c.decal += Vector2(sin(t * 47.0) * 0.4 * r, 0.0)
+					md = md.lerp(Vector3(4.9, 1.2, 17.4), r)
+					mg = mg.lerp(Vector3(4.7, -1.2, 16.6), r)
+				"somnifere":
+					# elle bâille (la tête part en arrière, la main à la bouche, les yeux clos), puis vacille
+					var baille := sin(PI * clampf(tr / 0.9, 0.0, 1.0)) * w
+					c.tete_baisse -= 1.3 * baille
+					c.epaules += 1.4 * baille
+					md = md.lerp(bouche + Vector3(0.6, 0.0, -0.4), baille).lerp(Corps.MAIN_D, r * (1.0 - baille) * 0.6)
+					c.decal += Vector2(sin(tr * 2.6) * 1.6 * r * smoothstep(0.5, 1.0, tr), 0.0)
+					c.bas += 0.9 * r * smoothstep(0.6, 1.2, tr)
+					c.tete_baisse += 1.6 * r * smoothstep(0.8, 1.3, tr)
+					if baille > 0.5:
+						c.yeux = 0.0
+				"voyante":
+					# elle recule d'un pas, les deux mains levées devant elle, les yeux grands ouverts, et tremble
+					deux = true
+					c.elan -= 1.5 * r
+					c.penche -= 1.3 * r
+					c.epaules += 1.6 * r
+					c.tete_baisse -= 0.5 * r
+					c.decal += Vector2(sin(t * 44.0) * 0.35 * r, 0.0) - Vector2(sin(_cap), cos(_cap) * Corps.INCL) * 1.6 * r
+					md = md.lerp(Vector3(8.4, 4.6, 27.0), r)
+					mg = mg.lerp(Vector3(8.4, -4.6, 26.0), r)
+					if r > 0.3:
+						c.yeux = 2.0
+		"piler":
+			# à genoux, le mortier au sol devant elle, tenu de la main gauche ; le pilon tourne et broie, puis se lève et écrase,
+			# trois fois (des brins sautent)
+			ou = Vector3(10.5, 0.0, 0.0)
+			outil = "pilon"
+			ouvrage = "mortier"
+			var tour := TAU * a
+			var fond := ou + Vector3(1.2 * cos(tour), 1.2 * sin(tour), 3.6 + 3.2 * maxf(-b, 0.0) - 1.2 * maxf(b, 0.0))
+			od = Vector3(0.2 + 0.16 * cos(tour), 0.16 * sin(tour), -0.96).normalized()
+			md = c.depose(fond - od * 6.0)
+			mg = c.depose(ou + Vector3(-1.4, -3.2, 3.4))
+			c.eclats = _depuis(t, PILER_COUPS)
+			c.ouvrage_u = clampf(t / 1.6, 0.0, 1.0)
+			pieds = 2.0
+		"jeter":
+			# la botte dans sa main : elle arme, le bras loin derrière, le buste tourné, et lance d'un geste large ; la botte tourne
+			# en l'air et tombe au cœur du feu
+			deux = false
+			md = Vector3(-5.5, 8.0, 24.0).lerp(Vector3(11.5, 3.5, 27.5), a) + Vector3(0.0, 0.0, 4.0 * sin(PI * a))
+			od = Vector3(-0.3, 0.2, 0.93).lerp(Vector3(0.9, 0.0, 0.43), a)
+			if t < 0.52:
+				outil = "botte"
+			else:
+				var v := Vector2(sin(_cap), cos(_cap) * Corps.INCL) * 26.0
+				if _jet_feu != null and is_instance_valid(_jet_feu):
+					v = _jet_feu.position - position
+				var au_sol := Vector2(v.x, v.y / Corps.INCL)
+				ouvrage = "botte_vol"
+				ou = Vector3(au_sol.x * sin(_cap) + au_sol.y * cos(_cap), (-au_sol.x * cos(_cap) + au_sol.y * sin(_cap)) * sens, 6.0)
+				c.ouvrage_u = b
 		"becher":
 			# la houe à deux mains : levée par-dessus l'épaule, plantée devant elle, puis tirée (la terre vient avec)
 			ou = Vector3(13.5, 0.0, 0.0)

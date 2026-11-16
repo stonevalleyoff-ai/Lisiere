@@ -79,7 +79,7 @@ func a_apprivoiser():
 		if str(b.role) != "proie" or float(b.pv) <= 0.0 or not apprivoisable(b):
 			continue
 		var d: float = b.position.distance_to(j.position) - float(b.largeur) * 0.25
-		if d < d0 and (float(b.mange) > 0.6 or float(b.confiance) >= 0.8):
+		if d < d0 and (float(b.mange) > 0.6 or float(b.confiance) >= 0.8 or float(b.endormie) > 0.0):
 			d0 = d
 			mieux = b
 	return mieux
@@ -131,6 +131,7 @@ func apprivoiser(b) -> bool:
 		return false
 	A.objets["licol"] = A.possede("licol") - 1
 	b.role = "compagne"
+	b.endormie = 0.0
 	b.harnais = {"licol": true}
 	b.suit_la = true
 	b.faim = 80.0
@@ -380,7 +381,7 @@ func tentation(b):
 	var mieux = null
 	var d0: float = float(b.flair) * 1.5
 	for s in _atelier().poses:
-		if is_instance_valid(s) and str(s.genre) == "appat" and float(s.etat.get("reste", 0.0)) > 0.0:
+		if is_instance_valid(s) and str(s.genre) == "appat" and str(s.etat.get("sorte", "")) == "" and float(s.etat.get("reste", 0.0)) > 0.0:
 			var d: float = s.position.distance_to(b.position)
 			if d < d0:
 				d0 = d

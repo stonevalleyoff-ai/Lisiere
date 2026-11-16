@@ -3,7 +3,8 @@ extends Node2D
 # Il brûle son bois (compté en secondes de feu), éclaire d'autant plus qu'il en a, et tient les bêtes à distance : un chasseur
 # n'entre pas dans sa lumière. Éteint, il reste un cercle de pierres et des cendres : une bûche le rallume.
 # Ce qu'on en voit : des flammes en deux langues (shaders/feu_flamme.gdshader), des braises qui rougeoient dans le foyer, des
-# étincelles qui montent, des cendres, une fumée qui dérive au vent, une lueur au sol, et l'ombre de ce qui l'entoure, poussée
+# étincelles qui montent, des cendres, une fumée qui dérive au vent (et, une botte d'herbe âcre jetée dedans, une colonne ocre,
+# épaisse, et sa nappe au sol : scripts/effets_herbes.gd, Fumee), une lueur au sol, et l'ombre de ce qui l'entoure, poussée
 # par sa lumière, et l'air qui tremble au-dessus des pointes. Le bord visible de sa lumière est le bord de la zone sûre : les
 # chasseurs s'arrêtent aux 0,85 du rayon.
 # Un feu qui meurt rapetisse, rougit et fume ; mort, ses braises s'éteignent une à une, puis la fumée.
@@ -13,6 +14,7 @@ const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/effets_textures.gd")
 const FLAMME := preload("res://shaders/feu_flamme.gdshader")
 const Trace := preload("res://scripts/interface_trace.gd")
+const Herbes := preload("res://scripts/effets_herbes.gd")
 const RAYON_MIN := 90.0
 const BRAISES_DUREE := 26.0     # secondes : les braises d'un feu mort
 const FUMEE_DUREE := 16.0       # secondes : sa dernière fumée
@@ -42,6 +44,7 @@ var _cle := ""
 var _ombres: Array = []
 var _ombres_t := 0.0
 var _mobile := false
+var _acre                       # la fumée âcre d'une botte d'herbe (Herbes.Fumee), le temps qu'elle dure ; null : aucune
 
 
 # la lumière d'un feu (et celle de la torche) : vive au centre, qui baisse doucement, puis un bord qu'on lit, vers les 0,85
@@ -256,6 +259,7 @@ func _maj(delta: float) -> void:
 	fumee.position = Vector2(0, -(6.0 + 30.0 * _vif))
 	var fa := lerpf(0.55, 1.0, meurt) if vif else clampf(1.0 - _eteint / FUMEE_DUREE, 0.0, 1.0)
 	fumee.self_modulate = Color(1, 1, 1, fa)
+	_enfumer(delta, vent)
 	etincelles.position = Vector2(0, -(6.0 + 16.0 * _vif))
 	# le foyer se redessine chaque image (ses braises battent) ; le reste, quand il change
 	_foyer.queue_redraw()
@@ -270,6 +274,30 @@ func _maj(delta: float) -> void:
 		_ombres_t = 0.4
 		_chercher_ombres()
 	_sol.queue_redraw()
+
+
+# la fumée âcre d'une botte jetée au feu (scripts/botanique.gd) : montée quand il le faut, réglée chaque image, défaite quand
+# il n'en reste rien ; elle s'étale jusqu'où ce feu tient alors les chasseurs. La fumée de toujours jaunit avec elle
+func _enfumer(delta: float, vent: float) -> void:
+	var B = jeu.get("botanique") if jeu != null else null
+	var force: float = float(B.fumee(self)) if B != null else 0.0
+	# (la botte vole encore vers lui — le geste « jeter », scripts/joueur.gd : la fumée ne prend que lorsqu'elle y tombe)
+	var j = jeu.joueur if jeu != null else null
+	if _acre == null and j != null and str(j.get("atelier")) == "jeter" and float(j.get("atelier_t")) < 0.86:
+		force = 0.0
+	if force > 0.0 and _acre == null and is_inside_tree():
+		_acre = Herbes.Fumee.new()
+		add_child(_acre)
+		_acre.poser(_sol, _mobile, _graine)
+	if _acre == null:
+		return
+	# (les chasseurs s'arrêtent aux 0,85 du rayon ; la fumée les tient GARDE fois plus loin)
+	var portee := maxf(rayon(), RAYON_MIN) * 0.85 * (float(B.GARDE) if B != null else 1.5)
+	var ambiance: Color = jeu.effets.teinte if jeu != null and jeu.get("effets") != null else Color.WHITE
+	fumee.self_modulate = fumee.self_modulate * Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.84, 0.56), force)
+	if not _acre.regler(force, vent, portee, ambiance, _vif, delta, rayon()):
+		_acre.queue_free()
+		_acre = null
 
 
 func _buches_n() -> int:

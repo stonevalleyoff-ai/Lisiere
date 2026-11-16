@@ -61,6 +61,8 @@ const CHANVRE := Color("9c9168")
 const FERRAILLE := Color("8b8a84")
 const ROUILLE := Color("8a5433")
 const DIR_LAMPE := Vector3(0.992, 0.0, -0.125)
+const HERBE := Color("6f8a45")
+const MALADE := Color("9eae80")
 # trempée, elle s'assombrit (le joueur en teinte tout son dessin) ; la toile cirée, non : sa couleur est relevée d'autant
 const TON_MOUILLE := Color(0.7, 0.74, 0.85)
 
@@ -131,6 +133,10 @@ var filet := 0.0              # le filet d'eau de l'outre, de 0 à 1
 var selle := 0.0              # de 0 (à pied) à 1 (en selle : assise, une jambe de chaque côté)
 var dort := 0.0               # le duvet qui la couvre, de 0 à 1
 var respire := 0.0            # son souffle de dormeuse, de -1 à 1
+# ce que les herbes lui font (scripts/botanique.gd ; scripts/joueur.gd, _poser_herbes)
+var malade := 0.0             # de 0 à 1 : le poison verdit son visage et ses mains
+var crache := -1.0            # depuis qu'elle a recraché l'herbe âcre, en secondes ; -1 : rien
+var soupir := 0.0             # de 0 à 1 : le long souffle du poison qui la quitte
 var c_visage := VISAGE
 var c_main := MAIN
 var c_botte := BOTTE
@@ -218,6 +224,8 @@ func preparer() -> void:
 	# (le froid bleuit son visage et ses mains, la chaleur les rougit ; la boue colle à ses bottes)
 	c_visage = VISAGE.lerp(P.LUNE.lightened(0.5), 0.45 * froid).lerp(P.BRAISE_ROUGE.lerp(VISAGE, 0.3), 0.8 * chaud)
 	c_main = MAIN.lerp(P.LUNE.lightened(0.4), 0.5 * froid).lerp(P.BRAISE_ROUGE.lerp(MAIN, 0.4), 0.6 * chaud)
+	c_visage = c_visage.lerp(MALADE, 0.6 * malade)
+	c_main = c_main.lerp(MALADE.darkened(0.1), 0.45 * malade)
 	c_botte = BOTTE.lerp(P.TERRE.lerp(P.ENCRE_DOUCE, 0.25), 0.75 * boue)
 	# (la pelisse l'épaissit : les épaules, la taille, l'ourlet, les manches)
 	var gros := 1.12 if pelisse else 1.0
@@ -310,6 +318,8 @@ func dessiner() -> void:
 			_perles()
 		if froid > 0.2:
 			_buee()
+		if crache >= 0.0 or soupir > 0.02:
+			_bouche_herbes()
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
@@ -723,7 +733,11 @@ func _capuche() -> void:
 			if prof(oeil, th) < -0.8:
 				continue
 			var ex := fc.x + proj(oeil, th).x - proj(Vector3(3.6, 0.0, 0.0), th).x
-			if yeux > 0.5:
+			if yeux > 1.5:
+				# (grands ouverts : on en voit le blanc — la peur d'une vision, le sursaut de qui s'endormait)
+				ci.draw_rect(Rect2(ex - 1.05, ey - 1.15, 2.1, 2.3), P.PAPIER)
+				ci.draw_rect(Rect2(ex - 0.5, ey - 0.55, 1.0, 1.1), P.ENCRE)
+			elif yeux > 0.5:
 				ci.draw_rect(Rect2(ex - 0.6, ey - 0.65, 1.2, 1.3), P.ENCRE)
 			else:
 				ci.draw_line(Vector2(ex - 0.8, ey), Vector2(ex + 0.8, ey), P.ENCRE, 0.7, true)
@@ -1220,6 +1234,29 @@ func _outil(main: Vector3) -> void:
 			# le bol de bois, plein de lait
 			_forme(PackedVector2Array([p + Vector2(-2.9, -0.9), p + Vector2(2.9, -0.9), p + Vector2(1.9, 1.9), p + Vector2(-1.9, 1.9)]), BOIS, 0.9)
 			ci.draw_line(p + Vector2(-2.1, -0.7), p + Vector2(2.1, -0.7), P.PAPIER, 1.1, true)
+		"feuille":
+			# un brin d'herbe entre ses doigts : sa tige, deux feuilles, une fleur pâle au bout
+			var bout := pt(main + d * 4.4, buste)
+			var u := (bout - p).normalized() if bout.distance_to(p) > 0.1 else Vector2.UP
+			var n := Vector2(-u.y, u.x)
+			ci.draw_line(p - u * 0.8, bout, P.ENCRE, 1.6, true)
+			ci.draw_line(p - u * 0.8, bout, HERBE, 0.8, true)
+			_forme(PackedVector2Array([p + u * 1.0, p + u * 2.2 + n * 2.0, p + u * 3.3 + n * 0.5]), HERBE, 0.6)
+			_forme(PackedVector2Array([p + u * 1.8, p + u * 2.8 - n * 1.9, p + u * 3.9 - n * 0.4]), HERBE.darkened(0.15), 0.6)
+			ci.draw_circle(bout, 1.15, P.ENCRE)
+			ci.draw_circle(bout, 0.75, P.PAPIER.lerp(P.PEUR, 0.3))
+		"pilon":
+			# le pilon : un galet long, tenu par le haut, sa tête lourde en bas
+			var bout := pt(main + d * 6.0, buste)
+			var cul := pt(main - d * 1.4, buste)
+			var u := (bout - cul).normalized() if bout.distance_to(cul) > 0.1 else Vector2.DOWN
+			ci.draw_line(cul, bout, P.ENCRE, 3.4, true)
+			ci.draw_line(cul, bout, PIERRE, 2.0, true)
+			_forme(_ellipse(bout - u * 0.6, 2.0, 1.7, 8, u.angle()), PIERRE.darkened(0.08), 0.8)
+			ci.draw_line(cul + u * 1.0 + Vector2(-0.6, 0.0), bout - u * 2.2 + Vector2(-0.6, 0.0), PIERRE.lightened(0.28), 0.7, true)
+		"botte":
+			# la botte d'herbe âcre, tenue par le milieu
+			_botte(pt(main - d * 3.8, buste), pt(main + d * 4.6, buste))
 
 
 # l'ouvrage, posé devant elle (il ne suit pas son corps) ; ce qui en saute quand elle frappe, le fil qui le lie à sa main
@@ -1329,6 +1366,34 @@ func _ouvrage() -> void:
 				for k in 3:
 					var e := fposmod(horloge * 3.1 + k * 0.37, 1.0)
 					ci.draw_circle(c + Vector2((k - 1) * 2.4 * e, -2.4 * sin(PI * e)), 0.5, Color(ton, 0.7 * filet * (1.0 - e)))
+		"mortier":
+			# le mortier : une pierre creuse posée au sol, qui tressaute sous le pilon ; l'herbe y dépasse d'abord en brins, puis
+			# n'est plus qu'une pâte sombre au fond
+			var c := sol(Vector3(o.x, o.y, 0.0)) + (Vector2(0.0, 0.5) if eclats >= 0.0 and eclats < 0.06 else Vector2.ZERO)
+			_remplir(_ellipse(c + Vector2(0.0, 2.0), 5.8, 1.8, 10), Color(P.ENCRE, 0.22))
+			var panse := PackedVector2Array([c + Vector2(-4.6, -3.0), c + Vector2(4.6, -3.0), c + Vector2(4.0, 0.6), c + Vector2(2.4, 2.2), c + Vector2(-2.4, 2.2), c + Vector2(-4.0, 0.6)])
+			_forme(_arrondi(panse, 1), PIERRE.darkened(0.12))
+			ci.draw_line(c + Vector2(-3.7, -1.0), c + Vector2(-2.7, 1.1), PIERRE.lightened(0.2), 0.7, true)
+			ci.draw_line(c + Vector2(1.6, 0.9), c + Vector2(3.2, -0.6), PIERRE.darkened(0.3), 0.7, true)
+			_forme(_ellipse(c + Vector2(0.0, -3.0), 4.5, 1.5, 12), PIERRE.darkened(0.45), 0.8)
+			_remplir(_ellipse(c + Vector2(0.0, -2.7), 3.2, 0.9, 8), HERBE.lerp(HERBE.darkened(0.4), ouvrage_u))
+			if ouvrage_u < 0.62:
+				for k in 3:
+					ci.draw_line(c + Vector2(-1.8 + 1.8 * k, -2.9), c + Vector2(-2.9 + 2.7 * k, -5.6 + 0.7 * k + 2.4 * ouvrage_u), HERBE.lightened(0.1), 0.8, true)
+			ci.draw_line(c + Vector2(-3.9, -3.5), c + Vector2(-1.2, -4.3), PIERRE.lightened(0.32), 0.7, true)
+		"botte_vol":
+			# la botte lancée : elle tourne en l'air, de sa main au cœur du feu, où elle disparaît ; des brins s'en détachent
+			if ouvrage_u < 0.98:
+				var depart := pt(Vector3(11.5, 3.5 * outil_main, 27.5), buste)
+				var but := sol(o)
+				var x := ouvrage_u
+				var q := depart.lerp(but, x) + Vector2(0.0, -15.0 * sin(PI * x))
+				var tourne := Vector2.from_angle(x * 9.0 + 0.6) * 3.8
+				_botte(q - tourne, q + tourne)
+				for k in 2:
+					var y := maxf(0.0, x - 0.13 * (k + 1))
+					var r := depart.lerp(but, y) + Vector2(0.0, -15.0 * sin(PI * y) + 2.2 * (k + 1))
+					ci.draw_line(r, r + Vector2(1.3, 0.8), Color(CHANVRE, 0.75 * (1.0 - x)), 0.7, true)
 		"bol":
 			# le bol sous elle : le lait y file, d'une main puis de l'autre, et monte
 			var c := sol(Vector3(o.x, o.y, 0.0))
@@ -1357,6 +1422,10 @@ func _ouvrage() -> void:
 		var terre := ouvrage == "fouille" or ouvrage == "terre"
 		var c := sol(o) + (Vector2(0.0, -1.5) if not terre else Vector2.ZERO)
 		var teinte := grain if not terre else P.TERRE.lightened(0.15)
+		if ouvrage == "mortier":
+			# (sous le pilon : des brins d'herbe, qui sautent du creux)
+			teinte = HERBE.lightened(0.12)
+			c += Vector2(0.0, -1.6)
 		var n := 7 if ouvrage == "terre" else 4
 		for k in n:
 			var v := Vector2(-16.0 + 44.0 * k / n + 5.0 * sin(k * 2.3), -26.0 - 7.0 * cos(k * 1.7))
@@ -1532,6 +1601,44 @@ func _buee() -> void:
 	var p := bouche + devant * (2.5 + 8.0 * u) + Vector2(0.0, -3.0 * u * u)
 	ci.draw_circle(p, 1.5 + 3.0 * u, Color(pale, a))
 	ci.draw_circle(p + devant * 2.2 + Vector2(0.8, -1.4), 1.0 + 2.2 * u, Color(pale, a * 0.7))
+
+
+# ce que les herbes font sortir de sa bouche : ce qu'elle recrache (l'herbe âcre : des gouttes et des brins mâchés, en gerbe
+# courte, qui retombent), le long souffle du poison qui la quitte
+func _bouche_herbes() -> void:
+	if cos(tete) < -0.35:
+		return
+	var devant := Vector2(sin(tete), cos(tete) * INCL)
+	var bouche := pt(Vector3(0.6 + tete_baisse * 0.5, 0.0, 37.4 + epaules * 0.4 - tete_baisse), buste) + proj(Vector3(3.9, 0.0, -3.2), tete)
+	if crache >= 0.0 and crache < 0.5:
+		var x := crache / 0.5
+		for k in 6:
+			var v := devant * (9.0 + 4.0 * sin(k * 2.1)) + Vector2(2.2 * cos(k * 1.7), -4.5 - 2.0 * cos(k * 2.9))
+			var q := bouche + v * x + Vector2(0.0, 15.0 * x * x)
+			if k % 2 == 0:
+				ci.draw_line(q, q + v.normalized() * 1.4, Color(HERBE.darkened(0.1), 1.0 - x * x), 0.9, true)
+			else:
+				ci.draw_circle(q, 0.6, Color(P.PAPIER.lerp(HERBE, 0.3), 0.85 * (1.0 - x)))
+	if soupir > 0.02:
+		var pale := P.PAPIER.lerp(P.ECHO, 0.25)
+		var p := bouche + devant * (2.5 + 7.0 * soupir) + Vector2(0.0, 1.5 * soupir)
+		ci.draw_circle(p, 1.2 + 2.4 * soupir, Color(pale, 0.32 * soupir))
+		ci.draw_circle(p + devant * 2.4 + Vector2(0.6, 0.9), 0.9 + 1.8 * soupir, Color(pale, 0.22 * soupir))
+
+
+# une botte d'herbe sèche : des tiges liées d'un brin, leurs têtes en éventail
+func _botte(cul: Vector2, bout: Vector2) -> void:
+	var u := (bout - cul).normalized() if bout.distance_to(cul) > 0.1 else Vector2.RIGHT
+	var n := Vector2(-u.y, u.x)
+	var paille := CHANVRE.lerp(HERBE, 0.35)
+	ci.draw_line(cul, bout, P.ENCRE, 3.6, true)
+	for k in 4:
+		var e := (k - 1.5) * 0.7
+		ci.draw_line(cul + n * e * 0.6, bout + n * e * 1.5 + u * (0.6 - 0.3 * absf(e)), paille.darkened(0.12 * (k % 2)), 0.8, true)
+	var milieu := cul.lerp(bout, 0.45)
+	ci.draw_line(milieu - n * 1.7, milieu + n * 1.7, ROULEAU.darkened(0.3), 1.1, true)
+	for k in 3:
+		ci.draw_circle(bout + n * (k - 1) * 1.5 + u * 0.4, 0.75, HERBE.darkened(0.25))
 
 
 # --- la silhouette seule (l'éclair d'une blessure, le liseré de lune la nuit) ---
