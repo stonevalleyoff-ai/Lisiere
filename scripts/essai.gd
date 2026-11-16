@@ -737,6 +737,60 @@ func _le_lance_pierre(F: Dictionary) -> void:
 	verif(not is_instance_valid(proie) or proie.pv <= 0.0 and jeu.chassees == chassees0 + 1 and vide,
 		"un galet peut tuer : c'est une chasse ; sans galet, on ne tire plus")
 	_oter(proie)
+	# la nuit, on ne tire que sur ce qu'on voit : des yeux qui brillent, oui ; un chasseur qui s'est détourné, non
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * (1.0 - jeu.part_nuit) + 2.0
+	var torche0: float = j.torche
+	j.torche = 0.0
+	var feux0: Array = jeu.feux.duplicate()
+	jeu.feux.clear()
+	inv["galet"] = 10
+	var rode = _bete(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(170.0, 20.0), {})
+	rode.conduite = false
+	rode.pv = 500.0
+	rode.detourne = 0.0
+	var pv_r: float = rode.pv
+	# (vers des yeux, dans le noir, elle manque souvent : douze galets, pour être sûr d'en voir toucher un)
+	var tires := 0
+	inv["galet"] = 12
+	while tires < 12 and rode.pv == pv_r:
+		tires += 1
+		tirer.call()
+	var vu: bool = rode.pv < pv_r
+	rode.detourne = 1.0
+	pv_r = rode.pv
+	inv["galet"] = 6
+	var partis := 0
+	for i in 6:
+		if tirer.call():
+			partis += 1
+	verif(vu and partis == 6 and rode.pv == pv_r and jeu.lumiere_du_jour() < 0.3 and RR.TIR_NOIR >= 15.0,
+		"la nuit, dans le noir : elle vise les yeux qui brillent, moins juste qu'en pleine lumière (touché au %s tir) ; détourné, on le perd, et ses galets partent droit devant" % (
+			"1er" if tires == 1 else "%de" % tires))
+	_oter(rode)
+	# un chasseur à son affût, touché de loin : il quitte son poste et se détourne ; la Noire : un galet l'agace à peine
+	var guet = _bete(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(260.0, 0.0), {"traque": 1.0})
+	guet.conduite = false
+	guet.pv = 500.0
+	guet.pv_max = 500.0
+	guet._poste_feu = guet
+	guet._af = guet.Affut.POSTE
+	var Af = guet.Affut
+	# (un faux feu, le temps du test : il lui faut un rayon, une place, une flamme)
+	var faux = jeu.Feu.new()
+	faux.jeu = jeu
+	faux.position = j.position
+	faux.bois = 40.0
+	jeu.monde.add_child(faux)
+	guet._poste_feu = faux
+	guet.blesser(1.0, j.position)
+	var quitte: bool = guet._af == Af.CHANGE
+	_oter(guet)
+	faux.queue_free()
+	verif(quitte and RR.TIR_NOIRE * RR.DEGATS_TIR * 20.0 < RR.NOIRE_ENDURE,
+		"un chasseur à l'affût, touché de loin, quitte son poste et se détourne ; la Noire : vingt galets ne suffisent pas à la faire partir (%d sur %d)" % [
+			int(RR.TIR_NOIRE * RR.DEGATS_TIR * 20.0), int(RR.NOIRE_ENDURE)])
+	jeu.feux.assign(feux0)
+	j.torche = torche0
 	A.poses.erase(etabli)
 	etabli.queue_free()
 	j.position = garde["p"]

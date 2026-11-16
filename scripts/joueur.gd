@@ -38,6 +38,12 @@ const LANCE_REPOS := Vector3(0.22, -0.04, 1.0)
 const LANCE_ESTOC := Vector3(1.0, 0.0, 0.06)
 const BLESSURE := 0.36
 const SOL := 300.0                  # la pesanteur de la torche lâchée
+# le tir au lance-pierre, en parts du geste : le bras levé, la poche à la joue, le retour ; et combien de temps la fourche
+# reste dans son poing après un tir (elle ne la rend pas à sa ceinture entre deux galets)
+const TIR_LEVE := 0.2
+const TIR_PLEIN := 0.46
+const TIR_RETOUR := 0.76
+const TIR_GARDE := 1.15
 
 # les gestes : leur durée, le moment où ils touchent, de combien elle se met de biais (pour frapper de la main droite), ce que
 # tient sa main ; et leurs clés : [moment, poids (la main suit la clé), la main (devant, à droite, en hauteur, vers ce qu'elle
@@ -78,12 +84,10 @@ const GESTES := {
 		[0.4, 1.0, Vector3(14.0, 1.5, 22.5), 0.8, 2.2, 0.35, 2.6, true],
 		[0.58, 1.0, Vector3(13.0, 1.8, 22.0), 0.8, 1.9, 0.3, 2.1],
 		[1.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0]]},
-	# le lance-pierre : le bras tendu vers ce qu'elle vise, elle tire la poche, et lâche (à « touche » : le galet part)
-	"tir": {"duree": 0.5, "touche": 0.5, "biais": 0.3, "deux_mains": false, "objet": ["", 0.0, 0.0], "cles": [
+	# le lance-pierre : son dessin est à part (_poser_tir : lever, tirer la poche, tenir, lâcher, revenir) ; ici sa durée, l'instant
+	# où elle lâche (le galet part : le signal impact, genre « tir »), et de combien elle se met de biais, l'épaule gauche en avant
+	"tir": {"duree": 0.54, "touche": 0.56, "biais": 0.7, "deux_mains": true, "objet": ["", 0.0, 0.0], "cles": [
 		[0.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0],
-		[0.25, 1.0, Vector3(13.0, 2.0, 21.0), 0.6, 0.6, 0.1, 0.8],
-		[0.5, 1.0, Vector3(13.5, 2.0, 21.5), 0.5, -0.6, -0.2, 0.4, true],
-		[0.7, 1.0, Vector3(13.0, 2.2, 21.0), 0.5, 0.4, 0.1, 0.6],
 		[1.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0]]},
 	"lance": {"duree": 0.34, "touche": 0.34, "biais": 0.35, "deux_mains": true, "objet": ["", 0.0, 0.0], "cles": [
 		[0.0, 0.0, Vector3(3.4, 7.4, 18.0), 0.0, 0.0, 0.0, 0.0],
@@ -418,6 +422,8 @@ var _geste := ""
 var _geste_t := 0.0
 var _geste_cap := 0.0
 var _touche_fait := false
+var _tir_garde := 0.0               # la fourche reste dans son poing : le temps qu'il lui reste
+var _lance_k := 0.0                 # sa lance, posée le temps de tirer (de 0, dans sa main, à 1)
 var _blesse := -1.0                 # depuis la dernière morsure (-1 : aucune)
 var _recul := Vector2.ZERO
 var _mort := -1.0                   # depuis qu'elle tombe
@@ -600,6 +606,11 @@ func _commencer(g: String, d: Vector2) -> void:
 	# (de biais : elle frappe de la main droite, et l'on voit le geste plutôt que son dos)
 	var b: float = GESTES[g]["biais"]
 	_cap_cible = _geste_cap + (b if sin(_geste_cap + b) >= sin(_geste_cap - b) else -b)
+	_tir_garde = 0.0
+	if g == "tir":
+		# (la fourche est dans sa main gauche : c'est l'épaule gauche qui va vers ce qu'elle vise)
+		_cap_cible = _geste_cap - b
+		_tir_garde = TIR_GARDE
 	_vitesse_tour = 26.0
 
 
@@ -696,6 +707,10 @@ func _process(delta: float) -> void:
 		if u >= 1.0:
 			_geste = ""
 			_vitesse_tour = 14.0
+	# (le lance-pierre : la fourche reste un moment dans son poing ; sa lance attend, posée, tant qu'elle tire sans bouger)
+	_tir_garde = maxf(0.0, _tir_garde - dt) if _en_garde() else 0.0
+	var pose := _geste == "tir" or (_tir_garde > 0.0 and _marche < 0.2)
+	_lance_k = move_toward(_lance_k, 1.0 if pose and lance > 0 else 0.0, dt * 9.0)
 	_avancer_atelier(dt)
 	if _blesse >= 0.0:
 		_blesse += dt
@@ -938,6 +953,15 @@ func _poser() -> void:
 	c.selle = 0.0
 	c.lance_pose = 0.0
 	c.dort = 0.0
+	# son lance-pierre : pendu à sa ceinture ; dans son poing gauche le temps d'un tir et un moment après, les boyaux pendants
+	c.fronde = 0
+	if monture == null and _porte_fronde():
+		c.fronde = 2 if _geste == "tir" or _tir_garde > 0.0 else 1
+		c.fronde_bal = -bal * 0.085 - clampf(_cape.x * 0.05, -0.3, 0.3)
+		c.fronde_u = Vector3(0.34, 0.0, 0.94)
+		c.fronde_a = Vector3(0.62, 0.78, 0.0)
+		c.fronde_galet = false
+		c.poche = c.main_g + c.fronde_u * 6.6 + Vector3(0.9 - bal * 0.25, 0.4, -6.4)
 	if lampe_en_main:
 		# (la lampe pointe où va le faisceau, quel que soit le sens de son corps)
 		var fa := PI * (1.0 - _faisceau_x) * 0.5
@@ -954,10 +978,20 @@ func _poser() -> void:
 	_poser_herbes(c)
 	if _selle_k > 0.0 or _jetee >= 0.0:
 		_poser_selle(c, en_main or lampe_en_main)
+	if c.fronde == 2 and _geste != "tir":
+		c.poche = c.main_g + c.fronde_u * 6.6 + Vector3(0.9 - bal * 0.25, 0.4, -6.4)
 	if _geste != "":
 		_poser_geste(c, en_main or lampe_en_main)
 	elif _at_w > 0.0 and _at_nom != "":
 		_poser_atelier(c, en_main or lampe_en_main)
+	if c.lance and _lance_k > 0.0 and atelier == "":
+		# (sa lance, posée le temps de tirer : à ses pieds, du côté de la main qui la tenait ; dans son dos si elle marche)
+		var cote: float = c.lance_main
+		var m_l := smoothstep(0.1, 0.5, m)
+		c.lance_pose = maxf(c.lance_pose, smoothstep(0.0, 1.0, _lance_k))
+		c.lance_sol = PackedVector2Array([
+			c.sol(Vector3(-11.0, cote * 11.5, 0.5)).lerp(c.pt(Vector3(-6.0, 3.0, 9.0), c.buste), m_l),
+			c.sol(Vector3(14.0, cote * 11.5, 0.5)).lerp(c.pt(Vector3(-4.6, -3.6, 43.0), c.buste), m_l)])
 	if _sommeil > 0.0 and not morte:
 		_poser_sommeil(c)
 	if _feu_k > 0.0:
@@ -1644,6 +1678,9 @@ static func _vers_corps(v: Vector3, delta: float) -> Vector3:
 
 
 func _poser_geste(c, prise: bool) -> void:
+	if _geste == "tir":
+		_poser_tir(c)
+		return
 	var g: Dictionary = GESTES[_geste]
 	var u := clampf(_geste_t / float(g["duree"]), 0.0, 1.0)
 	var k: Array = _cles(u, g["cles"])
@@ -1673,6 +1710,92 @@ func _poser_geste(c, prise: bool) -> void:
 	c.main_d = c.main_d.lerp(main, w)
 	if g["deux_mains"] and not prise and not (c.lance and c.lance_main < 0.0):
 		c.main_g = c.main_g.lerp(c.main_d + _vers_corps(Vector3(-0.8, -3.2, -1.2), delta), w * 0.85)
+
+
+# a-t-elle un lance-pierre ? (l'atelier le sait : scripts/atelier.gd ; sans lui, un banc d'essai, non)
+func _porte_fronde() -> bool:
+	var jeu = _jeu()
+	var a = jeu.get("atelier") if jeu != null else null
+	return a != null and int(a.possede("lance_pierre")) > 0
+
+
+# la fourche est-elle encore dans son poing ? (un autre geste, le sommeil, la selle, la mort la rendent à sa ceinture)
+func _en_garde() -> bool:
+	return (_geste == "" or _geste == "tir") and atelier == "" and not morte and not endormie and monture == null
+
+
+# une main ramenée à portée de son épaule : le bras ne s'allonge pas, et ce qu'elle tient reste dans son poing
+static func _a_portee(c, main: Vector3, cote: float) -> Vector3:
+	var epaule := Vector3(0.2, cote * float(c._epaule), 25.8 + float(c.epaules))
+	var d := main - epaule
+	return main if d.length() <= 13.9 else epaule + d.normalized() * 13.9
+
+
+# Le tir au lance-pierre. Elle se campe de biais, l'épaule gauche vers ce qu'elle vise, et la regarde ; le bras gauche se
+# tend, la fourche au poing (la torche ou la lampe restent dans ce poing-là : la flamme va devant, vers ce qu'elle vise) ; la
+# main droite pince la poche, la tire jusqu'à la joue (les boyaux se tendent, elle se cambre, la fourche vient un peu vers
+# elle), tient un instant (le poing tremble) ; elle lâche : la poche claque vers l'avant et retombe en fouettant, la fourche
+# bascule, la main qui tirait part en arrière, le corps suit le coup ; puis elle revient. Sa lance, si elle en a une, est
+# posée le temps de tirer (_lance_k) : à ses pieds si elle ne bouge pas, dans son dos si elle marche.
+func _poser_tir(c) -> void:
+	var g: Dictionary = GESTES["tir"]
+	var duree: float = g["duree"]
+	var u := clampf(_geste_t / duree, 0.0, 1.0)
+	var touche: float = g["touche"]
+	var leve := smoothstep(0.0, TIR_LEVE, u)
+	var tire := smoothstep(TIR_LEVE - 0.05, TIR_PLEIN, u)
+	tire = 1.0 - (1.0 - tire) * (1.0 - tire)
+	# (depuis qu'elle a lâché, en secondes ; avant : négatif)
+	var apres := (u - touche) * duree
+	var retour := smoothstep(TIR_RETOUR, 1.0, u)
+	var w := leve * (1.0 - retour)
+	var tendu := tire if apres < 0.0 else 0.0
+	var claque := exp(-apres * 15.0) if apres >= 0.0 else 0.0
+	c.bas += 0.9 * w * (1.0 - 0.55 * _marche)
+	c.penche += (1.5 * claque - 1.2 * tendu) * (1.0 - retour)
+	c.elan = (0.9 * claque - 0.7 * tendu) * (1.0 - retour)
+	c.buste = _cap + (0.12 * claque - 0.2 * tendu) * (1.0 - retour)
+	c.tete = lerp_angle(c.buste + _tete * (1.0 - w), _geste_cap, w)
+	c.tete_baisse += 0.4 * tendu
+	c.epaules += 0.5 * tendu
+	# les mains, données vers ce qu'elle vise (devant, à sa droite, en hauteur) ; de dos, la fourche monte un peu : on la voit
+	# par-dessus son épaule
+	var delta := wrapf(_geste_cap - c.buste, -PI, PI)
+	var dos := maxf(0.0, -cos(_geste_cap))
+	var tient := tendu * smoothstep(TIR_PLEIN - 0.06, touche, u)
+	var fourche := Vector3(17.2 - 1.3 * tendu + 1.3 * claque, -4.6, 28.6 + 2.8 * dos - 1.0 * claque)
+	fourche += Vector3(0.0, sin(_t * 61.0) * 0.22, sin(_t * 47.0) * 0.28) * tient
+	var joue := Vector3(2.6, 2.4, 32.3 + 0.8 * dos)
+	var pince := Vector3(10.4, -1.8, 28.8 + 2.4 * dos)
+	var droite := pince.lerp(joue, tire)
+	if apres >= 0.0:
+		# (elle a lâché : les doigts s'ouvrent, la main part en arrière)
+		droite = joue + Vector3(-2.4, 1.6, -0.8) * (1.0 - exp(-apres * 30.0))
+	var repos_g: Vector3 = c.main_g
+	c.main_g = repos_g.lerp(_a_portee(c, _vers_corps(fourche, delta), -1.0), w)
+	c.main_d = c.main_d.lerp(_a_portee(c, _vers_corps(droite, delta), 1.0), w)
+	# la fourche : tenue presque à plat (de profil, on voit ses deux branches l'une au-dessus de l'autre, et les boyaux en
+	# pointe jusqu'à la joue ; avec la torche, couchée de l'autre côté et un peu en avant : elles ne se mêlent pas),
+	# tirée vers elle par les boyaux ; au lâcher, elle bascule vers l'avant
+	var cote := -1.0 if c.torche else 1.0
+	var incline := (-0.4 if c.torche else 0.0) + 0.34 * tendu - (1.15 * exp(-apres * 8.0) if apres >= 0.0 else 0.0)
+	var monte := Vector3(-sin(incline), -sin(cote) * cos(incline), cos(cote) * cos(incline))
+	var axe := Vector3(0.0, cos(cote), sin(cote))
+	c.fronde_u = c.fronde_u.lerp(_vers_corps(monte, delta), w).normalized()
+	c.fronde_a = c.fronde_a.lerp(_vers_corps(axe, delta), w).normalized()
+	# la poche : elle pend sous la fourche ; dans sa main dès qu'elle l'a pincée ; lâchée, elle file devant la fourche et
+	# retombe en fouettant
+	var pend: Vector3 = c.main_g + c.fronde_u * 6.6 + Vector3(0.9, 0.4, -6.4)
+	c.fronde_galet = false
+	if apres < 0.0:
+		var prise := smoothstep(TIR_LEVE * 0.45, TIR_LEVE * 0.95, u)
+		c.poche = pend.lerp(c.main_d, prise)
+		c.fronde_galet = prise > 0.6
+	else:
+		var a := PI * 0.5 * (1.0 - exp(-apres * 9.0) * cos(apres * 30.0))
+		var l := Corps.BOYAU_REPOS * (1.0 + 0.45 * exp(-apres * 40.0))
+		var fouet: Vector3 = c.main_g + c.fronde_u * 6.6 + _vers_corps(Vector3(cos(a), 0.0, -sin(a)) * l, delta)
+		c.poche = fouet.lerp(pend, retour)
 
 
 func _poser_blessure(c) -> void:

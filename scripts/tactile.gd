@@ -281,6 +281,9 @@ func _dessiner() -> void:
 			var q2 := p + Vector2(-lw3 * 0.5, r * 0.66)
 			_dessin.draw_string_outline(g2, q2, b[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, 4, Color(P.ENCRE, 0.8))
 			_dessin.draw_string(g2, q2, b[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(ENCRE, 0.95 if dispo else 0.45))
+			if b[0] == "tir":
+				# (ce qu'il lui reste de galets, sur le bord du jeton)
+				_compteur(p + Vector2(r * 0.76, -r * 0.7), int(jeu.joueur.inventaire.get("galet", 0)))
 		_dessin.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -299,6 +302,20 @@ func _jeton(p: Vector2, r: float, appui: float, dispo: bool) -> void:
 	if not dispo:
 		bord = Color(ENCRE, 0.18)
 	I.arc_encre(_dessin, p, r - 1.2, -PI * 0.5, PI * 1.5, 2.0 + 1.4 * appui, bord, false)
+
+
+# le compteur d'un bouton (les galets du lance-pierre) : un nombre sur une pastille d'encre, au bord du jeton ; rouge à zéro.
+# La pastille est un maillage gardé, le nombre une seule ligne de texte : deux appels, et seulement si le bouton est montré
+func _compteur(c: Vector2, n: int) -> void:
+	var vide := n <= 0
+	_dessin.draw_mesh(Trace.maillage("tactile|compteur|%s" % vide, func(t):
+		I.disque(t, Vector2(0, 1.5), 12.0, Color(0, 0, 0, 0.3))
+		I.disque(t, Vector2.ZERO, 11.0, Color(P.ENCRE, 0.94))
+		t.draw_arc(Vector2.ZERO, 10.0, 0.0, TAU, 32, Color(P.SANG.lightened(0.3), 0.95) if vide else Color(ENCRE, 0.55), 1.5, true)), null, Transform2D(0.0, c))
+	var g := T.texte_gras()
+	var s := str(mini(n, 99))
+	var lw := g.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	_dessin.draw_string(g, c + Vector2(-lw * 0.5, 4.6), s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, P.SANG.lightened(0.42) if vide else P.PAPIER)
 
 
 # « tourne ton téléphone » : un téléphone debout qui se couche, une flèche en arc

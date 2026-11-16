@@ -424,38 +424,62 @@ static func _lance(ci, w: float, m: Color) -> void:
 		ci.draw_line(p + Vector2(-7, -7), p + Vector2(7, 7), Color("d9cfb4") * m, w * 0.9, true)
 
 
-# le lance-pierre : une fourche de bois, deux boyaux, une poche de cuir où tient un galet
+# le lance-pierre : une fourche de bois pelé (une branche : une corne un peu plus longue que l'autre), sa poignée entourée de
+# fibres ; tendus entre les deux cornes, clairs, les deux boyaux, et la poche de cuir où tient un galet. À 22 pixels on lit
+# la fourche et, dedans, la pointe claire des boyaux
 static func _lance_pierre(ci, w: float, m: Color) -> void:
 	var bois := Color("8a6a48")
-	# (les boyaux, derrière la fourche : ils pendent des deux cornes jusqu'à la poche)
-	var poche := Vector2(2, -2)
-	for x in [-27.0, 27.0]:
-		var corne := Vector2(x, -36)
-		ci.draw_polyline(PackedVector2Array([corne, corne.lerp(poche, 0.5) + Vector2(-x * 0.1, 8), poche + Vector2(signf(x) * 9.0, 2)]), P.ENCRE * m, w * 1.6, true)
-		ci.draw_polyline(PackedVector2Array([corne, corne.lerp(poche, 0.5) + Vector2(-x * 0.1, 8), poche + Vector2(signf(x) * 9.0, 2)]), Color("c9a878") * m, w * 0.7, true)
-	_forme(ci, _capsule(Vector2(0, 46), Vector2(0, 6), 7.0), bois * m, w, m)
-	_forme(ci, _capsule(Vector2(-3, 8), Vector2(-27, -36), 6.0), bois * m, w, m)
-	_forme(ci, _capsule(Vector2(3, 8), Vector2(27, -36), 6.0), bois * m, w, m)
-	ci.draw_line(Vector2(-2, 40), Vector2(-2, 12), Color(P.PAPIER, 0.3) * m, w * 0.6, true)
-	# (les ligatures, en haut des cornes ; la poignée, entourée de fibres)
-	for x in [-27.0, 27.0]:
-		ci.draw_line(Vector2(x - 7.0, -30), Vector2(x + 7.0, -34), P.ENCRE * m, w * 1.8, true)
-		ci.draw_line(Vector2(x - 6.0, -30.3), Vector2(x + 6.0, -33.7), Color("d9cfb4") * m, w * 0.8, true)
+	var boyau := Color("d9cfb4")
+	var g := Vector2(-31, -37)
+	var d := Vector2(31, -33)
+	_forme(ci, _capsule(Vector2(1, 46), Vector2(0, 8), 7.5), bois.darkened(0.08) * m, w, m)
+	_forme(ci, _capsule(Vector2(-3, 10), g, 6.2), bois * m, w, m)
+	_forme(ci, _capsule(Vector2(3, 10), d, 6.2), bois * m, w, m)
+	# (le nœud de la fourche, sans couture ; une touche de lumière sur la corne de gauche)
+	ci.draw_circle(Vector2(0, 11), 7.2, bois * m)
+	ci.draw_line(Vector2(-8, 4), Vector2(-27, -31), Color(P.PAPIER, 0.32) * m, w * 0.6, true)
+	ci.draw_line(Vector2(-2, 40), Vector2(-2, 16), Color(P.PAPIER, 0.25) * m, w * 0.6, true)
+	# la poignée, entourée de fibres
 	for i in 3:
 		var y := 26.0 + i * 7.0
-		ci.draw_line(Vector2(-8, y), Vector2(8, y + 2.0), P.ENCRE * m, w * 1.8, true)
-		ci.draw_line(Vector2(-7, y), Vector2(7, y + 2.0), Color("d9cfb4") * m, w * 0.8, true)
-	# (la poche, et son galet)
-	var cuir := PackedVector2Array([poche + Vector2(-11, -3), poche + Vector2(11, -3), poche + Vector2(8, 8), poche + Vector2(-8, 8)])
-	_forme(ci, cuir, Color("6f4f33") * m, w, m)
-	_caillou(ci, poche + Vector2(0, -2), 6.5, w, m)
+		ci.draw_line(Vector2(-8, y), Vector2(9, y + 2.0), P.ENCRE * m, w * 1.8, true)
+		ci.draw_line(Vector2(-7, y), Vector2(8, y + 2.0), boyau.darkened(0.12) * m, w * 0.8, true)
+	# les boyaux, des cornes à la poche (ils pendent un peu) ; leurs ligatures
+	var poche := Vector2(0, -17)
+	for c in [-1.0, 1.0]:
+		var corne: Vector2 = g if c < 0.0 else d
+		var bord := poche + Vector2(c * 9.0, -2.0)
+		var ligne := PackedVector2Array([corne + Vector2(-c * 2.0, 3.0), corne.lerp(bord, 0.55) + Vector2(0, 4.5), bord])
+		ci.draw_polyline(ligne, P.ENCRE * m, w * 1.9, true)
+		ci.draw_polyline(ligne, boyau * m, w * 0.9, true)
+		ci.draw_line(corne + Vector2(-6.5, 5.0 + c * 1.5), corne + Vector2(6.5, 5.0 - c * 1.5), P.ENCRE * m, w * 1.9, true)
+		ci.draw_line(corne + Vector2(-5.5, 5.0 + c * 1.3), corne + Vector2(5.5, 5.0 - c * 1.3), boyau * m, w * 0.9, true)
+	# la poche, et son galet
+	var cuir := PackedVector2Array([poche + Vector2(-11, -5), poche + Vector2(11, -5), poche + Vector2(8.5, 6), poche + Vector2(0, 8.5), poche + Vector2(-8.5, 6)])
+	_forme(ci, cuir, Color("9a7b55") * m, w, m)
+	_galet(ci, poche + Vector2(0, -4.5), 6.6, 5.4, 0.0, Color("c2bcae"), w, m)
 
 
-# trois galets, roulés
+# quatre galets, roulés par l'eau : ronds, lisses, chacun de sa teinte (une pierre, elle, est anguleuse et seule) ; une veine
+# claire sur le plus gros
 static func _galets(ci, w: float, m: Color) -> void:
-	_caillou(ci, Vector2(16, -14), 19.0, w, m)
-	_caillou(ci, Vector2(-18, 6), 22.0, w, m)
-	_caillou(ci, Vector2(20, 22), 15.0, w, m)
+	_galet(ci, Vector2(-7, -24), 10.5, 8.0, 0.3, Color("7e7a74"), w, m)
+	_galet(ci, Vector2(19, -11), 17.0, 12.5, -0.25, Color("bdb6a8"), w, m)
+	_galet(ci, Vector2(-17, 9), 22.0, 16.0, 0.12, PIERRE, w, m)
+	_galet(ci, Vector2(21, 22), 13.5, 10.0, 0.4, Color("a8977e"), w, m)
+	ci.draw_arc(Vector2(-17, 30), 30.0, -PI * 0.5 - 0.62, -PI * 0.5 + 0.2, 8, Color(P.PAPIER, 0.75) * m, w * 0.6, true)
+
+
+# un galet : son milieu, ses deux rayons, son angle, sa teinte ; l'ombre en dessous, un reflet en haut à gauche
+static func _galet(ci, c: Vector2, rx: float, ry: float, ang: float, teinte: Color, w: float, m: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 14:
+		var a := TAU * i / 14.0
+		pts.append(c + Vector2(cos(a) * rx, sin(a) * ry * (1.0 + 0.08 * sin(a))).rotated(ang))
+	ci.draw_colored_polygon(pts, teinte * m)
+	ci.draw_arc(c + Vector2(0.0, ry * 0.1), minf(rx, ry) * 0.78, 0.35 + ang, PI - 0.35 + ang, 8, Color(P.CENDRE, 0.5) * m, w * 0.8, true)
+	ci.draw_arc(c + Vector2(-rx * 0.12, -ry * 0.1), minf(rx, ry) * 0.55, PI + 0.5 + ang, PI * 1.55 + ang, 6, Color(P.PAPIER, 0.75) * m, w * 0.6, true)
+	ci.draw_polyline(pts + PackedVector2Array([pts[0]]), P.ENCRE * m, w, true)
 
 
 static func _caillou(ci, c: Vector2, r: float, w: float, m: Color) -> void:

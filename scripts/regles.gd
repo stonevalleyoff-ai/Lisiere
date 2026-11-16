@@ -56,6 +56,8 @@ const PORTEE_TIR := 300.0     # jusqu'où elle vise une bête : presque tout l'�
 const CADENCE_TIR := 0.75     # secondes entre deux tirs
 const VITESSE_GALET := 620.0
 const GALETS_COFFRE := 6      # ceux qu'on trouve avec la lance
+const TIR_NOIR := 20.0        # l'écart d'un tir vers des yeux dans le noir, en pixels (de près ; quatre fois plus au bout de sa portée)
+const TIR_NOIRE := 0.2        # ce qu'un galet fait à la Noire, en parts de ce qu'il fait aux autres : il l'agace
 const DUREE_TORCHE := 75.0
 const RAYON_TORCHE := 175.0
 

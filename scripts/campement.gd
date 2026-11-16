@@ -20,6 +20,8 @@ extends Node2D
 #     piquet       : « attache » (vrai : une bête y est liée ; sa longe, c'est elle qui la dessine, jusqu'à l'anneau)
 #     mangeoire    : « foin » (de 0 à 12 : les fibres qu'on y a mises)
 #     appat        : « reste » (de 1 à 0 : ce qu'il reste de baies)
+#     coffre       : « ouvert » (vrai : on l'a forcé, il est vide) ; « leve » (de 0 à 1 : l'ouverture, que l'atelier met à 0
+#                    en l'ouvrant et que le coffre fait avancer lui-même ; sans elle, un coffre ouvert l'est tout à fait)
 # Son pied est à l'origine (0, 0) : le lieu trie ce qui s'y tient par hauteur (monde.gd).
 # Le dessin : à l'encre, dans la peinture des arbres et des rochers (scripts/decor_pinceau.gd, la matière qui ne bouge pas de
 # scripts/objet.gd). Chaque chose a un fond, dessiné une fois (et de nouveau quand son état change : la neige, l'eau, un pan
@@ -137,6 +139,11 @@ var _sec := 0.0                 # la soif des plantes, de 0 à 1, sans à-coups
 # l'épouvantail
 var _tete := PI * 0.5           # où regarde sa tête (un angle du lieu ; vers nous : un quart de tour)
 var _secousse := Vector2.ZERO   # ce dont il tremble, à cette image
+# le coffre
+var _leve := 0.0                # son ouverture, de 0 (fermé) à 1 (le couvercle rejeté en arrière)
+var _poussiere := -1.0          # depuis que le couvercle est retombé (-1 : rien ne vole)
+var _luit := false              # un reflet passe sur sa serrure
+var _efface := false            # ce qui remuait vient de finir : un dernier dessin, pour l'ôter
 
 
 # son encombrement au sol, pour qu'on ne marche pas dedans (0 : on marche dessus, et les bêtes aussi)
@@ -225,6 +232,8 @@ func _ready() -> void:
 	_pris = etat.has("prise")
 	_prise_t = -5.0
 	_foudre_vue = _vrai(etat.get("foudre", false))
+	if genre == "coffre" and bool(etat.get("ouvert", false)):
+		_leve = clampf(float(etat.get("leve", 1.0)), 0.0, 1.0)
 	_lire(0.0)
 	_vent = _vent_ici()
 	_mouille = 1.0 if _pluie > 0.3 else 0.0
@@ -330,6 +339,8 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_cerf_volant_vif(p)
 				"vestige":
 					_vestige_vif(p)
+				"coffre":
+					_coffre_vif(p)
 				"carre":
 					_carre_vif(p, int(ci.get("rang")))
 				"epouvantail":
@@ -370,6 +381,8 @@ func _lire(dt: float) -> void:
 		"epouvantail":
 			# (sa tête tourne lentement : on ne la voit pas bouger, on voit qu'elle a tourné)
 			_tete = rotate_toward(_tete, _regard_voulu(), dt * 0.3)
+		"coffre":
+			_lire_coffre(dt)
 		"filet":
 			if etat.has("prise") != _pris:
 				_pris = not _pris
@@ -429,6 +442,9 @@ func _a_l_ecran() -> bool:
 func _cadence() -> float:
 	if not _copeaux.is_empty() or _foudre_t >= 0.0:
 		return 0.0
+	# (le couvercle qui se lève, sa poussière : une seconde et demie, image par image)
+	if genre == "coffre" and _coffre_bouge():
+		return (1.0 / 30.0) if _mobile else 0.0
 	if genre == "filet" and _pris and _sursaut() > 0.0:
 		return (1.0 / 20.0) if _mobile else 0.0
 	if genre == "cerf_volant" and _monte > 0.02:
@@ -459,6 +475,8 @@ func _remue() -> bool:
 			return _monte > 0.0
 		"vestige":
 			return _vent > 0.03
+		"coffre":
+			return _coffre_bouge() or _luit or _efface
 		"carre":
 			return str(etat.get("culture", "")) != "" and float(etat.get("stade", 0.0)) >= 0.25 and (_vent > 0.02 or float(etat.get("broute", 0.0)) > 0.0 or absf(_sec - _soif()) > 0.004)
 		"epouvantail":
@@ -489,7 +507,7 @@ func _cle_du_fond() -> String:
 		"vestige":
 			k += "-%s-%d-%s" % [bool(etat.get("fouille", false)), int(etat.get("riche", 0)), _vent > 0.03]
 		"coffre":
-			k += "-%s" % bool(etat.get("ouvert", false))
+			k += "-%s-%d" % [bool(etat.get("ouvert", false)), int(_leve * 400.0)]
 		"carre":
 			# (la terre par crans d'eau ; la pousse par seizièmes de stade : elle est lente, le fond se refait rarement)
 			k += "-%d-%s-%s-%d" % [int(clampf(float(etat.get("eau", 0.0)), 0.0, 1.0) * 5.0 + 0.5), bool(etat.get("gel", false)), str(etat.get("culture", "")),
@@ -1925,46 +1943,281 @@ func _vestige(p) -> void:
 			p.disque(q, 5.0 * neige + 1.5, 1.4 * neige + 0.5, NEIGE, Pinceau.DOME)
 
 
-# --- le coffre d'une autre veilleuse : des planches, deux ferrures, de la mousse ; ouvert, son couvercle rejeté en arrière ---
+# --- le coffre d'une autre veilleuse, laissé là depuis longtemps : des planches grises, deux ferrures qui passent sur le
+# couvercle, des coins de fer, une serrure rouillée et son moraillon ; de la mousse et des feuilles mortes dessus, l'herbe
+# qui a poussé autour, plus haute qu'ailleurs (on n'y marche plus). Un reflet passe de loin en loin sur sa serrure : c'est le
+# seul du lieu, on doit le voir. Ouvert : le couvercle rejeté en arrière (on voit son dedans, ses traverses), le dedans
+# sombre, la paille, et dans la paille le creux où dormait la lance, un chiffon au bout.
+# L'ouverture (« leve », de 0 à 1, une seconde) : elle force la serrure (le couvercle tressaute, la rouille tombe), il se
+# lève (la mousse et les feuilles glissent derrière), passe la verticale, retombe en arrière et rebondit : la poussière ---
+
+const COFFRE_W := 13.0              # sa demi-largeur
+const COFFRE_Y0 := -7.0             # son fond (la charnière) et son devant, au sol
+const COFFRE_Y1 := 5.0
+const COFFRE_H := 9.5               # la caisse, sans le couvercle
+const COFFRE_E := 3.2               # l'épaisseur du couvercle
+const COFFRE_DUREE := 1.0           # l'ouverture, en secondes
+const COFFRE_REFLET := 4.6          # un reflet sur la serrure, toutes les tant de secondes
+const COFFRE_NOIR := Color("15120e")
+
+
+func _coffre_bouge() -> bool:
+	return (bool(etat.get("ouvert", false)) and _leve < 1.0) or _poussiere >= 0.0
+
+
+func _lire_coffre(dt: float) -> void:
+	var ouvert := bool(etat.get("ouvert", false))
+	var bougeait := _coffre_bouge() or _luit
+	if not ouvert:
+		_leve = 0.0
+	elif _leve < 1.0:
+		# (l'atelier vient de l'ouvrir : « leve » repart de 0)
+		_leve = minf(_leve, clampf(float(etat.get("leve", 1.0)), 0.0, 1.0))
+		var avant := _leve
+		_leve = minf(1.0, _leve + dt / COFFRE_DUREE)
+		etat["leve"] = _leve
+		if avant < 0.86 and _leve >= 0.86:
+			# (le couvercle retombe en arrière : la poussière, et le bois qui sonne, sourd)
+			_poussiere = 0.0
+			if jeu != null and jeu.get("sons") != null:
+				jeu.sons.jouer("bois", -7.0, 0.6)
+	elif float(etat.get("leve", 1.0)) <= 0.0:
+		_leve = 0.0
+	if _poussiere >= 0.0:
+		_poussiere += dt
+		if _poussiere > 0.9:
+			_poussiere = -1.0
+	# (pas de reflet sur un téléphone : au repos, le coffre n'y redessine rien)
+	_luit = not ouvert and not _mobile and fmod(_tr + float(_graine % 40) * 0.1, COFFRE_REFLET) < 0.7
+	_efface = bougeait and not (_coffre_bouge() or _luit)
+
+
+# l'angle du couvercle selon « leve » : il tressaute sur sa serrure, se lève (lourd d'abord), retombe en arrière, rebondit
+func _coffre_angle() -> float:
+	var u := _leve
+	if u <= 0.0:
+		return 0.0
+	if u < 0.34:
+		return absf(sin(u * 55.0)) * 0.06 * smoothstep(0.0, 0.12, u)
+	if u < 0.86:
+		var k := (u - 0.34) / 0.52
+		return 1.98 * (0.3 * k + 0.7 * k * k)
+	var v := (u - 0.86) / 0.14
+	return 1.84 + 0.14 * cos(v * PI * 1.5) * (1.0 - v)
+
+
+# un point du couvercle : le long de la charnière, de la charnière vers son bord, dans son épaisseur ; a : son angle
+static func _coffre_pt(x: float, d: float, h: float, a: float) -> Vector2:
+	return _pr(x, COFFRE_Y0 + d * cos(a) - h * sin(a), COFFRE_H + d * sin(a) + h * cos(a))
+
+
+# une feuille morte : son milieu, sa longueur, son angle
+static func _feuille_morte(p, q: Vector2, l: float, ang: float, c: Color) -> void:
+	var u := Vector2.from_angle(ang)
+	var n := u.orthogonal() * l * 0.36
+	p.aplat(PackedVector2Array([q - u * l * 0.5, q + n, q + u * l * 0.5, q - n]), c)
+	p.tracer(PackedVector2Array([q - u * l * 0.6, q + u * l * 0.5]), 0.45, Color(ENCRE, 0.6), false)
+
 
 func _coffre(p) -> void:
 	var r := _hasard(31)
-	var sombre := 0.18 * _mouille_cran()
-	var bois := BOIS.darkened(0.28 + sombre)
-	var fer := METAL.darkened(0.1 + sombre)
-	var ouvert := bool(etat.get("ouvert", false))
-	_ombre(p, Vector2(0.0, 2.0), 17.0, 5.5, 0.24)
-	# la caisse : sa face, son dessus (vu de trois quarts, d'en haut)
-	var face := PackedVector2Array([Vector2(-13.0, -9.0), Vector2(13.0, -9.0), Vector2(13.0, 2.0), Vector2(-13.0, 2.0)])
-	var dessus := PackedVector2Array([Vector2(-11.5, -15.0), Vector2(11.5, -15.0), Vector2(13.0, -9.0), Vector2(-13.0, -9.0)])
+	var mouille := _mouille_cran()
+	var neige := _neige_cran()
+	var sombre := 0.16 * mouille
+	var bois := BOIS.lerp(P.CENDRE, 0.3).darkened(0.22 + sombre)
+	var fer := METAL.darkened(0.06 + sombre)
+	var rouille := ROUILLE.darkened(0.1 + sombre)
+	var a := _coffre_angle()
+	var w := COFFRE_W
+	var bas_av := COFFRE_Y1 * PROF
+	var haut_av := bas_av - COFFRE_H
+	var haut_ar := COFFRE_Y0 * PROF - COFFRE_H
+	_ombre(p, Vector2(0.5, 1.6), 19.5, 5.8, 0.32)
+	# l'herbe qui a poussé derrière et sur les côtés : de longs brins, qui dépassent du couvercle
+	var rh := _hasard(33)
+	for i in 11:
+		var x := -17.5 + 35.0 * float(i) / 10.0 + rh.randf_range(-1.3, 1.3)
+		var au_bord := absf(x) > 12.5
+		var pied := Vector2(x, rh.randf_range(-1.6, 1.6) if au_bord else rh.randf_range(-4.2, -2.6))
+		var long := rh.randf_range(8.0, 13.0) if au_bord else rh.randf_range(15.0, 20.5)
+		var penche := rh.randf_range(-3.2, 3.2) + (signf(x) * 1.6 if au_bord else 0.0)
+		p.tracer(PackedVector2Array([pied, pied + Vector2(penche * 0.3, -long * 0.6), pied + Vector2(penche, -long)]), 1.25,
+			P.MOUSSE.lerp(P.FEUILLE_SOMBRE, rh.randf_range(0.0, 0.45)).lightened(rh.randf_range(0.0, 0.12)))
+	# le dedans (on ne le voit que le couvercle levé) : le noir, la paroi du fond, la paille et le creux de la lance
+	if a > 0.02:
+		var trou := PackedVector2Array([Vector2(-w + 1.2, haut_ar + 0.6), Vector2(w - 1.2, haut_ar + 0.6), Vector2(w - 1.0, haut_av), Vector2(-w + 1.0, haut_av)])
+		p.aplat(trou, COFFRE_NOIR)
+		var jour := smoothstep(0.5, 1.5, a)
+		p.aplat(PackedVector2Array([trou[0], trou[1], trou[1] + Vector2(-0.2, 2.4), trou[0] + Vector2(0.2, 2.4)]), COFFRE_NOIR.lerp(bois, 0.42 * jour))
+		if jour > 0.05:
+			var rp := _hasard(34)
+			var paille := CORDE.lerp(CUIVRE, 0.18).darkened(0.18 + sombre)
+			for i in 16:
+				var q := Vector2(rp.randf_range(-10.5, 10.5), rp.randf_range(haut_ar + 3.6, haut_av - 0.7))
+				var v := Vector2.from_angle(rp.randf_range(-0.5, 0.5)) * rp.randf_range(2.2, 4.4)
+				p.tracer(PackedVector2Array([q - v * 0.5, q + v * 0.5]), 0.7, Color(paille.lightened(rp.randf_range(-0.1, 0.16)), jour), false)
+			# (le creux qu'elle a laissé, long et droit, le chiffon qui enveloppait son fer)
+			p.tracer(PackedVector2Array([Vector2(-9.6, haut_av - 2.9), Vector2(6.4, haut_av - 3.5)]), 1.5, Color(COFFRE_NOIR, 0.9 * jour), false)
+			p.aplat(PackedVector2Array([Vector2(5.6, haut_av - 4.6), Vector2(9.8, haut_av - 4.9), Vector2(10.4, haut_av - 2.5), Vector2(6.2, haut_av - 2.0)]),
+				Color(TOILE_OMBRE.lerp(TOILE, 0.3).darkened(sombre), jour))
+			p.tracer(PackedVector2Array([Vector2(6.6, haut_av - 3.9), Vector2(9.6, haut_av - 3.2)]), 0.5, Color(ENCRE, 0.5 * jour), false)
+	# la face : trois planches, leur fil, le bas plus sombre (la terre y remonte)
+	var face := PackedVector2Array([Vector2(-w, haut_av), Vector2(w, haut_av), Vector2(w, bas_av), Vector2(-w, bas_av)])
 	p.aplat(face, bois)
-	if ouvert:
-		# (le dedans, noir ; le couvercle, debout derrière)
-		var couvercle := PackedVector2Array([Vector2(-11.5, -26.0), Vector2(11.5, -26.0), Vector2(11.5, -15.0), Vector2(-11.5, -15.0)])
-		p.aplat(couvercle, bois.darkened(0.2))
-		p.contour(couvercle, 1.0, ENCRE, r)
-		p.aplat(dessus, Color("17140f"))
-	else:
-		p.aplat(dessus, bois.lightened(0.1), Pinceau.ECORCE)
-	p.contour(face, 1.1, ENCRE, r)
-	p.contour(dessus, 1.0, ENCRE, r)
-	# les planches de la face, les deux ferrures, la serrure
-	for y in [-5.2, -1.4]:
-		p.tracer(PackedVector2Array([Vector2(-12.4, y), Vector2(12.4, y + r.randf_range(-0.3, 0.3))]), 0.6, Color(ENCRE, 0.45), false)
-	for x in [-8.0, 8.0]:
-		p.tracer(PackedVector2Array([Vector2(x, -9.0), Vector2(x, 2.0)]), 2.2, ENCRE, false)
-		p.tracer(PackedVector2Array([Vector2(x, -8.6), Vector2(x, 1.6)]), 1.3, fer, false)
-		if not ouvert:
-			p.tracer(PackedVector2Array([Vector2(x * 0.9, -15.0), Vector2(x, -9.0)]), 1.3, fer.lightened(0.08), false)
-	p.disque(Vector2(0.0, -6.4), 2.0, 2.3, ENCRE)
-	p.disque(Vector2(0.0, -6.4), 1.3, 1.6, ROUILLE.darkened(0.15 + sombre))
-	# la mousse, sur un coin ; l'herbe au pied
-	if not ouvert:
-		p.disque(Vector2(-7.0, -13.0), 4.6, 1.9, P.MOUSSE.darkened(0.12), Pinceau.FEUILLAGE)
-	p.disque(Vector2(-11.0, -9.4), 3.0, 1.6, P.MOUSSE.darkened(0.05), Pinceau.FEUILLAGE)
-	for i in 4:
-		var x := r.randf_range(-15.0, 15.0)
-		p.tracer(PackedVector2Array([Vector2(x, 3.0), Vector2(x + r.randf_range(-1.0, 1.0), 3.0 - r.randf_range(3.0, 6.0))]), 1.1, P.MOUSSE.lightened(r.randf_range(0.0, 0.14)))
+	p.aplat(PackedVector2Array([Vector2(-w, bas_av - 2.6), Vector2(w, bas_av - 2.6), Vector2(w, bas_av), Vector2(-w, bas_av)]), bois.darkened(0.2))
+	p.aplat(PackedVector2Array([Vector2(-w, haut_av), Vector2(w, haut_av), Vector2(w, haut_av + 1.3), Vector2(-w, haut_av + 1.3)]), bois.lightened(0.07))
+	for y in [haut_av + 3.3, haut_av + 6.5]:
+		p.tracer(PackedVector2Array([Vector2(-w + 0.5, y + r.randf_range(-0.25, 0.25)), Vector2(w - 0.5, y + r.randf_range(-0.25, 0.25))]), 0.6, Color(ENCRE, 0.5), false)
+	for i in 7:
+		var q := Vector2(r.randf_range(-11.5, 8.0), haut_av + r.randf_range(1.0, 8.8))
+		p.tracer(PackedVector2Array([q, q + Vector2(r.randf_range(2.0, 4.6), r.randf_range(-0.25, 0.25))]), 0.45, Color(ENCRE, 0.26), false)
+	p.contour(face, 1.15, ENCRE, r)
+	# les ferrures, leurs rivets ; les coins de fer
+	for x in [-7.6, 7.6]:
+		p.tracer(PackedVector2Array([Vector2(x, haut_av), Vector2(x, bas_av)]), 2.9, ENCRE, false)
+		p.tracer(PackedVector2Array([Vector2(x, haut_av + 0.4), Vector2(x, bas_av - 0.4)]), 1.8, fer, false)
+		p.tracer(PackedVector2Array([Vector2(x - 0.5, haut_av + 0.6), Vector2(x - 0.5, bas_av - 0.6)]), 0.45, Color(METAL_CLAIR, 0.5), false)
+		for y in [haut_av + 1.7, bas_av - 1.7]:
+			p.disque(Vector2(x, y), 0.6, 0.6, METAL_CLAIR.darkened(sombre))
+		# (la rouille a coulé sous la ferrure)
+		p.tracer(PackedVector2Array([Vector2(x + 1.3, haut_av + 4.0), Vector2(x + 1.5, bas_av - 0.8)]), 0.7, Color(rouille, 0.5), false)
+	for c in [-1.0, 1.0]:
+		var coin := PackedVector2Array([Vector2(c * w, bas_av - 3.6), Vector2(c * (w - 3.4), bas_av), Vector2(c * w, bas_av)])
+		p.aplat(coin, fer.darkened(0.1))
+		p.tracer(PackedVector2Array([coin[0], coin[1]]), 0.7, ENCRE, false)
+	# la serrure : une platine rouillée, son trou ; la rouille qui a coulé dessous
+	var serrure := Vector2(0.0, haut_av + 3.4)
+	p.tracer(PackedVector2Array([serrure + Vector2(0.5, 2.2), Vector2(0.8, bas_av - 0.7)]), 0.9, Color(rouille, 0.55), false)
+	p.disque(serrure, 3.1, 3.3, ENCRE)
+	p.disque(serrure, 2.35, 2.55, rouille.lerp(CUIVRE, 0.22))
+	p.disque(serrure + Vector2(-0.7, -0.8), 0.9, 0.7, Color(CUIVRE.lightened(0.2), 0.5))
+	p.disque(serrure + Vector2(0.0, -0.2), 0.75, 0.75, COFFRE_NOIR)
+	p.tracer(PackedVector2Array([serrure + Vector2(0.0, 0.2), serrure + Vector2(0.0, 1.7)]), 0.7, COFFRE_NOIR, false)
+	_coffre_couvercle(p, a, bois, fer, neige, mouille)
+	# devant : l'herbe au pied, deux feuilles mortes ; la neige contre les planches
+	for i in 6:
+		var x := rh.randf_range(-16.0, 16.0)
+		var pied := Vector2(x, bas_av + rh.randf_range(0.2, 1.4))
+		p.tracer(PackedVector2Array([pied, pied + Vector2(rh.randf_range(-1.4, 1.4), -rh.randf_range(3.2, 6.4))]), 1.15, P.MOUSSE.lightened(rh.randf_range(0.0, 0.16)))
+	_feuille_morte(p, Vector2(-15.2, bas_av + 1.0), 3.4, 0.3, ROUILLE.lightened(0.08).darkened(sombre))
+	_feuille_morte(p, Vector2(11.6, bas_av + 1.7), 3.0, -0.5, CUIVRE.darkened(0.3 + sombre))
+	if neige > 0.1:
+		var blanc := Color(NEIGE, minf(1.0, neige * 1.5))
+		p.disque(Vector2(-9.5, bas_av + 0.3), 6.5 * neige + 1.5, 1.7, blanc)
+		p.disque(Vector2(8.0, bas_av + 0.6), 5.0 * neige + 1.5, 1.4, blanc)
+		p.disque(Vector2(-1.0, bas_av + 0.9), 4.0 * neige + 1.0, 1.1, Color(NEIGE_OMBRE, blanc.a))
+
+
+# le couvercle, à son angle : fermé ou à peine levé, on voit son dessus (ses deux planches, les ferrures, la mousse, les
+# feuilles, la neige) ; levé, son dedans (plus sombre, deux traverses) ; et toujours son chant de devant
+func _coffre_couvercle(p, a: float, bois: Color, fer: Color, neige: float, mouille: float) -> void:
+	var r := _hasard(32)
+	var w := COFFRE_W + 0.8
+	var d := COFFRE_Y1 - COFFRE_Y0 + 0.7
+	var e := COFFRE_E
+	var c0 := _coffre_pt(-w, d, 0.0, a)
+	var c1 := _coffre_pt(w, d, 0.0, a)
+	var c2 := _coffre_pt(w, d, e, a)
+	var c3 := _coffre_pt(-w, d, e, a)
+	var chant := PackedVector2Array([c3, c2, c1, c0])
+	var blanc := Color(NEIGE, minf(1.0, neige * 1.5))
+	if a > 0.4636:
+		var dedans := PackedVector2Array([_coffre_pt(-w, 0.0, 0.0, a), _coffre_pt(w, 0.0, 0.0, a), c1, c0])
+		p.aplat(dedans, bois.darkened(0.36))
+		for k in [0.26, 0.76]:
+			var g := _coffre_pt(-w + 1.0, d * k, 0.0, a)
+			var dr := _coffre_pt(w - 1.0, d * k, 0.0, a)
+			p.tracer(PackedVector2Array([g, dr]), 2.3, Color(ENCRE, 0.7), false)
+			p.tracer(PackedVector2Array([g, dr]), 1.4, bois.darkened(0.16), false)
+		p.contour(dedans, 1.1, ENCRE, r)
+		p.aplat(chant, bois.lightened(0.05))
+		p.contour(chant, 0.9, ENCRE, r, 2)
+		if neige > 0.1:
+			p.tracer(PackedVector2Array([c3 + Vector2(0.6, -0.4), c2 + Vector2(-0.6, -0.4)]), 1.3 + neige, blanc, false)
+		return
+	var dessus := PackedVector2Array([_coffre_pt(-w, 0.0, e, a), _coffre_pt(w, 0.0, e, a), c2, c3])
+	p.aplat(dessus, bois.lightened(0.13))
+	for i in 5:
+		# (le fil des deux planches)
+		var x := r.randf_range(-w + 1.5, w - 6.0)
+		var k := r.randf_range(0.12, 0.88)
+		p.tracer(PackedVector2Array([_coffre_pt(x, d * k, e, a), _coffre_pt(x + r.randf_range(2.5, 5.0), d * k, e, a)]), 0.45, Color(ENCRE, 0.24), false)
+	p.tracer(PackedVector2Array([_coffre_pt(-w + 0.6, d * 0.5, e, a), _coffre_pt(w - 0.6, d * 0.5, e, a)]), 0.6, Color(ENCRE, 0.45), false)
+	if mouille > 0.1:
+		p.tracer(PackedVector2Array([_coffre_pt(-w + 3.0, d * 0.3, e, a), _coffre_pt(w - 8.0, d * 0.3, e, a)]), 0.7, Color(P.IVOIRE, 0.2 * mouille), false)
+	p.aplat(chant, bois.darkened(0.1))
+	for x in [-7.6, 7.6]:
+		var ferrure := PackedVector2Array([_coffre_pt(x, 0.0, e, a), _coffre_pt(x, d, e, a), _coffre_pt(x, d, 0.0, a)])
+		p.tracer(ferrure, 2.9, ENCRE, false)
+		p.tracer(ferrure, 1.8, fer.lightened(0.07), false)
+		p.disque(_coffre_pt(x, d * 0.5, e, a), 0.6, 0.45, METAL_CLAIR)
+	p.contour(dessus, 1.1, ENCRE, r)
+	p.contour(chant, 1.0, ENCRE, r, 2)
+	# le moraillon : rabattu sur la serrure ; forcé, il n'en reste qu'un bout tordu
+	var milieu := (c0 + c1) * 0.5
+	var bout := Vector2(0.0, COFFRE_Y1 * PROF - COFFRE_H + 1.9) if _leve <= 0.0 else milieu + Vector2(1.3, 1.4)
+	p.tracer(PackedVector2Array([milieu + Vector2(0.0, -1.6), bout]), 2.7, ENCRE, false)
+	p.tracer(PackedVector2Array([milieu + Vector2(0.0, -1.4), bout]), 1.5, fer.lightened(0.12), false)
+	if neige > 0.1:
+		# (la neige fait un bourrelet dessus)
+		var n0 := _coffre_pt(-w + 0.8, 0.6, e, a)
+		var n1 := _coffre_pt(w - 0.8, 0.6, e, a)
+		var n2 := _coffre_pt(w - 1.2, d - 1.0, e, a)
+		var n3 := _coffre_pt(-w + 1.2, d - 1.0, e, a)
+		var tas := PackedVector2Array([n3, n0 + Vector2(0.8, -1.6 * neige), (n0 + n1) * 0.5 + Vector2(0.0, -2.6 * neige), n1 + Vector2(-0.8, -1.6 * neige), n2])
+		p.aplat(tas, blanc)
+		p.tracer(PackedVector2Array([n3 + Vector2(0.5, -0.2), n2 + Vector2(-0.5, -0.2)]), 0.8, Color(NEIGE_OMBRE, blanc.a), false)
+	elif _leve < 0.36:
+		# la mousse, sur un coin et le long d'une ferrure ; trois feuilles mortes
+		var m := _mouille_cran() * 0.1
+		p.disque(_coffre_pt(-8.4, d * 0.34, e, a), 4.8, 2.0, P.MOUSSE.darkened(0.1 + m), Pinceau.FEUILLAGE)
+		p.disque(_coffre_pt(-11.0, d * 0.7, e, a), 2.6, 1.3, P.MOUSSE.lightened(0.06), Pinceau.FEUILLAGE)
+		p.disque(_coffre_pt(9.4, d * 0.2, e, a), 2.4, 1.0, P.MOUSSE.darkened(0.04), Pinceau.FEUILLAGE)
+		_feuille_morte(p, _coffre_pt(2.4, d * 0.42, e, a), 3.6, 0.5, ROUILLE.lightened(0.12))
+		_feuille_morte(p, _coffre_pt(5.6, d * 0.74, e, a), 3.0, -0.35, CUIVRE.darkened(0.28))
+		_feuille_morte(p, _coffre_pt(-2.6, d * 0.2, e, a), 2.8, 2.6, ROUILLE.darkened(0.12))
+
+
+# ce qui bouge sur le coffre : le reflet de sa serrure ; puis, quand on l'ouvre, la rouille qui tombe de la serrure forcée,
+# les feuilles qui glissent du couvercle, et la poussière quand il retombe
+func _coffre_vif(p) -> void:
+	var haut_av := COFFRE_Y1 * PROF - COFFRE_H
+	if not bool(etat.get("ouvert", false)):
+		var k := fmod(_tr + float(_graine % 40) * 0.1, COFFRE_REFLET)
+		if k < 0.7:
+			var f := sin(k / 0.7 * PI)
+			var c := Vector2(-0.7, haut_av + 2.6)
+			var pale := Color(P.IVOIRE, 0.9 * f)
+			p.tracer(PackedVector2Array([c + Vector2(-3.6 * f, 0.0), c + Vector2(3.6 * f, 0.0)]), 0.8, pale)
+			p.tracer(PackedVector2Array([c + Vector2(0.0, -2.6 * f), c + Vector2(0.0, 2.6 * f)]), 0.8, pale)
+			p.disque(c, 0.9 * f, 0.9 * f, pale)
+		return
+	var u := _leve
+	if u < 1.0:
+		var rv := _hasard(35)
+		# (la rouille de la serrure, par miettes)
+		for i in (2 if _mobile else 5):
+			var t := (u - 0.05 - 0.05 * float(i)) * COFFRE_DUREE
+			var v := Vector2(rv.randf_range(-22.0, 22.0), rv.randf_range(-34.0, -12.0))
+			if t > 0.0 and t < 0.42:
+				p.disque(Vector2(0.0, haut_av + 3.4) + v * t + Vector2(0.0, 190.0 * t * t), 0.7, 0.7, Color(ROUILLE.lightened(0.1), 1.0 - t / 0.42))
+		# (les feuilles glissent derrière)
+		if u >= 0.36 and u < 0.96:
+			var k := (u - 0.36) / 0.6
+			for i in 3:
+				var q := _coffre_pt([2.4, 5.6, -2.6][i], 6.0, COFFRE_E, minf(_coffre_angle(), 0.7))
+				q += Vector2((float(i) - 1.0) * 5.0 * k + sin(k * 9.0 + float(i)) * 1.6, -11.0 * k + 22.0 * k * k)
+				_feuille_morte(p, q, 3.2, 0.5 + k * (4.0 + float(i)), Color([ROUILLE.lightened(0.12), CUIVRE.darkened(0.28), ROUILLE.darkened(0.12)][i], 1.0 - k * k))
+	if _poussiere >= 0.0:
+		var t := clampf(_poussiere / 0.9, 0.0, 1.0)
+		var ton := P.IVOIRE.lerp(P.TERRE, 0.45)
+		var n := 3 if _mobile else 6
+		var rq := _hasard(36)
+		for i in n:
+			var x := lerpf(-13.0, 13.0, float(i) / float(n - 1)) + rq.randf_range(-2.0, 2.0)
+			var c := Vector2(x * (1.0 + 0.55 * t), -15.0 - rq.randf_range(4.0, 11.0) * (1.0 - pow(1.0 - t, 2.0)))
+			var ray := rq.randf_range(3.0, 4.6) + 8.0 * t
+			p.eventail(c, ray, ray * 0.72, Color(ton, 0.55 * (1.0 - t) * (1.0 - t)), Color(ton, 0.0), 12)
 
 
 func _vestige_vif(p) -> void:

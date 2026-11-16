@@ -762,6 +762,10 @@ func blesser(n: float, depuis: Vector2) -> void:
 			# (craintif, il lâche prise plus tôt, plus souvent, plus longtemps ; traqueur, il revient ; agressif, il ne lâche pas)
 			if pv < pv_max * lerpf(0.4, 0.7, crainte) * (1.0 - 0.5 * agressivite) or randf() < lerpf(0.25, 0.6, crainte) * (1.0 - traque) * (1.0 - agressivite):
 				_fuir(depuis, maxf(1.0, 2.5 + 4.0 * crainte - 1.2 * traque))
+			elif _poste_feu != null and is_instance_valid(_poste_feu) and _af != Affut.RIEN and _af != Affut.CHANGE and position.distance_to(depuis) > 90.0:
+				# (touché de loin, à son affût — un galet venu du feu : il ne reste pas là à en attendre un autre. Il se détourne,
+				# on le perd, et il reparaît ailleurs)
+				_prendre_poste(_poste_feu, true)
 
 
 # la foudre, l'incendie : elle est blessée, mais personne ne l'a chassée

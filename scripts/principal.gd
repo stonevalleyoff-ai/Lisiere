@@ -947,20 +947,26 @@ func tirer() -> void:
 	var cible = null
 	var d0 := R.PORTEE_TIR
 	for b in get_tree().get_nodes_in_group("betes"):
-		if b.role == "echo" or b.role == "compagne":
+		if b.role == "echo" or b.role == "compagne" or not _voit(b):
 			continue
 		var d: float = p.distance_to(b.position) - b.largeur * 0.3
 		if d < d0:
 			d0 = d
 			cible = b
 	var vers: Vector2 = p + Vector2(joueur.regard * R.PORTEE_TIR * 0.8, 0.0)
+	var a_l_aveugle := false
 	if cible != null:
 		vers = Galet.vise(cible)
+		var loin := clampf(d0 / R.PORTEE_TIR, 0.0, 1.0)
+		# (dans le noir, elle ne vise que deux yeux : de près elle touche, de loin une fois sur deux à peine)
+		a_l_aveugle = lumiere_du_jour() <= 0.5 and cible.role != "noire" and eclairage(cible.position) <= 0.3
 		# (de loin, la main tremble un peu)
-		vers += Vector2.from_angle(randf() * TAU) * randf() * 10.0 * clampf(d0 / R.PORTEE_TIR, 0.0, 1.0)
+		vers += Vector2.from_angle(randf() * TAU) * randf() * ((R.TIR_NOIR + 3.0 * R.TIR_NOIR * loin) if a_l_aveugle else 10.0 * loin)
 	# (elle arme : le galet part quand sa main lâche la poche ; joueur.gd le dit par le signal impact, genre « tir »)
-	_tir_vise = {"cible": cible, "vers": vers}
+	_tir_vise = {"cible": cible, "vers": vers, "suit": not a_l_aveugle}
 	joueur.tirer(vers)
+	# (la poche qu'elle tire : les boyaux grincent en se tendant, de plus en plus haut)
+	sons.atelier("corde", 2.0, randf_range(2.0, 2.25))
 
 
 # sa main lâche la poche, en p (là où on la voit) : le galet part
@@ -972,22 +978,38 @@ func _lacher(p: Vector2) -> void:
 	var g = Galet.new()
 	g.jeu = self
 	g.cible = _tir_vise["cible"] if is_instance_valid(_tir_vise["cible"]) else null
+	g.suit = bool(_tir_vise.get("suit", true))
 	monde.add_child(g)
 	g.partir(Vector2(p.x, joueur.position.y), maxf(6.0, joueur.position.y - p.y), _tir_vise["vers"])
 	_tir_vise = {}
-	sons.jouer("herbe", -9.0, randf_range(1.5, 1.75))
+	# (le lâcher : l'air fouetté, et le boyau qui claque sur le bois de la fourche)
+	sons.jouer("herbe", -8.0, randf_range(1.85, 2.1))
+	sons.jouer("bois", -15.0, randf_range(2.3, 2.6))
+
+
+# voit-elle cette bête, pour la viser ? Le jour, oui. La nuit : si une lumière la touche, ou si ses yeux brillent dans le noir.
+# Un chasseur qui s'est détourné pour changer de poste, on le perd : on ne tire pas sur ce qu'on ne voit pas.
+func _voit(b) -> bool:
+	if lumiere_du_jour() > 0.5 or b.role == "noire" or eclairage(b.position) > 0.3:
+		return true
+	return float(b.detourne) < 0.5 and float(b.paupiere()) > 0.4
 
 
 # le galet est arrivé : sur la bête qu'il visait, si elle est encore là où il tombe ; sinon dans l'herbe
 func galet_arrive(g) -> void:
 	var b = g.cible
 	if b != null and is_instance_valid(b) and b.is_in_group("betes") and b.pv > 0.0 and g.position.distance_to(Galet.vise(b)) < 12.0 + b.largeur * 0.3:
-		sons.jouer("coup", -5.0, randf_range(1.2, 1.4))
+		# (sur une bête : le coup mat, et la pierre qui sonne, haut et bref)
+		sons.jouer("coup", -4.0, randf_range(1.25, 1.45))
+		sons.jouer("pierre", -15.0, randf_range(1.9, 2.15))
 		effets.impact(g.position, b.robe)
 		effets.arret(0.03)
-		b.blesser(R.DEGATS_TIR, g.de)
+		# (la Noire : un galet l'agace, sans plus ; il en faut une pleine besace pour qu'elle se retire)
+		b.blesser(R.DEGATS_TIR * (R.TIR_NOIRE if b.role == "noire" else 1.0), g.de)
 		return
-	sons.jouer("pierre", -13.0, randf_range(1.3, 1.6))
+	# (dans l'herbe : un froissement, et le galet qui tinte à peine)
+	sons.jouer("herbe", -12.0, randf_range(1.1, 1.3))
+	sons.jouer("pierre", -17.0, randf_range(1.7, 2.0))
 	effets.recolte(g.position, "rocher")
 
 

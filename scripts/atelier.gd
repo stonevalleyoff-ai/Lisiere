@@ -761,11 +761,15 @@ func _ouvrir(s) -> void:
 		jeu.ui.message("Le coffre est vide.", Color(0.75, 0.7, 0.66))
 		return
 	s.etat["ouvert"] = true
+	# (le couvercle se lève : le coffre fait avancer « leve », de 0 à 1 ; scripts/campement.gd)
+	s.etat["leve"] = 0.0
 	var j = jeu.joueur
 	j.lance = R.USURE_LANCE
 	var n := ranger("galet", R.GALETS_COFFRE)
 	j.geste_atelier("fouiller")
-	jeu.sons.atelier("fouille")
+	# (la serrure rouillée qu'on force, les charnières qui grincent ; le couvercle qui retombe : c'est le coffre qui le fait sonner)
+	jeu.sons.atelier("fouille", 2.0, 0.9)
+	jeu.sons.atelier("corde", 4.0, 0.62)
 	jeu.ui.message("Un coffre, sous la mousse. Dedans : une lance, ferrée, entière%s. On n'en fait plus de pareilles." % (", et %d galets" % n if n > 0 else ""),
 		Color(0.95, 0.75, 0.45))
 
