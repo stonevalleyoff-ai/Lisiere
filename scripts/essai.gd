@@ -187,8 +187,14 @@ func _lancer() -> void:
 	j.inventaire["fibre"] = 10
 	j.position = Vector2(0, 0)
 	jeu.fabriquer("feu")
-	jeu.fabriquer("lance")
-	verif(jeu.feux.size() == 1 and j.lance == 30 and int(j.inventaire["bois"]) == 24, "un feu de camp et une lance, payés en bois, pierres et fibres")
+	# (la lance ne se fabrique plus : elle se trouve, dans un coffre — _le_lance_pierre le vérifie ; ici on la lui donne, et l'on
+	# retire ce qu'elle coûtait, pour que la suite compte comme avant)
+	j.lance = jeu.R.USURE_LANCE
+	j.inventaire["bois"] = int(j.inventaire["bois"]) - 2
+	j.inventaire["pierre"] = int(j.inventaire["pierre"]) - 1
+	j.inventaire["fibre"] = int(j.inventaire["fibre"]) - 2
+	verif(jeu.feux.size() == 1 and int(j.inventaire["bois"]) == 24 and not jeu.R.RECETTES.has("lance") and not jeu.atelier.OBJETS.has("lance"),
+		"un feu de camp, payé en bois et en pierres ; la lance ne se fabrique plus, ni de ses mains ni à l'établi")
 	var f = jeu.feux[0]
 	var avant: float = f.bois
 	jeu.nourrir_feu()
@@ -562,6 +568,7 @@ func _lancer() -> void:
 	_la_noire(F)
 	_le_pistage(F)
 	_les_empreintes(F)
+	_le_lance_pierre(F)
 	_l_atelier(F)
 	_le_jardin_et_les_betes(F)
 	_la_botanique(F)
@@ -627,6 +634,124 @@ func _lancer() -> void:
 
 # une bête de cette lignée, dont la population aurait appris cela (les autres dispositions à leur valeur neutre) ; elle est la
 # bête moyenne de sa population (ecart 0), sauf si l'entrée dit son écart d'audace
+# le lance-pierre et ses galets (l'établi les fait ; principal.gd tire ; galet.gd vole), et le coffre où se trouve la lance
+func _le_lance_pierre(F: Dictionary) -> void:
+	print("Le lance-pierre, le coffre")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var RR = jeu.R
+	var garde := {"p": j.position, "inv": j.inventaire.duplicate(), "objets": A.objets.duplicate(), "lance": j.lance, "h": jeu.horloge, "regard": j.regard,
+		"chassees": jeu.chassees, "prel": jeu.prelevements.duplicate(), "deja": jeu._deja.duplicate()}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * 0.3
+	var inv: Dictionary = j.inventaire
+	# un tir, joué sans attendre : elle arme, sa main lâche (le signal que joueur.gd envoie), le galet vole jusqu'au bout
+	var tirer := func() -> bool:
+		jeu._tir = 0.0
+		jeu.tirer()
+		if jeu._tir_vise.is_empty():
+			return false
+		jeu._sur_impact(j.position + Vector2(8.0 * j.regard, -22.0), "tir")
+		var parti := false
+		for g in jeu.monde.get_children():
+			if g.get_script() == jeu.Galet and g.is_processing():
+				parti = true
+				for i in 200:
+					if not g.is_processing():
+						break
+					g._process(0.02)
+		return parti
+
+	# le coffre : un seul dans le lieu, près d'un camp abandonné, loin du réveil ; la lance ne se trouve que là
+	var coffres: Array = A.poses.filter(func(s): return is_instance_valid(s) and str(s.genre) == "coffre")
+	var vestiges: Array = A.poses.filter(func(s): return is_instance_valid(s) and str(s.genre) == "vestige")
+	var pres_d_un_camp := false
+	if coffres.size() == 1:
+		for v in vestiges:
+			if v.position.distance_to(coffres[0].position) < 90.0 and int(v.etat.get("riche", 0)) > 0:
+				pres_d_un_camp = true
+	verif(coffres.size() == 1 and pres_d_un_camp and coffres[0].position.length() > 500.0,
+		"un coffre dans le lieu, un seul, près du camp abandonné le mieux pourvu, à %d pixels du réveil" % (int(coffres[0].position.length()) if coffres.size() > 0 else -1))
+	if coffres.size() == 1:
+		var c = coffres[0]
+		j.lance = 0
+		inv["galet"] = 0
+		# (du côté opposé au camp abandonné : « Agir » sert la chose la plus proche)
+		j.position = c.position + Vector2(30.0, 6.0)
+		var pris: bool = A.agir()
+		var lance1: int = j.lance
+		var galets1 := int(inv["galet"])
+		j.lance = 3
+		A.agir()
+		verif(pris and lance1 == RR.USURE_LANCE and galets1 == RR.GALETS_COFFRE and j.lance == 3 and int(inv["galet"]) == galets1 and bool(c.etat.get("ouvert", false)) and not A.replier(),
+			"« Agir » l'ouvre : une lance entière (%d coups) et %d galets ; rouvert, il est vide ; il ne se replie pas" % [lance1, galets1])
+
+	# à l'établi : les galets, quatre par pierre ; le lance-pierre, une fois
+	for s in A.poses.duplicate():
+		if is_instance_valid(s) and str(s.genre) == "etabli":
+			A.poses.erase(s)
+			s.queue_free()
+	j.position = Vector2(40.0, 300.0)
+	j.regard = 1.0
+	A.objets.erase("lance_pierre")
+	inv["galet"] = 0
+	inv["pierre"] = 3
+	inv["bois"] = 5
+	inv["corde"] = 2
+	inv["peau"] = 2
+	var sans_etabli: bool = not A.peut("lance_pierre") and not A.peut("galet")
+	var sans_arme: bool = not jeu.peut_fabriquer("tir") and not tirer.call()
+	var etabli = A._creer("etabli", j.position + Vector2(30.0, 0.0), {})
+	var fait_g: bool = A.fabriquer("galet")
+	var fait_l: bool = A.fabriquer("lance_pierre")
+	verif(sans_etabli and sans_arme and fait_g and fait_l and int(inv["galet"]) == 4 and int(inv["pierre"]) == 2 and A.possede("lance_pierre") == 1 and int(inv["bois"]) == 4
+		and int(inv["corde"]) == 1 and int(inv["peau"]) == 1 and not A.peut("lance_pierre") and jeu.peut_fabriquer("tir"),
+		"à l'établi seulement : une pierre donne %d galets ; le lance-pierre (un bois, une corde, une peau) ne se fait qu'une fois ; sans lui, on ne tire pas" % int(inv["galet"]))
+
+	# un tir : le galet part vers la bête la plus proche à portée, la blesse, et il en reste un de moins
+	var proie = _bete(F["proies_jour"][0], "proie", j.position + Vector2(190.0, -40.0), {})
+	proie.conduite = false
+	proie.pv = 500.0
+	var pv0: float = proie.pv
+	var parti: bool = tirer.call()
+	var touche: bool = absf((pv0 - proie.pv) - RR.DEGATS_TIR) < 0.01
+	var reste := int(inv["galet"])
+	# (la cadence : un second tir aussitôt ne part pas)
+	jeu.tirer()
+	var trop_tot: bool = jeu._tir_vise.is_empty()
+	# (hors de portée : elle tire droit devant, le galet tombe dans l'herbe)
+	proie.position = j.position + Vector2(RR.PORTEE_TIR + 200.0, 0.0)
+	var pv1: float = proie.pv
+	var parti2: bool = tirer.call()
+	verif(parti and touche and reste == 3 and trop_tot and parti2 and proie.pv == pv1 and int(inv["galet"]) == 2 and RR.DEGATS_TIR > RR.DEGATS_POINGS and RR.DEGATS_TIR < RR.DEGATS_LANCE,
+		"un tir : le galet vole jusqu'à la bête à %d pixels et lui prend %d (les poings : %d, la lance : %d) ; pas deux tirs à la fois ; hors de portée, il tombe dans l'herbe ; chaque tir prend un galet" % [
+			190, int(RR.DEGATS_TIR), int(RR.DEGATS_POINGS), int(RR.DEGATS_LANCE)])
+	# (dans le noir aussi : un chasseur dont on ne voit que les yeux)
+	proie.position = j.position + Vector2(150.0, 30.0)
+	proie.pv = RR.DEGATS_TIR * 0.5
+	var chassees0: int = jeu.chassees
+	tirer.call()
+	inv["galet"] = 0
+	var vide: bool = not jeu.peut_fabriquer("tir") and not tirer.call()
+	verif(not is_instance_valid(proie) or proie.pv <= 0.0 and jeu.chassees == chassees0 + 1 and vide,
+		"un galet peut tuer : c'est une chasse ; sans galet, on ne tire plus")
+	_oter(proie)
+	A.poses.erase(etabli)
+	etabli.queue_free()
+	j.position = garde["p"]
+	j.regard = garde["regard"]
+	j.lance = garde["lance"]
+	j.inventaire.clear()
+	j.inventaire.merge(garde["inv"], true)
+	A.objets = garde["objets"]
+	jeu.horloge = garde["h"]
+	jeu.chassees = garde["chassees"]
+	jeu.prelevements = garde["prel"]
+	jeu._deja = garde["deja"]
+	jeu._tir = 0.0
+
+
 # le jardin (scripts/jardin.gd) et l'élevage (scripts/elevage.gd)
 func _le_jardin_et_les_betes(F: Dictionary) -> void:
 	print("Le jardin et les bêtes")
@@ -3271,7 +3396,8 @@ func _l_atelier(F: Dictionary) -> void:
 	jeu.agir()
 	var trouve: int = int(inv["ferraille"])
 	jeu.agir()
-	verif(vestiges.size() == 3 and A.poses.size() == n_poses + 3 and loin and trouve >= 2 and int(inv["ferraille"]) == trouve,
+	# (trois vestiges, et le coffre du mieux pourvu : quatre choses de plus dans le lieu)
+	verif(vestiges.size() == 3 and A.poses.size() == n_poses + 4 and loin and trouve >= 2 and int(inv["ferraille"]) == trouve,
 		"trois vestiges d'autres veilleuses dans le lieu, loin du réveil ; « Agir » y trouve de la ferraille (%d), une seule fois" % trouve)
 
 	# replier, et la partie gardée

@@ -278,7 +278,9 @@ static func page(jeu_, id: String) -> Dictionary:
 			L.append("La torche la tient à distance.")
 		else:
 			L.append("La torche ne l'arrête pas : il te faut un feu.")
-	L.append("%d coup%s de lance pour l'abattre (%d à mains nues). Elle donne %d viande%s." % [coups_lance, "s" if coups_lance > 1 else "", coups_mains, viande, "s" if viande > 1 else ""])
+	var galets := int(ceil(pv / R.DEGATS_TIR))
+	L.append("%d galet%s pour l'abattre au lance-pierre ; %d coup%s à mains nues, %d à la lance. Elle donne %d viande%s." % [galets, "s" if galets > 1 else "", coups_mains,
+		"s" if coups_mains > 1 else "", coups_lance, viande, "s" if viande > 1 else ""])
 	var dit := Donnees.dire_memoire(e.get("memoire", {})) if typeof(e.get("memoire")) == TYPE_DICTIONARY else ""
 	if dit != "":
 		L.append("Ce que les veilleuses lui ont appris : %s." % dit)

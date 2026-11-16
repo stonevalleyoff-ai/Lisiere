@@ -1382,9 +1382,15 @@ func _animer(delta: float) -> void:
 	_derobe = maxf(0.0, _derobe - delta / 0.32)
 	_recul = _recul.lerp(Vector2.ZERO, 1.0 - exp(-delta * 15.0))
 	# (le ressort du corps : vif chez une bête légère, lourd chez une grosse)
+	# (par petits pas : sur une image longue — un à-coup, un téléphone qui peine — le ressort d'un coup reçu s'emballait, et
+	# la bête enflait jusqu'à couvrir l'écran)
 	var wr := lerpf(22.0, 13.0, _poids)
-	_ressort_v += (-wr * wr * _ressort - 0.82 * wr * _ressort_v) * delta
-	_ressort += _ressort_v * delta
+	var reste := minf(delta, 0.25)
+	while reste > 0.0:
+		var h := minf(reste, 0.02)
+		_ressort_v += (-wr * wr * _ressort - 0.82 * wr * _ressort_v) * h
+		_ressort += _ressort_v * h
+		reste -= h
 	# le retournement : un demi-tour de papier, sans saut ; plus lent chez une bête lourde
 	var avant_face := _face
 	_face = move_toward(_face, regard, delta / (0.12 if role == "noire" else lerpf(0.15, 0.26, _poids)))

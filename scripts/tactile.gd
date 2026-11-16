@@ -22,7 +22,8 @@ const BOUTONS := [
 	["agir", "Agir", Vector2(-92, -100), 50.0],
 	["feu", "Feu", Vector2(-205, -96), 31.0],
 	["torche", "Torche", Vector2(-172, -182), 31.0],
-	["lance", "Lance", Vector2(-90, -214), 31.0],
+	# (le lance-pierre : dès qu'elle en a un ; scripts/atelier.gd)
+	["tir", "Tirer", Vector2(-90, -214), 31.0],
 	["nourrir", "Nourrir", Vector2(-292, -150), 29.0],
 	["cuire", "Cuire", Vector2(-230, -258), 29.0],
 	["manger", "Manger", Vector2(-120, -306), 29.0],
@@ -32,10 +33,12 @@ const BOUTONS := [
 	["sac", "Sac", Vector2(-336, -244), 29.0],
 ]
 const MARCHE := {"droite": Vector2.RIGHT, "gauche": Vector2.LEFT, "bas": Vector2.DOWN, "haut": Vector2.UP}
-const ICONES := {"feu": "feu", "torche": "torche", "lance": "lance", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger", "pont": "pont", "sac": "fibre"}
+const ICONES := {"feu": "feu", "torche": "torche", "tir": "tir", "nourrir": "nourrir", "cuire": "cuire", "manger": "manger", "pont": "pont", "sac": "fibre"}
 
 
 func _montre(action: String) -> bool:
+	if action == "tir":
+		return jeu.atelier != null and int(jeu.atelier.possede("lance_pierre")) > 0
 	return action != "pont" or bool(jeu.pont_possible)
 
 var jeu
@@ -206,7 +209,7 @@ func _lacher() -> void:
 func _disponible(action: String) -> bool:
 	var inv: Dictionary = jeu.joueur.inventaire
 	match action:
-		"feu", "torche", "lance", "pont":
+		"feu", "torche", "tir", "pont":
 			return jeu.peut_fabriquer(action)
 		"manger":
 			return int(inv["baies"]) + int(inv["viande"]) + int(inv["viande_cuite"]) + int(inv.get("bouillon", 0)) > 0

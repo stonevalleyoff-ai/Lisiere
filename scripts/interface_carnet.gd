@@ -620,10 +620,10 @@ class Commandes extends Control:
 	var tactile := false
 	const CLAVIER := [["patte", "ZQSD · WASD · flèches", "marcher"], ["lance", "Espace · clic", "récolter, frapper"],
 		["manger", "E", "manger"], ["nourrir", "F", "nourrir le feu"], ["cuire", "C", "cuire la viande"],
-		["feu", "1", "un feu de camp"], ["torche", "2", "une torche"], ["lance", "3", "une lance"], ["pause", "Échap", "reprendre"]]
+		["feu", "1", "un feu de camp"], ["torche", "2", "une torche"], ["tir", "3", "tirer au lance-pierre"], ["pause", "Échap", "reprendre"]]
 	const DOIGT := [["patte", "pouce gauche", "marcher"], ["lance", "Agir", "récolter, frapper"],
 		["manger", "Manger", "manger"], ["nourrir", "Nourrir", "nourrir le feu"], ["cuire", "Cuire", "cuire la viande"],
-		["feu", "Feu", "un feu de camp"], ["torche", "Torche", "une torche"], ["lance", "Lance", "une lance"], ["pause", "en haut", "reprendre"]]
+		["feu", "Feu", "un feu de camp"], ["torche", "Torche", "une torche"], ["tir", "Tirer", "tirer au lance-pierre"], ["pause", "en haut", "reprendre"]]
 
 	var _cadre := StyleBoxFlat.new()
 

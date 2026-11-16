@@ -9,7 +9,9 @@ Chaque bête du jeu est une lignée vraie d'Orvane, au dernier cycle publié : s
 ## Ce qu'on y fait
 
 - **Le jour** (quatre minutes, dont une part de nuit) : ramasser des brindilles, couper du bois, casser des pierres, cueillir des baies et des fibres. Chasser les proies du lieu, qui fuient quand on approche (plus tôt si l'on court vers elles). Laisser passer les rôdeurs, des chasseurs qui vivent le jour : ils se retournent si l'on s'approche trop.
-- **Fabriquer** : un feu de camp (4 bois, 2 pierres), une torche (2 bois, 1 fibre), une lance (2 bois, 1 pierre, 2 fibres), qui frappe trois fois plus fort et s'use.
+- **Fabriquer** : un feu de camp (4 bois, 2 pierres), une torche (2 bois, 1 fibre).
+- **Le lance-pierre** se fabrique à l'établi (1 bois, 1 corde, 1 peau), ses **galets** aussi (une pierre en donne quatre). On tire avec la touche 3 (le bouton « Tirer ») : le galet part vers la bête la plus proche à portée (300 pixels), même vers des yeux dans le noir ; il frappe plus fort que les poings (13 contre 8), moins que la lance (26).
+- **La lance** ne se fabrique plus : on la trouve, dans le **coffre** d'une autre veilleuse (un seul par lieu, près du camp abandonné le mieux pourvu ; dans le monde ouvert, un pays sur quatre environ). Elle s'use (60 coups).
 - **La nuit** : le feu brûle son bois (une bûche, 25 secondes de plus) et éclaire d'autant plus qu'il en a. Les chasseurs du lieu viennent. Ils n'entrent pas dans la lumière d'un feu : ils tournent à sa lisière. Ils gardent leurs distances avec une torche, sauf les plus audacieux. Dans le noir, ils mordent.
 - **Le corps** : la faim baisse sans cesse (des baies, rares ; de la viande, cuite de préférence). La peur monte dans le noir et quand un chasseur est près ; elle baisse à la lumière. **Tout cela tue** : la faim sous 15, la peur au-dessus de 75, le froid sous 32 et la chaleur au-dessus de 72 prennent sur la santé, de plus en plus, et chacune en vient à bout en moins d'une minute à son comble. Les jauges préviennent avant. L'écran de fin dit ce qui a pris la veilleuse.
 - **Le temps qu'il fait** change pendant la partie, et il pèse (`scripts/climat.gd`) :
@@ -121,7 +123,8 @@ Le même que pour Stone Valley : le bouton « Se connecter », sous « Entrer da
 | --- | --- | --- |
 | marcher | ZQSD (clavier français), WASD, ou les flèches | le pouce gauche, posé n'importe où dans la moitié gauche de l'écran |
 | récolter, frapper | Espace, ou le clic | Agir (on peut le tenir en marchant) |
-| un feu, une torche, une lance | 1, 2, 3 | Feu, Torche, Lance |
+| un feu, une torche | 1, 2 | Feu, Torche |
+| tirer au lance-pierre | 3 | Tirer |
 | manger, nourrir le feu, cuire | E, F, C | Manger, Nourrir, Cuire |
 | pause | Échap | le bouton en haut, au milieu |
 

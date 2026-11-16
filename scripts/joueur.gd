@@ -78,6 +78,13 @@ const GESTES := {
 		[0.4, 1.0, Vector3(14.0, 1.5, 22.5), 0.8, 2.2, 0.35, 2.6, true],
 		[0.58, 1.0, Vector3(13.0, 1.8, 22.0), 0.8, 1.9, 0.3, 2.1],
 		[1.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0]]},
+	# le lance-pierre : le bras tendu vers ce qu'elle vise, elle tire la poche, et lâche (à « touche » : le galet part)
+	"tir": {"duree": 0.5, "touche": 0.5, "biais": 0.3, "deux_mains": false, "objet": ["", 0.0, 0.0], "cles": [
+		[0.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0],
+		[0.25, 1.0, Vector3(13.0, 2.0, 21.0), 0.6, 0.6, 0.1, 0.8],
+		[0.5, 1.0, Vector3(13.5, 2.0, 21.5), 0.5, -0.6, -0.2, 0.4, true],
+		[0.7, 1.0, Vector3(13.0, 2.2, 21.0), 0.5, 0.4, 0.1, 0.6],
+		[1.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0]]},
 	"lance": {"duree": 0.34, "touche": 0.34, "biais": 0.35, "deux_mains": true, "objet": ["", 0.0, 0.0], "cles": [
 		[0.0, 0.0, Vector3(3.4, 7.4, 18.0), 0.0, 0.0, 0.0, 0.0],
 		[0.18, 1.0, Vector3(-5.0, 5.5, 21.0), 0.8, -1.6, -0.4, -1.4],
@@ -549,6 +556,11 @@ func blesser(n: float) -> void:
 func frapper() -> void:
 	var b = _bete_proche(R.PORTEE_COUP + 24.0)
 	_commencer("lance" if lance > 0 else "poing", (b.position - position) if b != null else _devant())
+
+
+# le lance-pierre : elle se tourne vers ce qu'elle vise, arme, lâche (le signal impact part alors, genre « tir »)
+func tirer(vers: Vector2) -> void:
+	_commencer("tir", vers - position)
 
 
 # un geste de récolte : couper (arbre, sapin), casser (rocher), cueillir (buisson), arracher (touffe), ramasser (brindille)

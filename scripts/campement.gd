@@ -82,7 +82,7 @@ const ANNEAU := Vector2(2.0, -9.0)
 const BOITES := {
 	"etabli": Rect2(-44.0, -40.0, 96.0, 62.0), "tente": Rect2(-44.0, -58.0, 90.0, 88.0), "hamac": Rect2(-110.0, -70.0, 220.0, 150.0),
 	"recuperateur": Rect2(-30.0, -44.0, 60.0, 66.0), "filet": Rect2(-40.0, -30.0, 80.0, 50.0),
-	"cerf_volant": Rect2(-60.0, -900.0, 260.0, 930.0), "vestige": Rect2(-50.0, -52.0, 100.0, 76.0),
+	"cerf_volant": Rect2(-60.0, -900.0, 260.0, 930.0), "vestige": Rect2(-50.0, -52.0, 100.0, 76.0), "coffre": Rect2(-24.0, -34.0, 48.0, 46.0),
 	"carre": Rect2(-30.0, -32.0, 60.0, 52.0), "epouvantail": Rect2(-28.0, -54.0, 60.0, 62.0), "piquet": Rect2(-16.0, -20.0, 32.0, 30.0),
 	"mangeoire": Rect2(-24.0, -30.0, 48.0, 42.0), "appat": Rect2(-12.0, -8.0, 24.0, 16.0),
 }
@@ -154,6 +154,8 @@ static func rayon(g: String) -> float:
 			return 6.0
 		"vestige":
 			return 19.0
+		"coffre":
+			return 11.0
 		"epouvantail":
 			return 7.0
 		"piquet":
@@ -180,6 +182,8 @@ static func hauteur(g: String) -> float:
 			return 17.0
 		"vestige":
 			return 37.0
+		"coffre":
+			return 15.0
 		"carre":
 			return 14.0
 		"epouvantail":
@@ -297,6 +301,8 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_cerf_volant(p)
 				"vestige":
 					_vestige(p)
+				"coffre":
+					_coffre(p)
 				"carre":
 					_carre(p)
 				"epouvantail":
@@ -482,6 +488,8 @@ func _cle_du_fond() -> String:
 			k += "-%s-%s-%d-%s" % [_monte <= 0.0, bool(etat.get("branche", false)), int(clampf(float(etat.get("charge", 0.0)), 0.0, 1.0) * 3.0 + 0.01), _roussi]
 		"vestige":
 			k += "-%s-%d-%s" % [bool(etat.get("fouille", false)), int(etat.get("riche", 0)), _vent > 0.03]
+		"coffre":
+			k += "-%s" % bool(etat.get("ouvert", false))
 		"carre":
 			# (la terre par crans d'eau ; la pousse par seizièmes de stade : elle est lente, le fond se refait rarement)
 			k += "-%d-%s-%s-%d" % [int(clampf(float(etat.get("eau", 0.0)), 0.0, 1.0) * 5.0 + 0.5), bool(etat.get("gel", false)), str(etat.get("culture", "")),
@@ -1915,6 +1923,48 @@ func _vestige(p) -> void:
 	if neige > 0.2:
 		for q in [foyer + Vector2(0.0, -0.5), Vector2(6.0, 9.4), bo + Vector2(0.0, -3.0)]:
 			p.disque(q, 5.0 * neige + 1.5, 1.4 * neige + 0.5, NEIGE, Pinceau.DOME)
+
+
+# --- le coffre d'une autre veilleuse : des planches, deux ferrures, de la mousse ; ouvert, son couvercle rejeté en arrière ---
+
+func _coffre(p) -> void:
+	var r := _hasard(31)
+	var sombre := 0.18 * _mouille_cran()
+	var bois := BOIS.darkened(0.28 + sombre)
+	var fer := METAL.darkened(0.1 + sombre)
+	var ouvert := bool(etat.get("ouvert", false))
+	_ombre(p, Vector2(0.0, 2.0), 17.0, 5.5, 0.24)
+	# la caisse : sa face, son dessus (vu de trois quarts, d'en haut)
+	var face := PackedVector2Array([Vector2(-13.0, -9.0), Vector2(13.0, -9.0), Vector2(13.0, 2.0), Vector2(-13.0, 2.0)])
+	var dessus := PackedVector2Array([Vector2(-11.5, -15.0), Vector2(11.5, -15.0), Vector2(13.0, -9.0), Vector2(-13.0, -9.0)])
+	p.aplat(face, bois)
+	if ouvert:
+		# (le dedans, noir ; le couvercle, debout derrière)
+		var couvercle := PackedVector2Array([Vector2(-11.5, -26.0), Vector2(11.5, -26.0), Vector2(11.5, -15.0), Vector2(-11.5, -15.0)])
+		p.aplat(couvercle, bois.darkened(0.2))
+		p.contour(couvercle, 1.0, ENCRE, r)
+		p.aplat(dessus, Color("17140f"))
+	else:
+		p.aplat(dessus, bois.lightened(0.1), Pinceau.ECORCE)
+	p.contour(face, 1.1, ENCRE, r)
+	p.contour(dessus, 1.0, ENCRE, r)
+	# les planches de la face, les deux ferrures, la serrure
+	for y in [-5.2, -1.4]:
+		p.tracer(PackedVector2Array([Vector2(-12.4, y), Vector2(12.4, y + r.randf_range(-0.3, 0.3))]), 0.6, Color(ENCRE, 0.45), false)
+	for x in [-8.0, 8.0]:
+		p.tracer(PackedVector2Array([Vector2(x, -9.0), Vector2(x, 2.0)]), 2.2, ENCRE, false)
+		p.tracer(PackedVector2Array([Vector2(x, -8.6), Vector2(x, 1.6)]), 1.3, fer, false)
+		if not ouvert:
+			p.tracer(PackedVector2Array([Vector2(x * 0.9, -15.0), Vector2(x, -9.0)]), 1.3, fer.lightened(0.08), false)
+	p.disque(Vector2(0.0, -6.4), 2.0, 2.3, ENCRE)
+	p.disque(Vector2(0.0, -6.4), 1.3, 1.6, ROUILLE.darkened(0.15 + sombre))
+	# la mousse, sur un coin ; l'herbe au pied
+	if not ouvert:
+		p.disque(Vector2(-7.0, -13.0), 4.6, 1.9, P.MOUSSE.darkened(0.12), Pinceau.FEUILLAGE)
+	p.disque(Vector2(-11.0, -9.4), 3.0, 1.6, P.MOUSSE.darkened(0.05), Pinceau.FEUILLAGE)
+	for i in 4:
+		var x := r.randf_range(-15.0, 15.0)
+		p.tracer(PackedVector2Array([Vector2(x, 3.0), Vector2(x + r.randf_range(-1.0, 1.0), 3.0 - r.randf_range(3.0, 6.0))]), 1.1, P.MOUSSE.lightened(r.randf_range(0.0, 0.14)))
 
 
 func _vestige_vif(p) -> void:

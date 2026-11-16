@@ -112,7 +112,12 @@ func _lancer() -> void:
 	if heure != "jour" and not OS.get_cmdline_user_args().has("--sans-feu"):
 		jeu.fabriquer("feu")
 		jeu.feux[0].ajouter(3)
-	jeu.fabriquer("lance")
+	# (--lance : elle a trouvé la lance ; --tir : elle a un lance-pierre et des galets, et tire toutes les secondes)
+	if OS.get_cmdline_user_args().has("--lance"):
+		j.lance = R.USURE_LANCE
+	if OS.get_cmdline_user_args().has("--tir"):
+		jeu.atelier.objets["lance_pierre"] = 1
+		j.inventaire["galet"] = 40
 	var F: Dictionary = jeu.faune
 	for i in 3:
 		if not F["proies_jour"].is_empty():
@@ -244,6 +249,9 @@ func _lancer() -> void:
 							jeu.atelier.fil = s
 							jeu.atelier.charge = 35.0
 							jeu.atelier.vent_force = 0.8
+					"coffre":
+						if _etats.has("ouvert"):
+							s.etat["ouvert"] = true
 					"vestige":
 						if _etats.has("fouille"):
 							s.etat["fouille"] = true
@@ -579,6 +587,9 @@ func _process(delta: float) -> void:
 		jeu.ui.visible = false
 	_le_temps_passe(u)
 	_mesurer()
+	# (--tir : elle tire au lance-pierre, toutes les secondes, sur ce qui est à portée)
+	if OS.get_cmdline_user_args().has("--tir") and int(_t / 1.1) != int((_t - delta) / 1.1):
+		jeu.tirer()
 	# (--carte : à la fin, la pause, et la carte du carnet ; les régions à deux pas de là sont découvertes, pour la voir pleine)
 	if jeu.ouvert and u > 0.8 and not _fait.has("carte") and OS.get_cmdline_user_args().has("--carte") and jeu.carte != null:
 		_fait["carte"] = true

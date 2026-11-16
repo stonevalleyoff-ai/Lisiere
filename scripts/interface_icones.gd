@@ -11,7 +11,7 @@ extends RefCounted
 const P := preload("res://scripts/palette.gd")
 const Trace := preload("res://scripts/interface_trace.gd")
 const NOMS := ["coeur", "baies", "oeil", "bois", "pierre", "fibre", "viande", "viande_cuite", "torche", "lance", "feu",
-	"soleil", "lune", "patte", "croix", "manger", "nourrir", "cuire", "pause", "thermometre", "goutte", "flamme", "pont"]
+	"soleil", "lune", "patte", "croix", "manger", "nourrir", "cuire", "pause", "thermometre", "goutte", "flamme", "pont", "tir", "lance_pierre", "galet"]
 
 const ROUGE := Color("a8321f")          # (les baies, la viande : entre le sang et la braise)
 const PIERRE := Color("9d968a")
@@ -87,6 +87,10 @@ static func _icone(ci, nom: String, w: float, m: Color, k: float) -> void:
 			_goutte(ci, w, m)
 		"pont":
 			_pont(ci, w, m)
+		"tir", "lance_pierre":
+			_lance_pierre(ci, w, m)
+		"galet":
+			_galets(ci, w, m)
 		"flamme":
 			_flamme(ci, w, m, Vector2(2, 40), 30.0, 84.0, -5.0)
 
@@ -418,6 +422,51 @@ static func _lance(ci, w: float, m: Color) -> void:
 		var p := Vector2(-2, 2) + Vector2(-1, 1) * (i * 6.0)
 		ci.draw_line(p + Vector2(-8, -8), p + Vector2(8, 8), P.ENCRE * m, w * 1.9, true)
 		ci.draw_line(p + Vector2(-7, -7), p + Vector2(7, 7), Color("d9cfb4") * m, w * 0.9, true)
+
+
+# le lance-pierre : une fourche de bois, deux boyaux, une poche de cuir où tient un galet
+static func _lance_pierre(ci, w: float, m: Color) -> void:
+	var bois := Color("8a6a48")
+	# (les boyaux, derrière la fourche : ils pendent des deux cornes jusqu'à la poche)
+	var poche := Vector2(2, -2)
+	for x in [-27.0, 27.0]:
+		var corne := Vector2(x, -36)
+		ci.draw_polyline(PackedVector2Array([corne, corne.lerp(poche, 0.5) + Vector2(-x * 0.1, 8), poche + Vector2(signf(x) * 9.0, 2)]), P.ENCRE * m, w * 1.6, true)
+		ci.draw_polyline(PackedVector2Array([corne, corne.lerp(poche, 0.5) + Vector2(-x * 0.1, 8), poche + Vector2(signf(x) * 9.0, 2)]), Color("c9a878") * m, w * 0.7, true)
+	_forme(ci, _capsule(Vector2(0, 46), Vector2(0, 6), 7.0), bois * m, w, m)
+	_forme(ci, _capsule(Vector2(-3, 8), Vector2(-27, -36), 6.0), bois * m, w, m)
+	_forme(ci, _capsule(Vector2(3, 8), Vector2(27, -36), 6.0), bois * m, w, m)
+	ci.draw_line(Vector2(-2, 40), Vector2(-2, 12), Color(P.PAPIER, 0.3) * m, w * 0.6, true)
+	# (les ligatures, en haut des cornes ; la poignée, entourée de fibres)
+	for x in [-27.0, 27.0]:
+		ci.draw_line(Vector2(x - 7.0, -30), Vector2(x + 7.0, -34), P.ENCRE * m, w * 1.8, true)
+		ci.draw_line(Vector2(x - 6.0, -30.3), Vector2(x + 6.0, -33.7), Color("d9cfb4") * m, w * 0.8, true)
+	for i in 3:
+		var y := 26.0 + i * 7.0
+		ci.draw_line(Vector2(-8, y), Vector2(8, y + 2.0), P.ENCRE * m, w * 1.8, true)
+		ci.draw_line(Vector2(-7, y), Vector2(7, y + 2.0), Color("d9cfb4") * m, w * 0.8, true)
+	# (la poche, et son galet)
+	var cuir := PackedVector2Array([poche + Vector2(-11, -3), poche + Vector2(11, -3), poche + Vector2(8, 8), poche + Vector2(-8, 8)])
+	_forme(ci, cuir, Color("6f4f33") * m, w, m)
+	_caillou(ci, poche + Vector2(0, -2), 6.5, w, m)
+
+
+# trois galets, roulés
+static func _galets(ci, w: float, m: Color) -> void:
+	_caillou(ci, Vector2(16, -14), 19.0, w, m)
+	_caillou(ci, Vector2(-18, 6), 22.0, w, m)
+	_caillou(ci, Vector2(20, 22), 15.0, w, m)
+
+
+static func _caillou(ci, c: Vector2, r: float, w: float, m: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 12:
+		var a := TAU * i / 12.0
+		pts.append(c + Vector2(cos(a) * r * 1.12, sin(a) * r * 0.86))
+	ci.draw_colored_polygon(pts, PIERRE * m)
+	ci.draw_arc(c + Vector2(0.0, r * 0.12), r * 0.72, 0.25, PI - 0.25, 8, Color(P.CENDRE, 0.55) * m, w * 0.9, true)
+	ci.draw_arc(c + Vector2(-r * 0.1, -r * 0.1), r * 0.5, PI + 0.5, PI * 1.6, 6, Color(P.PAPIER, 0.7) * m, w * 0.7, true)
+	ci.draw_polyline(pts + PackedVector2Array([pts[0]]), P.ENCRE * m, w, true)
 
 
 static func _feu(ci, w: float, m: Color) -> void:

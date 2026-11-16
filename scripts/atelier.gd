@@ -16,9 +16,9 @@ const R := preload("res://scripts/regles.gd")
 const Campement := preload("res://scripts/campement.gd")
 
 # les matières, dans l'ordre où on les montre ; celles du début sont dans le sac depuis toujours (regles.gd, NOMS)
-const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau"]
+const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet"]
 const NOMS_MATIERES := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "peau": "peau", "ferraille": "ferraille",
-	"corde": "corde", "bache": "bâche", "eau": "eau"}
+	"corde": "corde", "bache": "bâche", "eau": "eau", "galet": "galets"}
 # les familles, dans l'ordre de la page de l'établi : [la clé, son titre]
 const FAMILLES := [["matiere", "Les matières"], ["camp", "Le camp"], ["tenue", "La tenue"], ["outil", "Les outils"],
 	["jardin", "Le jardin"], ["elevage", "L'élevage"]]
@@ -29,6 +29,9 @@ const OBJETS := {
 		"dit": "Trois brins de fibres, tressés. Il en faut partout."},
 	"bache": {"nom": "Bâche", "famille": "matiere", "ou": "etabli", "cout": {"fibre": 6},
 		"dit": "Une toile serrée, enduite. Elle arrête la pluie et le vent."},
+	# (« lot » : ce qu'un ouvrage en donne d'un coup)
+	"galet": {"nom": "Galets", "famille": "matiere", "ou": "etabli", "lot": 4, "cout": {"pierre": 1},
+		"dit": "Une pierre cassée, ses éclats roulés : quatre galets, pour le lance-pierre."},
 	"etabli": {"nom": "Établi", "famille": "camp", "ou": "main", "pose": true, "cout": {"bois": 6, "pierre": 2, "fibre": 2},
 		"dit": "Un billot, un plateau, des outils de pierre. Tout le reste s'y fabrique."},
 	"tente": {"nom": "Tente", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"bache": 2, "corde": 2, "bois": 4},
@@ -59,6 +62,8 @@ const OBJETS := {
 		"dit": "Vides quand on les fait. Le cerf-volant les charge."},
 	"mortier": {"nom": "Mortier", "famille": "outil", "ou": "etabli", "unique": true, "cout": {"pierre": 3, "bois": 1},
 		"dit": "Une pierre creuse et son pilon : on y broie les herbes qu'on a reconnues (l'herbier, dans ton sac)."},
+	"lance_pierre": {"nom": "Lance-pierre", "famille": "outil", "ou": "etabli", "unique": true, "cout": {"bois": 1, "corde": 1, "peau": 1},
+		"dit": "Une fourche, un boyau, une poche de cuir. Il porte loin, même vers des yeux dans le noir. Il lui faut des galets."},
 	# le jardin (scripts/jardin.gd)
 	"houe": {"nom": "Houe", "famille": "jardin", "ou": "etabli", "unique": true, "cout": {"bois": 2, "pierre": 1, "corde": 1},
 		"dit": "Elle retourne la terre : un carré de jardin, où l'on sème."},
@@ -78,8 +83,8 @@ const OBJETS := {
 	"selle": {"nom": "Selle", "famille": "elevage", "ou": "etabli", "cout": {"peau": 3, "corde": 2, "bois": 1},
 		"dit": "Sur une bête assez forte, on la monte : on va bien plus vite. Elle te jette à terre quand elle a peur."},
 }
-const ORDRE := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
-	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire",
+const ORDRE := ["corde", "bache", "galet", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
+	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire",
 	"sacoche", "selle"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
 const TEINTE := Color(0.86, 0.8, 0.66)
@@ -182,7 +187,7 @@ func fabriquer(id: String) -> bool:
 	for k in o["cout"]:
 		inv[k] = int(inv.get(k, 0)) - int(o["cout"][k])
 	if MATIERES.has(id):
-		inv[id] = int(inv.get(id, 0)) + 1
+		inv[id] = int(inv.get(id, 0)) + int(o.get("lot", 1))
 	else:
 		objets[id] = int(objets.get(id, 0)) + 1
 		if bool(o.get("porte", false)) and id != "lampe":
@@ -295,7 +300,7 @@ func poser(id: String) -> bool:
 # elle replie la chose posée la plus proche, et la reprend dans son sac
 func replier() -> bool:
 	var s = _la_plus_proche(PORTEE)
-	if s == null or str(s.genre) in ["vestige", "appat"]:
+	if s == null or str(s.genre) in ["vestige", "appat", "coffre"]:
 		return false
 	if str(s.genre) == "carre":
 		# (un carré se comble : la terre reprend sa place, ce qui y poussait est perdu)
@@ -442,6 +447,8 @@ func agir() -> bool:
 			_brancher(s)
 		"vestige":
 			_fouiller(s)
+		"coffre":
+			_ouvrir(s)
 		_:
 			return false
 	return true
@@ -748,6 +755,21 @@ func _fouiller(s) -> void:
 	jeu.ui.message("Un camp abandonné. Tu y trouves de la ferraille (%d), et un sachet de graines : des simples." % n, TEINTE)
 
 
+# un coffre : ce qu'une autre veilleuse gardait pour plus tard. La lance ne se trouve que là : on ne sait plus la faire.
+func _ouvrir(s) -> void:
+	if bool(s.etat.get("ouvert", false)):
+		jeu.ui.message("Le coffre est vide.", Color(0.75, 0.7, 0.66))
+		return
+	s.etat["ouvert"] = true
+	var j = jeu.joueur
+	j.lance = R.USURE_LANCE
+	var n := ranger("galet", R.GALETS_COFFRE)
+	j.geste_atelier("fouiller")
+	jeu.sons.atelier("fouille")
+	jeu.ui.message("Un coffre, sous la mousse. Dedans : une lance, ferrée, entière%s. On n'en fait plus de pareilles." % (", et %d galets" % n if n > 0 else ""),
+		Color(0.95, 0.75, 0.45))
+
+
 # sa tenue a changé : le corps de la veilleuse la lit (scripts/joueur.gd)
 func _tenue() -> void:
 	var j = jeu.joueur
@@ -791,6 +813,9 @@ func semer_vestiges() -> void:
 			p = jeu.monde.repousser(Vector2(clampf(p.x, -lim, lim), clampf(p.y, -lim, lim)), 20.0)
 			if float(jeu.climat.eau(p)) < 0.05 or essai == 11:
 				_creer("vestige", p, {"riche": 1 if k == 0 else 0})
+				# (le camp le mieux pourvu garde un coffre, à deux pas : le seul du lieu)
+				if k == 0:
+					_creer("coffre", jeu.monde.repousser(p + Vector2(46.0, 10.0), 14.0), {})
 				break
 
 
@@ -810,7 +835,11 @@ func vestige_de(i: int) -> void:
 	for essai in 12:
 		var p: Vector2 = C.retenir(ici + Vector2.from_angle(cap + r.randf_range(-0.8, 0.8)) * r.randf_range(650.0, 1400.0))
 		if int(C.region_en(p)) == i and not bool(C.roche_en(p)) and float(C.lit(p)) <= 0.0:
-			_creer("vestige", p, {"riche": 1 if r.randf() < 0.3 else 0})
+			var riche := r.randf() < 0.3
+			_creer("vestige", p, {"riche": 1 if riche else 0})
+			# (un camp bien pourvu garde un coffre, à deux pas : un pays sur quatre environ)
+			if riche:
+				_creer("coffre", C.retenir(p + Vector2(46.0, 10.0)), {})
 			return
 
 
@@ -836,7 +865,7 @@ func commencer() -> void:
 	lit = null
 	_dit = {}
 	var inv: Dictionary = jeu.joueur.inventaire
-	for k in ["peau", "ferraille", "corde", "bache", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages"]:
+	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages"]:
 		if not inv.has(k):
 			inv[k] = 0
 	_tenue()

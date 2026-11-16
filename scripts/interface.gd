@@ -186,7 +186,7 @@ func _construire_titre() -> void:
 	_bas_titre.add_theme_constant_override("separation", 6)
 	_bas_titre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_titre.add_child(_bas_titre)
-	_aide_titre = _centre(T.libelle("ZQSD, WASD ou les flèches : marcher · Espace ou clic : récolter, frapper\n1 : un feu de camp · 2 : une torche · 3 : une lance · E : manger · F : nourrir le feu · C : cuire · Échap : pause", T.texte_moyen(), 14, Color(P.IVOIRE, 0.66)))
+	_aide_titre = _centre(T.libelle("ZQSD, WASD ou les flèches : marcher · Espace ou clic : récolter, frapper\n1 : un feu de camp · 2 : une torche · 3 : tirer au lance-pierre · E : manger · F : nourrir le feu · C : cuire · Échap : pause", T.texte_moyen(), 14, Color(P.IVOIRE, 0.66)))
 	_bas_titre.add_child(_aide_titre)
 	_pied = _centre(T.libelle("Chaque bête est une lignée vraie du monde d'Orvane, au dernier cycle publié : son nombre, sa silhouette, son heure, son caractère.\nCe que tu croises et ce que tu chasses est compté, et renvoyé au monde.", T.texte(), 12, Color(P.IVOIRE, 0.42)))
 	_bas_titre.add_child(_pied)
@@ -435,6 +435,9 @@ func maj_hud(jeu) -> void:
 		if r[0] == "pont":
 			# (au doigt, son bouton suffit : sa carte passerait sous les boutons)
 			r[1].visible = bool(jeu.pont_possible) and not tactile
+		elif r[0] == "tir":
+			# (le lance-pierre : sa carte paraît quand elle en a un ; elle dit ce qu'il lui reste de galets)
+			r[1].visible = jeu.atelier != null and int(jeu.atelier.possede("lance_pierre")) > 0 and not tactile
 	_jauges.corps = j.temperature
 	_jauges.trempe = j.trempe
 	_jauges.en_feu = j.en_feu > 0.0
@@ -541,7 +544,7 @@ func alleger() -> void:
 
 func passer_au_tactile() -> void:
 	tactile = true
-	_aide_titre.text = "Le pouce gauche, posé n'importe où à gauche : marcher\nLes boutons à droite : récolter et frapper (Agir), un feu, une torche, une lance, manger, nourrir le feu, cuire"
+	_aide_titre.text = "Le pouce gauche, posé n'importe où à gauche : marcher\nLes boutons à droite : récolter et frapper (Agir), un feu, une torche, le lance-pierre, manger, nourrir le feu, cuire"
 	_colonne.add_theme_constant_override("separation", 1)
 	_nom_du_jeu.add_theme_font_size_override("font_size", 74)
 	_nom_du_jeu.add_theme_font_override("font", T.espacee(T.titre(), 8))

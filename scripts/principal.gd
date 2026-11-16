@@ -42,6 +42,7 @@ const Atelier := preload("res://scripts/atelier.gd")
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
 const Botanique := preload("res://scripts/botanique.gd")
+const Galet := preload("res://scripts/galet.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -125,6 +126,8 @@ var _garde_ms := 0
 var _directeur := 0.0
 var _vague := 0.0
 var _agir := 0.0
+var _tir := 0.0               # le temps avant de pouvoir tirer de nouveau (le lance-pierre)
+var _tir_vise := {}           # ce qu'elle vise, le temps d'armer : la bête, le point
 var _grogne := 0.0
 var _etait_nuit := false
 var _deja: Dictionary = {}
@@ -300,7 +303,7 @@ func basculer_ips() -> bool:
 func _actions() -> void:
 	var touches := {
 		"haut": [KEY_W, KEY_UP], "bas": [KEY_S, KEY_DOWN], "gauche": [KEY_A, KEY_LEFT], "droite": [KEY_D, KEY_RIGHT],
-		"agir": [KEY_SPACE], "feu": [KEY_1, KEY_KP_1], "torche": [KEY_2, KEY_KP_2], "lance": [KEY_3, KEY_KP_3], "pont": [KEY_4, KEY_KP_4],
+		"agir": [KEY_SPACE], "feu": [KEY_1, KEY_KP_1], "torche": [KEY_2, KEY_KP_2], "tir": [KEY_3, KEY_KP_3], "pont": [KEY_4, KEY_KP_4],
 		"manger": [KEY_E], "nourrir": [KEY_F], "cuire": [KEY_C], "pause": [KEY_ESCAPE, KEY_P], "valider": [KEY_ENTER, KEY_KP_ENTER],
 		# (l'atelier : son sac, où elle fabrique l'établi, pose son camp, met sa tenue ; sa lampe)
 		"sac": [KEY_B, KEY_TAB], "lampe": [KEY_L],
@@ -845,6 +848,8 @@ func _process(delta: float) -> void:
 		_tombee_de_la_nuit()
 	_etait_nuit = nuit
 	_lumieres()
+	# (le lance-pierre se réarme, que la partie soit jouée de ses mains ou menée par la vitrine)
+	_tir = maxf(0.0, _tir - delta)
 	if essai == null:
 		_gestes(delta)
 	_corps(delta)
@@ -918,6 +923,72 @@ func _gestes(delta: float) -> void:
 		nourrir_feu()
 	if Input.is_action_just_pressed("cuire"):
 		cuire()
+
+
+# le lance-pierre : un galet vers la bête la plus proche à portée, qu'on la voie ou qu'on n'en voie que les yeux ; sans bête,
+# droit devant elle. Le galet part de sa main (scripts/galet.gd) et dit, en arrivant, ce qu'il a touché (galet_arrive).
+func tirer() -> void:
+	if joueur == null or joueur.morte or atelier.endormie:
+		return
+	var gris := Color(0.75, 0.7, 0.66)
+	if atelier.possede("lance_pierre") <= 0:
+		ui.message("Un lance-pierre se fabrique à l'établi : du bois, une corde, une peau.", gris)
+		return
+	if int(joueur.inventaire.get("galet", 0)) <= 0:
+		ui.message("Plus de galets. À l'établi, une pierre en donne %d." % int(Atelier.OBJETS["galet"]["lot"]), gris)
+		return
+	if joueur.monture != null:
+		ui.message("Pas en selle : il faut ses deux mains, et les pieds au sol.", gris)
+		return
+	if _tir > 0.0:
+		return
+	_tir = R.CADENCE_TIR
+	var p: Vector2 = joueur.position
+	var cible = null
+	var d0 := R.PORTEE_TIR
+	for b in get_tree().get_nodes_in_group("betes"):
+		if b.role == "echo" or b.role == "compagne":
+			continue
+		var d: float = p.distance_to(b.position) - b.largeur * 0.3
+		if d < d0:
+			d0 = d
+			cible = b
+	var vers: Vector2 = p + Vector2(joueur.regard * R.PORTEE_TIR * 0.8, 0.0)
+	if cible != null:
+		vers = Galet.vise(cible)
+		# (de loin, la main tremble un peu)
+		vers += Vector2.from_angle(randf() * TAU) * randf() * 10.0 * clampf(d0 / R.PORTEE_TIR, 0.0, 1.0)
+	# (elle arme : le galet part quand sa main lâche la poche ; joueur.gd le dit par le signal impact, genre « tir »)
+	_tir_vise = {"cible": cible, "vers": vers}
+	joueur.tirer(vers)
+
+
+# sa main lâche la poche, en p (là où on la voit) : le galet part
+func _lacher(p: Vector2) -> void:
+	if _tir_vise.is_empty() or int(joueur.inventaire.get("galet", 0)) <= 0:
+		_tir_vise = {}
+		return
+	joueur.inventaire["galet"] = int(joueur.inventaire["galet"]) - 1
+	var g = Galet.new()
+	g.jeu = self
+	g.cible = _tir_vise["cible"] if is_instance_valid(_tir_vise["cible"]) else null
+	monde.add_child(g)
+	g.partir(Vector2(p.x, joueur.position.y), maxf(6.0, joueur.position.y - p.y), _tir_vise["vers"])
+	_tir_vise = {}
+	sons.jouer("herbe", -9.0, randf_range(1.5, 1.75))
+
+
+# le galet est arrivé : sur la bête qu'il visait, si elle est encore là où il tombe ; sinon dans l'herbe
+func galet_arrive(g) -> void:
+	var b = g.cible
+	if b != null and is_instance_valid(b) and b.is_in_group("betes") and b.pv > 0.0 and g.position.distance_to(Galet.vise(b)) < 12.0 + b.largeur * 0.3:
+		sons.jouer("coup", -5.0, randf_range(1.2, 1.4))
+		effets.impact(g.position, b.robe)
+		effets.arret(0.03)
+		b.blesser(R.DEGATS_TIR, g.de)
+		return
+	sons.jouer("pierre", -13.0, randf_range(1.3, 1.6))
+	effets.recolte(g.position, "rocher")
 
 
 # frapper la bête la plus proche à portée ; sinon, prendre ce qui est à portée
@@ -1063,6 +1134,10 @@ func mangee(b, quoi, delta: float) -> void:
 
 
 func _sur_impact(p: Vector2, genre: String) -> void:
+	# (le lance-pierre : sa main vient de lâcher la poche)
+	if genre == "tir":
+		_lacher(p)
+		return
 	# (un geste d'atelier : le maillet, le piquet ; scripts/atelier.gd)
 	if atelier != null and Atelier.GESTES.has(genre):
 		atelier.coup(genre, p)
@@ -1087,6 +1162,9 @@ func peut_fabriquer(quoi: String) -> bool:
 	# (un pont ne se fait qu'au bord d'une rivière, là où il peut se poser)
 	if quoi == "pont" and not pont_possible:
 		return false
+	# (tirer : il faut le lance-pierre, fait à l'établi ; le galet est compté plus bas)
+	if quoi == "tir" and atelier.possede("lance_pierre") <= 0:
+		return false
 	var cout: Dictionary = R.RECETTES[quoi]["cout"]
 	for k in cout:
 		if int(joueur.inventaire.get(k, 0)) < int(cout[k]):
@@ -1095,6 +1173,9 @@ func peut_fabriquer(quoi: String) -> bool:
 
 
 func fabriquer(quoi: String) -> void:
+	if quoi == "tir":
+		tirer()
+		return
 	var rec: Dictionary = R.RECETTES[quoi]
 	var berges: Array = []
 	if quoi == "pont":
@@ -1130,9 +1211,6 @@ func fabriquer(quoi: String) -> void:
 			joueur.torche = R.DUREE_TORCHE
 			sons.jouer("allume", -6.0, 1.3)
 			ui.message("Une torche : un peu plus d'une minute de lumière.", Color(0.95, 0.75, 0.45))
-		"lance":
-			joueur.lance = R.USURE_LANCE
-			ui.message("Une lance : elle frappe trois fois plus fort.", Color(0.95, 0.75, 0.45))
 		"pont":
 			poser_pont(berges[0], berges[1], R.PONT_DUREE)
 			sons.jouer("bois", -3.0, 0.8)

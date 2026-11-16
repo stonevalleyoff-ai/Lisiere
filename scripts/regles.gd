@@ -49,7 +49,13 @@ const PORTEE_RECOLTE := 44.0
 const PORTEE_FEU := 90.0
 const DEGATS_POINGS := 8.0
 const DEGATS_LANCE := 26.0
-const USURE_LANCE := 30       # coups avant qu'elle se brise
+const USURE_LANCE := 60       # coups avant qu'elle se brise (on ne la fabrique plus : on la trouve, dans un coffre)
+# le lance-pierre (scripts/atelier.gd le fabrique ; scripts/principal.gd tire ; scripts/galet.gd, le galet qui vole)
+const DEGATS_TIR := 13.0
+const PORTEE_TIR := 300.0     # jusqu'où elle vise une bête : presque tout l'écran, et dans le noir aussi
+const CADENCE_TIR := 0.75     # secondes entre deux tirs
+const VITESSE_GALET := 620.0
+const GALETS_COFFRE := 6      # ceux qu'on trouve avec la lance
 const DUREE_TORCHE := 75.0
 const RAYON_TORCHE := 175.0
 
@@ -115,11 +121,12 @@ const ECHOS_MAX := 3
 const RECETTES := {
 	"feu": {"nom": "Feu de camp", "touche": "1", "cout": {"bois": 4, "pierre": 2}},
 	"torche": {"nom": "Torche", "touche": "2", "cout": {"bois": 2, "fibre": 1}},
-	"lance": {"nom": "Lance", "touche": "3", "cout": {"bois": 2, "pierre": 1, "fibre": 2}},
+	# (le lance-pierre ne se fait pas ici mais à l'établi ; ici, on tire : chaque tir prend un galet)
+	"tir": {"nom": "Lance-pierre", "touche": "3", "cout": {"galet": 1}},
 	# (le monde ouvert : au bord d'une rivière, vers l'autre berge ; scripts/pont.gd)
 	"pont": {"nom": "Pont de fortune", "touche": "4", "cout": {"bois": 6, "fibre": 3}},
 }
-const ORDRE_RECETTES := ["feu", "torche", "lance", "pont"]
+const ORDRE_RECETTES := ["feu", "torche", "tir", "pont"]
 const PONT_DUREE := 360.0     # ce qu'un pont tient, en secondes (une journée et demie)
 const PONT_PASSAGE := 25.0    # ce que chaque passage de la veilleuse lui retire
 # le relief (scripts/carte.gd) : plus haut, l'air est plus froid et la vue plus large
