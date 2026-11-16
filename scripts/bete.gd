@@ -97,7 +97,7 @@ var _assaut := 0.0               # le temps pendant lequel une morsure est encor
 var _presage := 0.0              # ce qu'elle a déjà annoncé, avant de passer la torche
 var _a_la_torche := false        # un chasseur, tenu à la lisière de la torche (il la longe ; il lui faut s'en écarter pour la quitter)
 var _suit := false               # elle suit la veilleuse de loin
-const LISERE := 3.2              # la Noire : la force du liseré que le feu accroche sur son échine (le shader de son encre)
+const LISERE := 2.6              # la Noire : la force du liseré que le feu accroche sur son échine (le shader de son encre)
 # la Noire : ce que scripts/noire.gd lui fait faire
 var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »
 var ordre_but := Vector2.ZERO

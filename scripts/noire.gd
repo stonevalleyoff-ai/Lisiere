@@ -19,8 +19,9 @@ extends RefCounted
 
 const R := preload("res://scripts/regles.gd")
 
-# ce qu'elle est : une bête faite à la main, que le bestiaire de Lisière dessine comme les autres (scripts/bestiaire.gd lit
-# « noire » : une robe d'encre, l'œil en fente de braise, l'échine hérissée)
+# ce qu'elle est : une bête faite à la main, que le bestiaire de Lisière dessine à part (scripts/bestiaire.gd lit « noire »,
+# scripts/noire_corps.gd la dessine : haute sur pattes, maigre sous un poil de traits d'encre, la tête basse, la gueule
+# fermée ; un œil petit, une braise sombre, que scripts/yeux.gd fait luire)
 const LIGNEE := {
 	"id": "la-noire", "nom": "La Noire",
 	"plan": {

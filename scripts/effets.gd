@@ -12,6 +12,7 @@ const T := preload("res://scripts/effets_textures.gd")
 const Lieu := preload("res://scripts/effets_lieu.gd")
 const Ecran := preload("res://scripts/effets_ecran.gd")
 const Herbes := preload("res://scripts/effets_herbes.gd")
+const Presence := preload("res://scripts/noire_presence.gd")
 const ARRET_LENT := 0.04         # le temps, pendant un arrêt d'image
 const FIN_LENT := 0.55           # le temps, quand la veilleuse tombe
 
@@ -33,6 +34,8 @@ var _lieu
 var _ecran
 # ce que les herbes font voir (scripts/effets_herbes.gd) : le corps de la veilleuse, les yeux, les feux le lisent ici
 var herbes
+# ce que la Noire change au lieu avant qu'on la voie (scripts/noire_presence.gd) : le vent qui tombe, les lucioles
+var presence
 var _bruit := FastNoiseLite.new()
 var _horloge := 0.0
 var _q := 1.0
@@ -78,6 +81,8 @@ func _ready() -> void:
 	_ecran.preparer(jeu.qualite if jeu != null else "haute")
 	herbes = Herbes.new()
 	herbes.jeu = jeu
+	presence = Presence.new()
+	presence.jeu = jeu
 
 
 # une partie commence : la scène du lieu, sa caméra, son obscurité
@@ -128,6 +133,7 @@ func vider() -> void:
 	_fin = -1.0
 	_temps()
 	herbes.vider()
+	presence.vider()
 	_ecran.vider()
 
 
@@ -158,9 +164,11 @@ func maj(delta: float) -> void:
 	var h: Dictionary = herbes.maj(delta, nuit)
 	_camera(delta, nuit, fin)
 	var vue := _vue()
+	# (la Noire, avant le lieu : son vent et ses lucioles en dépendent)
+	presence.maj(delta)
 	if _lieu != null and camera != null:
 		_lieu.maj(delta, {"nuit": nuit, "peur": _peur, "vent": vent(), "centre": camera.get_screen_center_position(), "vue": vue,
-			"lucioles": _crepuscule(), "brume_matin": _brume_matin(), "obscur": teinte if obscurite != null else Color.WHITE,
+			"lucioles": _crepuscule() * float(presence.lucioles()), "brume_matin": _brume_matin(), "obscur": teinte if obscurite != null else Color.WHITE,
 			"lumieres": _lumieres(), "climat": jeu.climat})
 	var e := {
 		"ratio": vue.x / maxf(vue.y, 1.0), "nuit": nuit * 0.32, "peur": _peur, "coeur": _coeur * smoothstep(0.62, 0.75, _peur),
@@ -326,7 +334,8 @@ func _brume_matin() -> float:
 func vent() -> float:
 	# (le vent du lieu, celui de l'herbe et des feuillages, là où est la veilleuse : jeu.vent, de 0 à 1)
 	if jeu != null and jeu.monde != null and jeu.joueur != null:
-		return clampf(0.15 + 0.85 * float(jeu.vent()), -1.0, 1.0)
+		# (quand la Noire est là, il tombe, et ce qu'il en reste va vers elle : scripts/noire_presence.gd)
+		return presence.vent(clampf(0.15 + 0.85 * float(jeu.vent()), -1.0, 1.0))
 	var t: float = jeu.horloge if jeu != null else 0.0
 	var fond := 0.3 + 0.25 * _bruit.get_noise_1d(t * 0.05)
 	var rafale := smoothstep(0.15, 0.7, _bruit.get_noise_1d(t * 0.35 + 300.0)) * 0.55

@@ -12,8 +12,11 @@ extends Node2D
 # les yeux du lieu. Les échos vivent aussi dans cette couche : la nuit ne les cache pas.
 # Ce que les herbes y ajoutent (scripts/effets_herbes.gd le dessine, ici) : sous la voyance, le contour pâle de chaque bête et
 # le fil vers la tanière de la Noire ; sous les visions, des yeux qui n'existent pas (par paires, violets).
-# La Noire (scripts/noire.gd) a les siens : rouges, plus grands, et qui ne s'éteignent pas dans la lumière ; quand elle guette,
-# elle regarde en face, et l'on voit ses deux yeux.
+# La Noire (scripts/noire.gd) a les siens : deux braises, petites, d'un rouge sombre, qui ne s'éteignent pas dans la lumière.
+# Ni pupille, ni reflet, presque pas de halo : un cœur à peine plus clair, qui penche vers la veilleuse (elle regarde), et une
+# lueur qui respire lentement. Leur taille se règle sur rayon_oeil() (scripts/bete.gd), jamais en pixels : NOIRE_TAILLE. De
+# profil, une seule ; quand elle guette (de_face), la seconde paraît à sa place : de l'autre côté du chanfrein, plus loin,
+# plus petite, vue de biais — jamais posée sur la première.
 
 const R := preload("res://scripts/regles.gd")
 const P := preload("res://scripts/palette.gd")
@@ -25,6 +28,16 @@ var _vus := {}
 var _a_voir: Array = []       # [la bête, sa lueur] : ceux qu'on dessine, cette image
 static var _rond: ImageTexture
 static var _amande: ImageTexture
+static var _braise: ImageTexture
+# les yeux de la Noire. NOIRE_TAILLE est le seul chiffre à régler : la demi-largeur de la braise, en rayons d'œil (rayon_oeil,
+# scripts/bete.gd). Le reste se dit en demi-largeurs : sa demi-hauteur, son halo, et, pour une tête qui ne dit pas où est son
+# second œil (oeil_loin), l'écart et la taille de celui-ci quand elle regarde en face (l'écart passe la somme des deux
+# demi-largeurs : elles ne se touchent pas).
+const NOIRE_TAILLE := 1.3
+const NOIRE_HAUTE := 0.74
+const NOIRE_HALO := 2.6
+const NOIRE_ECART := 2.35
+const NOIRE_SECONDE := 0.7
 
 
 func _ready() -> void:
@@ -47,8 +60,9 @@ func _process(delta: float) -> void:
 				var l: float = jeu.eclairage(b.point_oeil())
 				a = clampf((0.45 - l) / 0.45, 0.0, 1.0) * nuit
 			if b.role == "noire":
-				# (ses yeux ne s'éteignent pas : ni dans la lumière d'un feu, ni tout à fait le jour)
-				a = maxf(a, lerpf(0.55, 0.85, nuit))
+				# (ses yeux ne s'éteignent pas : dans la lumière d'un feu ils couvent ; le jour, il n'en reste qu'un rouge sourd, sur
+				# l'œil que sa tête porte déjà)
+				a = maxf(a, lerpf(0.18, 0.72, nuit))
 			var avant: float = _vus.get(id, 0.0)
 			var v := move_toward(avant, a, delta * (5.0 if a < avant else 2.5))
 			garder[id] = v
@@ -81,6 +95,7 @@ func _draw() -> void:
 		return
 	var j = jeu.joueur
 	var yeux: Array = []          # [où, rayon, couleur, lueur, paupière, reflet, axe, chasseur]
+	var braises: Array = []       # ceux de la Noire : [où, rayon, lueur, paupière, reflet, axe, vers la veilleuse, la première]
 	for e in _a_voir:
 		var b = e[0]
 		if not is_instance_valid(b):
@@ -102,15 +117,29 @@ func _draw() -> void:
 		# (la voyance : chaque œil renvoie une lumière qu'on ne voit pas)
 		reflet = maxf(reflet, 0.6 * voit)
 		if b.role == "noire":
-			# de profil, un œil ; de face (elle guette), les deux, qui tombent l'un vers l'autre
-			var r: float = float(b.rayon_oeil()) * 1.25
+			# une braise de profil ; quand elle guette (de_face), la seconde paraît là où sa tête la porte (bete.gd : oeil_loin, si
+			# elle le dit) ; sinon elle sort de derrière le chanfrein : du côté du museau, un peu plus haut (plus loin de nous),
+			# plus petite, et s'écarte de la première en venant. Jamais elles ne se touchent.
+			var rn: float = float(b.rayon_oeil()) * NOIRE_TAILLE
+			var an: Vector2 = b.axe_oeil()
+			if an.length_squared() < 0.25:
+				an = Vector2.RIGHT
 			var face: float = smoothstep(0.0, 1.0, float(b.de_face))
-			var axe: Vector2 = b.axe_oeil()
-			var ecart := r * 2.7 * face
-			var bas := Vector2(0.0, 0.34)
-			yeux.append([p + Vector2(ecart, 0.0), r, P.OEIL_NOIRE, a, ouvert, reflet * 0.5, axe.lerp(Vector2(-1.0, 0.0) + bas, face).normalized(), true])
-			if face > 0.05:
-				yeux.append([p - Vector2(ecart, 0.0), r, P.OEIL_NOIRE, a * face, ouvert, reflet * 0.5, (Vector2(1.0, 0.0) + bas).normalized(), true])
+			# (une lente respiration de la lueur ; le cœur penche vers la veilleuse)
+			var couve: float = e[1] * (0.87 + 0.13 * sin(_t * 0.9))
+			var vers := Vector2.ZERO
+			if j != null:
+				vers = (j.position + Vector2(0.0, -20.0) - p).normalized()
+			braises.append([p, rn, couve, ouvert, reflet, an, vers, true])
+			if face > 0.03:
+				var devant := 1.0 if an.x >= 0.0 else -1.0
+				var q := p + Vector2(devant * rn * NOIRE_ECART * lerpf(0.72, 1.0, face), -rn * 0.26 * face)
+				var rq := rn * NOIRE_SECONDE
+				if b.has_method("oeil_loin"):
+					var loin: Vector3 = b.oeil_loin()
+					q = Vector2(loin.x, loin.y)
+					rq = loin.z * NOIRE_TAILLE
+				braises.append([q, rq, couve * face * 0.85, ouvert, reflet, an, vers, false])
 			continue
 		yeux.append([p, float(b.rayon_oeil()), P.OEIL_CHASSEUR if chasse else P.OEIL_PROIE, a, ouvert, reflet, b.axe_oeil(), chasse])
 	# les halos d'abord (une seule image, un seul appel), puis les yeux ronds, puis les amandes, puis les reflets
@@ -159,6 +188,45 @@ func _draw() -> void:
 			var lueur: float = o[3]
 			var g := maxf(0.6, r * 0.34)
 			draw_texture_rect(rond, Rect2(ou + Vector2(-r * 0.4, -r * 0.34 * ouvert) - Vector2(g, g), Vector2(g, g) * 2.0), false, Color(1, 1, 1, lueur * reflet * 0.9))
+	if not braises.is_empty():
+		_peindre_braises(braises, doux)
+
+
+# les yeux de la Noire : un halo (à peine), la braise, son cœur. Trois appels de dessin quand elle est là, aucun sinon.
+func _peindre_braises(braises: Array, doux: Texture2D) -> void:
+	for o in braises:
+		var ouvert: float = o[3]
+		if ouvert <= 0.05:
+			continue
+		var ou: Vector2 = o[0]
+		var h: float = float(o[1]) * NOIRE_HALO
+		draw_texture_rect(doux, Rect2(ou - Vector2(h, h * 0.8), Vector2(h * 2.0, h * 1.6)), false, Color(P.OEIL_NOIRE, float(o[2]) * 0.1 * ouvert))
+	var tex := _oeil_braise()
+	for passe in 2:
+		for o in braises:
+			var ouvert: float = o[3]
+			var premiere: bool = o[7]
+			if ouvert <= 0.05 or (passe == 1 and not premiere):
+				continue
+			var ou: Vector2 = o[0]
+			var r: float = o[1]
+			var lueur: float = o[2]
+			var axe: Vector2 = o[5]
+			# (l'image regarde à droite : on la tourne vers le museau, sans la renverser ; la paupière l'écrase)
+			var bas := Vector2(-axe.y, axe.x) if axe.x >= 0.0 else Vector2(axe.y, -axe.x)
+			# (la seconde : vue de biais, plus étroite, la paupière plus basse ; elle n'a pas de cœur)
+			var large := r * (1.0 if premiere else 0.8)
+			var haute := r * NOIRE_HAUTE * ouvert * (1.0 if premiere else 0.9)
+			if passe == 0:
+				draw_set_transform_matrix(Transform2D(axe * large, bas * haute, ou))
+				draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(P.OEIL_NOIRE, lueur))
+			else:
+				# le cœur : à peine plus clair, plus chaud ; il va vers la veilleuse, et s'avive un peu quand une lumière l'approche
+				var vers: Vector2 = o[6]
+				var vif: float = o[4]
+				draw_set_transform_matrix(Transform2D(axe * large * 0.5, bas * haute * 0.5, ou + vers * r * 0.17 + bas * haute * 0.12))
+				draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(P.OEIL_NOIRE.lerp(P.BRAISE, 0.35), lueur * (0.24 + 0.2 * vif) * ouvert))
+	draw_set_transform(Vector2.ZERO)
 
 
 # l'œil d'une proie : un disque net, à peine plus sombre au bord
@@ -201,3 +269,21 @@ static func _oeil_amande() -> ImageTexture:
 				img.set_pixel(x, y, Color(v, v, v, a))
 		_amande = ImageTexture.create_from_image(img)
 	return _amande
+
+
+# l'œil de la Noire, tourné vers la droite : une braise. Un ovale au bord fondu, sombre au pourtour, que la paupière du dessus
+# coupe un peu bas, et plus bas encore du côté du museau (elle fixe). Ni pupille, ni blanc.
+static func _oeil_braise() -> ImageTexture:
+	if _braise == null:
+		var n := 48
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		for y in n:
+			for x in n:
+				var q := Vector2((x + 0.5) / n * 2.0 - 1.0, (y + 0.5) / n * 2.0 - 1.0)
+				var d := q.length()
+				var dessus := q.y + 0.58 - 0.2 * q.x
+				var a := clampf(minf((0.94 - d) * 4.5, dessus * 6.0), 0.0, 1.0)
+				var v := 1.0 - 0.45 * smoothstep(0.15, 0.9, d)
+				img.set_pixel(x, y, Color(v, v, v, a))
+		_braise = ImageTexture.create_from_image(img)
+	return _braise
