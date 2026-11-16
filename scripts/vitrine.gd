@@ -15,6 +15,10 @@ extends Node
 #   relief d'un pays, le plan d'une grotte) ; --torche : elle part une torche à la main
 #   --herbier fichier.json : l'herbier d'un biome d'Orvane, donné à la main (voir sa flore sans le réseau)
 #   --sans-feu : la nuit, pas de feu de camp (les chasseurs autour de la seule torche)
+#   --meute 3 : tant de chasseurs, pour regarder leur affût autour du feu (scripts/affut.gd) ; elle ne bouge pas, ou : --sort
+#   (elle sort de la lumière), --dos (elle tourne le dos au plus proche, puis se retourne), --marche (elle fait quelques pas
+#   vers lui) ; --torche (avec --sans-feu) ; --bois 15 : le bois de son feu ; --hate 4 : leur patience quatre fois plus
+#   courte ; --trace fichier : où ils sont, cinq fois par seconde (outils : un script qui en dessine les chemins)
 #   --noire 2|3|4 : la Noire à cet acte (scripts/noire.gd) ; --noire dort, --noire piste : de jour, sa tanière, sa piste ;
 #   --noire reveil : de jour, endormie puis réveillée (sa charge, sa morsure, son départ, en pleine lumière)
 #   l'atelier (scripts/atelier.gd) : --pose etabli,tente,hamac,recuperateur,filet,cerf_volant,vestige : ces choses, posées
@@ -61,6 +65,9 @@ var _dormir_dans = null
 var _botanique := {}
 var _geste_atelier_t := 0.0
 var _brules: Array = []
+var _meute := 0                # (--meute) combien de chasseurs, pour regarder leur affût
+var _trace: FileAccess = null  # (--trace) où ils sont, cinq fois par seconde
+var _trace_t := 0.0
 
 
 func _ready() -> void:
@@ -128,7 +135,18 @@ func _lancer() -> void:
 	# jour, sa piste qui part du camp. Sans les chasseurs ordinaires, qu'elle ferait fuir.)
 	var i_n := OS.get_cmdline_user_args().find("--noire")
 	var quelle := OS.get_cmdline_user_args()[i_n + 1] if i_n >= 0 and i_n + 1 < OS.get_cmdline_user_args().size() else ""
-	if heure != "jour" and quelle == "":
+	# (--meute 3 : tant de chasseurs, venus en bande du même côté, pour regarder leur affût autour du feu (scripts/affut.gd) ;
+	# elle ne bouge pas. --sort : aux trois cinquièmes, elle sort de la lumière ; --dos : au tiers, elle tourne le dos au plus
+	# proche, puis se retourne ; --marche : à mi-temps, elle fait quelques pas vers lui ; --torche (avec --sans-feu) : la nuit à
+	# la torche ; --bois 15 : le bois de son feu (bas : 15 ; haut : 100) ; --hate 4 : leur patience quatre fois plus courte ;
+	# --trace fichier : où ils sont, cinq fois par seconde (pour dessiner leurs chemins))
+	var i_m := OS.get_cmdline_user_args().find("--meute")
+	if i_m >= 0 and i_m + 1 < OS.get_cmdline_user_args().size():
+		_meute = maxi(1, int(OS.get_cmdline_user_args()[i_m + 1]))
+	if heure != "jour" and quelle == "" and _meute > 0:
+		for i in _meute:
+			jeu._creer(F["chasseurs_nuit"][i % F["chasseurs_nuit"].size()], "chasseur", j.position + Vector2.from_angle(1.0 + i * 0.12) * (430.0 + 30.0 * i))
+	elif heure != "jour" and quelle == "":
 		for i in 2:
 			jeu._creer(F["chasseurs_nuit"][i % F["chasseurs_nuit"].size()], "chasseur", j.position + Vector2.from_angle(i * PI + 1.0) * 300.0)
 	match quelle:
@@ -156,6 +174,26 @@ func _lancer() -> void:
 		[0.7, 0.82, "torche"],
 		[0.82, 1.0, "peur"],
 	]
+	if _meute > 0:
+		var ar_m := OS.get_cmdline_user_args()
+		_plan = [[0.0, 1.0, "attendre"]]
+		if ar_m.has("--sort"):
+			_plan = [[0.0, 0.6, "attendre"], [0.6, 1.0, "sortir"]]
+		elif ar_m.has("--dos"):
+			_plan = [[0.0, 0.33, "face"], [0.33, 0.7, "dos"], [0.7, 1.0, "face"]]
+		elif ar_m.has("--marche"):
+			_plan = [[0.0, 0.5, "attendre"], [0.5, 0.512, "vers"], [0.512, 1.0, "attendre"]]
+		if ar_m.has("--torche"):
+			jeu.fabriquer("torche")
+		var i_bo := ar_m.find("--bois")
+		if i_bo >= 0 and i_bo + 1 < ar_m.size() and not jeu.feux.is_empty():
+			jeu.feux[0].bois = float(ar_m[i_bo + 1])
+		var i_ha := ar_m.find("--hate")
+		if i_ha >= 0 and i_ha + 1 < ar_m.size():
+			load("res://scripts/affut.gd").hate = maxf(0.1, float(ar_m[i_ha + 1]))
+		var i_tr := ar_m.find("--trace")
+		if i_tr >= 0 and i_tr + 1 < ar_m.size():
+			_trace = FileAccess.open(ar_m[i_tr + 1], FileAccess.WRITE)
 	# (l'atelier, scripts/atelier.gd : --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --dort : elle dort ; --geste marteler :
 	# ce geste d'atelier, repris sans cesse (marteler, scier, coudre, monter, fouiller, boire, remuer) ; --pose etabli,tente : ces
 	# choses du camp, posées autour d'elle)
@@ -590,6 +628,7 @@ func _process(delta: float) -> void:
 	# (--tir : elle tire au lance-pierre, toutes les secondes, sur ce qui est à portée)
 	if OS.get_cmdline_user_args().has("--tir") and int(_t / 1.1) != int((_t - delta) / 1.1):
 		jeu.tirer()
+	_tracer(delta)
 	# (--carte : à la fin, la pause, et la carte du carnet ; les régions à deux pas de là sont découvertes, pour la voir pleine)
 	if jeu.ouvert and u > 0.8 and not _fait.has("carte") and OS.get_cmdline_user_args().has("--carte") and jeu.carte != null:
 		_fait["carte"] = true
@@ -751,6 +790,17 @@ func _process(delta: float) -> void:
 			j.deplacer(Vector2(0.6, -0.4), delta, jeu.monde)
 		"sortir":
 			j.deplacer(Vector2(0.9, -0.35), delta, jeu.monde)
+		"dos", "face", "vers":
+			# (la meute : elle tourne le dos au chasseur le plus proche d'un pas de côté, lui fait face, ou marche vers lui)
+			var ch = _chasseur_proche()
+			var vers_lui: Vector2 = (ch.position - j.position) if ch != null else Vector2.ZERO
+			var cote := signf(vers_lui.x) * (-1.0 if geste == "dos" else 1.0)
+			if geste == "vers":
+				j.deplacer(vers_lui.normalized(), delta, jeu.monde)
+			elif ch != null and cote != 0.0 and cote != float(j.regard):
+				j.deplacer(Vector2(cote, 0.0), delta, jeu.monde)
+			else:
+				j.deplacer(Vector2.ZERO, delta, jeu.monde)
 
 
 func _cadence(_quoi: String, delta: float) -> void:
@@ -771,6 +821,33 @@ func _plus_proche(genres: Array):
 				d0 = d
 				meilleur = o
 	return meilleur
+
+
+func _chasseur_proche():
+	var meilleur = null
+	var d0 := INF
+	for b in get_tree().get_nodes_in_group("betes"):
+		var d: float = jeu.joueur.position.distance_to(b.position)
+		if b.role == "chasseur" and d < d0:
+			d0 = d
+			meilleur = b
+	return meilleur
+
+
+# (--trace : le temps, la veilleuse, son regard, le feu et son rayon ; puis chaque chasseur : où il est, posté, détourné, où il en est)
+func _tracer(delta: float) -> void:
+	_trace_t -= delta
+	if _trace == null or _trace_t > 0.0:
+		return
+	_trace_t = 0.2
+	var j = jeu.joueur
+	var f = jeu.feux[0] if not jeu.feux.is_empty() else null
+	var l := "%.1f;%d;%d;%d;%d;%d;%d" % [_t, j.position.x, j.position.y, j.regard, f.position.x if f != null else 0.0, f.position.y if f != null else 0.0, f.rayon() if f != null else 0.0]
+	for b in get_tree().get_nodes_in_group("betes"):
+		if b.role == "chasseur":
+			l += ";%d;%d;%d;%.2f;%.2f;%d" % [b.get_instance_id() % 1000, b.position.x, b.position.y, b.poste, b.detourne, b._af]
+	_trace.store_line(l)
+	_trace.flush()
 
 
 func _un_chasseur():

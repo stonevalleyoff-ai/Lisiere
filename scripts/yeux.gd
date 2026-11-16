@@ -17,6 +17,11 @@ extends Node2D
 # lueur qui respire lentement. Leur taille se règle sur rayon_oeil() (scripts/bete.gd), jamais en pixels : NOIRE_TAILLE. De
 # profil, une seule ; quand elle guette (de_face), la seconde paraît à sa place : de l'autre côté du chanfrein, plus loin,
 # plus petite, vue de biais — jamais posée sur la première.
+# Un chasseur posté dans le noir (scripts/bete.gd : poste) fixe la veilleuse : sa tête vient vers nous, et l'on voit ses deux
+# yeux, côte à côte, qui s'effilent l'un vers l'autre. On compte les paires : on sait par combien on est regardé, et d'où. Leur
+# lueur est celle du feu qu'ils renvoient : elle pâlit moins vite que lui, une bûche les fait briller un instant ; et quand il
+# se détourne pour changer de poste (detourne), le second œil passe derrière sa tête, le premier s'étrécit et s'éteint : on
+# le perd. Toujours trois images et les mêmes appels de dessin : la paire est faite de la même amande, retournée.
 
 const R := preload("res://scripts/regles.gd")
 const P := preload("res://scripts/palette.gd")
@@ -38,6 +43,19 @@ const NOIRE_HAUTE := 0.74
 const NOIRE_HALO := 2.6
 const NOIRE_ECART := 2.35
 const NOIRE_SECONDE := 0.7
+# la paire d'un chasseur posté, en rayons d'œil elle aussi : l'écart de ses deux yeux (leurs deux demi-largeurs, et du noir
+# entre eux : sans ce noir, de loin, on n'en compte qu'un), la taille du second, et le plus petit rayon d'un œil qui fixe (à
+# 300 pixels, sur un téléphone, il faut encore compter les paires)
+const PAIRE_ECART := 3.9
+const PAIRE_SECOND := 0.84
+const PAIRE_PETIT := 2.1
+const BUCHE := 1.4               # secondes : ce que dure l'éclat des yeux quand une bûche avive le feu
+var _feux_r := {}                # le rayon de chaque feu, à l'image d'avant : une bûche le fait bondir
+var _buche := 0.0                # de 1 à 0 : un feu vient de s'aviver, à _buche_ou
+var _buche_ou := Vector2.ZERO
+var _buche_r := 0.0
+var _fixes := {}                 # les chasseurs dont on a vu la paire, immobile (les mots : quand elle s'éteint)
+var _fixe_t := 0.0               # depuis quand des yeux la fixent, à l'écran
 
 
 func _ready() -> void:
@@ -51,14 +69,40 @@ func _process(delta: float) -> void:
 	if jeu != null and jeu.en_partie:
 		var garder := {}
 		var nuit: float = 1.0 - jeu.lumiere_du_jour()
+		_feux_avives(delta)
+		var herbes = _herbes()
+		var voit: float = herbes.voyance if herbes != null else 0.0
+		var j = jeu.joueur
+		var fixes := {}
+		var fixee := false
+		var perdu := false
 		for b in jeu.get_tree().get_nodes_in_group("betes"):
 			if not is_instance_valid(b) or b.role == "echo":
 				continue
 			var id: int = b.get_instance_id()
 			var a := 0.0
+			var l := 0.0
 			if nuit >= 0.2:
-				var l: float = jeu.eclairage(b.point_oeil())
+				l = jeu.eclairage(b.point_oeil())
 				a = clampf((0.45 - l) / 0.45, 0.0, 1.0) * nuit
+			if b.role == "chasseur":
+				if nuit >= 0.2 and b.poste > 0.01:
+					# (posté au bord d'un feu bas, sa tête entre dans la pénombre : ses yeux fixent le feu, ils le renvoient encore.
+					# Sans cela le cercle d'yeux s'éteindrait en se resserrant, quand le feu meurt : le moment où il doit peser)
+					a = maxf(a, clampf((0.45 + 0.35 * float(b.poste) - l) / 0.45, 0.0, 1.0) * nuit)
+				# (il se détourne pour changer de poste : ses yeux ne renvoient plus rien, on le perd ; la voyance, elle, le voit)
+				a *= 1.0 - smoothstep(0.1, 0.85, float(b.detourne)) * (1.0 - voit) * (1.0 - _eclat_buche(b.position))
+				# (les mots : une paire qu'on a vue, à l'écran, sans bouger ; puis celle qui s'éteint)
+				var vue: bool = float(_vus.get(id, 0.0)) > 0.6 and b.poste > 0.9 and b.detourne < 0.1 and j != null \
+					and absf(b.position.x - j.position.x) < 450.0 and absf(b.position.y - j.position.y) < 200.0
+				if vue:
+					fixee = true
+					fixes[id] = true
+				elif _fixes.has(id):
+					if b.detourne > 0.8:
+						perdu = true
+					else:
+						fixes[id] = true
 			if b.role == "noire":
 				# (ses yeux ne s'éteignent pas : dans la lumière d'un feu ils couvent ; le jour, il n'en reste qu'un rouge sourd, sur
 				# l'œil que sa tête porte déjà)
@@ -69,7 +113,37 @@ func _process(delta: float) -> void:
 			if v > 0.02:
 				_a_voir.append([b, v])
 		_vus = garder
+		_fixes = fixes
+		# les mots, une fois par partie : des yeux qui la fixent sans bouger ; puis les premiers qui s'éteignent
+		_fixe_t = _fixe_t + delta if fixee else 0.0
+		if (_fixe_t > 2.5 or perdu) and jeu.has_method("_conseil"):
+			jeu._conseil("yeux-fixes", _fixe_t > 2.5, "Des yeux, dans le noir. Ils ne bougent pas.")
+			jeu._conseil("yeux-perdus", perdu, "Deux yeux s'éteignent. Il n'est pas parti : écoute.")
 	queue_redraw()
+
+
+# le premier instant de cet éclat (une demi-seconde), de 1 à 0, pour un œil qui est là : il tient par-dessus la paupière et
+# le demi-tour. Sans cela on ne le verrait pas : la bête cligne et se détourne dans le dixième de seconde où le feu grandit.
+func _eclat_buche(ou: Vector2) -> float:
+	if _buche <= 0.6:
+		return 0.0
+	return smoothstep(0.6, 0.88, _buche) * clampf(1.0 - (ou.distance_to(_buche_ou) - _buche_r * 2.2) / (_buche_r * 1.2), 0.0, 1.0)
+
+
+# une bûche jetée au feu : son rayon bondit d'une image à l'autre. Les yeux tournés vers lui brillent un instant (_draw).
+func _feux_avives(delta: float) -> void:
+	_buche = maxf(0.0, _buche - delta / BUCHE)
+	var rayons := {}
+	for f in jeu.feux:
+		if is_instance_valid(f) and f.allume():
+			var idf: int = f.get_instance_id()
+			var rf: float = f.rayon()
+			if rf > float(_feux_r.get(idf, rf)) + 6.0:
+				_buche = 1.0
+				_buche_ou = f.position
+				_buche_r = rf
+			rayons[idf] = rf
+	_feux_r = rayons
 
 
 # ce que les herbes font voir (scripts/effets_herbes.gd) ; null hors d'une partie, ou sans les effets
@@ -94,7 +168,9 @@ func _draw() -> void:
 	if _a_voir.is_empty():
 		return
 	var j = jeu.joueur
-	var yeux: Array = []          # [où, rayon, couleur, lueur, paupière, reflet, axe, chasseur]
+	# [où, rayon, couleur, lueur, paupière, reflet, axe, chasseur, son halo (0 : aucun), où est le halo, sa forme (demi-largeur
+	# et demi-hauteur, en rayons), de combien son cœur va vers la veilleuse, ce qu'il renvoie du feu]
+	var yeux: Array = []
 	var braises: Array = []       # ceux de la Noire : [où, rayon, lueur, paupière, reflet, axe, vers la veilleuse, la première]
 	for e in _a_voir:
 		var b = e[0]
@@ -102,15 +178,22 @@ func _draw() -> void:
 			continue
 		var p: Vector2 = b.point_oeil()
 		var ouvert: float = b.paupiere()
+		# (une bûche vient d'aviver le feu : ses yeux l'ont renvoyé avant qu'il ait cligné, avant qu'il se soit détourné)
+		var saisi := _eclat_buche(p) if b.role == "chasseur" else 0.0
+		ouvert = maxf(ouvert, saisi)
 		# la torche, le bord d'un feu : les yeux renvoient la lumière
 		var reflet := 0.0
+		# (posté, ce que ses yeux renvoient de la lumière qu'il fixe : un feu qui baisse pâlit plus vite qu'eux)
+		var renvoi := 0.0
 		if j != null and j.torche > 0.0:
 			var dt: float = p.distance_to(j.position)
 			reflet = clampf(1.0 - (dt - R.RAYON_TORCHE * 0.8) / (R.RAYON_TORCHE * 0.7), 0.0, 1.0)
+			renvoi = 0.7 * clampf(1.0 - (dt - R.RAYON_TORCHE * 1.6) / (R.RAYON_TORCHE * 1.4), 0.0, 1.0)
 		for f in jeu.feux:
 			if is_instance_valid(f) and f.allume():
 				var rf: float = f.rayon()
 				reflet = maxf(reflet, 0.55 * clampf(1.0 - (p.distance_to(f.position) - rf * 0.82) / (rf * 0.5), 0.0, 1.0))
+				renvoi = maxf(renvoi, pow(clampf(rf / 270.0, 0.0, 1.0), 0.4) * clampf(1.0 - (p.distance_to(f.position) - rf * 2.2) / (rf * 1.2), 0.0, 1.0))
 		var chasse: bool = b.role == "chasseur" or b.role == "rodeur"
 		# (une lueur qui vit : elle respire à peine)
 		var a: float = e[1] * (0.93 + 0.07 * sin(_t * 2.3 + float(b.get_instance_id() % 97)))
@@ -141,19 +224,55 @@ func _draw() -> void:
 					rq = loin.z * NOIRE_TAILLE
 				braises.append([q, rq, couve * face * 0.85, ouvert, reflet, an, vers, false])
 			continue
-		yeux.append([p, float(b.rayon_oeil()), P.OEIL_CHASSEUR if chasse else P.OEIL_PROIE, a, ouvert, reflet, b.axe_oeil(), chasse])
+		var r0: float = b.rayon_oeil()
+		var axe0: Vector2 = b.axe_oeil()
+		var teinte: Color = P.OEIL_CHASSEUR if chasse else P.OEIL_PROIE
+		var face := 0.0
+		var tourne := 0.0
+		if b.role == "chasseur":
+			tourne = float(b.detourne) * (1.0 - voit) * (1.0 - saisi)
+			face = smoothstep(0.0, 1.0, float(b.poste)) * (1.0 - smoothstep(0.0, 0.45, tourne))
+			if _buche > 0.0:
+				# (une bûche : le feu s'avive, ses yeux le renvoient d'un coup, puis retombent)
+				reflet = maxf(reflet, _buche * _buche * (1.0 - tourne) * clampf(1.0 - (p.distance_to(_buche_ou) - _buche_r * 2.2) / (_buche_r * 1.2), 0.0, 1.0))
+		if face <= 0.03:
+			# de profil : un seul œil (celui qui se détourne s'étrécit en s'éteignant)
+			yeux.append([p, r0, teinte, a, ouvert, reflet, axe0, chasse, 1.0, p, Vector2(2.3 * (1.0 - 0.5 * tourne), 1.5) if chasse else Vector2(1.45, 1.45), Vector2.ZERO, 0.0])
+			continue
+		# posté, il la fixe : la paire. Le premier œil est celui que sa tête porte ; le second paraît du côté du museau, un peu
+		# plus haut (plus loin de nous), plus petit. Chacun s'effile vers l'autre, le coin du dedans plus bas : il ne cligne
+		# presque pas (bete.gd : _cligner). Leur cœur, et la fente de la pupille avec lui, vont vers la veilleuse.
+		var devant := 1.0 if axe0.x >= 0.0 else -1.0
+		var rp := lerpf(r0, maxf(r0, PAIRE_PETIT), face)
+		var pente := 0.2 * face
+		var axe1 := axe0.lerp(Vector2(devant * cos(pente), sin(pente)), face).normalized()
+		var axe2 := Vector2(-devant * cos(pente), sin(pente))
+		# (la paire se tient sur sa tête : le premier œil recule un peu vers la nuque, le second vient vers le museau)
+		var ecart := devant * rp * PAIRE_ECART * lerpf(0.55, 1.0, face)
+		p.x -= ecart * 0.42 * face
+		var q := p + Vector2(ecart, -rp * 0.2 * face)
+		var vers := Vector2.ZERO
+		if j != null:
+			vers = (j.position + Vector2(0.0, -20.0) - p).normalized() * rp * 0.28 * face
+		renvoi *= face
+		# (un feu bas : ils pâlissent, mais moins que lui)
+		var lueur_p := a * lerpf(1.0, 0.8 + 0.2 * renvoi, face)
+		yeux.append([p, rp, teinte, lueur_p, ouvert, reflet, axe1, true, lerpf(1.0, 1.3, face), p.lerp(q, 0.5 * face), Vector2(lerpf(2.3, 1.72, face) * (1.0 - 0.5 * tourne), lerpf(1.5, 1.56, face)), vers, renvoi])
+		yeux.append([q, rp * PAIRE_SECOND, teinte, lueur_p * face, ouvert, reflet, axe2, true, 0.0, q, Vector2(1.72, 1.56), vers, renvoi])
 	# les halos d'abord (une seule image, un seul appel), puis les yeux ronds, puis les amandes, puis les reflets
 	var doux := T.point_doux()
 	for o in yeux:
 		var ouvert: float = o[4]
-		if ouvert <= 0.05:
+		var halo: float = o[8]
+		if ouvert <= 0.05 or halo <= 0.0:
 			continue
 		var r: float = o[1]
 		var reflet: float = o[5]
 		var lueur: float = o[3]
-		var ou: Vector2 = o[0]
-		var h := maxf(r * (7.5 if o[7] else 6.0), 5.0) * (1.0 + 0.8 * reflet)
-		draw_texture_rect(doux, Rect2(ou - Vector2(h, h * 0.8), Vector2(h * 2.0, h * 1.6)), false, Color(o[2], lueur * (0.24 + 0.3 * reflet) * ouvert))
+		var ou: Vector2 = o[9]
+		var renvoi: float = o[12]
+		var h := maxf(r * (7.5 if o[7] else 6.0), 5.0) * (1.0 + 0.8 * reflet) * halo
+		draw_texture_rect(doux, Rect2(ou - Vector2(h, h * 0.8), Vector2(h * 2.0, h * 1.6)), false, Color(o[2], lueur * (0.24 + 0.3 * reflet + 0.1 * renvoi) * ouvert))
 	for passe in 2:
 		var chasse := passe == 1
 		var tex := _oeil_amande() if chasse else _oeil_rond()
@@ -169,13 +288,16 @@ func _draw() -> void:
 			var axe: Vector2 = o[6]
 			# (l'image regarde à droite : on la tourne vers le museau, sans la renverser ; la paupière l'écrase)
 			var haut := Vector2(-axe.y, axe.x) if axe.x >= 0.0 else Vector2(axe.y, -axe.x)
-			var large := r * (2.3 if chasse else 1.45)
-			var hauteur := r * (1.5 if chasse else 1.45) * ouvert
+			var forme: Vector2 = o[10]
+			var vers: Vector2 = o[11]
+			var renvoi: float = o[12]
+			var large := r * forme.x
+			var hauteur := r * forme.y * ouvert
 			draw_set_transform_matrix(Transform2D(axe * large, haut * hauteur, ou))
 			draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(c, lueur))
-			# le cœur, plus clair
-			draw_set_transform_matrix(Transform2D(axe * large * 0.62, haut * hauteur * 0.62, ou - haut * hauteur * 0.06))
-			draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(c.lightened(0.5), lueur * (0.75 + 0.25 * reflet)))
+			# le cœur, plus clair (et plus encore pour qui fixe un feu : il le renvoie)
+			draw_set_transform_matrix(Transform2D(axe * large * 0.62, haut * hauteur * 0.62, ou - haut * hauteur * 0.06 + vers))
+			draw_texture_rect(tex, Rect2(-1.0, -1.0, 2.0, 2.0), false, Color(c.lightened(0.5 + 0.22 * renvoi), lueur * (0.75 + 0.25 * maxf(reflet, renvoi))))
 	draw_set_transform(Vector2.ZERO)
 	# le reflet de la torche : un point blanc, net
 	var rond := _oeil_rond()
