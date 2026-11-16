@@ -135,6 +135,9 @@ const NOIRE_TANIERE_MIN := 3200.0   # à quelle distance de la veilleuse elle fa
 const NOIRE_TANIERE_MAX := 4600.0   # et au plus
 const NOIRE_SUIT := 5600.0       # sa tanière plus loin que cela de la veilleuse, à l'aube : elle en change, pour suivre
 const NOIRE_ENDURE := 70.0       # ce qu'elle encaisse dans une nuit avant de se retirer jusqu'à la suivante
+# l'acte de chaque nuit (la première, la deuxième…) : les deux premières nuits, rien ; puis les signes (un appel, au loin) ;
+# deux nuits où elle vient regarder ; deux où elle tourne et feinte ; ensuite, elle charge. Après la dernière : le dernier acte
+const NOIRE_ACTES := [0, 0, 1, 2, 2, 3, 3, 4]
 const NOIRE_DEPART := [1.0, 0.45, 0.3, 0.18, 0.06]   # par acte : la part de la nuit passée quand elle quitte sa tanière
 const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0]     # par acte : le temps que la torche la tient, avant qu'elle passe
 const NOIRE_PRESAGE := 1.4       # elle s'aplatit et gronde ce temps-là, avant de charger

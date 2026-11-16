@@ -116,9 +116,19 @@ func commencer() -> void:
 	ou = taniere
 
 
+# l'acte de la nuit qui tombe, d'après les nuits déjà tenues (regles.gd, NOIRE_ACTES : elle ne vient pas les premières nuits)
+static func acte_de(nuits: int) -> int:
+	return int(R.NOIRE_ACTES[clampi(nuits, 0, R.NOIRE_ACTES.size() - 1)])
+
+
+# la première nuit de cet acte (les nuits déjà tenues ce soir-là)
+static func premiere_nuit(acte_: int) -> int:
+	return maxi(0, R.NOIRE_ACTES.find(acte_))
+
+
 # la nuit tombe : l'acte de cette nuit, et quand elle partira
 func tombee() -> void:
-	acte = clampi(int(jeu.nuits) + 1, 1, 4)
+	acte = acte_de(int(jeu.nuits))
 	_nuit_t = 0.0
 	_duree_nuit = R.DUREE * float(jeu.part_nuit)
 	_depart = float(R.NOIRE_DEPART[acte]) * _duree_nuit

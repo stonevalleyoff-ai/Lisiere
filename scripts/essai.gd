@@ -2351,11 +2351,25 @@ func _la_noire(F: Dictionary) -> void:
 	verif(N.acte == 0 and N.corps == null and loin > 1500.0 and absf(N.taniere.x) <= RR.DEMI and absf(N.taniere.y) <= RR.DEMI,
 		"la Noire a sa tanière, loin de la veilleuse (%d pixels), dans le lieu ; rien d'elle avant la première nuit" % int(loin))
 
-	# acte 1 : les signes
-	jeu.nuits = 0
+	# les premières nuits : rien. Elle dort, elle n'appelle pas, on ne sait rien d'elle
 	jeu.horloge = nuit_h
 	jeu.feux.append(feu)
 	var journal_avant = jeu.sons.journal
+	jeu.sons.journal = []
+	var calmes := 0
+	var venue_tot := false
+	for nuit_k in N.premiere_nuit(1):
+		jeu.nuits = nuit_k
+		N.tombee()
+		_noire_joue(duree_nuit * 0.5, func(_t): venue_tot = venue_tot or N.corps != null)
+		if N.acte == 0:
+			calmes += 1
+		N.aube()
+	var appels_tot: int = jeu.sons.journal.filter(func(x): return str(x[1]) == "appel").size()
+	verif(calmes == N.premiere_nuit(1) and calmes >= 2 and not venue_tot and appels_tot == 0 and N.su.is_empty() and N.acte_de(99) == 4,
+		"les %d premières nuits, la Noire ne vient pas et n'appelle pas ; les actes se suivent ensuite, de nuit en nuit, jusqu'au dernier" % calmes)
+	# acte 1 : les signes
+	jeu.nuits = N.premiere_nuit(1)
 	jeu.sons.journal = []
 	N.tombee()
 	var corps_vu := [false]
@@ -2382,7 +2396,7 @@ func _la_noire(F: Dictionary) -> void:
 	j.position = ici
 
 	# acte 2 : les yeux
-	jeu.nuits = 1
+	jeu.nuits = N.premiere_nuit(2)
 	jeu.horloge = nuit_h
 	var proie = _bete(F["proies_jour"][0], "proie", feu.position + Vector2(-(r + 200.0), 60.0), {})
 	N.mettre_en_scene(2, 900.0, PI)
@@ -2423,7 +2437,7 @@ func _la_noire(F: Dictionary) -> void:
 	feu.bois = 40.0
 
 	# acte 3 : le siège
-	jeu.nuits = 2
+	jeu.nuits = N.premiere_nuit(3)
 	N.mettre_en_scene(3, 900.0, PI)
 	var s3 := {"pres_feu": INF, "tour": 0.0, "avant": NAN, "feinte": false, "feinte_pres": INF}
 	_noire_joue(34.0, func(_t):
@@ -2538,7 +2552,7 @@ func _la_noire(F: Dictionary) -> void:
 
 	# plus on dort loin, plus elle arrive tard
 	var arrive := func(distance: float) -> float:
-		jeu.nuits = 1
+		jeu.nuits = N.premiere_nuit(2)
 		N.taniere = j.position + Vector2(-distance, 0.0)
 		N.ou = N.taniere
 		N.etat = "dort"
