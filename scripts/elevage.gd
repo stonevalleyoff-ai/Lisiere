@@ -7,6 +7,8 @@ extends RefCounted
 # Nourrie (elle broute le jour, ou mange à la mangeoire), elle donne son lait.
 # Le noir les rend folles : la nuit, hors de la lumière d'un feu, une bête prend peur, rompt sa longe et s'enfuit ; et
 # quand la Noire vient, celle qui n'est pas dans la lumière est à elle. En selle, la peur de sa monture jette à terre.
+# Le feu, lui, est leur abri : elles n'en ont pas peur. Tenue (en licol ou au piquet), une bête ne s'enfuit pas : ce qui
+# l'effraie la fait tressaillir dans la lumière d'un feu, ou faire un écart au bout de sa longe (scripts/bete.gd, effrayer).
 # Les choses posées de l'élevage (scripts/campement.gd les dessine), leur état :
 #   appat     : « reste » (de 1 à 0 : ce qu'il en reste)
 #   piquet    : « attache » (vrai : une bête y est liée)

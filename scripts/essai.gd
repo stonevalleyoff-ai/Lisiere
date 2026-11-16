@@ -1066,6 +1066,72 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		verif(remontee and jetee and refuse != "", "un chasseur tout près : sa monture se cabre et la jette à terre, et ne se laisse plus monter (« %s »)" % refuse)
 		bete.etat = "repos"
 
+		# le feu ne la fait pas fuir : tenue au piquet ou en licol, elle s'y sent à l'abri, même si sa population le craint
+		jeu.horloge = jour_h
+		bete.peur_feu = 1.0
+		bete.suit_la = false
+		bete.maison = piquet.position + Vector2(18.0, 10.0)
+		bete.position = bete.maison
+		j.position = piquet.position + Vector2(-140.0, 0.0)
+		var feu_camp = jeu.Feu.new()
+		feu_camp.jeu = jeu
+		feu_camp.position = piquet.position + Vector2(0.0, 110.0)
+		jeu.monde.add_child(feu_camp)
+		jeu.feux.append(feu_camp)
+		E.maj(0.1)
+		var a_l_abri: bool = jeu.feu_qui_protege(bete.position) == feu_camp and bete.tenue()
+		var maison0: Vector2 = bete.maison
+		var jamais_fui := true
+		var ecartee := 0.0
+		for k in 3:
+			# (une bûche, trois fois : la gerbe d'étincelles)
+			bete.gerbe(feu_camp)
+			for i in 20:
+				bete._conduire(0.1)
+				E.maj(0.1)
+				jamais_fui = jamais_fui and str(bete.etat) != "fuit"
+				ecartee = maxf(ecartee, bete.position.distance_to(maison0))
+		# (la foudre tombe à côté : dans la lumière du feu, elle tressaille, sans plus)
+		bete.effrayer(bete.position + Vector2(160.0, 0.0), 3.0)
+		jamais_fui = jamais_fui and str(bete.etat) != "fuit"
+		var au_piquet: bool = E.betes.has(bete) and bool(piquet.etat.get("attache", false)) and bete.maison == maison0
+		# (en licol, sa longe dans la main de la veilleuse, au bord du feu)
+		bete.suit_la = true
+		j.position = bete.position + Vector2(-60.0, 0.0)
+		E.maj(0.1)
+		var en_main: bool = bete.tenue() and Vector2(bete.longe).distance_to(j.position) < 1.0
+		for k in 3:
+			bete.gerbe(feu_camp)
+			for i in 20:
+				bete._conduire(0.1)
+				E.maj(0.1)
+				jamais_fui = jamais_fui and str(bete.etat) != "fuit"
+		var reste_en_main: bool = E.betes.has(bete) and bete.position.distance_to(j.position) < 150.0
+		verif(a_l_abri and jamais_fui and ecartee < 48.0 and au_piquet and en_main and reste_en_main,
+			"tenue au piquet ou en licol, sa bête ne fuit pas le feu (sa population le craint-elle) : une bûche, la foudre, elle reste au feu, attachée (à %d pixels au plus de sa place)" % int(ecartee))
+		jeu.feux.erase(feu_camp)
+		feu_camp.queue_free()
+
+		# ce qui l'effraie hors de la lumière (la foudre) : un écart au bout de sa longe, et elle se reprend, toujours au piquet
+		bete.suit_la = false
+		bete.maison = maison0
+		bete.position = maison0
+		bete.etat = "repos"
+		j.position = piquet.position + Vector2(-140.0, 0.0)
+		E.maj(0.1)
+		bete.effrayer(bete.position + Vector2(120.0, 0.0), 3.0)
+		var sursaute: bool = str(bete.etat) == "fuit"
+		var bout := 0.0
+		for i in 40:
+			bete._conduire(0.1)
+			E.maj(0.1)
+			bout = maxf(bout, bete.position.distance_to(maison0))
+		var reprise: bool = str(bete.etat) != "fuit" and bete.maison == maison0 and bool(piquet.etat.get("attache", false)) and E.betes.has(bete)
+		verif(sursaute and bout > 5.0 and bout < 50.0 and reprise,
+			"hors de la lumière, la foudre lui fait faire un écart au bout de sa longe (%d pixels), puis elle se reprend, toujours au piquet" % int(bout))
+		bete.peur_feu = 0.0
+		bete.etat = "repos"
+
 		# la nuit : dans le noir, elle rompt sa longe ; dans la lumière d'un feu, elle reste ; la Noire prend celle qu'on y laisse
 		jeu.horloge = nuit_h
 		jeu.noire.acte = 1
