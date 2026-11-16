@@ -13,6 +13,9 @@ extends RefCounted
 # Le jardin et l'élevage : la houe, le sachet de graines, l'outre à bec, le licol, la selle qu'elle porte, le bol ; la terre
 # retournée, les graines à la volée, le filet d'eau, le lait. En selle : la cuisse sur le flanc de la bête, le genou en avant,
 # la jambe de l'autre côté cachée par la bête ; pas d'ombre à ses pieds (c'est la bête qui la porte).
+# Son lance-pierre (fronde) : une fourche de bois pelé, deux boyaux, une poche de cuir. Au repos il pend à sa ceinture, sur la
+# hanche gauche, la fourche en bas, et balance avec son pas ; pour tirer il est dans son poing gauche (avec la torche ou la
+# lampe, s'il y en a une), et les boyaux vont jusqu'à la poche, que sa main droite tire puis lâche.
 
 const P := preload("res://scripts/palette.gd")
 const INCL := 0.45            # la vue de trois quarts : ce qui avance vers nous d'un pixel descend d'autant
@@ -61,6 +64,10 @@ const CHANVRE := Color("9c9168")
 const FERRAILLE := Color("8b8a84")
 const ROUILLE := Color("8a5433")
 const DIR_LAMPE := Vector3(0.992, 0.0, -0.125)
+# le lance-pierre : le bois pelé de la fourche, le boyau séché
+const FOURCHE := Color("7f5d38")
+const BOYAU := Color("d3c196")
+const BOYAU_REPOS := 7.0      # la longueur d'un boyau qu'on ne tire pas
 const HERBE := Color("6f8a45")
 const MALADE := Color("9eae80")
 # trempée, elle s'assombrit (le joueur en teinte tout son dessin) ; la toile cirée, non : sa couleur est relevée d'autant
@@ -128,6 +135,13 @@ var eclats := -1.0            # depuis le dernier coup (des copeaux, de la sciur
 var fil := 0.0                # un fil, une corde, de l'ouvrage à sa main (de 0 à 1 : sa présence)
 var lance_pose := 0.0         # la lance : 0 dans sa main, 1 posée au sol près d'elle
 var lance_sol := PackedVector2Array([Vector2(-10, 6), Vector2(15, 8)])   # où (à l'écran) : son talon, sa pointe
+# --- son lance-pierre (le joueur le règle) ---
+var fronde := 0               # 0 : elle n'en a pas ; 1 : pendu à sa ceinture, sur la hanche gauche ; 2 : dans son poing gauche
+var fronde_u := Vector3(0, 0, 1)      # dans son poing : vers où monte la fourche
+var fronde_a := Vector3(0, 1, 0)      # et l'axe de ses deux branches
+var poche := Vector3.ZERO     # la poche de cuir, au bout des deux boyaux (dans sa main droite quand elle la tire)
+var fronde_galet := false     # un galet dans la poche
+var fronde_bal := 0.0         # à la ceinture, il balance avec son pas (un angle)
 # --- son sommeil ---
 var filet := 0.0              # le filet d'eau de l'outre, de 0 à 1
 var selle := 0.0              # de 0 (à pied) à 1 (en selle : assise, une jambe de chaque côté)
@@ -294,6 +308,9 @@ func dessiner() -> void:
 		parts.append([prof(Vector3(3.6, -1.0, 0), buste) + 0.4, _pans])
 	if ouvrage != "":
 		parts.append([prof(ouvrage_ou, cap) * 0.6 + 1.0, _ouvrage])
+	if fronde == 1 and not couchee and selle < 0.5:
+		# (sur la hanche gauche, par-dessus le manteau et le bras : de l'autre profil, son corps le cache)
+		parts.append([prof(Vector3(0.0, -8.6, 0.0), buste) + 1.2, _fronde_ceinture])
 	parts.sort_custom(func(a, b): return a[0] < b[0])
 	for p in parts:
 		p[1].call()
@@ -1055,9 +1072,77 @@ func _bras(cote: float) -> void:
 		_lampe(main)
 	if outil != "" and cote == outil_main:
 		_outil(main)
+	if fronde == 2 and cote < 0.0:
+		_fronde(main)
 	_forme(_ellipse(pts[2], 1.6, 1.5, 8), c_main.darkened(0.3) if loin else c_main, 0.9)
 	if cote > 0.0 and objet != "":
 		_objet(pts[2])
+
+
+# un boyau, d'une branche de la fourche à la poche (a, b : dans le corps) : tendu, il s'amincit ; lâche, il pend
+func _boyau(a: Vector3, b: Vector3) -> void:
+	var d := a.distance_to(b)
+	var pa := pt(a, buste)
+	var pb := pt(b, buste)
+	var ligne := PackedVector2Array([pa, pb])
+	if d < BOYAU_REPOS - 0.2:
+		var creux := Vector2(0.0, sqrt(BOYAU_REPOS * BOYAU_REPOS - d * d) * 0.5)
+		ligne = PackedVector2Array([pa, pa.lerp(pb, 0.3) + creux * 0.8, pa.lerp(pb, 0.65) + creux, pb])
+	var w := clampf(1.1 - 0.04 * d, 0.55, 0.9)
+	ci.draw_polyline(ligne, P.ENCRE, w + 0.8, true)
+	ci.draw_polyline(ligne, BOYAU, w, true)
+
+
+# le lance-pierre dans son poing gauche : le manche, les deux branches, une ligature claire à chaque bout ; les deux boyaux
+# jusqu'à la poche de cuir, et le galet dedans
+func _fronde(main: Vector3) -> void:
+	var u := fronde_u
+	var a := fronde_a
+	var cul := pt(main - u * 3.2, buste)
+	var noeud := pt(main + u * 2.2, buste)
+	var b1 := main + u * 6.6 + a * 3.1
+	var b2 := main + u * 6.6 - a * 3.1
+	var p1 := pt(b1, buste)
+	var p2 := pt(b2, buste)
+	# (le boyau de la branche loin de nous d'abord : la fourche passe dessus)
+	var loin := prof(a, buste) > 0.0
+	_boyau(b2 if loin else b1, poche)
+	var branches := PackedVector2Array([p1, noeud.lerp(p1, 0.4) + (noeud - cul) * 0.14, noeud, noeud.lerp(p2, 0.4) + (noeud - cul) * 0.14, p2])
+	ci.draw_line(cul, noeud, P.ENCRE, 3.8, true)
+	ci.draw_polyline(branches, P.ENCRE, 3.4, true)
+	ci.draw_line(cul, noeud, FOURCHE.darkened(0.15), 2.2, true)
+	ci.draw_polyline(branches, FOURCHE, 1.9, true)
+	ci.draw_line(noeud.lerp(p1, 0.25), p1, FOURCHE.lightened(0.22), 0.7, true)
+	_boyau(b1 if loin else b2, poche)
+	for q in [p1, p2]:
+		ci.draw_circle(q, 0.9, BOYAU.lightened(0.15))
+	var po := pt(poche, buste)
+	_forme(_ellipse(po, 2.0, 1.6, 8), CUIR_CLAIR, 0.7)
+	if fronde_galet:
+		ci.draw_circle(po, 0.95, PIERRE.lightened(0.35))
+
+
+# pendu à sa ceinture, sur la hanche gauche : la poche passée sous la ceinture, les boyaux, la fourche en bas, son manche vers
+# le sol ; il balance d'avant en arrière avec son pas, et suit l'évasement du manteau
+func _fronde_ceinture() -> void:
+	var large := _ta.x / 7.5
+	var haut := Vector3(0.4, -(7.8 * large + 0.5), 16.4)
+	var s := sin(fronde_bal)
+	var c := cos(fronde_bal)
+	var pts := PackedVector2Array()
+	# (le long du pendule, puis en travers : la poche, les deux bouts des branches, la fourche, le bout du manche)
+	for q in [Vector2(0.0, 0.0), Vector2(2.4, -2.9), Vector2(2.4, 2.9), Vector2(6.6, 0.0), Vector2(11.2, 0.0)]:
+		pts.append(pt(haut + Vector3(s * q.x + c * q.y, -0.2 * q.x, -c * q.x + s * q.y), buste))
+	for i in [1, 2]:
+		ci.draw_line(pts[0], pts[i], P.ENCRE, 1.7, true)
+		ci.draw_line(pts[0], pts[i], BOYAU, 0.8, true)
+	var branches := PackedVector2Array([pts[1], pts[3].lerp(pts[1], 0.4) + (pts[3] - pts[4]) * 0.1, pts[3], pts[3].lerp(pts[2], 0.4) + (pts[3] - pts[4]) * 0.1, pts[2]])
+	ci.draw_line(pts[4], pts[3], P.ENCRE, 3.6, true)
+	ci.draw_polyline(branches, P.ENCRE, 3.2, true)
+	ci.draw_line(pts[4], pts[3], FOURCHE.darkened(0.15), 2.0, true)
+	ci.draw_polyline(branches, FOURCHE, 1.7, true)
+	ci.draw_line(pts[3].lerp(pts[1], 0.25), pts[1], FOURCHE.lightened(0.22), 0.7, true)
+	_forme(_ellipse(pts[0], 1.6, 1.25, 8), CUIR_CLAIR, 0.8)
 
 
 # la lampe : un tube de ferraille rouillée, une tête plus large, son verre clair ; une dragonne de corde au poignet

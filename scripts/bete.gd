@@ -97,6 +97,29 @@ var _assaut := 0.0               # le temps pendant lequel une morsure est encor
 var _presage := 0.0              # ce qu'elle a déjà annoncé, avant de passer la torche
 var _a_la_torche := false        # un chasseur, tenu à la lisière de la torche (il la longe ; il lui faut s'en écarter pour la quitter)
 var _suit := false               # elle suit la veilleuse de loin
+# l'affût d'un chasseur, la nuit, devant un feu où la veilleuse se tient : ce que sa conduite (_chasseur) dit à son dessin et à
+# ses yeux (scripts/yeux.gd). Lissés tous les deux.
+var poste := 0.0                 # 0 : il marche ; 1 : posté dans le noir, à l'écart du feu, immobile, tourné vers la veilleuse
+var detourne := 0.0              # 1 : il s'est détourné du feu (il change de poste) : on le perd
+const Affut := preload("res://scripts/affut.gd")
+var _poste_a := 0.0              # l'angle de son poste, autour du feu
+var _poste_t := 0.0              # sa patience : le temps qu'il lui reste à ce poste
+var _poste_p := Vector2.ZERO     # son poste, dans le lieu
+var _poste_k := 0.0              # de combien ce poste est plus loin que sa distance (un couvert, un peu en arrière)
+var _poste_feu = null            # le feu qu'il guette
+var _af := 0                     # où il en est de son affût (scripts/affut.gd : il vient voir, tenu, posté, il change de poste…)
+var _af_t := 0.0                 # le temps de ce moment-là
+var _gagne := 0.0                # ce qu'il a gagné sur la lisière, dans le dos de la veilleuse (pixels)
+var _pas_t := 0.0                # avant son prochain pas, quand elle ne le regarde pas
+var _vue_t := 0.0                # depuis quand elle le regarde
+var _furtif := false             # il gagne un pas dans son dos : qu'elle se retourne, il se fige
+var _de_face := false            # ce déplacement est court : il le fait sans la quitter des yeux
+var _presse := 0.0               # depuis quand elle marche sur lui
+var _dj0 := 0.0                  # sa distance à elle, l'image d'avant
+var _elan_t := -1.0              # elle est sortie de la lumière : son tour de venir, dans… (-1 : rien)
+var _tourne := false             # à la torche : il cherche le dos de la veilleuse
+var _dos_n := -1                 # … et la place qu'il y prend (scripts/affut.gd, AU_DOS ; -1 : aucune)
+const LISERE := 2.6              # la Noire : la force du liseré que le feu accroche sur son échine (le shader de son encre)
 # la Noire : ce que scripts/noire.gd lui fait faire
 var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »
 var ordre_but := Vector2.ZERO
@@ -107,6 +130,12 @@ var yeux_clos := 0.0             # de 0 à 1 : ses yeux se ferment (elle dort, e
 var de_face := 0.0               # de 0 à 1 : elle regarde la veilleuse en face, et l'on voit ses deux yeux (scripts/yeux.gd)
 var _claque := -1.0              # son coup de gueule, de 0 à 1 (-1 : rien) : le corps se jette en avant, la tête claque
 var _tic := 0.0                  # un mouvement de tête brusque, qui retombe
+# (son dessin, scripts/noire_corps.gd : ce que sa planche a de plus que les autres)
+var _machoire: Sprite2D          # sa mâchoire, derrière sa tête : montrée seulement quand sa gueule s'ouvre
+var _gueule := 0.0               # de combien sa gueule est ouverte (radians)
+var _roulee: Sprite2D            # endormie : son corps roulé, à la place de tout le reste
+var _guet := 0.0                 # de 0 à 1 : elle guette, ramassée sur ses épaules
+var _oeil_axe := 0.0             # de combien son museau pique sur sa planche (axe_oeil) ; 0 pour les autres bêtes
 var _tic_t := 2.0
 # la bête apprivoisée (rôle « compagne », scripts/elevage.gd), et ce qui tente une proie (un appât, un jardin)
 var harnais := {}                # « licol », « selle », « sacoche » : vrai quand elle le porte (son dessin les montre)
@@ -278,6 +307,8 @@ var _oeil_rayon := 1.5
 var _cligne := -1.0              # depuis quand elle cligne (-1 : l'œil ouvert)
 var _cligne_t := 2.0             # le prochain clignement, dans…
 var _cligne_d := 0.2
+var _tapi := 0.0                 # de 0 à 1 : le chasseur posté dans le noir (poste) est tapi ; le dessin seulement
+const TAPI_BAS := 0.13           # de combien il s'abaisse alors, en hauteurs de patte (en plus de l'affût)
 var _haut_sale := false
 static var _ombre_tex: ImageTexture
 static var _vue_image := -1
@@ -488,6 +519,10 @@ func _monter() -> void:
 	if not _sq["dessus"].is_empty():
 		_dessus = _calque_sprite(_sq["dessus"])
 	if not _sq["tete"].is_empty():
+		if _sq.has("plus"):
+			# (la Noire : sa mâchoire, derrière sa tête ; cachée tant que sa gueule est fermée)
+			_machoire = _calque_sprite(_sq["plus"]["machoire"])
+			_machoire.visible = false
 		_tete = _calque_sprite(_sq["tete"])
 		# (jusqu'où la tête descend pour brouter : le museau vers le sol, sans tordre le cou)
 		var rt: Rect2 = _sq["tete"]["rect"]
@@ -498,6 +533,12 @@ func _monter() -> void:
 		# (ce qui manque encore, ce sont les épaules qui le donnent : elle s'incline)
 		var reste := -(pv_t.y + museau.rotated(_broute_rot).y) - _H * 0.12
 		_broute_penche = clampf(reste / maxf(pv_t.x + museau.x - _c.x, _H * 0.5), 0.03, 0.15)
+	if _sq.has("plus"):
+		# (la Noire endormie : son corps roulé, par-dessus le reste ; et l'axe de son museau, qui pique sur sa planche)
+		_roulee = _calque_sprite(_sq["plus"]["roulee"])
+		_roulee.visible = false
+		var axe: Vector2 = _sq["reperes"]["axe"]
+		_oeil_axe = axe.angle()
 	_haut = Calque.new()
 	_haut.peindre = _peindre_haut
 	add_child(_haut)
@@ -544,6 +585,9 @@ func _monter_queue(c: Dictionary) -> void:
 	# (une queue longue et fine fouette ; un moignon ne fait que frémir)
 	_q_souple = clampf((_q_long / maxf(2.0, s1 - s0) - 0.6) / 2.2, 0.2, 1.0)
 	var n := 6 if _fin else 3
+	if role == "noire":
+		# (la sienne est longue et balaie large : plus de tranches, pour qu'elle plie sans se casser ; toujours un seul appel)
+		n = 12 if _fin else 6
 	var uv := PackedVector2Array()
 	var pos: Vector2 = c["pos"]
 	var tri: Array = []
@@ -621,6 +665,10 @@ func _decalages() -> void:
 func point_oeil() -> Vector2:
 	if _pivot == null:
 		return position + Vector2(_oeil_local.x * regard, _oeil_local.y)
+	if _roulee != null and _roulee.visible and _roulee.self_modulate.a > 0.6:
+		# (la Noire endormie : l'œil clos de son corps roulé)
+		var o: Vector2 = _sq["reperes"]["oeil_roulee"]
+		return position + _pivot.transform * o
 	return position + _pivot.transform * (_t_corps * (_t_tete * _oeil_local))
 
 
@@ -631,11 +679,23 @@ func rayon_oeil() -> float:
 	return r
 
 
+# la Noire, de face (de_face) : son autre œil, là où sa tête le porte — plus loin, plus petit, à demi caché par le chanfrein ;
+# (x et y dans le monde, son rayon). Une bête qui n'en a qu'un de dessiné : le même que point_oeil et rayon_oeil.
+func oeil_loin() -> Vector3:
+	var p := point_oeil()
+	var r := rayon_oeil()
+	if _pivot != null and _sq.get("yeux", []).size() > 1 and not (_roulee != null and _roulee.visible and _roulee.self_modulate.a > 0.6):
+		var y1: Vector3 = _sq["yeux"][1]
+		p = position + _pivot.transform * (_t_corps * (_t_tete * Vector2(y1.x, y1.y)))
+		r *= y1.z / maxf(_oeil_rayon, 0.01)
+	return Vector3(p.x, p.y, r)
+
+
 # vers où pointe son museau, dans le monde : la lueur de son œil s'effile de ce côté (scripts/yeux.gd)
 func axe_oeil() -> Vector2:
 	if _pivot == null:
 		return Vector2(regard, 0.0)
-	return (_pivot.transform * (_t_corps * _t_tete)).basis_xform(Vector2.RIGHT).normalized()
+	return (_pivot.transform * (_t_corps * _t_tete)).basis_xform(Vector2.from_angle(_oeil_axe)).normalized()
 
 
 # sa paupière : 1, l'œil ouvert ; 0, fermé (elle cligne, elle ferme l'œil sous un coup, elle meurt). La nuit, la lueur s'éteint.
@@ -702,6 +762,10 @@ func blesser(n: float, depuis: Vector2) -> void:
 			# (craintif, il lâche prise plus tôt, plus souvent, plus longtemps ; traqueur, il revient ; agressif, il ne lâche pas)
 			if pv < pv_max * lerpf(0.4, 0.7, crainte) * (1.0 - 0.5 * agressivite) or randf() < lerpf(0.25, 0.6, crainte) * (1.0 - traque) * (1.0 - agressivite):
 				_fuir(depuis, maxf(1.0, 2.5 + 4.0 * crainte - 1.2 * traque))
+			elif _poste_feu != null and is_instance_valid(_poste_feu) and _af != Affut.RIEN and _af != Affut.CHANGE and position.distance_to(depuis) > 90.0:
+				# (touché de loin, à son affût — un galet venu du feu : il ne reste pas là à en attendre un autre. Il se détourne,
+				# on le perd, et il reparaît ailleurs)
+				_prendre_poste(_poste_feu, true)
 
 
 # la foudre, l'incendie : elle est blessée, mais personne ne l'a chassée
@@ -736,7 +800,8 @@ func gerbe(feu) -> void:
 			sursauter()
 			jeu.noire.gerbe()
 		return
-	if pv <= 0.0 or role == "echo" or peur_feu <= 0.2 or position.distance_to(feu.position) > feu.rayon() * 1.3:
+	# (posté devant ce feu, il voit la gerbe d'aussi loin qu'il se tient)
+	if pv <= 0.0 or role == "echo" or peur_feu <= 0.2 or (position.distance_to(feu.position) > feu.rayon() * 1.3 and _poste_feu != feu):
 		return
 	effrayer(feu.position, 1.0 + 2.5 * peur_feu)
 	_effaroucher("feu")
@@ -1143,6 +1208,11 @@ func _chasseur(delta: float) -> void:
 	_retenu = false
 	if jeu.est_jour() and etat != "part":
 		_changer("part", 30.0)
+	if etat == "part" or etat == "fuit":
+		# (il s'en va, il fuit : il n'est plus à son poste)
+		poste = move_toward(poste, 0.0, delta * 1.2)
+		detourne = move_toward(detourne, 0.0, delta * 2.0)
+		_dj0 = dj
 	if etat == "part":
 		_aller(_loin_de(j.position), vitesse, delta)
 		if dj > 1100.0 or _t > _duree:
@@ -1157,18 +1227,170 @@ func _chasseur(delta: float) -> void:
 	var but: Vector2 = j.position
 	var retenu := false
 	var pousse := false
+	var au_poste := false       # posté : immobile dans le noir, tourné vers elle
+	var fige := false           # immobile, sans être posté (tenu à la lisière, il regarde ; il gronde)
+	var change := false         # détourné : on le perd
+	var face := false           # il marche sans la quitter des yeux (il recule, il gagne un pas)
+	var pas := 0.0              # son allure, quand l'affût la décide (0 : celle d'un chasseur tenu)
+	var attend := false         # elle est sortie de la lumière : son tour n'est pas venu
+	# (de combien elle vient sur lui, en pixels par seconde : posté, il ne bouge pas, c'est donc elle qui marche)
+	var vient: float = (_dj0 - dj) / maxf(delta, 0.001)
+	_dj0 = dj
 	var feu = jeu.feu_qui_protege(j.position)
 	if feu != null:
+		# --- l'affût : elle se tient dans la lumière d'un feu. Il ne tourne pas autour : il vient voir, puis il se poste dans
+		# le noir, et n'en bouge que pour une raison (scripts/affut.gd : le choix du poste, l'entente de la meute)
 		_a_la_torche = false
-		var c: Vector2 = feu.position
-		var bord: float = feu.rayon() * 0.85
-		var ici := position - c
-		var a := ici.angle() + _sens * 0.55
-		but = c + Vector2.from_angle(a) * (bord + 16.0)
+		_elan_t = -1.0
 		retenu = true
-		# (arrivé à la lisière d'un feu de camp, il est tenu : Orvane le retiendra ; un incendie n'est le fait de personne)
-		if _effarouchee != int(jeu.jour) and ici.length() < feu.rayon() * _lisiere() + 40.0 and jeu.feux.has(feu):
-			_effaroucher("feu")
+		var c: Vector2 = feu.position
+		var ici := position - c
+		var r: float = feu.rayon()
+		var bord: float = r * _lisiere()
+		if feu != _poste_feu or _af == Affut.RIEN:
+			# un feu qu'il ne guettait pas. Un feu de camp : il vient voir, une fois ; un incendie : il s'en tient à l'écart
+			_poste_feu = feu
+			if jeu.feux.has(feu) and _af == Affut.RIEN:
+				_af = Affut.VIENT
+			else:
+				_prendre_poste(feu, false)
+		# (sa distance, sans ce qu'il a gagné dans son dos : elle suit le rayon du feu)
+		var voulu: float = Affut.distance(self, feu) + _poste_k
+		if (_af == Affut.GAGNE or _af == Affut.CHANGE) and _poste_p.distance_to(c) < bord + 6.0:
+			# (le feu a grandi jusque sur son poste, une bûche, la fumée âcre : il le prend plus loin, sur le même côté)
+			_poste_p = c + Vector2.from_angle(_poste_a) * maxf(voulu - _gagne, bord + 8.0)
+		match _af:
+			Affut.VIENT:
+				# il vient voir : droit sur la lisière, où le feu l'arrête
+				but = c + ici.normalized() * (bord + 4.0)
+				# (arrivé à la lisière d'un feu de camp, il est tenu : Orvane le retiendra ; un incendie n'est le fait de personne)
+				if ici.length() < bord + 40.0 and jeu.feux.has(feu):
+					_effaroucher("feu")
+				if ici.length() < bord + 12.0:
+					# (venus en bande, ils ne repartent pas tous dans la même image : l'un recule, les autres regardent encore)
+					_af = Affut.TENU
+					_af_t = 1.2 + 1.8 * audace + randf() * 2.5
+			Affut.TENU:
+				# le feu le tient : arrêté à sa lisière, il la regarde ; puis il recule dans le noir
+				fige = true
+				_af_t -= delta
+				if _af_t <= 0.0:
+					_prendre_poste(feu, false)
+			Affut.GAGNE:
+				but = _poste_p
+				var reste := position.distance_to(_poste_p)
+				_af_t += delta
+				if _af_t > 20.0:
+					# (il n'y arrive pas, un autre feu lui barre le chemin : il se poste où il est)
+					reste = 0.0
+					_poste_p = position
+					_poste_a = ici.angle()
+					_poste_k = ici.length() - Affut.distance(self, feu)
+					_gagne = 0.0
+				if _furtif and _vue_d_elle(j):
+					# « un, deux, trois, soleil » : elle se retourne, il se fige là où il est
+					_poste_p = position
+					_gagne = voulu - ici.length()
+					_furtif = false
+					_af = Affut.POSTE
+					au_poste = true
+				elif reste < 4.0:
+					_furtif = false
+					_af = Affut.POSTE
+					au_poste = true
+				else:
+					face = _de_face
+					# (un long chemin qui l'éloigne du feu : il lui tourne le dos, ses yeux s'éteignent)
+					change = not _de_face and _poste_p.distance_to(c) > ici.length() - 20.0
+					pas = 0.3 if _furtif else 0.0
+			Affut.POSTE:
+				au_poste = true
+				# elle marche sur lui, dans la lumière : il recule, se détourne, et va se poster ailleurs
+				_presse = _presse + delta if vient > 50.0 and dj < ici.length() - 0.2 * r else maxf(0.0, _presse - delta * 2.0)
+				if _presse > 0.25:
+					_prendre_poste(feu, true)
+				elif absf(voulu - _gagne - ici.length()) > 16.0 + 0.04 * r or position.distance_to(_poste_p) > 14.0:
+					# le feu baisse : il avance d'autant, d'un coup, et s'arrête (le cercle se resserre par à-coups) ; une bûche,
+					# la fumée âcre : il recule
+					_vers_poste(c + Vector2.from_angle(_poste_a) * maxf(voulu - _gagne, bord + 8.0), false)
+				else:
+					if _vue_d_elle(j):
+						_vue_t += delta
+						_pas_t = maxf(_pas_t, 1.0)
+						# (elle le regarde depuis un moment, lui qui s'était avancé : il rend ce qu'il a gagné)
+						if _gagne > 0.0 and _vue_t > 2.0 + 3.0 * audace:
+							_gagne = 0.0
+					else:
+						# elle a le dos tourné, elle est occupée : il gagne quelques pas vers la lisière (moins s'il la craint)
+						_vue_t = 0.0
+						_pas_t -= delta
+						var jusque: float = (voulu - bord - 14.0) * (1.0 - clampf(maxf(crainte, peur_feu), 0.0, 1.0))
+						if _pas_t <= 0.0 and _gagne < jusque - 4.0:
+							_pas_t = randf_range(2.5, 5.0) - audace
+							_gagne = minf(jusque, _gagne + randf_range(14.0, 22.0))
+							_vers_poste(c + Vector2.from_angle(_poste_a) * (voulu - _gagne), true)
+					# l'impatience (plus vive s'il s'est posté là où on ne le voit pas : hors de l'écran, il ne fait peur à personne)
+					_poste_t -= delta * (1.0 if Affut.hors_ecran(jeu, position) <= 0.0 else 2.5)
+					if _poste_t <= 0.0 and _af == Affut.POSTE:
+						if Affut.un_autre_bouge(self, jeu, c):
+							# (jamais tous à la fois : quand l'un bouge, les autres tiennent)
+							_poste_t = randf_range(3.0, 6.0)
+						elif audace + 0.3 * traque + 0.3 * agressivite >= 0.55 and maxf(crainte, peur_feu) < 0.3 and randf() < 0.3:
+							# la feinte des plus hardis
+							_poste_t = _patience() * randf_range(0.75, 1.35) / Affut.hate
+							_af = Affut.FEINTE
+							_af_t = 0.0
+						else:
+							_prendre_poste(feu, true)
+			Affut.CHANGE:
+				# détourné, il passe par le noir, au large (pas le long de la lisière), et reparaît ailleurs
+				var reste2 := position.distance_to(_poste_p)
+				var da := wrapf(_poste_a - ici.angle(), -PI, PI)
+				_af_t += delta
+				change = reste2 > 30.0
+				pas = 0.75
+				if reste2 < 4.0 or _af_t > 30.0:
+					_poste_p = position
+					_poste_a = ici.angle()
+					_poste_k = ici.length() - Affut.distance(self, feu)
+					_af = Affut.POSTE
+					au_poste = true
+				elif absf(da) > 0.4:
+					but = c + Vector2.from_angle(ici.angle() + signf(da) * 0.5) * (voulu + 0.2 * r + 30.0) / cos(0.5)
+				else:
+					but = _poste_p
+			Affut.FEINTE:
+				# la feinte : quelques pas vifs jusqu'à la lisière…
+				_af_t += delta
+				but = c + ici.normalized() * (bord + 4.0)
+				pas = 0.95
+				if ici.length() < bord + 10.0 or _af_t > 2.5:
+					_af = Affut.GRONDE
+					_af_t = 0.7 + 0.6 * audace
+					jeu.grognement(self, true)
+			Affut.GRONDE:
+				# … un grondement, et il s'en retourne à son poste
+				fige = true
+				_af_t -= delta
+				if _af_t <= 0.0:
+					_gagne = 0.0
+					_vers_poste(c + Vector2.from_angle(_poste_a) * voulu, false)
+	elif _af != Affut.RIEN:
+		# --- elle sort de la lumière (ou son feu meurt) : ils viennent, de leurs postes, donc de plusieurs côtés ; le plus près
+		# ou le plus hardi d'abord, les autres une ou deux secondes après
+		if _elan_t < 0.0:
+			_elan_t = Affut.tour(self, jeu, j.position)
+		_elan_t -= delta
+		if _elan_t <= 0.0:
+			_af = Affut.RIEN
+			_poste_feu = null
+			_elan_t = -1.0
+			_gagne = 0.0
+			_furtif = false
+		else:
+			attend = true
+	if feu != null:
+		pass
 	elif j.torche > 0.0 or (jeu.get("atelier") != null and float(jeu.atelier.eclaire(position)) > 0.4):
 		# (la torche ; ou le faisceau de sa lampe, tant qu'il est sur lui : hors du faisceau, rien ne le tient)
 		var tenue := _tenue_torche()
@@ -1180,32 +1402,67 @@ func _chasseur(delta: float) -> void:
 		if dj < tenue + (70.0 if _a_la_torche else 12.0) and (tient or gronde):
 			_a_la_torche = true
 			retenu = true
-			# tenu, il longe la lisière de la torche, comme celle d'un feu : il tourne autour de la veilleuse
-			# (visant un point en avant sur le cercle, il couperait par la corde : on le vise un peu plus loin, et il s'y tient)
-			but = j.position + Vector2.from_angle((position - j.position).angle() + _sens * 0.45) * tenue / cos(0.45)
 			pousse = dj < tenue - 22.0
+			var de_elle: Vector2 = position - j.position
+			# tenu, il garde sa distance, face à elle : il recule quand elle avance, la suit quand elle s'éloigne
+			but = j.position + de_elle.normalized() * tenue
+			face = true
 			if tient:
 				if dj < tenue + 12.0:
 					_effaroucher("lumiere")
+				# il cherche son dos, puis s'arrête : plus de manège. Devant elle, il attend qu'elle l'ait regardé un moment ;
+				# alors il passe derrière (un peu de côté : à deux, ils ne se marchent pas dessus), et n'en bouge plus
+				var ecart := wrapf(Vector2(-float(j.regard), 0.0).angle() + Affut.AU_DOS[maxi(_dos_n, 0)] - de_elle.angle(), -PI, PI)
+				if _tourne:
+					_tourne = absf(ecart) > 0.3
+				else:
+					_vue_t = _vue_t + delta if absf(ecart) > 1.3 else 0.0
+					if _vue_t > 1.5 + 2.5 * (1.0 - audace):
+						_tourne = true
+						_vue_t = 0.0
+						_dos_n = Affut.place_au_dos(self, jeu)
+				if _tourne and not pousse:
+					# (visant un point en avant sur le cercle, il couperait par la corde : on le vise un peu plus loin, et il s'y tient)
+					but = j.position + Vector2.from_angle(de_elle.angle() + signf(ecart) * 0.45) * tenue / cos(0.45)
+					face = false
+				else:
+					# (arrêté, il lui faut un vrai écart pour se remettre en marche : il ne piétine pas)
+					au_poste = absf(dj - tenue) < (14.0 if poste > 0.5 else 4.0)
 			else:
+				# (il s'annonce : aplati, il gronde, sans avancer)
+				fige = not pousse
 				if _presage <= 0.0:
 					jeu.grognement(self, true)
 				_presage += delta
 		else:
 			_a_la_torche = false
+			_tourne = false
+			_dos_n = -1
 			if dj > tenue + 80.0:
 				_presage = 0.0
 	else:
 		_a_la_torche = false
+		_tourne = false
+		_dos_n = -1
+	if attend and not retenu:
+		au_poste = true
 	_retenu = retenu
 	var allure := 0.5 if retenu else 0.9
 	if traque > 0.0:
-		# (traqueur, il arpente la lisière plus vite et vient plus droit, sans jamais gagner sur elle ce qu'il ne gagnait pas déjà)
+		# (traqueur, il gagne et quitte ses postes plus vite, et vient plus droit, sans jamais gagner sur elle ce qu'il ne gagnait pas déjà)
 		allure = 0.5 + 0.25 * traque if retenu else maxf(0.9, minf(lerpf(0.9, 1.0, traque), 0.97 * R.VITESSE / maxf(vitesse, 1.0)))
+	if pas > 0.0:
+		allure = pas if pas < 0.5 else maxf(pas, allure)
 	if pousse:
 		# (la veilleuse marche sur lui, la torche haute : il recule plus vite qu'il ne rôde)
 		allure = maxf(allure, 0.9)
-	_aller(but, vitesse * allure, delta)
+	poste = move_toward(poste, 1.0 if au_poste else 0.0, delta * 1.2)
+	detourne = move_toward(detourne, 1.0 if change else 0.0, delta * 2.0)
+	if not au_poste and not fige:
+		_aller(but, vitesse * allure, delta)
+	if (au_poste or fige or face) and absf(j.position.x - position.x) > 2.0:
+		# (posté, tenu, ou reculant de quelques pas : tourné vers elle)
+		regard = signf(j.position.x - position.x)
 	# (le feu a grandi sous elle : la bête recule hors de sa lumière ; plus loin encore si elle le craint)
 	var lisiere := _lisiere()
 	for f in jeu.feux_et_foyers():
@@ -1216,8 +1473,49 @@ func _chasseur(delta: float) -> void:
 				position = f.position + ici2.normalized() * bord2
 	if not retenu:
 		_mordre_si_pres(dj)
-	if randf() < delta * 0.08 and dj < 420.0:
+	# (posté, il se tait : on n'entend de lui qu'un grondement bas, rare ; scripts/sons_ambiance.gd)
+	if poste < 0.5 and randf() < delta * 0.08 and dj < 420.0:
 		jeu.grognement(self)
+
+
+# il prend un poste autour de ce feu (« ailleurs » : il quitte le sien, détourné, par le noir), et sa patience repart
+func _prendre_poste(feu, ailleurs: bool) -> void:
+	var p: Vector2 = Affut.poste(self, feu, jeu, ailleurs)
+	var vers: Vector2 = p - feu.position
+	_poste_a = vers.angle()
+	_poste_k = vers.length() - Affut.distance(self, feu)
+	_poste_t = _patience() * randf_range(0.75, 1.35) / Affut.hate
+	_gagne = 0.0
+	_pas_t = randf_range(2.0, 4.0)
+	_vue_t = 0.0
+	_presse = 0.0
+	_af_t = 0.0
+	_vers_poste(p, false)
+	# (loin, ou ailleurs : il se détourne et passe au large ; à deux pas : il recule sans la quitter des yeux)
+	if ailleurs or position.distance_to(p) > 0.5 * float(feu.rayon()) + 60.0:
+		_af = Affut.CHANGE
+
+
+# il gagne ce point, et s'y postera (« furtif » : dans le dos de la veilleuse, à pas lents)
+func _vers_poste(p: Vector2, furtif: bool) -> void:
+	_poste_p = p
+	_furtif = furtif
+	_af_t = 0.0
+	_de_face = position.distance_to(p) < 90.0
+	_af = Affut.GAGNE
+
+
+# combien de temps il tient un poste avant de s'impatienter : de cinquante secondes à vingt, selon son caractère (hardi,
+# traqueur, agressif, il tient moins longtemps en place)
+func _patience() -> float:
+	return lerpf(50.0, 20.0, clampf(0.45 * audace + 0.4 * traque + 0.35 * agressivite, 0.0, 1.0))
+
+
+# la veilleuse le regarde-t-elle ? Non si elle lui tourne le dos, si elle dort, si elle est à l'ouvrage ou une page ouverte
+func _vue_d_elle(j) -> bool:
+	if j.endormie or str(j.atelier) != "" or (jeu.get("page") != null and str(jeu.page) != ""):
+		return false
+	return (position.x - j.position.x) * float(j.regard) > -24.0
 
 
 # jusqu'où un chasseur entre dans la lumière d'un feu, en parts de son rayon : 0,8, jamais moins (le feu reste une loi) ; plus
@@ -1346,9 +1644,15 @@ func _animer(delta: float) -> void:
 	_derobe = maxf(0.0, _derobe - delta / 0.32)
 	_recul = _recul.lerp(Vector2.ZERO, 1.0 - exp(-delta * 15.0))
 	# (le ressort du corps : vif chez une bête légère, lourd chez une grosse)
+	# (par petits pas : sur une image longue — un à-coup, un téléphone qui peine — le ressort d'un coup reçu s'emballait, et
+	# la bête enflait jusqu'à couvrir l'écran)
 	var wr := lerpf(22.0, 13.0, _poids)
-	_ressort_v += (-wr * wr * _ressort - 0.82 * wr * _ressort_v) * delta
-	_ressort += _ressort_v * delta
+	var reste := minf(delta, 0.25)
+	while reste > 0.0:
+		var h := minf(reste, 0.02)
+		_ressort_v += (-wr * wr * _ressort - 0.82 * wr * _ressort_v) * h
+		_ressort += _ressort_v * h
+		reste -= h
 	# le retournement : un demi-tour de papier, sans saut ; plus lent chez une bête lourde
 	var avant_face := _face
 	_face = move_toward(_face, regard, delta / (0.12 if role == "noire" else lerpf(0.15, 0.26, _poids)))
@@ -1412,7 +1716,8 @@ func _allure(v: float, delta: float) -> void:
 	_foulee = 0.85 * w_pas + 1.05 * _affut + 1.15 * _course + _g_foulee * _bond
 	_appui = lerpf(0.6, 0.68, _poids) * w_pas + 0.76 * _affut + 0.42 * _course + _g_appui * _bond
 	_levee = lerpf(0.26, 0.14, _poids) * w_pas + 0.15 * _affut + lerpf(0.4, 0.26, _poids) * _course + lerpf(0.42, 0.3, _poids) * _bond
-	_bas = lerpf(_bas, (0.08 if nuit else 0.0) + 0.14 * affut + (0.07 if role != "proie" else 0.03) * vite + 0.6 * couchee + 0.13 * aplatie, lisse)
+	# (posté dans le noir, il se tapit : _tapi, ci-dessous dans _corps)
+	_bas = lerpf(_bas, (0.08 if nuit else 0.0) + 0.14 * affut + (0.07 if role != "proie" else 0.03) * vite + 0.6 * couchee + 0.13 * aplatie + TAPI_BAS * _tapi, lisse)
 	if role == "echo":
 		_appui = 0.7
 		_levee = 0.2
@@ -1654,6 +1959,7 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	# le souffle, au repos : lent chez une grande bête ; court et fort après une course
 	var repos := 1.0 - marche
 	var noire := role == "noire"
+	var pose_y := 0.0
 	_essouffle = clampf(_essouffle + delta * ((_course + _bond) * 0.5 - 0.16 + 0.5 * aplatie), 0.0, 1.0)
 	_souffle += delta * TAU / (1.3 + 1.1 * log(masse + 1.0) / log(10.0)) * (1.0 + 1.5 * _essouffle) * (1.5 if noire else 1.0)
 	var ampleur := (0.026 + 0.02 * _essouffle) * (0.35 + 0.65 * repos) * (1.5 if noire else 1.0)
@@ -1692,6 +1998,22 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			else:
 				x += H * 0.26 * sin(PI * _claque)
 				tang += 0.07 * sin(PI * _claque)
+		# elle guette : ramassée, les épaules plus basses que la croupe
+		_guet = lerpf(_guet, 1.0 if ordre == "guette" else 0.0, 1.0 - exp(-delta * 2.5))
+		y += H * 0.07 * _guet * (1.0 - aplatie)
+		tang += 0.03 * _guet * (1.0 - aplatie)
+		pose_y = H * (_bas + 0.07 * _guet * (1.0 - aplatie))
+		# sa gueule : fermée, une fente. Elle s'ouvre grand et claque quand elle mord ; entrouverte tant qu'elle charge
+		var ouvre := 0.0
+		if _claque >= 0.0:
+			ouvre = 0.44 * smoothstep(0.0, 0.2, _claque) * (1.0 - smoothstep(0.46, 0.6, _claque))
+		elif ordre == "charge":
+			ouvre = 0.2 + 0.05 * sin(_anim * 9.0)
+		_gueule = lerpf(_gueule, ouvre, 1.0 - exp(-delta * 28.0))
+	# le chasseur posté dans le noir (poste) : tapi. Les épaules plus basses que la croupe, ramassé sur ses pattes ; il ne bouge
+	# plus que de son souffle. (On ne le voit ainsi que lorsqu'une lumière le touche : la lampe, un éclair, l'aube, la voyance.)
+	_tapi = lerpf(_tapi, poste if role == "chasseur" and _mort < 0.0 else 0.0, 1.0 - exp(-delta * 3.0))
+	tang += 0.05 * _tapi
 	# elle broute, elle flaire le sol : ses épaules s'abaissent un peu
 	var penche := 0.0
 	if _geste == "broute" or _geste == "flaire":
@@ -1767,6 +2089,9 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			d = Vector2(0.03, -0.05) * H
 		"frisson":
 			rot = 0.05 * frisson
+		"tique":
+			# (posté : une oreille qui tique. Sa tête tressaille à peine, et revient)
+			rot = -0.11 if _geste_age < 0.13 else 0.0
 	if mange > 0.01 and _mort < 0.0 and _tete != null:
 		# (elle mange : le museau au sol, de petits coups de mâchoire ; elle relève la tête comme mange redescend)
 		var au_sol := _tete_au_sol()
@@ -1774,6 +2099,12 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 		d = d.lerp(Vector2(0.03 * H, au_sol.y), mange)
 	rot += 0.12 * _affut + 0.06 * _course + 0.07 * _bond
 	d += Vector2(0.06, 0.12) * H * _affut
+	if _tapi > 0.01 and jeu != null and jeu.joueur != null:
+		# (tapi, il la fixe : la tête basse, en avant du poitrail, le museau levé vers elle — plus bas si elle est en dessous de
+		# lui dans le lieu, plus haut si elle est au-dessus)
+		var vers_elle: Vector2 = jeu.joueur.position - position
+		rot += (-0.1 + 0.1 * clampf(vers_elle.y / 220.0, -1.0, 1.0)) * _tapi
+		d += Vector2(0.07, 0.03) * H * _tapi
 	var raide := 1.0 - exp(-delta * lerpf(6.0, 3.6, _poids))
 	if noire and _mort < 0.0 and _tete != null and jeu != null and jeu.joueur != null:
 		if ordre == "dort":
@@ -1818,6 +2149,13 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	# (la tête ne suit pas tout à fait le roulis du dos, ni le bond : elle regarde droit)
 	var tr := _tete_rot - 0.6 * _porte_a - 0.5 * (tang - _porte_a - _penche) * (1.0 if _mort < 0.0 else 0.0)
 	td.y -= 0.35 * _porte
+	if noire and _mort < 0.0 and _tete != null:
+		# la Noire : sa tête ne bouge presque pas quand elle marche. Ce sont ses épaules qui roulent, son corps qui tourne
+		# autour : on la retient là où elle serait si le corps ne tanguait ni ne rebondissait (moins au galop).
+		var tient := lerpf(0.85, 0.4, _bond) * (1.0 - couchee)
+		var pv0: Vector2 = _sq["tete"]["pivot"]
+		td += _t_corps.basis_xform_inv(pv0 + Vector2(x, pose_y) - _t_corps * pv0) * tient
+		tr = lerpf(tr, _tete_rot - tang, tient)
 	if _n_cote == 1:
 		# (un oiseau, un bipède : la tête va de l'avant à chaque pas, puis attend)
 		var w := fposmod(u * 2.0, 1.0)
@@ -1837,6 +2175,33 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 		_dessus.transform = _t_corps * demi
 	if _tete != null:
 		_tete.transform = _t_corps * _t_tete * demi
+	if _machoire != null:
+		_noire_images(demi)
+
+
+# la Noire (scripts/noire_corps.gd) : sa gueule et son sommeil sont d'autres images que sa planche. La gueule fermée, sa tête
+# est d'un seul tenant ; ouverte, on montre la tête sans sa mâchoire (les dents du haut) et la mâchoire à part, derrière, qui
+# tourne autour de sa charnière. Endormie, son corps roulé vient par-dessus le reste, qu'on ne dessine plus ensuite.
+func _noire_images(demi: Transform2D) -> void:
+	var ouverte := _gueule > 0.02 and _mort < 0.0
+	if ouverte != _machoire.visible:
+		_machoire.visible = ouverte
+		var c: Dictionary = _sq["plus"]["gueule"] if ouverte else _sq["tete"]
+		_tete.texture = c["tex"]
+		_tete.offset = c["pos"] * 2.0
+	if ouverte:
+		var ch: Vector2 = _sq["reperes"]["machoire"]
+		_machoire.transform = _t_corps * _t_tete * Transform2D(_gueule, ch) * Transform2D(0.0, -ch) * demi
+	var k := smoothstep(0.55, 0.9, couchee) if _mort < 0.0 else 0.0
+	if (k > 0.0) != _roulee.visible or (k < 1.0) != sprite.visible:
+		_roulee.visible = k > 0.0
+		for n in _pivot.get_children():
+			if n != _roulee and n != _machoire:
+				n.visible = k < 1.0
+	if k > 0.0:
+		# (elle respire : son dos se soulève, lentement)
+		_roulee.self_modulate.a = k
+		_roulee.transform = Transform2D(0.0, Vector2(1.0 - 0.01 * sin(_souffle), 1.0 + 0.03 * sin(_souffle)), 0.0, Vector2.ZERO) * demi
 
 
 # ce qu'elle fait quand elle ne va nulle part : une proie broute, guette, hume ; un chasseur guette, hume, flaire le sol ;
@@ -1852,6 +2217,26 @@ func _gestes_repos(delta: float) -> void:
 		# (le rôdeur qui va charger, la bête qui fait front : la tête levée, sans la quitter des yeux)
 		_geste = "guette"
 		_geste_t = 0.3
+		return
+	if role == "chasseur" and poste > 0.4:
+		# (posté dans le noir : il ne flaire pas le sol, ne piétine pas, ne se détourne pas. Il fixe ; de loin en loin une
+		# oreille tique, ou il prend le vent)
+		if _geste == "flaire" or _geste == "pietine":
+			_geste = ""
+			_geste_t = minf(_geste_t, 0.4)
+		if _geste_t > 0.0:
+			return
+		_geste_age = 0.0
+		var hasard_p := randf()
+		if hasard_p < 0.3:
+			_geste = "tique"
+			_geste_t = 0.4
+		elif hasard_p < 0.4:
+			_geste = "hume"
+			_geste_t = randf_range(1.1, 1.5)
+		else:
+			_geste = ""
+			_geste_t = randf_range(2.5, 6.0)
 		return
 	if _geste_t > 0.0:
 		return
@@ -2101,6 +2486,9 @@ func _animer_queue(delta: float) -> void:
 		var vite := _course + _bond
 		# (dans la fuite, la queue d'une proie se dresse ; celle d'un chasseur lancé file droit derrière lui)
 		var levee := Vector2(-0.5, -0.87) if role == "proie" else Vector2(-1.0, -0.1)
+		if role == "noire":
+			# (la sienne, longue et maigre, traîne derrière elle sans se lever)
+			levee = Vector2(-1.0, 0.3)
 		cible += wrapf(levee.angle() - _q_axe.angle(), -PI, PI) * (0.55 if role == "proie" else 0.8) * vite
 		cible += wrapf(Vector2(-1.0, 0.42).angle() - _q_axe.angle(), -PI, PI) * 0.6 * _affut
 		cible += 0.02 * sin(_souffle * 0.5 + 1.0) * repos
@@ -2120,6 +2508,9 @@ func _animer_queue(delta: float) -> void:
 			if hardi:
 				_q_geste_d = lerpf(0.5, 0.85, _poids)
 				_q_attente = randf_range(2.2, 5.5) * (1.4 - 0.7 * audace)
+				if _tapi > 0.5:
+					# (posté : seul son bout bat, de loin en loin)
+					_q_attente *= 1.8
 				if role == "noire":
 					# (sa queue fouette sans cesse, de plus en plus vite quand elle va charger)
 					_q_geste_d = lerpf(0.5, 0.3, aplatie)
@@ -2169,16 +2560,29 @@ func _cligner(delta: float) -> void:
 		if _cligne >= _cligne_d:
 			_cligne = -1.0
 		return
-	_cligne_t -= delta * (0.4 if _geste == "guette" else (0.3 if role == "noire" else 1.0))
+	# (posté dans le noir, il fixe : un clignement lent, rare, jamais deux de suite ; scripts/yeux.gd éteint alors ses deux yeux)
+	var fixe := role == "chasseur" and poste > 0.5
+	_cligne_t -= delta * (0.45 if fixe else (0.4 if _geste == "guette" else (0.3 if role == "noire" else 1.0)))
 	if _cligne_t <= 0.0:
 		_cligne = 0.0
-		_cligne_d = lerpf(0.17, 0.27, _poids)
-		_cligne_t = randf_range(0.22, 0.4) if randf() < 0.16 else randf_range(2.4, 6.5)
+		_cligne_d = lerpf(0.17, 0.27, _poids) * (2.3 if fixe else 1.0)
+		_cligne_t = randf_range(0.22, 0.4) if randf() < 0.16 and not fixe else randf_range(2.4, 6.5)
 
 
 # ce que lit le shader de son encre
 func _parametres() -> void:
 	_param("eclat", _eclat * 0.85)
+	if role == "noire":
+		# le liseré du feu : la nuit, au bord de sa lumière, le feu accroche ce que son dessin a de clair (les poils de son
+		# échine, le dessus de sa tête, ses dents) ; le reste demeure une ombre (shaders/bete_encre.gdshader, lisere)
+		var force := 0.0
+		if jeu != null and not jeu.est_jour():
+			for f in jeu.feux_et_foyers():
+				if f.allume():
+					var r: float = f.rayon()
+					force = maxf(force, 1.0 - smoothstep(r * 1.15, r * 2.4, position.distance_to(f.position)))
+		# (la braise, tirée vers le rouge : la nuit bleuit tout ce qu'elle touche)
+		_param("lisere", Vector3(P.BRAISE.r, P.BRAISE.g * 0.7, P.BRAISE.b * 0.4) * (LISERE * force))
 	if role == "echo" or _mort >= 0.0 or _dissipe >= 0.0:
 		_param("origine", global_position)
 		_param("temps", fmod(_anim, 600.0))
@@ -2314,7 +2718,7 @@ func _peindre_haut(c: CanvasItem) -> void:
 		c.draw_line(g, g + Vector2(w * pv / pv_max, 0.0), Color(P.ENCRE, 0.92 * a), 1.3, true)
 	var ef := clampf((_mort - CHUTE - GISANT) / EFFACEMENT, 0.0, 1.0) if _mort >= 0.0 else 0.0
 	var ferme := 1.0 - paupiere()
-	if ferme > 0.03 and _a_oeil and role != "echo" and _pivot != null and absf(_pivot.scale.x) > 0.5 and ef < 0.3:
+	if ferme > 0.03 and _a_oeil and role != "echo" and _pivot != null and absf(_pivot.scale.x) > 0.5 and ef < 0.3 and (_roulee == null or not _roulee.visible or _roulee.self_modulate.a < 0.6):
 		_haut_sale = true
 		_peindre_paupiere(c, ferme, 1.0 - ef / 0.3)
 	if _mort > CHUTE + GISANT and _fin and not _miettes.is_empty():

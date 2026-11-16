@@ -187,8 +187,14 @@ func _lancer() -> void:
 	j.inventaire["fibre"] = 10
 	j.position = Vector2(0, 0)
 	jeu.fabriquer("feu")
-	jeu.fabriquer("lance")
-	verif(jeu.feux.size() == 1 and j.lance == 30 and int(j.inventaire["bois"]) == 24, "un feu de camp et une lance, payés en bois, pierres et fibres")
+	# (la lance ne se fabrique plus : elle se trouve, dans un coffre — _le_lance_pierre le vérifie ; ici on la lui donne, et l'on
+	# retire ce qu'elle coûtait, pour que la suite compte comme avant)
+	j.lance = jeu.R.USURE_LANCE
+	j.inventaire["bois"] = int(j.inventaire["bois"]) - 2
+	j.inventaire["pierre"] = int(j.inventaire["pierre"]) - 1
+	j.inventaire["fibre"] = int(j.inventaire["fibre"]) - 2
+	verif(jeu.feux.size() == 1 and int(j.inventaire["bois"]) == 24 and not jeu.R.RECETTES.has("lance") and not jeu.atelier.OBJETS.has("lance"),
+		"un feu de camp, payé en bois et en pierres ; la lance ne se fabrique plus, ni de ses mains ni à l'établi")
 	var f = jeu.feux[0]
 	var avant: float = f.bois
 	jeu.nourrir_feu()
@@ -562,6 +568,7 @@ func _lancer() -> void:
 	_la_noire(F)
 	_le_pistage(F)
 	_les_empreintes(F)
+	_le_lance_pierre(F)
 	_l_atelier(F)
 	_le_jardin_et_les_betes(F)
 	_la_botanique(F)
@@ -627,6 +634,178 @@ func _lancer() -> void:
 
 # une bête de cette lignée, dont la population aurait appris cela (les autres dispositions à leur valeur neutre) ; elle est la
 # bête moyenne de sa population (ecart 0), sauf si l'entrée dit son écart d'audace
+# le lance-pierre et ses galets (l'établi les fait ; principal.gd tire ; galet.gd vole), et le coffre où se trouve la lance
+func _le_lance_pierre(F: Dictionary) -> void:
+	print("Le lance-pierre, le coffre")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var RR = jeu.R
+	var garde := {"p": j.position, "inv": j.inventaire.duplicate(), "objets": A.objets.duplicate(), "lance": j.lance, "h": jeu.horloge, "regard": j.regard,
+		"chassees": jeu.chassees, "prel": jeu.prelevements.duplicate(), "deja": jeu._deja.duplicate()}
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * 0.3
+	var inv: Dictionary = j.inventaire
+	# un tir, joué sans attendre : elle arme, sa main lâche (le signal que joueur.gd envoie), le galet vole jusqu'au bout
+	var tirer := func() -> bool:
+		jeu._tir = 0.0
+		jeu.tirer()
+		if jeu._tir_vise.is_empty():
+			return false
+		jeu._sur_impact(j.position + Vector2(8.0 * j.regard, -22.0), "tir")
+		var parti := false
+		for g in jeu.monde.get_children():
+			if g.get_script() == jeu.Galet and g.is_processing():
+				parti = true
+				for i in 200:
+					if not g.is_processing():
+						break
+					g._process(0.02)
+		return parti
+
+	# le coffre : un seul dans le lieu, près d'un camp abandonné, loin du réveil ; la lance ne se trouve que là
+	var coffres: Array = A.poses.filter(func(s): return is_instance_valid(s) and str(s.genre) == "coffre")
+	var vestiges: Array = A.poses.filter(func(s): return is_instance_valid(s) and str(s.genre) == "vestige")
+	var pres_d_un_camp := false
+	if coffres.size() == 1:
+		for v in vestiges:
+			if v.position.distance_to(coffres[0].position) < 90.0 and int(v.etat.get("riche", 0)) > 0:
+				pres_d_un_camp = true
+	verif(coffres.size() == 1 and pres_d_un_camp and coffres[0].position.length() > 500.0,
+		"un coffre dans le lieu, un seul, près du camp abandonné le mieux pourvu, à %d pixels du réveil" % (int(coffres[0].position.length()) if coffres.size() > 0 else -1))
+	if coffres.size() == 1:
+		var c = coffres[0]
+		j.lance = 0
+		inv["galet"] = 0
+		# (du côté opposé au camp abandonné : « Agir » sert la chose la plus proche)
+		j.position = c.position + Vector2(30.0, 6.0)
+		var pris: bool = A.agir()
+		var lance1: int = j.lance
+		var galets1 := int(inv["galet"])
+		j.lance = 3
+		A.agir()
+		verif(pris and lance1 == RR.USURE_LANCE and galets1 == RR.GALETS_COFFRE and j.lance == 3 and int(inv["galet"]) == galets1 and bool(c.etat.get("ouvert", false)) and not A.replier(),
+			"« Agir » l'ouvre : une lance entière (%d coups) et %d galets ; rouvert, il est vide ; il ne se replie pas" % [lance1, galets1])
+
+	# à l'établi : les galets, quatre par pierre ; le lance-pierre, une fois
+	for s in A.poses.duplicate():
+		if is_instance_valid(s) and str(s.genre) == "etabli":
+			A.poses.erase(s)
+			s.queue_free()
+	j.position = Vector2(40.0, 300.0)
+	j.regard = 1.0
+	A.objets.erase("lance_pierre")
+	inv["galet"] = 0
+	inv["pierre"] = 3
+	inv["bois"] = 5
+	inv["corde"] = 2
+	inv["peau"] = 2
+	var sans_etabli: bool = not A.peut("lance_pierre") and not A.peut("galet")
+	var sans_arme: bool = not jeu.peut_fabriquer("tir") and not tirer.call()
+	var etabli = A._creer("etabli", j.position + Vector2(30.0, 0.0), {})
+	var fait_g: bool = A.fabriquer("galet")
+	var fait_l: bool = A.fabriquer("lance_pierre")
+	verif(sans_etabli and sans_arme and fait_g and fait_l and int(inv["galet"]) == 4 and int(inv["pierre"]) == 2 and A.possede("lance_pierre") == 1 and int(inv["bois"]) == 4
+		and int(inv["corde"]) == 1 and int(inv["peau"]) == 1 and not A.peut("lance_pierre") and jeu.peut_fabriquer("tir"),
+		"à l'établi seulement : une pierre donne %d galets ; le lance-pierre (un bois, une corde, une peau) ne se fait qu'une fois ; sans lui, on ne tire pas" % int(inv["galet"]))
+
+	# un tir : le galet part vers la bête la plus proche à portée, la blesse, et il en reste un de moins
+	var proie = _bete(F["proies_jour"][0], "proie", j.position + Vector2(190.0, -40.0), {})
+	proie.conduite = false
+	proie.pv = 500.0
+	var pv0: float = proie.pv
+	var parti: bool = tirer.call()
+	var touche: bool = absf((pv0 - proie.pv) - RR.DEGATS_TIR) < 0.01
+	var reste := int(inv["galet"])
+	# (la cadence : un second tir aussitôt ne part pas)
+	jeu.tirer()
+	var trop_tot: bool = jeu._tir_vise.is_empty()
+	# (hors de portée : elle tire droit devant, le galet tombe dans l'herbe)
+	proie.position = j.position + Vector2(RR.PORTEE_TIR + 200.0, 0.0)
+	var pv1: float = proie.pv
+	var parti2: bool = tirer.call()
+	verif(parti and touche and reste == 3 and trop_tot and parti2 and proie.pv == pv1 and int(inv["galet"]) == 2 and RR.DEGATS_TIR > RR.DEGATS_POINGS and RR.DEGATS_TIR < RR.DEGATS_LANCE,
+		"un tir : le galet vole jusqu'à la bête à %d pixels et lui prend %d (les poings : %d, la lance : %d) ; pas deux tirs à la fois ; hors de portée, il tombe dans l'herbe ; chaque tir prend un galet" % [
+			190, int(RR.DEGATS_TIR), int(RR.DEGATS_POINGS), int(RR.DEGATS_LANCE)])
+	# (dans le noir aussi : un chasseur dont on ne voit que les yeux)
+	proie.position = j.position + Vector2(150.0, 30.0)
+	proie.pv = RR.DEGATS_TIR * 0.5
+	var chassees0: int = jeu.chassees
+	tirer.call()
+	inv["galet"] = 0
+	var vide: bool = not jeu.peut_fabriquer("tir") and not tirer.call()
+	verif(not is_instance_valid(proie) or proie.pv <= 0.0 and jeu.chassees == chassees0 + 1 and vide,
+		"un galet peut tuer : c'est une chasse ; sans galet, on ne tire plus")
+	_oter(proie)
+	# la nuit, on ne tire que sur ce qu'on voit : des yeux qui brillent, oui ; un chasseur qui s'est détourné, non
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * (1.0 - jeu.part_nuit) + 2.0
+	var torche0: float = j.torche
+	j.torche = 0.0
+	var feux0: Array = jeu.feux.duplicate()
+	jeu.feux.clear()
+	inv["galet"] = 10
+	var rode = _bete(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(170.0, 20.0), {})
+	rode.conduite = false
+	rode.pv = 500.0
+	rode.detourne = 0.0
+	var pv_r: float = rode.pv
+	# (vers des yeux, dans le noir, elle manque souvent : douze galets, pour être sûr d'en voir toucher un)
+	var tires := 0
+	inv["galet"] = 12
+	while tires < 12 and rode.pv == pv_r:
+		tires += 1
+		tirer.call()
+	var vu: bool = rode.pv < pv_r
+	rode.detourne = 1.0
+	pv_r = rode.pv
+	inv["galet"] = 6
+	var partis := 0
+	for i in 6:
+		if tirer.call():
+			partis += 1
+	verif(vu and partis == 6 and rode.pv == pv_r and jeu.lumiere_du_jour() < 0.3 and RR.TIR_NOIR >= 15.0,
+		"la nuit, dans le noir : elle vise les yeux qui brillent, moins juste qu'en pleine lumière (touché au %s tir) ; détourné, on le perd, et ses galets partent droit devant" % (
+			"1er" if tires == 1 else "%de" % tires))
+	_oter(rode)
+	# un chasseur à son affût, touché de loin : il quitte son poste et se détourne ; la Noire : un galet l'agace à peine
+	var guet = _bete(F["chasseurs_nuit"][0], "chasseur", j.position + Vector2(260.0, 0.0), {"traque": 1.0})
+	guet.conduite = false
+	guet.pv = 500.0
+	guet.pv_max = 500.0
+	guet._poste_feu = guet
+	guet._af = guet.Affut.POSTE
+	var Af = guet.Affut
+	# (un faux feu, le temps du test : il lui faut un rayon, une place, une flamme)
+	var faux = jeu.Feu.new()
+	faux.jeu = jeu
+	faux.position = j.position
+	faux.bois = 40.0
+	jeu.monde.add_child(faux)
+	guet._poste_feu = faux
+	guet.blesser(1.0, j.position)
+	var quitte: bool = guet._af == Af.CHANGE
+	_oter(guet)
+	faux.queue_free()
+	verif(quitte and RR.TIR_NOIRE * RR.DEGATS_TIR * 20.0 < RR.NOIRE_ENDURE,
+		"un chasseur à l'affût, touché de loin, quitte son poste et se détourne ; la Noire : vingt galets ne suffisent pas à la faire partir (%d sur %d)" % [
+			int(RR.TIR_NOIRE * RR.DEGATS_TIR * 20.0), int(RR.NOIRE_ENDURE)])
+	jeu.feux.assign(feux0)
+	j.torche = torche0
+	A.poses.erase(etabli)
+	etabli.queue_free()
+	j.position = garde["p"]
+	j.regard = garde["regard"]
+	j.lance = garde["lance"]
+	j.inventaire.clear()
+	j.inventaire.merge(garde["inv"], true)
+	A.objets = garde["objets"]
+	jeu.horloge = garde["h"]
+	jeu.chassees = garde["chassees"]
+	jeu.prelevements = garde["prel"]
+	jeu._deja = garde["deja"]
+	jeu._tir = 0.0
+
+
 # le jardin (scripts/jardin.gd) et l'élevage (scripts/elevage.gd)
 func _le_jardin_et_les_betes(F: Dictionary) -> void:
 	print("Le jardin et les bêtes")
@@ -1302,28 +1481,254 @@ func _fuite(e: Dictionary, memoire: Dictionary, en_marche: bool) -> float:
 	return d
 
 
-# un chasseur devant un feu où la veilleuse se tient, tant de secondes : au plus près et en moyenne (en parts du rayon), le
-# chemin qu'il fait autour (en radians), la seconde moitié du temps ; et la bête, encore là (à ôter)
+# un chasseur devant un feu où la veilleuse se tient, tant de secondes : au plus près (en parts du rayon), et où il se tient
+# une fois posté, la seconde moitié du temps (la veilleuse le regarde : il ne gagne rien dans son dos) ; la part de ce temps
+# qu'il passe posté ; et la bête, encore là (à ôter)
 func _siege(e: Dictionary, memoire: Dictionary, feu, secondes: float) -> Dictionary:
+	var j = jeu.joueur
 	var b = _bete(e, "chasseur", feu.position + Vector2(feu.rayon() + 260.0, 40.0), memoire)
 	var r: float = feu.rayon()
 	var pres := INF
 	var somme := 0.0
-	var tours := 0.0
 	var k := 0
-	var avant := 0.0
+	var somme_p := 0.0
+	var k_p := 0
 	var pas := int(secondes / 0.05)
 	for i in pas:
+		j.regard = 1.0 if b.position.x >= j.position.x else -1.0
 		b._conduire(0.05)
 		var ici: Vector2 = b.position - feu.position
 		pres = minf(pres, ici.length() / r)
 		if i >= pas / 2:
-			if k > 0:
-				tours += absf(wrapf(ici.angle() - avant, -PI, PI))
-			avant = ici.angle()
 			somme += ici.length() / r
 			k += 1
-	return {"pres": pres, "moyenne": somme / maxf(k, 1), "tours": tours, "bete": b}
+			if b.poste > 0.5:
+				somme_p += ici.length() / r
+				k_p += 1
+	return {"pres": pres, "moyenne": somme_p / k_p if k_p > 0 else somme / maxf(k, 1), "poste": float(k_p) / maxf(k, 1), "bete": b}
+
+
+# l'affût : ce que font les chasseurs autour d'un feu où la veilleuse se tient (scripts/bete.gd, _chasseur ; scripts/affut.gd).
+# Ce qui tient au hasard est fixé : la veilleuse regarde celui qu'on mesure (sauf quand on dit qu'elle tourne le dos), sa
+# patience est posée à la main, et aucun ne mord (on s'arrête avant)
+func _l_affut(e: Dictionary, f) -> void:
+	var Affut := load("res://scripts/affut.gd")
+	var RR := load("res://scripts/regles.gd")
+	var j = jeu.joueur
+	var centre: Vector2 = f.position
+	var bois0: float = f.bois
+	var regard0: float = j.regard
+	j.torche = 0.0
+	# (un chasseur resté là de la nuit compterait dans la meute, sans que personne le fasse marcher)
+	for x in jeu.get_tree().get_nodes_in_group("betes"):
+		if str(x.role) == "chasseur":
+			_oter(x)
+	# --- un seul, devant un feu haut : il vient voir, se poste, et ne bouge plus
+	f.bois = 100.0
+	j.position = centre + Vector2(0, 30)
+	var b = _bete(e, "chasseur", centre + Vector2(f.rayon() + 260.0, 40.0), {})
+	b.audace = 0.3
+	var t_poste := -1.0
+	for i in 800:
+		j.regard = 1.0 if b.position.x >= j.position.x else -1.0
+		b._conduire(0.05)
+		if b._af == Affut.POSTE and b.poste >= 1.0:
+			t_poste = i * 0.05
+			break
+	b._poste_t = 999.0
+	var chemin := 0.0
+	var avant: Vector2 = b.position
+	for i in 600:
+		j.regard = 1.0 if b.position.x >= j.position.x else -1.0
+		b._conduire(0.05)
+		chemin += b.position.distance_to(avant)
+		avant = b.position
+	var manege: float = 0.5 * b.vitesse * 30.0
+	var d_poste: float = b.position.distance_to(centre)
+	var de_j: Vector2 = (b.position - j.position).abs()
+	verif(t_poste >= 0.0 and chemin < manege * 0.05 and b.poste >= 1.0 and b.detourne <= 0.0,
+		"l'affût : il vient voir, puis se poste dans le noir (en %d secondes) ; posté, il ne bouge presque plus : %d pixels en trente secondes (le manège lui en faisait faire %d)" % [
+			int(t_poste), int(chemin), int(manege)])
+	verif(d_poste - b.largeur * 0.5 >= f.rayon() and f.eclaire(b.position) <= 0.0 and Affut.hors_ecran(jeu, b.position) <= 0.0,
+		"son poste est hors de la lumière (à %.2f du rayon du feu : on ne voit que ses yeux) et dans l'écran (à %d pixels de côté et %d de haut de la veilleuse, qui en voit %d et %d)" % [
+			d_poste / f.rayon(), int(de_j.x), int(de_j.y), int(Affut.demi_ecran(jeu).x), int(Affut.demi_ecran(jeu).y)])
+	# --- l'impatience : il se détourne, passe par le noir, au large, et reparaît ailleurs
+	var a0: float = (b.position - centre).angle()
+	b._poste_t = 0.0
+	var detourne_max := 0.0
+	var large := 0.0
+	var pres := INF
+	var t_change := -1.0
+	for i in 1200:
+		j.regard = 1.0 if b.position.x >= j.position.x else -1.0
+		b._conduire(0.05)
+		var ici: Vector2 = b.position - centre
+		detourne_max = maxf(detourne_max, b.detourne)
+		large = maxf(large, ici.length())
+		pres = minf(pres, ici.length() / f.rayon())
+		if i > 4 and b._af == Affut.POSTE and b.poste >= 1.0:
+			t_change = i * 0.05
+			break
+	b._poste_t = 999.0
+	var tourne := absf(wrapf((b.position - centre).angle() - a0, -PI, PI))
+	verif(t_change > 0.0 and detourne_max >= 1.0 and b.detourne <= 0.0 and tourne >= 0.8 and large > d_poste + 0.15 * f.rayon() and pres >= 1.0,
+		"impatient, il change de poste : il se détourne (on le perd), passe par le noir, au large (jusqu'à %.2f du rayon, jamais dans la lumière : %.2f au plus près), et reparaît %d degrés plus loin, %d secondes après" % [
+			large / f.rayon(), pres, int(rad_to_deg(tourne)), int(t_change)])
+	# --- la feinte (forcée : elle est rare) : quelques pas vifs jusqu'à la lisière, un grondement, et retour
+	var d_avant: float = b.position.distance_to(centre)
+	b._af = Affut.FEINTE
+	b._af_t = 0.0
+	var pres_f := INF
+	var gronde := false
+	for i in 600:
+		j.regard = 1.0 if b.position.x >= j.position.x else -1.0
+		b._conduire(0.05)
+		pres_f = minf(pres_f, b.position.distance_to(centre) / f.rayon())
+		gronde = gronde or b._af == Affut.GRONDE
+		if gronde and b._af == Affut.POSTE and b.poste >= 1.0:
+			break
+	verif(gronde and pres_f >= 0.78 and pres_f <= 0.9 and absf(b.position.distance_to(centre) - d_avant) < 10.0 and b.poste >= 1.0,
+		"la feinte : quelques pas vifs jusqu'à la lisière (%.2f du rayon, pas plus près), un grondement, et il retourne à son poste" % pres_f)
+	_oter(b)
+	# --- à trois, autour d'un feu bas : ils ne tiennent pas le même côté
+	f.bois = 20.0
+	j.position = centre
+	var r: float = f.rayon()
+	var meute: Array = []
+	for i in 3:
+		var m = _bete(e, "chasseur", centre + Vector2(r + 300.0 + 30.0 * i, -60.0 + 40.0 * i), {})
+		m.audace = 0.3
+		meute.append(m)
+	var pres3 := INF
+	for i in 1200:
+		for m in meute:
+			j.regard = 1.0 if m.position.x >= j.position.x else -1.0
+			m._conduire(0.05)
+			if m._af == Affut.POSTE:
+				m._poste_t = 999.0
+			pres3 = minf(pres3, m.position.distance_to(centre) / r)
+		if meute.all(func(m): return m._af == Affut.POSTE and m.poste >= 1.0):
+			break
+	var ecarts: Array = []
+	for i in 3:
+		ecarts.append(absf(wrapf((meute[i].position - centre).angle() - (meute[(i + 1) % 3].position - centre).angle(), -PI, PI)))
+	var noir: bool = meute.all(func(m): return f.eclaire(m.position) <= 0.0 and Affut.hors_ecran(jeu, m.position) <= 0.0)
+	verif(meute.all(func(m): return m.poste >= 1.0) and ecarts.min() >= 0.7 and noir and pres3 >= 0.78,
+		"à trois autour d'un feu bas, ils ne tiennent pas le même côté : %d, %d et %d degrés de l'un à l'autre, tous postés hors de la lumière et dans l'écran (au plus près : %.2f du rayon)" % [
+			int(rad_to_deg(ecarts[0])), int(rad_to_deg(ecarts[1])), int(rad_to_deg(ecarts[2])), pres3])
+	# --- le feu baisse : le cercle se resserre ; une bûche : ils reculent
+	var d_haut: Array = meute.map(func(m): return m.position.distance_to(centre))
+	f.bois = 5.0
+	var pres4 := INF
+	for i in 200:
+		for m in meute:
+			j.regard = 1.0 if m.position.x >= j.position.x else -1.0
+			m._conduire(0.05)
+			pres4 = minf(pres4, m.position.distance_to(centre) / f.rayon())
+	var d_bas: Array = meute.map(func(m): return m.position.distance_to(centre))
+	var r_bas: float = f.rayon()
+	f.bois = 20.0
+	for i in 200:
+		for m in meute:
+			j.regard = 1.0 if m.position.x >= j.position.x else -1.0
+			m._conduire(0.05)
+	var resserre := true
+	var recule := true
+	for i in 3:
+		resserre = resserre and d_bas[i] < d_haut[i] - 15.0
+		recule = recule and meute[i].position.distance_to(centre) > d_bas[i] + 15.0
+	verif(resserre and recule and pres4 >= 0.78 and meute.all(func(m): return m.poste >= 1.0),
+		"le feu baisse (son rayon passe de %d à %d pixels) : ils se rapprochent d'autant (de %d, %d et %d pixels), sans entrer dans sa lumière (%.2f du rayon au plus près) ; une bûche : ils reculent" % [
+			int(r), int(r_bas), int(d_haut[0] - d_bas[0]), int(d_haut[1] - d_bas[1]), int(d_haut[2] - d_bas[2]), pres4])
+	# --- le dos tourné : celui qu'elle ne regarde pas gagne quelques pas ; elle se retourne, il se fige
+	var m0 = meute[0]
+	for m in meute:
+		if absf(m.position.x - j.position.x) > absf(m0.position.x - j.position.x):
+			m0 = m
+	var cote := signf(m0.position.x - j.position.x)
+	var d0: float = m0.position.distance_to(centre)
+	var pres5 := INF
+	j.regard = -cote
+	for i in 240:
+		for m in meute:
+			m._conduire(0.05)
+			pres5 = minf(pres5, m.position.distance_to(centre) / r)
+	var gagne: float = d0 - m0.position.distance_to(centre)
+	j.regard = cote
+	m0._conduire(0.05)
+	var la: Vector2 = m0.position
+	for i in 30:
+		m0._conduire(0.05)
+	var bouge: float = m0.position.distance_to(la)
+	verif(gagne >= 10.0 and bouge < 0.5 and pres5 >= 0.78,
+		"elle a le dos tourné : celui qu'elle ne regarde pas gagne %d pixels vers la lisière (%.2f du rayon au plus près) ; elle se retourne, il se fige (%.1f pixel en une seconde et demie)" % [
+			int(gagne), pres5, bouge])
+	# --- elle marche sur lui, dans la lumière : il recule, se détourne, et va se poster ailleurs
+	for i in 160:
+		for m in meute:
+			j.regard = 1.0 if m.position.x >= j.position.x else -1.0
+			m._conduire(0.05)
+	var m1 = meute[1]
+	var a1: float = (m1.position - centre).angle()
+	var parti := false
+	for i in 12:
+		j.position += Vector2.from_angle(a1) * RR.VITESSE * 0.05
+		j.regard = 1.0 if m1.position.x >= j.position.x else -1.0
+		m1._conduire(0.05)
+		parti = parti or m1._af == Affut.CHANGE
+	var dans_la_lumiere: bool = jeu.feu_qui_protege(j.position) == f
+	j.position = centre
+	var detourne1 := 0.0
+	for i in 1200:
+		j.regard = 1.0 if m1.position.x >= j.position.x else -1.0
+		m1._conduire(0.05)
+		detourne1 = maxf(detourne1, m1.detourne)
+		if m1._af == Affut.POSTE and m1.poste >= 1.0:
+			break
+	m1._poste_t = 999.0
+	var tourne1 := absf(wrapf((m1.position - centre).angle() - a1, -PI, PI))
+	verif(parti and dans_la_lumiere and detourne1 >= 1.0 and tourne1 >= 0.8 and m1.poste >= 1.0,
+		"elle marche sur lui sans sortir de la lumière : il recule, se détourne, et va se poster ailleurs (%d degrés plus loin)" % int(rad_to_deg(tourne1)))
+	# --- elle sort de la lumière : ils viennent, de leurs postes, l'un après l'autre (on s'arrête avant la morsure)
+	for i in 100:
+		for m in meute:
+			j.regard = 1.0 if m.position.x >= j.position.x else -1.0
+			m._conduire(0.05)
+	# (par le plus grand vide entre deux d'entre eux : aucun n'est à deux pas de là où elle sort)
+	var angles: Array = meute.map(func(m): return (m.position - centre).angle())
+	angles.sort()
+	var par := 0.0
+	var vide := 0.0
+	for i in 3:
+		var g := fposmod(angles[(i + 1) % 3] - angles[i], TAU)
+		if g > vide:
+			vide = g
+			par = angles[i] + g * 0.5
+	j.position = centre + Vector2.from_angle(par) * (r * 0.85 + 40.0)
+	var d_sortie: Array = meute.map(func(m): return m.position.distance_to(j.position))
+	var departs: Array = [-1.0, -1.0, -1.0]
+	var arrives := 0
+	for i in 200:
+		for k in 3:
+			var m = meute[k]
+			var d: float = m.position.distance_to(j.position)
+			if d < 110.0:
+				continue
+			m._conduire(0.05)
+			if departs[k] < 0.0 and d < d_sortie[k] - 6.0:
+				departs[k] = i * 0.05
+	for k in 3:
+		if meute[k].position.distance_to(j.position) < d_sortie[k] - 50.0 or meute[k].position.distance_to(j.position) < 115.0:
+			arrives += 1
+	var tries: Array = departs.duplicate()
+	tries.sort()
+	verif(tries[0] >= 0.0 and tries[0] < 1.0 and tries[1] - tries[0] >= 0.25 and tries[2] - tries[1] >= 0.25 and tries[2] < 5.0 and arrives == 3,
+		"elle sort de la lumière : ils viennent, de leurs postes, l'un après l'autre (le premier après %.1f s, puis à %.1f et %.1f s)" % [tries[0], tries[1], tries[2]])
+	for m in meute:
+		_oter(m)
+	f.bois = bois0
+	j.position = centre + Vector2(0, 30)
+	j.regard = regard0
 
 
 # un chasseur d'audace 0,5 dans le noir, face à la torche, tant de secondes : au plus près (pixels), où il se tient la seconde
@@ -1332,6 +1737,8 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 	var j = jeu.joueur
 	j.torche = 75.0
 	j.sante = 100.0
+	# (elle lui fait face : tenu, il ira chercher son dos)
+	j.regard = 1.0
 	var b = _bete(e, "chasseur", j.position + Vector2(380.0, 0.0), {})
 	# (la même audace de plan pour tous, puis ce que la population a appris : bete.gd, _apprendre)
 	b.audace = 0.5
@@ -1376,7 +1783,7 @@ func _face_a_la_torche(e: Dictionary, memoire: Dictionary, secondes: float) -> D
 			j.sante = 100.0
 	j.torche = 0.0
 	return {"pres": pres, "moyenne": somme / maxf(k, 1), "annonce": annonce, "morsure": morsure, "morsures": morsures, "bete": b,
-		"voltes": voltes, "va_et_vient": va_et_vient}
+		"voltes": voltes, "va_et_vient": va_et_vient, "derriere": (b.position.x - j.position.x) * j.regard < 0.0 and b.poste >= 0.99}
 
 
 # un rôdeur d'audace 0,5 tenu à cette distance de la veilleuse, une minute au plus : quand il s'arrête pour guetter, quand il
@@ -1520,18 +1927,19 @@ func _la_memoire(F: Dictionary, f) -> void:
 	var sa := _siege(ch_e, {"neophobie": 0.0}, f, 40.0)
 	var sp := _siege(ch_e, {"neophobie": 0.95}, f, 40.0)
 	var sc := _siege(ch_e, {"mefiance": 0.9}, f, 40.0)
-	verif(s0["pres"] >= 0.78 and st["pres"] >= 0.78 and sa["pres"] >= 0.78 and st["tours"] > s0["tours"] * 1.2,
-		"le feu reste une loi : traqueur ou fait au feu, aucun chasseur n'entre dans sa lumière (au plus près : %.2f, %.2f et %.2f du rayon, sans mémoire, traqueur, accoutumé) ; le traqueur arpente la lisière plus vite (%.1f radians en vingt secondes, contre %.1f)" % [
-			s0["pres"], st["pres"], sa["pres"], st["tours"], s0["tours"]])
+	verif(s0["pres"] >= 0.78 and st["pres"] >= 0.78 and sa["pres"] >= 0.78 and sp["pres"] >= 0.78 and sc["pres"] >= 0.78 and st["bete"]._patience() < s0["bete"]._patience() * 0.85,
+		"le feu reste une loi : traqueur ou fait au feu, aucun chasseur n'entre dans sa lumière (au plus près : %.2f, %.2f et %.2f du rayon, sans mémoire, traqueur, accoutumé) ; le traqueur tient moins longtemps en place (%d secondes à son poste, contre %d)" % [
+			s0["pres"], st["pres"], sa["pres"], int(st["bete"]._patience()), int(s0["bete"]._patience())])
 	# une bûche : celui qui craint le feu recule, pas l'autre
 	j.inventaire["bois"] = int(j.inventaire["bois"]) + 1
 	jeu.nourrir_feu()
 	verif(sp["moyenne"] > s0["moyenne"] + 0.15 and sc["moyenne"] > s0["moyenne"] + 0.08 and sp["bete"].etat == "fuit" and s0["bete"].etat != "fuit",
-		"une population qui craint le feu se tient à %.2f du rayon (contre %.2f ; %.2f pour une population craintive), hors de sa lumière ; et une bûche la fait reculer" % [
+		"une population qui craint le feu se poste à %.2f du rayon (contre %.2f ; %.2f pour une population craintive), hors de sa lumière ; et une bûche la fait reculer" % [
 			sp["moyenne"], s0["moyenne"], sc["moyenne"]])
 	var tenus: float = _compte(str(ch_e["id"]), "effarouchement", "feu")
 	for x in [s0, st, sa, sp, sc]:
 		_oter(x["bete"])
+	_l_affut(ch_e, f)
 
 	# --- la torche : tenu, ou traqueur (il s'annonce, puis passe) ; la première nuit, à moitié
 	j.position = f.position + Vector2(f.rayon() + 700.0, 0)
@@ -1543,8 +1951,8 @@ func _la_memoire(F: Dictionary, f) -> void:
 	var t1 := _face_a_la_torche(ch_e, {"traque": 1.0}, 14.0)
 	jeu.nuits = 1
 	# (il avançait dès qu'il sortait de sa limite et reculait dès qu'il y rentrait : cent volte-face en sept secondes)
-	verif(t0["va_et_vient"] <= 2 and t0["voltes"] <= 6 and ta["va_et_vient"] <= 2 and ta["voltes"] <= 6 and tp["va_et_vient"] <= 2 and tp["voltes"] <= 6,
-		"tenu par la torche, il longe la lisière de sa lumière sans aller et venir : en sept secondes, %d volte-face et %d va-et-vient (fait au feu : %d et %d ; qui le craint : %d et %d)" % [
+	verif(t0["derriere"] and t0["va_et_vient"] <= 2 and t0["voltes"] <= 6 and ta["va_et_vient"] <= 2 and ta["voltes"] <= 6 and tp["va_et_vient"] <= 2 and tp["voltes"] <= 6,
+		"tenu par la torche, il garde sa distance, passe dans son dos et s'y arrête (plus de manège), sans aller et venir : en sept secondes, %d volte-face et %d va-et-vient (fait au feu : %d et %d ; qui le craint : %d et %d)" % [
 			t0["voltes"], t0["va_et_vient"], ta["voltes"], ta["va_et_vient"], tp["voltes"], tp["va_et_vient"]])
 	# (il passe la ligne des 140 pixels d'un pas avant d'être tenu : au plus près, un peu moins de 140 ; mesuré, 133)
 	verif(t0["pres"] >= 125.0 and t0["morsure"] < 0.0 and tt["morsure"] > 0.0 and tt["annonce"] >= 0.0 and tt["morsure"] - tt["annonce"] >= 0.8,
@@ -2351,11 +2759,25 @@ func _la_noire(F: Dictionary) -> void:
 	verif(N.acte == 0 and N.corps == null and loin > 1500.0 and absf(N.taniere.x) <= RR.DEMI and absf(N.taniere.y) <= RR.DEMI,
 		"la Noire a sa tanière, loin de la veilleuse (%d pixels), dans le lieu ; rien d'elle avant la première nuit" % int(loin))
 
-	# acte 1 : les signes
-	jeu.nuits = 0
+	# les premières nuits : rien. Elle dort, elle n'appelle pas, on ne sait rien d'elle
 	jeu.horloge = nuit_h
 	jeu.feux.append(feu)
 	var journal_avant = jeu.sons.journal
+	jeu.sons.journal = []
+	var calmes := 0
+	var venue_tot := false
+	for nuit_k in N.premiere_nuit(1):
+		jeu.nuits = nuit_k
+		N.tombee()
+		_noire_joue(duree_nuit * 0.5, func(_t): venue_tot = venue_tot or N.corps != null)
+		if N.acte == 0:
+			calmes += 1
+		N.aube()
+	var appels_tot: int = jeu.sons.journal.filter(func(x): return str(x[1]) == "appel").size()
+	verif(calmes == N.premiere_nuit(1) and calmes >= 2 and not venue_tot and appels_tot == 0 and N.su.is_empty() and N.acte_de(99) == 4,
+		"les %d premières nuits, la Noire ne vient pas et n'appelle pas ; les actes se suivent ensuite, de nuit en nuit, jusqu'au dernier" % calmes)
+	# acte 1 : les signes
+	jeu.nuits = N.premiere_nuit(1)
 	jeu.sons.journal = []
 	N.tombee()
 	var corps_vu := [false]
@@ -2382,7 +2804,7 @@ func _la_noire(F: Dictionary) -> void:
 	j.position = ici
 
 	# acte 2 : les yeux
-	jeu.nuits = 1
+	jeu.nuits = N.premiere_nuit(2)
 	jeu.horloge = nuit_h
 	var proie = _bete(F["proies_jour"][0], "proie", feu.position + Vector2(-(r + 200.0), 60.0), {})
 	N.mettre_en_scene(2, 900.0, PI)
@@ -2423,7 +2845,7 @@ func _la_noire(F: Dictionary) -> void:
 	feu.bois = 40.0
 
 	# acte 3 : le siège
-	jeu.nuits = 2
+	jeu.nuits = N.premiere_nuit(3)
 	N.mettre_en_scene(3, 900.0, PI)
 	var s3 := {"pres_feu": INF, "tour": 0.0, "avant": NAN, "feinte": false, "feinte_pres": INF}
 	_noire_joue(34.0, func(_t):
@@ -2538,7 +2960,7 @@ func _la_noire(F: Dictionary) -> void:
 
 	# plus on dort loin, plus elle arrive tard
 	var arrive := func(distance: float) -> float:
-		jeu.nuits = 1
+		jeu.nuits = N.premiere_nuit(2)
 		N.taniere = j.position + Vector2(-distance, 0.0)
 		N.ou = N.taniere
 		N.etat = "dort"
@@ -3257,7 +3679,8 @@ func _l_atelier(F: Dictionary) -> void:
 	jeu.agir()
 	var trouve: int = int(inv["ferraille"])
 	jeu.agir()
-	verif(vestiges.size() == 3 and A.poses.size() == n_poses + 3 and loin and trouve >= 2 and int(inv["ferraille"]) == trouve,
+	# (trois vestiges, et le coffre du mieux pourvu : quatre choses de plus dans le lieu)
+	verif(vestiges.size() == 3 and A.poses.size() == n_poses + 4 and loin and trouve >= 2 and int(inv["ferraille"]) == trouve,
 		"trois vestiges d'autres veilleuses dans le lieu, loin du réveil ; « Agir » y trouve de la ferraille (%d), une seule fois" % trouve)
 
 	# replier, et la partie gardée

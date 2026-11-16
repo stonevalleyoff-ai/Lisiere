@@ -49,7 +49,15 @@ const PORTEE_RECOLTE := 44.0
 const PORTEE_FEU := 90.0
 const DEGATS_POINGS := 8.0
 const DEGATS_LANCE := 26.0
-const USURE_LANCE := 30       # coups avant qu'elle se brise
+const USURE_LANCE := 60       # coups avant qu'elle se brise (on ne la fabrique plus : on la trouve, dans un coffre)
+# le lance-pierre (scripts/atelier.gd le fabrique ; scripts/principal.gd tire ; scripts/galet.gd, le galet qui vole)
+const DEGATS_TIR := 13.0
+const PORTEE_TIR := 300.0     # jusqu'où elle vise une bête : presque tout l'écran, et dans le noir aussi
+const CADENCE_TIR := 0.75     # secondes entre deux tirs
+const VITESSE_GALET := 620.0
+const GALETS_COFFRE := 6      # ceux qu'on trouve avec la lance
+const TIR_NOIR := 20.0        # l'écart d'un tir vers des yeux dans le noir, en pixels (de près ; quatre fois plus au bout de sa portée)
+const TIR_NOIRE := 0.2        # ce qu'un galet fait à la Noire, en parts de ce qu'il fait aux autres : il l'agace
 const DUREE_TORCHE := 75.0
 const RAYON_TORCHE := 175.0
 
@@ -115,11 +123,12 @@ const ECHOS_MAX := 3
 const RECETTES := {
 	"feu": {"nom": "Feu de camp", "touche": "1", "cout": {"bois": 4, "pierre": 2}},
 	"torche": {"nom": "Torche", "touche": "2", "cout": {"bois": 2, "fibre": 1}},
-	"lance": {"nom": "Lance", "touche": "3", "cout": {"bois": 2, "pierre": 1, "fibre": 2}},
+	# (le lance-pierre ne se fait pas ici mais à l'établi ; ici, on tire : chaque tir prend un galet)
+	"tir": {"nom": "Lance-pierre", "touche": "3", "cout": {"galet": 1}},
 	# (le monde ouvert : au bord d'une rivière, vers l'autre berge ; scripts/pont.gd)
 	"pont": {"nom": "Pont de fortune", "touche": "4", "cout": {"bois": 6, "fibre": 3}},
 }
-const ORDRE_RECETTES := ["feu", "torche", "lance", "pont"]
+const ORDRE_RECETTES := ["feu", "torche", "tir", "pont"]
 const PONT_DUREE := 360.0     # ce qu'un pont tient, en secondes (une journée et demie)
 const PONT_PASSAGE := 25.0    # ce que chaque passage de la veilleuse lui retire
 # le relief (scripts/carte.gd) : plus haut, l'air est plus froid et la vue plus large
@@ -135,6 +144,9 @@ const NOIRE_TANIERE_MIN := 3200.0   # à quelle distance de la veilleuse elle fa
 const NOIRE_TANIERE_MAX := 4600.0   # et au plus
 const NOIRE_SUIT := 5600.0       # sa tanière plus loin que cela de la veilleuse, à l'aube : elle en change, pour suivre
 const NOIRE_ENDURE := 70.0       # ce qu'elle encaisse dans une nuit avant de se retirer jusqu'à la suivante
+# l'acte de chaque nuit (la première, la deuxième…) : les deux premières nuits, rien ; puis les signes (un appel, au loin) ;
+# deux nuits où elle vient regarder ; deux où elle tourne et feinte ; ensuite, elle charge. Après la dernière : le dernier acte
+const NOIRE_ACTES := [0, 0, 1, 2, 2, 3, 3, 4]
 const NOIRE_DEPART := [1.0, 0.45, 0.3, 0.18, 0.06]   # par acte : la part de la nuit passée quand elle quitte sa tanière
 const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0]     # par acte : le temps que la torche la tient, avant qu'elle passe
 const NOIRE_PRESAGE := 1.4       # elle s'aplatit et gronde ce temps-là, avant de charger

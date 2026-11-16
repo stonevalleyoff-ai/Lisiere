@@ -18,6 +18,8 @@ uniform float onde = 0.0;
 uniform float onde_phase = 0.0;
 uniform float onde_vagues = 1.4;
 uniform bool fin = true;
+// la Noire seulement (scripts/bete.gd) : ce que le feu accroche de son dessin, la nuit, au bord de sa lumière ; nul pour les autres
+uniform vec3 lisere = vec3(0.0);
 
 varying vec2 lieu;
 varying vec4 teinte;
@@ -84,6 +86,14 @@ void fragment() {
 		c.rgb = mix(c.rgb, couleur_eclat.rgb * 0.86, (1.0 - trait) * proche * 0.6);
 		c.rgb = mix(c.rgb, couleur_encre.rgb, clamp(bord * 0.7 * (1.0 - trait) + dissolution * 0.12, 0.0, 1.0));
 		c.a *= smoothstep(s - 0.03, s + 0.04, n);
+	}
+	// la Noire au bord d'un feu : le feu n'accroche que ce que son dessin a de clair (les poils de l'échine, du dessus de la
+	// tête, ses dents) ; le reste demeure une ombre. Rien pour les autres bêtes : lisere est nul.
+	if (lisere.r > 0.0) {
+		// (là où il y a de l'encre seulement : un pixel vide garde une couleur, que le feu n'a pas à allumer ; et ce qui est
+		// déjà pâle, ses dents, se réchauffe à peine : elles restent ternes, pas une rangée de flammes)
+		float accroche = smoothstep(0.14, 0.3, lum) * (1.0 - 0.9 * smoothstep(0.26, 0.4, lum));
+		c.rgb += lisere * accroche * smoothstep(0.5, 0.95, c.a);
 	}
 	// un coup : l'éclair blanchit la robe ; le trait d'encre reste, la bête garde son dessin
 	c.rgb = mix(c.rgb, couleur_eclat.rgb, eclat * mix(0.3, 1.0, smoothstep(0.1, 0.4, lum)));

@@ -19,8 +19,9 @@ extends RefCounted
 
 const R := preload("res://scripts/regles.gd")
 
-# ce qu'elle est : une bête faite à la main, que le bestiaire de Lisière dessine comme les autres (scripts/bestiaire.gd lit
-# « noire » : une robe d'encre, l'œil en fente de braise, l'échine hérissée)
+# ce qu'elle est : une bête faite à la main, que le bestiaire de Lisière dessine à part (scripts/bestiaire.gd lit « noire »,
+# scripts/noire_corps.gd la dessine : haute sur pattes, maigre sous un poil de traits d'encre, la tête basse, la gueule
+# fermée ; un œil petit, une braise sombre, que scripts/yeux.gd fait luire)
 const LIGNEE := {
 	"id": "la-noire", "nom": "La Noire",
 	"plan": {
@@ -116,9 +117,19 @@ func commencer() -> void:
 	ou = taniere
 
 
+# l'acte de la nuit qui tombe, d'après les nuits déjà tenues (regles.gd, NOIRE_ACTES : elle ne vient pas les premières nuits)
+static func acte_de(nuits: int) -> int:
+	return int(R.NOIRE_ACTES[clampi(nuits, 0, R.NOIRE_ACTES.size() - 1)])
+
+
+# la première nuit de cet acte (les nuits déjà tenues ce soir-là)
+static func premiere_nuit(acte_: int) -> int:
+	return maxi(0, R.NOIRE_ACTES.find(acte_))
+
+
 # la nuit tombe : l'acte de cette nuit, et quand elle partira
 func tombee() -> void:
-	acte = clampi(int(jeu.nuits) + 1, 1, 4)
+	acte = acte_de(int(jeu.nuits))
 	_nuit_t = 0.0
 	_duree_nuit = R.DUREE * float(jeu.part_nuit)
 	_depart = float(R.NOIRE_DEPART[acte]) * _duree_nuit

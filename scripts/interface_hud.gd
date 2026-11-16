@@ -502,6 +502,7 @@ class Sac extends Allege:
 # --- une recette, en petite carte ---
 
 class Recette extends Allege:
+	var reste := -1          # (le lance-pierre) ce qu'il reste de galets ; -1 : une recette, on montre son coût
 	var cle := ""
 	var compact := false
 	var tactile := false
@@ -530,6 +531,9 @@ class Recette extends Allege:
 
 	func maj(peut: bool, inv: Dictionary) -> void:
 		var rec: Dictionary = R.RECETTES[cle]
+		# (le lance-pierre : sa carte ne dit pas ce que coûte un tir, mais ce qu'il lui reste de galets)
+		if cle == "tir":
+			reste = int(inv.get("galet", 0))
 		manques.clear()
 		for k in rec["cout"]:
 			var m := int(rec["cout"][k]) - int(inv.get(k, 0))
@@ -598,7 +602,7 @@ class Recette extends Allege:
 		var morceaux := []
 		var total := 0.0
 		for k in rec["cout"]:
-			var t := str(rec["cout"][k])
+			var t := str(rec["cout"][k]) if reste < 0 else str(reste)
 			var lw := g.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, gs).x
 			morceaux.append([k, t, lw])
 			total += isz + lw + 7.0

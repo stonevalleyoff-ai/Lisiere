@@ -4,6 +4,10 @@ extends RefCounted
 # l'aube) ; au soir et la nuit, des grillons qui chantent par phrases, chacun à son pas (plus vite s'il fait chaud), des
 # grenouilles si le lieu est humide, une chouette de temps en temps (une autre lui répond), une branche qui casse au loin ;
 # quand des chasseurs sont là, leurs hurlements ou leurs grondements, d'où ils sont, et ce qui bouge dans les fourrés tout près.
+# La nuit, autour d'un feu, les chasseurs se postent dans le noir et ne bougent plus (scripts/bete.gd : poste) : un chasseur
+# posté ne froisse rien. Quand l'un change de poste (detourne) ses yeux s'éteignent : c'est alors qu'on l'entend passer, du
+# côté où il passe, pas à chaque fois (un froissement, parfois une branche) ; et posté depuis longtemps, l'un d'eux gronde,
+# bas, rarement. Les mêmes sons qu'avant, autrement distribués : aucun de plus à préparer.
 # Sous la pluie et l'orage les oiseaux, les grillons, la chouette se taisent (sons.gd baisse ce qu'il donne ici) ; à
 # l'éclaircie, les oiseaux reviennent ensemble.
 # sons.gd lui donne, à chaque image, ce qu'il faut savoir du moment (c) ; elle joue par sons.evenement().
@@ -19,6 +23,9 @@ var _chouette := 30.0
 var _craquement := 18.0
 var _hurlement := 8.0
 var _fourre := 2.0
+var _passe := 1.5            # le prochain bruit de celui qui change de poste
+var _branche := 0.0          # (une branche ne casse pas deux fois de suite sous lui)
+var _gronde := 30.0          # le prochain grondement bas d'un chasseur posté
 var _temp := 0.5
 
 
@@ -45,6 +52,9 @@ func nouvelle_partie(c: Dictionary) -> void:
 	_chouette = _r.randf_range(20.0, 50.0)
 	_craquement = _r.randf_range(12.0, 30.0)
 	_hurlement = _r.randf_range(4.0, 12.0)
+	_passe = 1.5
+	_branche = 0.0
+	_gronde = _r.randf_range(24.0, 40.0)
 	_choeur_aube = 0.0
 
 
@@ -191,14 +201,50 @@ func _chasseurs_maj(dt: float, c: Dictionary) -> void:
 			var autre = chasseurs[(chasseurs.find(qui) + 1) % chasseurs.size()]
 			var d: float = autre.position.distance_to(p)
 			_reprises.append([_r.randf_range(1.5, 4.0), _nom_voix(autre), clampf(-8.0 - d / 45.0, -32.0, -10.0), _hauteur_voix(autre), s.pan_de(autre.position), false])
-	# tout près, dans le noir : un froissement de feuilles, là où il marche
+	# tout près, dans le noir : un froissement de feuilles, là où il marche (posté, immobile, il ne froisse rien)
 	_fourre -= dt
 	if _fourre <= 0.0:
 		_fourre = _r.randf_range(1.6, 4.2)
-		var proche = _chasseur_proche(c, 380.0)
+		var proche = _chasseur_proche(c, 380.0, true)
 		if proche != null:
 			var d2: float = proche.position.distance_to(p)
 			s.evenement("froissement%d" % (_r.randi() % 2), -13.0 - d2 / 35.0, clampf(1.2 - 0.08 * log(maxf(1.0, proche.masse)) / log(2.0), 0.7, 1.2), s.pan_de(proche.position))
+	# celui qui change de poste : on ne voit plus ses yeux, on l'entend passer, de plus loin, du côté où il est. Pas à chaque
+	# fois ; de loin en loin une branche casse sous lui. Et les postés : depuis longtemps là, l'un d'eux gronde, bas.
+	var passant = null
+	var d_passant := 620.0
+	var postes: Array = []
+	for b in chasseurs:
+		var db: float = b.position.distance_to(p)
+		if b.detourne > 0.6 and db < d_passant:
+			d_passant = db
+			passant = b
+		elif b.poste > 0.9 and db < 560.0:
+			postes.append(b)
+	_branche -= dt
+	if passant == null:
+		_passe = minf(_passe, 1.2)
+	else:
+		_passe -= dt
+		if _passe <= 0.0:
+			_passe = _r.randf_range(1.8, 4.5)
+			if _r.randf() < 0.7:
+				var grave := clampf(1.2 - 0.08 * log(maxf(1.0, passant.masse)) / log(2.0), 0.7, 1.2)
+				if _branche <= 0.0 and _r.randf() < 0.25:
+					_branche = _r.randf_range(14.0, 30.0)
+					s.evenement("craquement", clampf(-15.0 - d_passant / 55.0, -27.0, -16.0), _r.randf_range(0.9, 1.15), s.pan_de(passant.position))
+				else:
+					s.evenement("froissement%d" % (_r.randi() % 2), clampf(-12.0 - d_passant / 45.0, -26.0, -13.0), grave * _r.randf_range(0.92, 1.05), s.pan_de(passant.position))
+	if postes.is_empty():
+		_gronde = maxf(_gronde, 16.0)
+	else:
+		_gronde -= dt
+		if _gronde <= 0.0:
+			_gronde = _r.randf_range(26.0, 60.0)
+			var qui = postes[_r.randi() % postes.size()]
+			var dq: float = qui.position.distance_to(p)
+			# (plus grave que lorsqu'il menace, et bien plus bas : on le devine plus qu'on ne l'entend)
+			s.evenement("grogne", clampf(-17.0 - dq / 45.0, -30.0, -18.0), _r.randf_range(0.66, 0.8) * clampf(2.0 / sqrt(maxf(0.2, float(qui.masse))), 0.6, 1.5), s.pan_de(qui.position))
 
 
 func _voix_de(b, p: Vector2) -> void:
@@ -216,12 +262,15 @@ func _hauteur_voix(b) -> float:
 	return clampf(1.25 - 0.1 * log(maxf(1.0, b.masse)) / log(2.0), 0.75, 1.3) * _r.randf_range(0.96, 1.04)
 
 
-func _chasseur_proche(c: Dictionary, rayon: float):
+# (qui_bouge : sans les chasseurs postés, immobiles, ni ceux qui changent de poste — ceux-là ont leur bruit à eux)
+func _chasseur_proche(c: Dictionary, rayon: float, qui_bouge: bool = false):
 	var p: Vector2 = c["ici"]
 	var meilleur = null
 	var d0 := rayon
 	for b in c["betes"]:
 		if is_instance_valid(b) and (b.role == "chasseur" or (b.role == "rodeur" and b.etat == "attaque") or (b.role == "noire" and b.ordre != "dort")):
+			if qui_bouge and b.role == "chasseur" and (b.poste > 0.5 or b.detourne > 0.6):
+				continue
 			var d: float = b.position.distance_to(p)
 			if d < d0:
 				d0 = d

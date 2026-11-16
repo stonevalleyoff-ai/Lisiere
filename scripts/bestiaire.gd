@@ -18,6 +18,8 @@ const FORMES := {
 	"oiseau": "res://scripts/bestiaire_oiseau.gd",
 	"hexapode": "res://scripts/bestiaire_hexapode.gd",
 	"serpent": "res://scripts/bestiaire_serpent.gd",
+	# (pas une forme d'Orvane : la Noire, qui a sa planche à elle)
+	"noire": "res://scripts/noire_corps.gd",
 }
 
 static var _cache := {}
@@ -52,7 +54,7 @@ static func planche(lignee: Dictionary, largeur: float) -> Planche:
 	var corps = plan.get("corps", {})
 	if typeof(corps) != TYPE_DICTIONARY or corps.is_empty():
 		return null
-	var f = _forme(str(corps.get("forme", "")))
+	var f = _forme("noire" if bool(plan.get("noire", false)) else str(corps.get("forme", "")))
 	if f == null:
 		return null
 	var p := Planche.new()
@@ -108,12 +110,14 @@ static func _traits(lignee: Dictionary) -> Array:
 static func tons(plan: Dictionary) -> Dictionary:
 	var c: Dictionary = plan.get("corps", {}).get("couleurs", {}) if typeof(plan.get("corps", {})) == TYPE_DICTIONARY else {}
 	if bool(plan.get("noire", false)):
-		# (la Noire, scripts/noire.gd : pas un pigment de carnet, de l'encre ; il n'en sort que l'œil et les crocs)
-		var poil := Color(0.1, 0.095, 0.105)
+		# (la Noire, scripts/noire.gd, dessinée par scripts/noire_corps.gd : pas un pigment de carnet, l'encre elle-même, qui
+		# tire sur le bleu de la nuit. « accent » : le poil qu'on distingue dans sa masse ; « lumiere » : ce que le jour, ou le
+		# feu, accroche sur son échine ; « loin » : les pattes de l'autre côté, en encre délayée ; « os » : des dents ternes)
+		var poil := P.NUIT.lerp(P.NUIT_BLEUE, 0.3).lerp(P.ENCRE, 0.35)
 		return {
-			"robe": poil, "lumiere": Color(0.2, 0.19, 0.215), "ombre": Color(0.04, 0.04, 0.05), "dos": Color(0.05, 0.048, 0.058),
-			"ventre": Color(0.13, 0.12, 0.13), "loin": Color(0.055, 0.052, 0.065), "accent": Color(0.06, 0.056, 0.066), "oeil": P.OEIL_NOIRE,
-			"encre": Color(0.015, 0.015, 0.02), "os": Color("e6dcc2"), "truffe": Color(0.02, 0.02, 0.025),
+			"robe": poil, "lumiere": P.LUNE.lerp(P.NUIT_BLEUE, 0.42).lerp(P.CENDRE, 0.25), "ombre": P.NUIT.darkened(0.55), "dos": P.NUIT.darkened(0.3),
+			"ventre": poil.darkened(0.2), "loin": P.NUIT_BLEUE.lerp(P.CENDRE, 0.3).darkened(0.36), "accent": P.NUIT_BLEUE.lerp(P.LUNE, 0.2).lerp(P.CENDRE, 0.3), "oeil": P.OEIL_NOIRE,
+			"encre": P.NUIT.darkened(0.72), "os": P.IVOIRE.darkened(0.42), "truffe": P.NUIT.darkened(0.6),
 		}
 	var robe := _accorder(_rvb(c.get("robe"), Color(0.55, 0.47, 0.36)), 0.34, 0.48, 0.72)
 	var dos := _accorder(_rvb(c.get("sombre"), robe.darkened(0.35)), 0.32, 0.24, 0.44)
