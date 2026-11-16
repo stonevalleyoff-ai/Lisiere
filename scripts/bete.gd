@@ -97,6 +97,7 @@ var _assaut := 0.0               # le temps pendant lequel une morsure est encor
 var _presage := 0.0              # ce qu'elle a déjà annoncé, avant de passer la torche
 var _a_la_torche := false        # un chasseur, tenu à la lisière de la torche (il la longe ; il lui faut s'en écarter pour la quitter)
 var _suit := false               # elle suit la veilleuse de loin
+const LISERE := 3.2              # la Noire : la force du liseré que le feu accroche sur son échine (le shader de son encre)
 # la Noire : ce que scripts/noire.gd lui fait faire
 var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »
 var ordre_but := Vector2.ZERO
@@ -107,6 +108,12 @@ var yeux_clos := 0.0             # de 0 à 1 : ses yeux se ferment (elle dort, e
 var de_face := 0.0               # de 0 à 1 : elle regarde la veilleuse en face, et l'on voit ses deux yeux (scripts/yeux.gd)
 var _claque := -1.0              # son coup de gueule, de 0 à 1 (-1 : rien) : le corps se jette en avant, la tête claque
 var _tic := 0.0                  # un mouvement de tête brusque, qui retombe
+# (son dessin, scripts/noire_corps.gd : ce que sa planche a de plus que les autres)
+var _machoire: Sprite2D          # sa mâchoire, derrière sa tête : montrée seulement quand sa gueule s'ouvre
+var _gueule := 0.0               # de combien sa gueule est ouverte (radians)
+var _roulee: Sprite2D            # endormie : son corps roulé, à la place de tout le reste
+var _guet := 0.0                 # de 0 à 1 : elle guette, ramassée sur ses épaules
+var _oeil_axe := 0.0             # de combien son museau pique sur sa planche (axe_oeil) ; 0 pour les autres bêtes
 var _tic_t := 2.0
 # la bête apprivoisée (rôle « compagne », scripts/elevage.gd), et ce qui tente une proie (un appât, un jardin)
 var harnais := {}                # « licol », « selle », « sacoche » : vrai quand elle le porte (son dessin les montre)
@@ -488,6 +495,10 @@ func _monter() -> void:
 	if not _sq["dessus"].is_empty():
 		_dessus = _calque_sprite(_sq["dessus"])
 	if not _sq["tete"].is_empty():
+		if _sq.has("plus"):
+			# (la Noire : sa mâchoire, derrière sa tête ; cachée tant que sa gueule est fermée)
+			_machoire = _calque_sprite(_sq["plus"]["machoire"])
+			_machoire.visible = false
 		_tete = _calque_sprite(_sq["tete"])
 		# (jusqu'où la tête descend pour brouter : le museau vers le sol, sans tordre le cou)
 		var rt: Rect2 = _sq["tete"]["rect"]
@@ -498,6 +509,12 @@ func _monter() -> void:
 		# (ce qui manque encore, ce sont les épaules qui le donnent : elle s'incline)
 		var reste := -(pv_t.y + museau.rotated(_broute_rot).y) - _H * 0.12
 		_broute_penche = clampf(reste / maxf(pv_t.x + museau.x - _c.x, _H * 0.5), 0.03, 0.15)
+	if _sq.has("plus"):
+		# (la Noire endormie : son corps roulé, par-dessus le reste ; et l'axe de son museau, qui pique sur sa planche)
+		_roulee = _calque_sprite(_sq["plus"]["roulee"])
+		_roulee.visible = false
+		var axe: Vector2 = _sq["reperes"]["axe"]
+		_oeil_axe = axe.angle()
 	_haut = Calque.new()
 	_haut.peindre = _peindre_haut
 	add_child(_haut)
@@ -544,6 +561,9 @@ func _monter_queue(c: Dictionary) -> void:
 	# (une queue longue et fine fouette ; un moignon ne fait que frémir)
 	_q_souple = clampf((_q_long / maxf(2.0, s1 - s0) - 0.6) / 2.2, 0.2, 1.0)
 	var n := 6 if _fin else 3
+	if role == "noire":
+		# (la sienne est longue et balaie large : plus de tranches, pour qu'elle plie sans se casser ; toujours un seul appel)
+		n = 12 if _fin else 6
 	var uv := PackedVector2Array()
 	var pos: Vector2 = c["pos"]
 	var tri: Array = []
@@ -621,6 +641,10 @@ func _decalages() -> void:
 func point_oeil() -> Vector2:
 	if _pivot == null:
 		return position + Vector2(_oeil_local.x * regard, _oeil_local.y)
+	if _roulee != null and _roulee.visible and _roulee.self_modulate.a > 0.6:
+		# (la Noire endormie : l'œil clos de son corps roulé)
+		var o: Vector2 = _sq["reperes"]["oeil_roulee"]
+		return position + _pivot.transform * o
 	return position + _pivot.transform * (_t_corps * (_t_tete * _oeil_local))
 
 
@@ -631,11 +655,23 @@ func rayon_oeil() -> float:
 	return r
 
 
+# la Noire, de face (de_face) : son autre œil, là où sa tête le porte — plus loin, plus petit, à demi caché par le chanfrein ;
+# (x et y dans le monde, son rayon). Une bête qui n'en a qu'un de dessiné : le même que point_oeil et rayon_oeil.
+func oeil_loin() -> Vector3:
+	var p := point_oeil()
+	var r := rayon_oeil()
+	if _pivot != null and _sq.get("yeux", []).size() > 1 and not (_roulee != null and _roulee.visible and _roulee.self_modulate.a > 0.6):
+		var y1: Vector3 = _sq["yeux"][1]
+		p = position + _pivot.transform * (_t_corps * (_t_tete * Vector2(y1.x, y1.y)))
+		r *= y1.z / maxf(_oeil_rayon, 0.01)
+	return Vector3(p.x, p.y, r)
+
+
 # vers où pointe son museau, dans le monde : la lueur de son œil s'effile de ce côté (scripts/yeux.gd)
 func axe_oeil() -> Vector2:
 	if _pivot == null:
 		return Vector2(regard, 0.0)
-	return (_pivot.transform * (_t_corps * _t_tete)).basis_xform(Vector2.RIGHT).normalized()
+	return (_pivot.transform * (_t_corps * _t_tete)).basis_xform(Vector2.from_angle(_oeil_axe)).normalized()
 
 
 # sa paupière : 1, l'œil ouvert ; 0, fermé (elle cligne, elle ferme l'œil sous un coup, elle meurt). La nuit, la lueur s'éteint.
@@ -1654,6 +1690,7 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	# le souffle, au repos : lent chez une grande bête ; court et fort après une course
 	var repos := 1.0 - marche
 	var noire := role == "noire"
+	var pose_y := 0.0
 	_essouffle = clampf(_essouffle + delta * ((_course + _bond) * 0.5 - 0.16 + 0.5 * aplatie), 0.0, 1.0)
 	_souffle += delta * TAU / (1.3 + 1.1 * log(masse + 1.0) / log(10.0)) * (1.0 + 1.5 * _essouffle) * (1.5 if noire else 1.0)
 	var ampleur := (0.026 + 0.02 * _essouffle) * (0.35 + 0.65 * repos) * (1.5 if noire else 1.0)
@@ -1692,6 +1729,18 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			else:
 				x += H * 0.26 * sin(PI * _claque)
 				tang += 0.07 * sin(PI * _claque)
+		# elle guette : ramassée, les épaules plus basses que la croupe
+		_guet = lerpf(_guet, 1.0 if ordre == "guette" else 0.0, 1.0 - exp(-delta * 2.5))
+		y += H * 0.07 * _guet * (1.0 - aplatie)
+		tang += 0.03 * _guet * (1.0 - aplatie)
+		pose_y = H * (_bas + 0.07 * _guet * (1.0 - aplatie))
+		# sa gueule : fermée, une fente. Elle s'ouvre grand et claque quand elle mord ; entrouverte tant qu'elle charge
+		var ouvre := 0.0
+		if _claque >= 0.0:
+			ouvre = 0.44 * smoothstep(0.0, 0.2, _claque) * (1.0 - smoothstep(0.46, 0.6, _claque))
+		elif ordre == "charge":
+			ouvre = 0.2 + 0.05 * sin(_anim * 9.0)
+		_gueule = lerpf(_gueule, ouvre, 1.0 - exp(-delta * 28.0))
 	# elle broute, elle flaire le sol : ses épaules s'abaissent un peu
 	var penche := 0.0
 	if _geste == "broute" or _geste == "flaire":
@@ -1818,6 +1867,13 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 	# (la tête ne suit pas tout à fait le roulis du dos, ni le bond : elle regarde droit)
 	var tr := _tete_rot - 0.6 * _porte_a - 0.5 * (tang - _porte_a - _penche) * (1.0 if _mort < 0.0 else 0.0)
 	td.y -= 0.35 * _porte
+	if noire and _mort < 0.0 and _tete != null:
+		# la Noire : sa tête ne bouge presque pas quand elle marche. Ce sont ses épaules qui roulent, son corps qui tourne
+		# autour : on la retient là où elle serait si le corps ne tanguait ni ne rebondissait (moins au galop).
+		var tient := lerpf(0.85, 0.4, _bond) * (1.0 - couchee)
+		var pv0: Vector2 = _sq["tete"]["pivot"]
+		td += _t_corps.basis_xform_inv(pv0 + Vector2(x, pose_y) - _t_corps * pv0) * tient
+		tr = lerpf(tr, _tete_rot - tang, tient)
 	if _n_cote == 1:
 		# (un oiseau, un bipède : la tête va de l'avant à chaque pas, puis attend)
 		var w := fposmod(u * 2.0, 1.0)
@@ -1837,6 +1893,33 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 		_dessus.transform = _t_corps * demi
 	if _tete != null:
 		_tete.transform = _t_corps * _t_tete * demi
+	if _machoire != null:
+		_noire_images(demi)
+
+
+# la Noire (scripts/noire_corps.gd) : sa gueule et son sommeil sont d'autres images que sa planche. La gueule fermée, sa tête
+# est d'un seul tenant ; ouverte, on montre la tête sans sa mâchoire (les dents du haut) et la mâchoire à part, derrière, qui
+# tourne autour de sa charnière. Endormie, son corps roulé vient par-dessus le reste, qu'on ne dessine plus ensuite.
+func _noire_images(demi: Transform2D) -> void:
+	var ouverte := _gueule > 0.02 and _mort < 0.0
+	if ouverte != _machoire.visible:
+		_machoire.visible = ouverte
+		var c: Dictionary = _sq["plus"]["gueule"] if ouverte else _sq["tete"]
+		_tete.texture = c["tex"]
+		_tete.offset = c["pos"] * 2.0
+	if ouverte:
+		var ch: Vector2 = _sq["reperes"]["machoire"]
+		_machoire.transform = _t_corps * _t_tete * Transform2D(_gueule, ch) * Transform2D(0.0, -ch) * demi
+	var k := smoothstep(0.55, 0.9, couchee) if _mort < 0.0 else 0.0
+	if (k > 0.0) != _roulee.visible or (k < 1.0) != sprite.visible:
+		_roulee.visible = k > 0.0
+		for n in _pivot.get_children():
+			if n != _roulee and n != _machoire:
+				n.visible = k < 1.0
+	if k > 0.0:
+		# (elle respire : son dos se soulève, lentement)
+		_roulee.self_modulate.a = k
+		_roulee.transform = Transform2D(0.0, Vector2(1.0 - 0.01 * sin(_souffle), 1.0 + 0.03 * sin(_souffle)), 0.0, Vector2.ZERO) * demi
 
 
 # ce qu'elle fait quand elle ne va nulle part : une proie broute, guette, hume ; un chasseur guette, hume, flaire le sol ;
@@ -2101,6 +2184,9 @@ func _animer_queue(delta: float) -> void:
 		var vite := _course + _bond
 		# (dans la fuite, la queue d'une proie se dresse ; celle d'un chasseur lancé file droit derrière lui)
 		var levee := Vector2(-0.5, -0.87) if role == "proie" else Vector2(-1.0, -0.1)
+		if role == "noire":
+			# (la sienne, longue et maigre, traîne derrière elle sans se lever)
+			levee = Vector2(-1.0, 0.3)
 		cible += wrapf(levee.angle() - _q_axe.angle(), -PI, PI) * (0.55 if role == "proie" else 0.8) * vite
 		cible += wrapf(Vector2(-1.0, 0.42).angle() - _q_axe.angle(), -PI, PI) * 0.6 * _affut
 		cible += 0.02 * sin(_souffle * 0.5 + 1.0) * repos
@@ -2179,6 +2265,17 @@ func _cligner(delta: float) -> void:
 # ce que lit le shader de son encre
 func _parametres() -> void:
 	_param("eclat", _eclat * 0.85)
+	if role == "noire":
+		# le liseré du feu : la nuit, au bord de sa lumière, le feu accroche ce que son dessin a de clair (les poils de son
+		# échine, le dessus de sa tête, ses dents) ; le reste demeure une ombre (shaders/bete_encre.gdshader, lisere)
+		var force := 0.0
+		if jeu != null and not jeu.est_jour():
+			for f in jeu.feux_et_foyers():
+				if f.allume():
+					var r: float = f.rayon()
+					force = maxf(force, 1.0 - smoothstep(r * 1.15, r * 2.4, position.distance_to(f.position)))
+		# (la braise, tirée vers le rouge : la nuit bleuit tout ce qu'elle touche)
+		_param("lisere", Vector3(P.BRAISE.r, P.BRAISE.g * 0.7, P.BRAISE.b * 0.4) * (LISERE * force))
 	if role == "echo" or _mort >= 0.0 or _dissipe >= 0.0:
 		_param("origine", global_position)
 		_param("temps", fmod(_anim, 600.0))
@@ -2314,7 +2411,7 @@ func _peindre_haut(c: CanvasItem) -> void:
 		c.draw_line(g, g + Vector2(w * pv / pv_max, 0.0), Color(P.ENCRE, 0.92 * a), 1.3, true)
 	var ef := clampf((_mort - CHUTE - GISANT) / EFFACEMENT, 0.0, 1.0) if _mort >= 0.0 else 0.0
 	var ferme := 1.0 - paupiere()
-	if ferme > 0.03 and _a_oeil and role != "echo" and _pivot != null and absf(_pivot.scale.x) > 0.5 and ef < 0.3:
+	if ferme > 0.03 and _a_oeil and role != "echo" and _pivot != null and absf(_pivot.scale.x) > 0.5 and ef < 0.3 and (_roulee == null or not _roulee.visible or _roulee.self_modulate.a < 0.6):
 		_haut_sale = true
 		_peindre_paupiere(c, ferme, 1.0 - ef / 0.3)
 	if _mort > CHUTE + GISANT and _fin and not _miettes.is_empty():

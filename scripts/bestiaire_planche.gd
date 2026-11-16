@@ -45,6 +45,7 @@ var _pattes: Array = []
 var _pivots := {}
 var _ombre := Vector2(0.0, -1.0)     # (son milieu en x, son demi-grand axe ; -1 : d'après le corps)
 var _n := 0
+var _places := {}                    # la place d'un calque (pixels montrés), quand la bête la connaît d'avance : voir place()
 
 
 func _init() -> void:
@@ -57,6 +58,26 @@ func _init() -> void:
 func calque(nom: String) -> void:
 	assert(_calques.has(nom))
 	_courant = nom
+
+
+# un calque de plus que les quatre de toutes les bêtes (la Noire, scripts/noire_corps.gd : sa gueule ouverte, sa mâchoire, son
+# corps roulé) : finir() le rend dans « plus », avec les repères posés par pivot() dans « reperes ». Un nom qui commence par
+# « _ » : un brouillon, qu'on verse dans d'autres calques et qui ne fait pas d'image.
+func calque_en_plus(nom: String) -> void:
+	if not _calques.has(nom):
+		_calques[nom] = PackedStringArray()
+	_courant = nom
+
+
+# la place qu'occupe un calque, quand la bête la connaît d'avance (la Noire) : son image se fait dans un cadre à sa mesure, bien
+# plus vite que dans le cadre de toute la planche. Si le dessin en déborde, finir() le refait dans le grand cadre.
+func place(nom: String, zone: Rect2) -> void:
+	_places[nom] = zone
+
+
+# ce qu'un calque a reçu, recopié à la suite d'un autre (le même dessin dans deux images)
+func verser(de: String, vers: String) -> void:
+	_calques[vers].append_array(_calques[de])
 
 
 # du SVG tel quel, dans le calque courant (pour ce que les gestes d'ici ne savent pas faire)
@@ -271,15 +292,6 @@ func oeil(c: Vector2, rayon: float, opts := {}) -> void:
 	if nocturne:
 		ro *= 1.15
 	var encre := coul(tons["encre"])
-	if opts.get("braise", false):
-		# (la Noire : une fente de braise qui tombe vers le museau, sans pupille ni reflet ; rien d'un regard)
-		var tour := "rotate(%s %s %s)" % [n(rad_to_deg(float(opts.get("pente", 0.3)))), n(c.x), n(c.y)]
-		svg("<ellipse cx=\"%s\" cy=\"%s\" rx=\"%s\" ry=\"%s\" fill=\"%s\" transform=\"%s\"/>" % [n(c.x), n(c.y), n(ro * 1.5), n(ro * 0.78), encre, tour])
-		svg("<ellipse cx=\"%s\" cy=\"%s\" rx=\"%s\" ry=\"%s\" fill=\"%s\" transform=\"%s\"/>" % [n(c.x), n(c.y), n(ro * 1.18), n(ro * 0.5), coul(tons["oeil"]), tour])
-		svg("<ellipse cx=\"%s\" cy=\"%s\" rx=\"%s\" ry=\"%s\" fill=\"%s\" transform=\"%s\"/>" % [n(c.x + ro * 0.15), n(c.y), n(ro * 0.6), n(ro * 0.2), coul(tons["oeil"].lightened(0.5)), tour])
-		tracer("M%s L%s" % [pt(c + Vector2(-ro * 1.7, -ro * 1.3)), pt(c + Vector2(ro * 1.7, -ro * 0.2))], e * 1.2, tons["encre"])
-		yeux.append(Vector3(c.x, c.y, ro))
-		return
 	svg("<circle cx=\"%s\" cy=\"%s\" r=\"%s\" fill=\"%s\"/>" % [n(c.x), n(c.y), n(ro + e * 0.55), encre])
 	svg("<circle cx=\"%s\" cy=\"%s\" r=\"%s\" fill=\"%s\"/>" % [n(c.x), n(c.y), n(ro), coul(tons["oeil"])])
 	if opts.get("fente", false):
@@ -300,7 +312,10 @@ func oeil(c: Vector2, rayon: float, opts := {}) -> void:
 # Trois points au moins : la cuisse, puis le reste, qui suit d'un seul tenant (la bête plie le genou : bete.gd, _ik).
 # opts : "teinte" (sinon la robe, ou le ton lointain), "pied" ("sabot", "coussinet", "griffes", "doigts", "pointe", "main",
 # "aucun"), "pied_taille" (en fois la largeur du bas de la patte), "pied_teinte", "poilu" (vrai : des hachures sur la cuisse),
-# "epines" (leur longueur, en pixels montrés : des crocs d'encre le long de la cuisse et de la jambe ; un insecte)
+# "epines" (leur longueur, en pixels montrés : des crocs d'encre le long de la cuisse et de la jambe ; un insecte) ;
+# une bête qui dessine ses pattes elle-même (la Noire) : "morceau" (une fonction : le rang du morceau, sa longueur, ses deux
+# largeurs, loin → son SVG, couché comme dans _morceau), "marge" (la place qu'il lui faut de chaque côté, pour son poil),
+# "pied_fait" (une fonction : sa largeur, loin → [son SVG, sa boîte], comme _pied)
 func patte(pts: PackedVector2Array, largeurs: Array, loin: bool, opts := {}) -> void:
 	if pts.size() < 2:
 		return
@@ -393,29 +408,43 @@ func _pied(genre: String, w: float, teinte: Color, loin_: bool) -> Array:
 
 # --- la planche finie ---
 
-func _cadre() -> Array:
-	# (le cadre du dessin, en pixels montrés : sa taille, et où y tombe l'origine)
+func _cadre(nom := "") -> Array:
+	# (le cadre du dessin, en pixels montrés : sa taille, et où y tombe l'origine ; celui d'un calque qui a dit sa place)
+	if _places.has(nom):
+		var z: Rect2 = _places[nom]
+		return [z.size, -z.position]
 	var taille := Vector2(2.6 * L + 40.0, 1.9 * L + 40.0)
 	return [taille, Vector2(taille.x * 0.5, 1.55 * L + 20.0)]
 
 
-func _document(contenu: String) -> String:
-	var c := _cadre()
+func _document(contenu: String, nom := "") -> String:
+	var c := _cadre(nom)
 	return "<svg viewBox=\"0 0 %s %s\" width=\"%s\" height=\"%s\"><g transform=\"translate(%s %s)\" stroke-linecap=\"round\" stroke-linejoin=\"round\">%s</g></svg>" % [
 		n(c[0].x), n(c[0].y), n(c[0].x), n(c[0].y), n(c[1].x), n(c[1].y), contenu]
 
 
-func _image(contenu: String) -> Image:
+func _image(contenu: String, nom := "") -> Image:
 	if contenu == "":
 		return null
 	var img := Image.new()
-	if img.load_svg_from_string(_document(contenu), ECH) != OK:
+	if img.load_svg_from_string(_document(contenu, nom), ECH) != OK:
 		return null
 	return img
 
 
+# un calque, fini : son image, rognée. Dessiné à la place qu'il a dite, s'il n'en déborde pas ; sinon dans le grand cadre.
+func _calque_fini(nom: String, marge_onde := 0.0) -> Dictionary:
+	var img := _image(_contenu(nom), nom)
+	if img != null and _places.has(nom):
+		var u := img.get_used_rect()
+		if u.position.x <= 0 or u.position.y <= 0 or u.end.x >= img.get_width() or u.end.y >= img.get_height():
+			_places.erase(nom)
+			img = _image(_contenu(nom), nom)
+	return _rogner(img, marge_onde, nom)
+
+
 # une image rognée à ce qu'elle dessine : { tex, pos, taille, rect } (pixels montrés, autour de l'origine)
-func _rogner(img: Image, marge_onde: float) -> Dictionary:
+func _rogner(img: Image, marge_onde: float, nom := "") -> Dictionary:
 	if img == null:
 		return {}
 	var u := img.get_used_rect()
@@ -426,7 +455,7 @@ func _rogner(img: Image, marge_onde: float) -> Dictionary:
 	out.blit_rect(img, u, m)
 	# (les pixels transparents du rendu sont blancs : filtrés, ils feraient un liseré clair autour du dessin)
 	out.fix_alpha_edges()
-	var origine: Vector2 = _cadre()[1]
+	var origine: Vector2 = _cadre(nom)[1]
 	var pos := Vector2(u.position - m) / ECH - origine
 	return {"tex": ImageTexture.create_from_image(out), "image": out, "pos": pos, "taille": Vector2(out.get_size()) / ECH,
 		"rect": Rect2(pos + Vector2(m) / ECH, Vector2(u.size) / ECH)}
@@ -438,11 +467,11 @@ func _contenu(nom: String) -> String:
 
 # ce que la bête anime : la même forme que Squelette.lire (scripts/squelette.gd), et en plus « yeux » et « queue »
 func finir() -> Dictionary:
-	var corps_ := _rogner(_image(_contenu("corps")), 0.16 if onde else 0.0)
+	var corps_ := _calque_fini("corps", 0.16 if onde else 0.0)
 	if corps_.is_empty():
 		return {}
-	var sq := {"corps": corps_, "dessus": _rogner(_image(_contenu("dessus")), 0.0), "tete": _rogner(_image(_contenu("tete")), 0.0),
-		"queue": _rogner(_image(_contenu("queue")), 0.0), "pattes": [], "atlas": null, "sans_pattes": _pattes.is_empty(), "yeux": yeux, "lisiere": true}
+	var sq := {"corps": corps_, "dessus": _calque_fini("dessus"), "tete": _calque_fini("tete"),
+		"queue": _calque_fini("queue"), "pattes": [], "atlas": null, "sans_pattes": _pattes.is_empty(), "yeux": yeux, "lisiere": true}
 	var rc: Rect2 = corps_["rect"]
 	sq["centre"] = rc.get_center()
 	sq["haut"] = rc.position.y
@@ -469,6 +498,14 @@ func finir() -> Dictionary:
 	else:
 		sq["jambe"] = maxf(1.0, portee / sq["pattes"].size())
 		sq["ventre"] = hanches / sq["pattes"].size()
+	if _calques.size() > CALQUES.size():
+		# (les calques en plus : chacun son image ; et les repères, pour qui les anime)
+		var plus := {}
+		for nom in _calques:
+			if not CALQUES.has(nom) and not str(nom).begins_with("_"):
+				plus[nom] = _calque_fini(nom)
+		sq["plus"] = plus
+		sq["reperes"] = _pivots.duplicate()
 	return sq
 
 
@@ -486,15 +523,15 @@ func _morceaux(q: Dictionary) -> Dictionary:
 		var w0 := float(w[s])
 		var w1 := float(w[s + 1])
 		var ep := float(o.get("epines", 0.0)) if s < 2 else 0.0
-		var rm := maxf(w0, w1) * 0.5 + e + ep
+		var rm := maxf(w0, w1) * 0.5 + e + ep + float(o.get("marge", 0.0))
 		var ancre := Vector2(pad + w0 * 0.5 + e, pad + rm)
 		segs.append({"taille": Vector2(lg + (w0 + w1) * 0.5 + 2.0 * e + 2.0 * pad, 2.0 * rm + 2.0 * pad), "ancre": ancre,
-			"svg": _morceau(lg, w0, w1, teinte, loin_, o.get("poilu", false) and s == 0, ep)})
+			"svg": o["morceau"].call(s, lg, w0, w1, loin_) if o.has("morceau") else _morceau(lg, w0, w1, teinte, loin_, o.get("poilu", false) and s == 0, ep)})
 	var pied := {}
 	var genre := str(o.get("pied", "aucun"))
 	if genre != "aucun":
 		var wp := float(w.back()) * float(o.get("pied_taille", 1.0))
-		var f := _pied(genre, maxf(wp, 1.6), o.get("pied_teinte", teinte), loin_)
+		var f: Array = o["pied_fait"].call(maxf(wp, 1.6), loin_) if o.has("pied_fait") else _pied(genre, maxf(wp, 1.6), o.get("pied_teinte", teinte), loin_)
 		if f[0] != "":
 			var b: Rect2 = f[1].grow(e)
 			pied = {"taille": b.size + Vector2(2.0 * pad, 2.0 * pad), "ancre": Vector2(pad, pad) - b.position, "svg": f[0]}
