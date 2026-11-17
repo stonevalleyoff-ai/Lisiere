@@ -5394,7 +5394,7 @@ func _le_lichen() -> void:
 	# (ceux qu'on cueille sans qu'une chose du pays soit à portée de main : sinon « Agir » prendrait celle-là)
 	var debout := func(q: Vector2) -> bool:
 		return T._autour(q, 130.0).any(func(t): return str(t["genre"]) in T.DEBOUT or str(t["genre"]) == "mare")
-	var libres: Array = tous.filter(func(x): return not debout.call(x.position) and x.position.distance_to(camp) < 1600.0)
+	var libres: Array = tous.filter(func(x): return not debout.call(x.position))
 	libres.sort_custom(func(a, b): return a.position.distance_to(camp) < b.position.distance_to(camp))
 	var cueillir := func(o) -> int:
 		var n := 0
@@ -5456,9 +5456,10 @@ func _le_lichen() -> void:
 		for o in proches:
 			o._process(load("res://scripts/objet.gd").REPOUSSE + 1.0)
 	var besoin := ceilf(RR.FAIM * RR.DUREE / RR.SOUPE_LICHEN)
+	var loin: float = proches.back().position.distance_to(camp) if not proches.is_empty() else 0.0
 	verif(proches.size() >= 8 and faim_min > RR.FAIM_MORD and soupes >= 6 and j.temperature >= 40.0,
-		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
-		cuites, soupes, int(besoin), int(faim_min)])
+		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour) du lichen de %d touffes autour du camp (la plus loin à %d pixels), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
+		cuites, soupes, int(besoin), proches.size(), int(loin), int(faim_min)])
 	f.queue_free()
 	jeu.feux.erase(f)
 
