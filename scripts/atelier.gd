@@ -473,6 +473,83 @@ func cuisiner(feu = null) -> bool:
 	return true
 
 
+# --- la cueillette (scripts/flore.gd) : l'infusion de fleurs, l'appât d'amanite ---
+
+# ce qui l'empêche d'infuser ses fleurs ("" : rien) : des fleurs, une gorgée d'eau, la popote, un feu allumé tout près
+func empeche_infuser() -> String:
+	var inv: Dictionary = jeu.joueur.inventaire
+	if int(inv.get("fleurs", 0)) < R.FLEURS_INFUSION:
+		return "Il te faut %d fleurs." % R.FLEURS_INFUSION
+	if possede("popote") <= 0:
+		return "Il te faut une popote."
+	if int(inv.get("eau", 0)) <= 0:
+		return "Il te faut une gorgée d'eau."
+	if jeu._feu_proche(jeu.joueur.position, true) == null:
+		return "Il faut un feu allumé, tout près."
+	return ""
+
+
+# des fleurs et de l'eau, à la popote sur un feu : une infusion
+func infuser() -> bool:
+	var pourquoi := empeche_infuser()
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	inv["fleurs"] = int(inv["fleurs"]) - R.FLEURS_INFUSION
+	inv["eau"] = int(inv["eau"]) - 1
+	inv["infusion"] = int(inv.get("infusion", 0)) + 1
+	mijoter(jeu._feu_proche(jeu.joueur.position, true))
+	jeu.joueur.geste_atelier("remuer")
+	jeu.sons.jouer("allume", -10.0, 0.6)
+	jeu.ui.message("Les fleurs frémissent dans la popote : une infusion.", Color(0.95, 0.75, 0.45))
+	return true
+
+
+# elle boit une infusion : la peur se pose, le corps se réchauffe un peu
+func boire_infusion() -> bool:
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	if int(inv.get("infusion", 0)) <= 0:
+		return false
+	inv["infusion"] = int(inv["infusion"]) - 1
+	j.peur = maxf(0.0, float(j.peur) - R.INFUSION_PEUR)
+	if float(j.temperature) < 58.0:
+		j.temperature = minf(58.0, float(j.temperature) + R.INFUSION_CHAUD)
+	j.geste_atelier("boire")
+	jeu.sons.atelier("gorgee")
+	jeu.ui.message("L'infusion, chaude et douce. Le cœur se pose.", TEINTE)
+	return true
+
+
+# ce qui l'empêche de piler une amanite en appât ("" : rien)
+func empeche_piler_amanite() -> String:
+	var inv: Dictionary = jeu.joueur.inventaire
+	if int(inv.get("amanite", 0)) <= 0:
+		return "Tu n'as pas d'amanite."
+	if possede("mortier") <= 0:
+		return "Il te faut un mortier."
+	if int(inv.get("viande", 0)) <= 0:
+		return "Il te faut de la viande crue."
+	return ""
+
+
+# une amanite pilée avec de la viande : l'appât empoisonné des herbes (scripts/botanique.gd, « appat_poison »), qui se pose de même
+func piler_amanite() -> bool:
+	var pourquoi := empeche_piler_amanite()
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	inv["amanite"] = int(inv["amanite"]) - 1
+	inv["viande"] = int(inv["viande"]) - 1
+	inv["appat_poison"] = int(inv.get("appat_poison", 0)) + 1
+	jeu.joueur.geste_atelier("piler")
+	jeu.sons.atelier("tresse", -4.0, 0.8)
+	jeu.ui.message("Un appât empoisonné : de la viande frottée d'amanite. Pose-le loin du camp (ton sac) : ce qui chasse viendra le manger.", TEINTE)
+	return true
+
+
 # la popote reste un moment sur ce feu : elle y frémit (un bouillon, une décoction : scripts/botanique.gd)
 func mijoter(feu) -> void:
 	if feu == null or not is_instance_valid(feu):
@@ -874,7 +951,8 @@ func commencer() -> void:
 	lit = null
 	_dit = {}
 	var inv: Dictionary = jeu.joueur.inventaire
-	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages"]:
+	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages",
+			"fleurs", "champignons", "amanite", "infusion"]:
 		if not inv.has(k):
 			inv[k] = 0
 	_tenue()

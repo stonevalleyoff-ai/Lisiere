@@ -6,6 +6,8 @@ extends RefCounted
 # selle ; pour la page du sac, le carré, l'appât, les trois sachets de graines (on les distingue à leur lien et à ce qui est
 # peint dessus), les simples, le lait, et « bete » (une tête de bête à licol : tes bêtes).
 # Et la carte (une peau roulée sur sa corde, un chemin et sa croix), la plume et son godet d'encre (scripts/reperes.gd).
+# Et celles de la cueillette (scripts/flore.gd) : un petit bouquet de fleurs des prés lié d'un brin, le cèpe (brun, le pied
+# ventru), l'amanite (rouge piquée de blanc, son anneau), l'infusion (un bol fumant, une fleur qui y flotte).
 # Et celles de l'herbier : le cahier où une plante est pressée, le mortier, et ce qu'on y prépare — le baume, la tisane, le
 # philtre, la botte âcre, les deux appâts (l'empoisonné : de la viande ; le dormant : des baies, sous la lune).
 # Dans le trait de scripts/interface_icones.gd : une boîte de 100 unités, centrée, mise à la taille voulue ; des aplats de la
@@ -21,7 +23,8 @@ const NOMS := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "fi
 	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "peau", "ferraille", "eau", "bouillon",
 	"houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire", "sacoche", "selle",
 	"carre", "appat", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "bete",
-	"herbier", "mortier", "baume", "tisane", "philtre", "botte", "appat_poison", "appat_dormant", "carte", "plume"]
+	"herbier", "mortier", "baume", "tisane", "philtre", "botte", "appat_poison", "appat_dormant", "carte", "plume",
+	"fleurs", "champignons", "amanite", "infusion"]
 
 const TOILE := Color("aba888")          # (la bâche : une toile écrue, enduite, entre l'ivoire et la mousse)
 const TOILE_CLAIRE := Color("cbc6a4")
@@ -210,6 +213,14 @@ static func _icone(ci, id: String, w: float, m: Color) -> void:
 			_carte(ci, w, m)
 		"plume":
 			_plume(ci, w, m)
+		"fleurs":
+			_fleurs(ci, w, m)
+		"champignons":
+			_champignon(ci, w, m, false)
+		"amanite":
+			_champignon(ci, w, m, true)
+		"infusion":
+			_infusion(ci, w, m)
 
 
 # --- les briques ---
@@ -1377,3 +1388,71 @@ static func _plume(ci, w: float, m: Color) -> void:
 	ci.draw_line(a.lerp(b, 0.12), b, P.ENCRE * m, w * 0.9, true)
 	# (le bec taillé, noirci d'encre)
 	ci.draw_line(a, a.lerp(b, 0.3), encre * m, w * 1.4, true)
+
+
+# --- la cueillette ---
+
+# une fleur des prés : cinq pétales autour d'un cœur, à la lumière en haut à gauche
+static func _fleur(ci, c: Vector2, r: float, petale: Color, coeur: Color, w: float, m: Color) -> void:
+	for k in 5:
+		var a := TAU * k / 5.0 - PI * 0.5
+		_forme(ci, _ellipse(c + Vector2(cos(a), sin(a)) * r * 0.62, r * 0.52, r * 0.4, a, 16), petale.lightened(0.08) if sin(a) < 0.2 else petale, w * 0.8, m)
+	_forme(ci, _ellipse(c, r * 0.32, r * 0.32, 0.0, 14), coeur, w * 0.7, m)
+
+
+# les fleurs : un petit bouquet de fleurs des prés, des tiges liées d'un brin de paille
+static func _fleurs(ci, w: float, m: Color) -> void:
+	var tiges := [[Vector2(-4, 44), Vector2(-26, -12)], [Vector2(0, 44), Vector2(2, -26)], [Vector2(4, 44), Vector2(27, -8)], [Vector2(-2, 44), Vector2(-9, 4)], [Vector2(2, 44), Vector2(15, 8)]]
+	for t in tiges:
+		var ligne := _bezier(t[0], (t[0] + t[1]) * 0.5 + Vector2(0, 4), t[1], 8)
+		_cordon(ci, ligne, 3.2, VERT, w, m)
+	_limbe(ci, Vector2(-2, 22), Vector2(-22, 12), 5.5, VERT.lightened(0.08), w * 0.8, m)
+	_limbe(ci, Vector2(2, 26), Vector2(20, 18), 5.0, VERT, w * 0.8, m)
+	_cordon(ci, PackedVector2Array([Vector2(-8, 33), Vector2(8, 31)]), 4.0, CHANVRE, w, m)
+	_fleur(ci, Vector2(-9, 4), 9.0, P.PEUR.lerp(P.CREPUSCULE, 0.3).lightened(0.25), P.BRAISE_COEUR, w, m)
+	_fleur(ci, Vector2(15, 8), 9.0, P.BRAISE_COEUR.lightened(0.05), P.BRAISE.darkened(0.1), w, m)
+	_fleur(ci, Vector2(-26, -12), 11.0, P.PAPIER.lightened(0.15), P.BRAISE_COEUR, w, m)
+	_fleur(ci, Vector2(27, -8), 10.0, P.PAPIER.lightened(0.15), P.BRAISE_COEUR, w, m)
+	_fleur(ci, Vector2(2, -26), 12.0, P.PEUR.lerp(P.CREPUSCULE, 0.3).lightened(0.25), P.BRAISE_COEUR, w, m)
+
+
+# un champignon des bois : le cèpe (chapeau brun, pied ventru, un fin réseau) ou l'amanite (rouge, ses verrues blanches, son
+# anneau, sa volve)
+static func _champignon(ci, w: float, m: Color, amanite: bool) -> void:
+	var pale := LAIT.darkened(0.06)
+	var pied := PackedVector2Array()
+	if amanite:
+		pied = _lisse(PackedVector2Array([Vector2(-15, 44), Vector2(-17, 34), Vector2(-9, 26), Vector2(-7, -4), Vector2(7, -4), Vector2(9, 26), Vector2(17, 34), Vector2(15, 44)]), 1)
+	else:
+		pied = _lisse(PackedVector2Array([Vector2(-14, 44), Vector2(-21, 26), Vector2(-15, 6), Vector2(-9, -4), Vector2(9, -4), Vector2(15, 6), Vector2(21, 26), Vector2(14, 44)]), 2)
+	_volume(ci, pied, pale if amanite else pale.lerp(BOIS, 0.35), w, m, 5.0, 0.25)
+	if amanite:
+		_forme(ci, _lisse(PackedVector2Array([Vector2(-15, 6), Vector2(-9, 0), Vector2(9, 0), Vector2(15, 6), Vector2(9, 11), Vector2(-9, 11)]), 1), LAIT, w * 0.8, m)
+	else:
+		for k in 3:
+			ci.draw_polyline(_bezier(Vector2(-9 + k * 6, 4), Vector2(-7 + k * 6, 14), Vector2(-10 + k * 7, 26), 6), Color(P.ENCRE, 0.3) * m, w * 0.4, true)
+	var chapeau := _bezier(Vector2(-42, 2), Vector2(-40, -46), Vector2(0, -46), 12) + _bezier(Vector2(0, -46), Vector2(40, -46), Vector2(42, 2), 12).slice(1)
+	chapeau += _bezier(Vector2(42, 2), Vector2(0, 10), Vector2(-42, 2), 12).slice(1, 11)
+	var teinte := P.BRAISE_ROUGE.lerp(P.SANG, 0.12) if amanite else P.TERRE.lerp(P.BRAISE, 0.35)
+	_volume(ci, chapeau, teinte, w, m, 8.0, 0.3)
+	if amanite:
+		for q in [Vector2(-22, -18), Vector2(-6, -32), Vector2(12, -24), Vector2(26, -12), Vector2(-28, -4), Vector2(4, -12), Vector2(-14, -36)]:
+			_forme(ci, _ellipse(q, 4.2, 3.2, 0.3, 12), LAIT, w * 0.55, m)
+	else:
+		ci.draw_polyline(_bezier(Vector2(-38, 2), Vector2(0, 9), Vector2(38, 2), 10), Color(P.BRAISE_COEUR, 0.7) * m, w * 1.1, true)
+	ci.draw_arc(Vector2(-6, -12), 28.0, PI * 1.08, PI * 1.42, 8, Color(P.PAPIER, 0.55) * m, w * 0.8, true)
+
+
+# l'infusion : un bol de bois fumant, une fleur qui flotte dans le thé doré
+static func _infusion(ci, w: float, m: Color) -> void:
+	_vapeur(ci, Vector2(-10, -10), 32.0, w, m)
+	_vapeur(ci, Vector2(10, -13), 25.0, w, m)
+	var bol := PackedVector2Array()
+	for i in 19:
+		var a := PI * i / 18.0
+		bol.append(Vector2(cos(a) * 38.0, 3.0 + sin(a) * 36.0))
+	_volume(ci, bol, BOIS, w, m, 6.0, 0.28)
+	_forme(ci, _ellipse(Vector2(0, 3), 38.0, 10.0, 0.0, 30), BOIS.lightened(0.12), w, m)
+	_forme(ci, _ellipse(Vector2(0, 4), 31.0, 6.8, 0.0, 26), BOUILLON.lerp(P.BRAISE_COEUR, 0.35), w * 0.7, m)
+	_fleur(ci, Vector2(6, 3), 7.0, P.PAPIER.lightened(0.15), P.BRAISE_COEUR, w * 0.8, m)
+	ci.draw_polyline(_bezier(Vector2(-31, 18), Vector2(0, 34), Vector2(31, 18), 12), Color(P.ENCRE, 0.3) * m, w * 0.5, true)

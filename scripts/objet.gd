@@ -1,7 +1,9 @@
 extends Node2D
 # Lisière — ce qui pousse et ce qui gît (scripts/objet.gd)
 # Un arbre (du bois, puis une souche), un rocher (des pierres), un buisson (des baies, qui repoussent), une touffe (des fibres,
-# qui repoussent), une brindille (un bois, ramassé d'un geste). Chacun dessiné une fois, d'après sa graine, comme sur une planche
+# qui repoussent), une brindille (un bois, ramassé d'un geste), une fleur (des fleurs), une plante d'eau, un champignon des bois
+# (un cèpe qu'on mange, une amanite qui tue). Ce qui vient de l'herbier d'Orvane porte sa forme (scripts/flore.gd) : son dessin
+# est alors dans scripts/flore_dessins.gd, sa conduite reste celle de son genre. Chacun dessiné une fois, d'après sa graine, comme sur une planche
 # de naturaliste : un contour d'encre, trois tons (l'ombre, le ton propre, la lumière venue d'en haut à gauche), l'écorce, la
 # mousse, les baies (scripts/decor_pinceau.gd, shaders/vegetation_feuillage.gdshader). Deux arbres ne se ressemblent pas.
 # L'origine du nœud est son pied : le monde les trie par hauteur, le joueur passe derrière les troncs. La couronne d'un arbre est
@@ -12,7 +14,11 @@ const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const P := preload("res://scripts/palette.gd")
 const SHADER := preload("res://shaders/vegetation_feuillage.gdshader")
 const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois",
-	"champignon": "baies", "herbe": "herbe"}
+	"champignon": "baies", "herbe": "herbe", "fleur": "fleurs", "aquatique": "fibre", "cepe": "champignons", "amanite": "amanite"}
+const Flore := preload("res://scripts/flore.gd")
+const Dessins := preload("res://scripts/flore_dessins.gd")
+const R_REPOUSSE_FLEURS := preload("res://scripts/regles.gd").REPOUSSE_FLEURS
+const R_REPOUSSE_CHAMPIGNONS := preload("res://scripts/regles.gd").REPOUSSE_CHAMPIGNONS
 const LUISANT := Color(0.42, 0.95, 0.82)    # la lueur des champignons lumineux d'une grotte (le vert d'eau de l'herbier d'Orvane)
 const OCRE := Color(0.65, 0.48, 0.19)       # le chapeau des autres champignons (l'ocre de l'herbier)
 const R_INCENDIE := preload("res://scripts/regles.gd").INCENDIE_DUREE
@@ -122,6 +128,19 @@ var plante := ""
 var port := ""
 var epineux := false
 var herbe := ""                # (une herbe) son espèce dans l'herbier : « foret:ombelle » (scripts/botanique.gd)
+# (scripts/flore.gd) ce que l'herbier dit encore d'elle : son stade, et ce qu'on en tire ; ce que le monde a semé à sa place (la
+# strate : une partie gardée la ressème de là), et ce que son dessin change à la mesure commune (un tronc plus fin, une écorce)
+var stade := ""
+var en_fleurs := true
+var a_fruits := true
+var piquant := false
+var planche := false           # (une forme que Lisière ne sait pas dessiner : la planche d'Orvane, en secours)
+var semis := ""
+var nom_plante := ""
+var couleur_fleur := Color(0, 0, 0, 0)
+var epaisseur := 1.0
+var ecorce_teinte := Color(0, 0, 0, 0)
+var haut_touffe := 1.0
 
 
 func preparer(g: String, couleur: Color, s: int) -> void:
@@ -142,12 +161,12 @@ func preparer(g: String, couleur: Color, s: int) -> void:
 		"touffe":
 			plein = 2
 		_:
-			# (une brindille ; un bouquet de champignons ; une herbe : une part)
+			# (une brindille ; un bouquet de champignons ; une herbe, une fleur, une plante d'eau : une part)
 			plein = 1
 	reste = plein
 	matieres()
 	_mesurer()
-	material = vegetation if g in ["arbre", "sapin", "buisson", "touffe", "herbe"] else fixe
+	material = vegetation if g in ["arbre", "sapin", "buisson", "touffe", "herbe", "fleur"] else fixe
 	if g == "champignon":
 		# (des champignons luisants, sous terre : leur lueur se dessine à part, sans l'ombre de la roche)
 		lueur = Luisant.new()
@@ -167,20 +186,42 @@ func preparer(g: String, couleur: Color, s: int) -> void:
 func porter_plante(e: Dictionary) -> void:
 	plante = str(e.get("id", ""))
 	port = str(e.get("port", ""))
+	nom_plante = str(e.get("nom", ""))
 	var defense = e.get("defense", [])
 	epineux = typeof(defense) == TYPE_ARRAY and defense.has("epineux")
 	if genre == "champignon":
 		_etre_champignon(str(e.get("forme", "")))
 		return
+	# (sa forme fait son dessin ; son stade, ses fleurs ; ses caractères, ses fruits ; ses défenses, ses épines)
+	forme = str(e.get("forme", ""))
+	stade = str(e.get("stade", ""))
+	planche = bool(e.get("planche", false))
+	en_fleurs = Flore.fleurit(forme, stade)
+	a_fruits = Flore.fruits(forme, e.get("caracteres", []))
+	piquant = Flore.pique(forme, genre, epineux)
+	var cf = e.get("fleur")
+	if typeof(cf) == TYPE_COLOR:
+		couleur_fleur = cf
 	var c = e.get("couleur")
 	if typeof(c) == TYPE_COLOR and c.s > 0.08:
 		teinte = Color.from_hsv(c.h, lerpf(teinte.s, c.s, 0.35), teinte.v)
+	Dessins.regler(self)
+	reste = plein
+	_mesurer()
 	var k := float(e.get("taille", 1.0))
 	if absf(k - 1.0) > 0.01:
-		_mesurer()
 		_echelle(k)
 	if couronne != null:
 		couronne.queue_redraw()
+	queue_redraw()
+
+
+# une plante de Lisière, que l'herbier ne publie pas : une fleur des prés (sans forme), un champignon des bois
+func etre(f: String) -> void:
+	forme = f
+	Dessins.regler(self)
+	reste = plein
+	_mesurer()
 	queue_redraw()
 
 
@@ -209,11 +250,8 @@ func _echelle(k: float) -> void:
 	_ry *= k
 	_cc *= k
 	hauteur *= k
-	match genre:
-		"arbre":
-			couronne_rect = Rect2(_cc - Vector2(_rx, _ry), Vector2(_rx, _ry) * 2.0)
-		"sapin":
-			couronne_rect = Rect2(-_rx, -hauteur, _rx * 2.0, _ry)
+	# (le feuillage, autour du pied : à la même échelle)
+	couronne_rect = Rect2(couronne_rect.position * k, couronne_rect.size * k)
 
 
 func _mesurer() -> void:
@@ -260,6 +298,8 @@ func _mesurer() -> void:
 			hauteur = 16.0
 		_:
 			hauteur = 2.0
+	# (une forme de l'herbier, une plante de Lisière : ses propres mesures)
+	Dessins.mesurer(self, r)
 
 
 # un geste : ce qu'il donne ({ "bois": 1 }), ou rien
@@ -267,16 +307,16 @@ func recolter() -> Dictionary:
 	if reste <= 0:
 		return {}
 	reste -= 1
-	var item: String = BUTIN.get(genre, "")
+	var item := butin()
 	if (genre == "arbre" or genre == "sapin") and reste <= 0:
 		genre = "souche"
 		rayon = 6.0
 		_chute = 0.0
 		_sens = 1.0 if graine % 2 == 0 else -1.0
 		material = fixe
-	elif (genre == "buisson" or genre == "touffe" or genre == "champignon" or genre == "herbe") and reste <= 0:
-		# (les fibres reviennent vite ; ce qui se mange, lentement)
-		_repousse = REPOUSSE if genre == "touffe" else R_REPOUSSE_BAIES
+	elif genre in ["buisson", "touffe", "champignon", "herbe", "fleur", "aquatique", "cepe", "amanite"] and reste <= 0:
+		# (les fibres reviennent vite ; ce qui se mange, lentement ; les fleurs refleurissent, les champignons ressortent)
+		_repousse = _attente()
 	_secoue = 0.35
 	set_process(true)
 	queue_redraw()
@@ -286,6 +326,24 @@ func recolter() -> Dictionary:
 
 func epuise() -> bool:
 	return reste <= 0
+
+
+# ce que donne un geste : ce que dit sa forme (scripts/flore.gd : des fleurs, des tiges, du bois mort…), sinon son genre
+func butin() -> String:
+	var d := Flore.donne(forme, genre, en_fleurs, a_fruits) if forme != "" else ""
+	return d if d != "" else str(BUTIN.get(genre, ""))
+
+
+# le temps qu'il lui faut pour repousser, cueillie
+func _attente() -> float:
+	match genre:
+		"touffe", "aquatique":
+			return REPOUSSE
+		"fleur":
+			return R_REPOUSSE_FLEURS
+		"cepe", "amanite":
+			return R_REPOUSSE_CHAMPIGNONS
+	return R_REPOUSSE_BAIES
 
 
 # --- l'abri, le feu ---
@@ -330,7 +388,7 @@ func tiedeur() -> float:
 
 
 func _matiere_au_repos() -> ShaderMaterial:
-	return vegetation if genre in ["arbre", "sapin", "buisson", "touffe"] else fixe
+	return vegetation if genre in ["arbre", "sapin", "buisson", "touffe", "fleur"] else fixe
 
 
 # la pluie l'a éteint avant la fin : il reste debout, roussi (d'autant plus qu'il a brûlé longtemps)
@@ -458,7 +516,7 @@ func _process(delta: float) -> void:
 				material = _matiere_au_repos()
 	if _repousse > 0.0:
 		# (une herbe repousse à vue : elle se redessine à chaque quart du chemin)
-		if genre == "herbe" and int(_repousse / R_REPOUSSE_BAIES * 4.0) != int((_repousse - delta) / R_REPOUSSE_BAIES * 4.0):
+		if (genre == "herbe" or genre == "fleur") and int(_repousse / _attente() * 4.0) != int((_repousse - delta) / _attente() * 4.0):
 			queue_redraw()
 		_repousse -= delta
 		anime = true
@@ -475,6 +533,9 @@ func _process(delta: float) -> void:
 
 # ses ombres au sol : [centre, rayons, opacité, portée (0 : de contact ; 1 : elle suit le soleil), hauteur]
 func ombres() -> Array:
+	var propres = Dessins.ombres(self)
+	if propres != null:
+		return propres
 	match genre:
 		"arbre":
 			return [[Vector2(1, 1), Vector2(14, 5.5), 0.45, 0.0, 0.0], [Vector2(_cc.x + 3.0, 3.0), Vector2(_rx * 1.02, _ry * 0.46), 0.3, 1.0, hauteur * 0.75]]
@@ -527,21 +588,26 @@ func _draw() -> void:
 	var depuis: int = p.uvs.size()
 	match genre:
 		"arbre", "sapin":
-			_pied(p, r, false)
+			if not Dessins.pied(self, p, r):
+				_pied(p, r, false)
 		"souche":
 			_pied(p, r, true)
 		"rocher":
 			_rocher(p, r)
 		"buisson":
-			_buisson(p, r)
+			if not Dessins.dessiner(self, p, r):
+				_buisson(p, r)
 		"touffe":
-			_touffe(p, r)
+			if not Dessins.dessiner(self, p, r):
+				_touffe(p, r)
 		"champignon":
 			_champignon(p, r)
 		"brindille":
 			_brindille(p, r)
 		"herbe":
 			_herbe(p, r)
+		"fleur", "aquatique", "cepe", "amanite":
+			Dessins.dessiner(self, p, r)
 	if en_feu:
 		_dessiner_feu(p, depuis)
 	teinte = garde
@@ -568,7 +634,7 @@ func _dessiner_couronne(c: CanvasItem) -> void:
 	var depuis: int = p.uvs.size()
 	if sapin:
 		_sapin(p, r)
-	else:
+	elif not Dessins.couronne(self, p, r):
 		_feuillu(p, r)
 	if en_feu:
 		# (devant : des flammes plus basses, qui laissent voir les feuilles roussir)
@@ -754,6 +820,9 @@ func _cendres(p, r: RandomNumberGenerator) -> void:
 
 func _ecorce() -> Color:
 	var c := P.TERRE.lerp(P.BRAISE_ROUGE, 0.12).darkened(0.32) if _espece == "sapin" else P.TERRE.lerp(P.ENCRE_DOUCE, 0.42).lerp(P.CENDRE, 0.15)
+	if ecorce_teinte.a > 0.0:
+		# (une écorce à elle : le blanc d'un bouleau, le gris lisse d'un palmier)
+		c = ecorce_teinte
 	# (le feu a léché le tronc)
 	return c.lerp(NOIR, 0.3 + 0.45 * roussi) if roussi > 0.0 else c
 
@@ -767,7 +836,7 @@ func _demi_largeur(y: float) -> float:
 	var haut := -_cc.y if _espece == "arbre" else _ht + 6.0
 	var u := clampf(-y / haut, 0.0, 1.0)
 	var w := lerpf(5.0, 2.8, u) if _espece == "arbre" else lerpf(3.6, 2.6, u)
-	return w + 2.6 * (1.0 - smoothstep(0.0, 6.0, -y))
+	return (w + 2.6 * (1.0 - smoothstep(0.0, 6.0, -y))) * epaisseur
 
 
 # un morceau de tronc, de y0 à y1 (négatifs), en écorce, bordé d'encre
@@ -1077,6 +1146,9 @@ func _buisson(p, r: RandomNumberGenerator) -> void:
 		p.tracer(arc, 0.8, Color(ENCRE, 0.55))
 	# les baies : des grappes luisantes, d'autant moins qu'on en a cueilli
 	var baie := P.SANG.lerp(P.BRAISE_ROUGE, 0.55).lightened(0.06)
+	if forme == "baies":
+		# (un arbuste à baies de l'herbier : des myrtilles, bleu-noir)
+		baie = P.NUIT_BLEUE.lerp(P.PEUR, 0.3).lightened(0.12)
 	var rb := RandomNumberGenerator.new()
 	rb.seed = graine + 5
 	for g in 3:
@@ -1202,7 +1274,7 @@ func _touffe(p, r: RandomNumberGenerator) -> void:
 	for i in n:
 		var x0 := r.randf_range(-3.5, 3.5)
 		var cote := signf(x0 + r.randf_range(-0.5, 0.5))
-		var h := r.randf_range(12.0, 21.0) * (1.0 if reste >= plein else 0.85) * (1.75 if port == "roseau" else 1.0)
+		var h := r.randf_range(12.0, 21.0) * (1.0 if reste >= plein else 0.85) * (1.75 if port == "roseau" else 1.0) * haut_touffe
 		# (un roseau : plus haut, plus droit)
 		var bout := Vector2(x0 * 2.0 + cote * r.randf_range(2.0, 11.0) * (0.4 if port == "roseau" else 1.0), -h)
 		var milieu := Vector2(x0 * 1.3 + bout.x * 0.35, -h * 0.62)

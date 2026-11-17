@@ -1109,14 +1109,23 @@ func agir() -> void:
 	if o == null:
 		return
 	var genre: String = o.genre
-	joueur.geste(genre, o.position)
+	# (une fleur, une plante d'eau, un champignon des bois se cueillent comme une baie ; leurs éclats sont ceux d'une touffe, ou
+	# de la terre qu'on remue)
+	var cueillir := genre in ["fleur", "aquatique", "cepe", "amanite"]
+	joueur.geste("buisson" if cueillir else genre, o.position)
 	var g: Dictionary = o.recolter()
 	var son := "bois"
 	if genre == "rocher":
 		son = "pierre"
-	elif genre == "buisson" or genre == "touffe" or genre == "champignon":
+	elif genre == "buisson" or genre == "touffe" or genre == "champignon" or cueillir:
 		son = "herbe"
-	_viser({"son": son, "db": -4.0, "p": o.position, "genre": genre})
+	_viser({"son": son, "db": -4.0, "p": o.position, "genre": ("touffe" if genre in ["fleur", "aquatique"] else "cueillette") if cueillir else genre})
+	# (ce qui pique — un cactus, un roncier, un agave, un buisson d'épines — écorche les mains nues ; la pelisse, doublée de
+	# fourrure, les protège)
+	if bool(o.piquant) and not g.is_empty() and not atelier.porte("vetement_chaud"):
+		_mal("epines", R.EPINES)
+		ui.blessure()
+		_conseil("epines", true, "Les épines t'écorchent les mains. La pelisse, avec ses manches de fourrure, t'en garderait.", Color(0.85, 0.6, 0.55))
 	for k in g:
 		# (une herbe : son espèce entre dans le sac, et dans l'herbier ; scripts/botanique.gd)
 		if k == "herbe":
@@ -1128,9 +1137,14 @@ func agir() -> void:
 		# (ce qui entre dans son sac : elle ne porte pas tout ; scripts/atelier.gd)
 		var pris: int = atelier.ranger(k, int(g[k]))
 		if pris > 0:
-			ui.ramasse(k, pris, o.position)
-	# (cueillir rend parfois des graines : scripts/jardin.gd)
-	if not g.is_empty():
+			if CUEILLETTE.has(k):
+				# (ce qu'on cueille et qui n'est pas une matière : son nom, et, la première fois, ce qu'on en fait)
+				ui.message("+%d %s" % [pris, str(CUEILLETTE[k][0])], Color(0.75, 0.78, 0.72))
+				_conseil("cueillette-" + k, true, str(CUEILLETTE[k][1]), Color(0.72, 0.84, 0.6))
+			else:
+				ui.ramasse(k, pris, o.position)
+	# (cueillir rend parfois des graines : scripts/jardin.gd ; celles des baies, celles du lin — d'une herbe, pas d'un cactus)
+	if not g.is_empty() and (g.has("baies") or (genre == "touffe" and str(o.forme) in ["", "herbe", "cereale", "grande_herbe", "roseau", "jonc", "riz", "papyrus"])):
 		jardin.cueilli(genre)
 	if genre == "brindille" and o.epuise():
 		monde.retirer(o)
@@ -1335,6 +1349,15 @@ func _voir_les_ponts(delta: float) -> void:
 	pont_possible = carte != null and _region >= 0 and bool(carte.regions[_region]["riviere"]) and not carte.pont_depuis(joueur.position).is_empty()
 
 
+# ce qu'on cueille qui n'est pas une matière : [son nom, ce qu'on en dit la première fois] (scripts/flore.gd ; la cueillette
+# dans regles.gd)
+const CUEILLETTE := {
+	"fleurs": ["fleurs", "Des fleurs. Trois, avec une gorgée d'eau, à la popote sur un feu : une infusion qui calme la peur (ton sac)."],
+	"champignons": ["cèpe", "Un cèpe, brun et ferme : il se mange (E)."],
+	"amanite": ["amanite", "Une amanite, rouge piquée de blanc : elle empoisonne qui la mange. Pilée au mortier avec de la viande, elle fait un appât pour ce qui chasse (ton sac)."],
+}
+
+
 func manger() -> void:
 	var inv: Dictionary = joueur.inventaire
 	if int(inv.get("bouillon", 0)) > 0:
@@ -1356,6 +1379,11 @@ func manger() -> void:
 		inv["baies"] = int(inv["baies"]) - 1
 		joueur.faim = minf(100.0, joueur.faim + R.BAIE)
 		ui.message("Une poignée de baies.")
+	elif int(inv.get("champignons", 0)) > 0:
+		# (un cèpe des bois, cueilli au pied d'un arbre)
+		inv["champignons"] = int(inv["champignons"]) - 1
+		joueur.faim = minf(100.0, joueur.faim + R.CHAMPIGNON)
+		ui.message("Un cèpe, cru. Il a le goût de la forêt.")
 	elif int(inv["viande"]) > 0:
 		inv["viande"] = int(inv["viande"]) - 1
 		joueur.faim = minf(100.0, joueur.faim + 18.0)
@@ -1363,6 +1391,13 @@ func manger() -> void:
 		_maux["faim"] = float(_maux.get("faim", 0.0)) + 6.0
 		joueur.peur = minf(100.0, joueur.peur + 6.0)
 		ui.message("La viande crue passe mal. Cuis-la (C), près d'un feu.", Color(0.85, 0.6, 0.55))
+	elif int(inv.get("amanite", 0)) > 0:
+		# (rien d'autre : la faim fait manger l'amanite, et elle empoisonne comme une herbe vénéneuse ; un baume chasse le poison)
+		inv["amanite"] = int(inv["amanite"]) - 1
+		joueur.faim = minf(100.0, joueur.faim + 4.0)
+		botanique.poison = maxf(float(botanique.poison), Botanique.POISON * R.AMANITE_POISON)
+		joueur.peur = minf(100.0, joueur.peur + 10.0)
+		ui.message("L'amanite. La gorge se serre, le ventre se tord : tu es empoisonnée. Un baume chasse le poison.", Color(0.95, 0.5, 0.42))
 	else:
 		ui.message("Rien à manger.", Color(0.75, 0.7, 0.66))
 		return

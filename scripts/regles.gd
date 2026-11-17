@@ -154,6 +154,16 @@ const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0]     # par acte : le temps que l
 const NOIRE_PRESAGE := 1.4       # elle s'aplatit et gronde ce temps-là, avant de charger
 const NOIRE_PEUR := 5.0          # la peur gagnée par seconde sous son regard
 const NOIRE_REVEIL := 120.0      # le jour, à cette distance de sa tanière, on la réveille
+# --- la cueillette : les fleurs, les champignons des bois, les épines (scripts/flore.gd, principal.gd : agir, manger) ---
+const CHAMPIGNON := 9.0           # ce qu'un cèpe rend à la faim (cru : moins qu'une poignée de baies)
+const REPOUSSE_FLEURS := 300.0    # secondes avant qu'une fleur cueillie refleurisse
+const REPOUSSE_CHAMPIGNONS := 480.0   # avant qu'un champignon cueilli ressorte de la mousse
+const EPINES := 2.0               # la santé que prennent les épines (un cactus, un roncier…), cueillis à mains nues
+const FLEURS_INFUSION := 3        # des fleurs, une gorgée d'eau, à la popote sur un feu : une infusion
+const INFUSION_PEUR := 30.0       # la peur qu'elle apaise
+const INFUSION_CHAUD := 8.0       # et ce qu'elle rend de chaleur au corps (une boisson chaude)
+const AMANITE_POISON := 1.0       # une amanite mangée : le poison d'une herbe vénéneuse goûtée, en parts (scripts/botanique.gd, POISON)
+
 const NOMS := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "baies": "baies", "viande": "viande crue", "viande_cuite": "viande cuite"}
 const ORDRE_INVENTAIRE := ["bois", "pierre", "fibre", "baies", "viande", "viande_cuite"]
 

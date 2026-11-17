@@ -21,7 +21,10 @@ const Hud := preload("res://scripts/interface_hud.gd")
 const Atelier := preload("res://scripts/atelier.gd")
 const R := preload("res://scripts/regles.gd")
 
-const NOURRITURE := ["baies", "viande", "viande_cuite", "bouillon"]
+const NOURRITURE := ["baies", "champignons", "viande", "viande_cuite", "bouillon"]
+# ce qu'on cueille et qui sert (scripts/flore.gd) : les fleurs (une infusion), l'infusion, l'amanite (un appât) ; et leurs noms
+const CUEILLETTE := ["fleurs", "infusion", "amanite"]
+const NOMS_CUEILLETTE := {"fleurs": "Fleurs", "infusion": "Infusion de fleurs", "amanite": "Amanite", "champignons": "cèpes"}
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
 const Botanique := preload("res://scripts/botanique.gd")
@@ -1116,7 +1119,7 @@ class Sac extends Feuille:
 		var manger := []
 		var inv: Dictionary = jeu.joueur.inventaire
 		for k in NOURRITURE:
-			manger.append({"id": k, "nom": Plume.majuscule(str(R.NOMS.get(k, k))), "n": int(inv.get(k, 0)), "sur": 0})
+			manger.append({"id": k, "nom": Plume.majuscule(str(R.NOMS.get(k, NOMS_CUEILLETTE.get(k, k)))), "n": int(inv.get(k, 0)), "sur": 0})
 		return [{"titre": "Ce que tu portes · %d de chaque, au plus" % int(atelier.capacite()), "cases": _matieres()}, {"titre": "À manger", "cases": manger}]
 
 	# ce qui est posé à portée de main, et qui se replie (un vestige ne se replie pas)
@@ -1185,12 +1188,18 @@ class Sac extends Feuille:
 			var n := int(inv.get(k, 0))
 			if n > 0:
 				dons.append({"cle": ("use:" if k in ["simples", "lait"] else "graine:") + k, "id": k, "nom": str(NOMS_DU_JARDIN[k]), "n": n})
+		# (ce qu'elle a cueilli et qui sert : des fleurs à infuser, une infusion à boire, une amanite à piler)
+		for k in CUEILLETTE:
+			var nc := int(inv.get(k, 0))
+			if nc > 0:
+				var gene := str(atelier.empeche_infuser()) if k == "fleurs" else (str(atelier.empeche_piler_amanite()) if k == "amanite" else "")
+				dons.append({"cle": "use:" + k, "id": k, "nom": str(NOMS_CUEILLETTE[k]), "n": nc, "pale": gene != ""})
 		# (et ce qu'elle a préparé de ses herbes : scripts/botanique.gd)
 		for p in Botanique.ORDRE_PREPARATIONS:
 			if int(inv.get(p, 0)) > 0:
 				dons.append({"cle": "prep:" + p, "id": p, "nom": str(Botanique.PREPARATIONS[p]["nom"]), "n": int(inv[p]), "pale": B.empeche_utiliser(p) != ""})
 		if not dons.is_empty():
-			out.append({"titre": "Du jardin, des bêtes, des herbes", "tuiles": dons, "a_la_ligne": true})
+			out.append({"titre": "Du jardin, des bêtes, des herbes, de la cueillette", "tuiles": dons, "a_la_ligne": true})
 		var affaires := []
 		for id in Atelier.ORDRE:
 			if Atelier.MATIERES.has(id) or atelier.possede(id) <= 0:
@@ -1269,6 +1278,17 @@ class Sac extends Feuille:
 			return _carte("simples", "Simples", "Tu en as %d." % int(inv.get("simples", 0)), "Des herbes qu'on mâche : la santé revient (%d), la peur s'apaise." % int(Jardin.SIMPLES_SANTE), "Se panser")
 		if cle == "use:lait":
 			return _carte("lait", "Lait", "Tu en as %d." % int(inv.get("lait", 0)), "Tiède. Il nourrit (%d), et calme un peu." % int(Elevage.LAIT_FAIM), "Boire")
+		if cle == "use:fleurs":
+			return _carte("fleurs", "Fleurs", "Tu en as %d." % int(inv.get("fleurs", 0)),
+				"Cueillies dans l'herbe, sur une bruyère, sur une mare. %d fleurs et une gorgée d'eau, à la popote sur un feu allumé : une infusion, qui calme la peur." % R.FLEURS_INFUSION,
+				"Infuser", atelier.empeche_infuser())
+		if cle == "use:infusion":
+			return _carte("infusion", "Infusion de fleurs", "Tu en as %d." % int(inv.get("infusion", 0)),
+				"Chaude et douce : elle calme la peur (%d) et réchauffe un peu." % int(R.INFUSION_PEUR), "Boire")
+		if cle == "use:amanite":
+			return _carte("amanite", "Amanite", "Tu en as %d." % int(inv.get("amanite", 0)),
+				"Rouge, piquée de blanc : elle empoisonne qui la mange. Pilée au mortier avec de la viande crue, elle fait un appât pour ce qui chasse.",
+				"Piler un appât", atelier.empeche_piler_amanite())
 		if cle.begins_with("graine:"):
 			var g := cle.trim_prefix("graine:")
 			var d_ou := "Un buisson cueilli en rend parfois." if g == "graine_baie" else ("Une touffe coupée en rend parfois." if g == "graine_lin" else "On en trouve dans les vestiges d'autres veilleuses.")
@@ -1337,6 +1357,12 @@ class Sac extends Feuille:
 			J.panser()
 		elif cle == "use:lait":
 			E.boire_lait()
+		elif cle == "use:fleurs":
+			atelier.infuser()
+		elif cle == "use:infusion":
+			atelier.boire_infusion()
+		elif cle == "use:amanite":
+			atelier.piler_amanite()
 		elif cle == "bete:suite":
 			E.basculer_suite(b)
 		elif cle == "bete:selle":
