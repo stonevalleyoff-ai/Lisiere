@@ -2,12 +2,16 @@
 // La passe de toujours (shaders/ecran_post.gdshader : elle lit l'image du lieu, sur un ordinateur seulement, et en retire la
 // couleur), et dans le même passage : le poison (l'image tangue, se dédouble à chaque battement, verdit et s'éteint), la
 // torpeur (le flou), les visions (le bord de l'image nage, ses couleurs glissent), la voyance (les noirs se lèvent, froids) ; et
-// le corps qui faiblit : la faim (l'encre pâlit sur un papier qui jaunit, une crampe brouille la vue), la santé qui s'en va (le
-// monde pâlit), le froid (il bleuit), la chaleur (l'air tremble).
+// le corps qui faiblit : la peur (la page se froisse, le dessin se décale d'un pan à l'autre), la faim (l'encre pâlit sur un
+// papier qui jaunit, une crampe brouille la vue), la santé qui s'en va (le monde pâlit), le froid (il bleuit), la chaleur (l'air
+// tremble).
 // Jamais plus de quatre lectures de l'image, quel que soit le mélange ; les herbes à zéro, c'est la passe de toujours.
 shader_type canvas_item;
 
 uniform sampler2D ecran : hint_screen_texture, filter_linear;
+uniform sampler2D bruit : repeat_enable, filter_linear;
+uniform float ratio = 1.7778;
+uniform float coeur = 0.0;
 uniform float peur = 0.0;
 uniform float echo = 0.0;
 uniform float fin = 0.0;
@@ -30,6 +34,43 @@ uniform vec4 c_echo : source_color = vec4(0.75, 0.89, 1.0, 1.0);
 uniform vec4 c_poison : source_color = vec4(0.45, 0.55, 0.17, 1.0);
 uniform vec4 c_voyance : source_color = vec4(0.53, 0.72, 0.95, 1.0);
 
+float hache(vec2 p) {
+	vec3 q = fract(vec3(p.xyx) * 0.1031);
+	q += dot(q, q.yzx + 33.33);
+	return fract((q.x + q.y) * q.z);
+}
+
+// la pente de la page froissée sous ce point (les mêmes plis que le voile : shaders/ecran_voile_herbes.gdshader, froisse)
+vec4 froisse(vec2 p) {
+	vec2 g = vec2(0.0);
+	float pres = 9.0;
+	float cote = 0.0;
+	for (int i = 0; i < 22; i++) {
+		float fi = float(i);
+		vec2 o;
+		vec2 nrm;
+		if (i < 15) {
+			// (un pli qui part du bord vers le centre, à peu près)
+			float t = hache(vec2(fi, 1.3)) * 6.2832;
+			o = vec2(cos(t) * 0.86, sin(t) * 0.5);
+			float a = t + 1.5708 + (hache(vec2(fi, 4.2)) - 0.5) * 0.9;
+			nrm = vec2(cos(a), sin(a));
+		} else {
+			o = (vec2(hache(vec2(fi, 1.3)), hache(vec2(fi, 7.9))) - 0.5) * vec2(1.8, 1.0);
+			float a = hache(vec2(fi, 4.2)) * 3.1416;
+			nrm = vec2(cos(a), sin(a));
+		}
+		float amp = (0.4 + 0.6 * hache(vec2(fi, 9.4))) * sign(hache(vec2(fi, 2.6)) - 0.5);
+		float e = dot(p - o, nrm);
+		g += nrm * amp * clamp(e / 0.002, -1.0, 1.0);
+		if (abs(e) < pres) {
+			pres = abs(e);
+			cote = amp;
+		}
+	}
+	return vec4(g, pres, cote);
+}
+
 void fragment() {
 	vec2 uv = SCREEN_UV;
 	vec2 c = uv - 0.5;
@@ -39,6 +80,14 @@ void fragment() {
 	uv += vec2(sin(TIME * 1.1 + uv.y * 2.6), cos(TIME * 0.83 + uv.x * 2.1)) * 0.0042 * poison;
 	// (la chaleur : l'air tremble, plus au bord qu'au centre)
 	uv += vec2(sin(uv.y * 38.0 + TIME * 5.0), cos(uv.x * 31.0 + TIME * 4.3)) * 0.0017 * smoothstep(0.25, 0.8, fournaise) * (0.35 + re);
+	// (la peur froisse la page : le dessin se décale d'un pan à l'autre, par les bords)
+	float effroi = smoothstep(0.35, 1.0, peur);
+	if (effroi > 0.01) {
+		vec2 pp = vec2(c.x * ratio, c.y);
+		float d = re + (texture(bruit, pp * 1.2).r - 0.5) * 0.55 - mix(1.16, 0.58, effroi) + coeur * 0.06;
+		float k = smoothstep(-0.08, 0.32, d) * (0.55 + 0.45 * effroi) * (1.0 + 0.45 * coeur);
+		uv += froisse(pp).xy * 0.0011 * k;
+	}
 	// (une crampe : la vue se brouille un instant, comme un vertige)
 	float brouille = max(flou, crampe * (0.5 + 0.5 * faim));
 	float ab = aberration * re * re;

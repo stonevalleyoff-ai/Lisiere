@@ -1,8 +1,8 @@
 // Lisière — le voile de l'écran, avec ce que les herbes font voir (shaders/ecran_voile_herbes.gdshader)
 // Le voile de toujours (shaders/ecran_voile.gdshader : la nuit, la vignette, la morsure, l'aube, l'écho, la fin, le grain), et le
-// corps qui faiblit, dessiné comme ce qui arrive à une page de carnet : la peur la rature, la faim la jaunit et la pique de
-// rousseurs (ses crampes la froissent), la santé qui s'en va y fait boire de l'encre rouge, le froid y grave un givre de
-// hachures bleues, la chaleur en roussit les bords. Et dans le même passage, sans lire l'image : le poison (un vert malade qui gagne par les bords, en veines
+// corps qui faiblit, dessiné comme ce qui arrive à une page de carnet : la peur la froisse, la faim la jaunit et la pique de
+// rousseurs, la santé qui s'en va y fait boire de l'encre rouge, le froid y grave un givre de hachures bleues, la chaleur en
+// roussit les bords. Et dans le même passage, sans lire l'image : le poison (un vert malade qui gagne par les bords, en veines
 // qui battent avec le cœur), la torpeur (les paupières : deux pans d'ombre, frangés de cils, qui se ferment), les visions (les
 // couleurs glissent au bord de l'œil), la voyance (le noir s'ouvre, froid et bleu, dans un iris de givre). Les herbes à zéro,
 // l'image est celle du voile de toujours, au même prix. Alpha prémultiplié : il peut assombrir et éclairer.
@@ -71,27 +71,38 @@ float rousseurs(vec2 p, float densite) {
 	return (1.0 - smoothstep(0.55, 1.0, d)) * (0.6 + 0.4 * (1.0 - d));
 }
 
-// une rature : dans une case de 110 pixels, ou pas (densité), un mot barré d'un zigzag d'encre serré, à un angle tiré, d'une
-// longueur et d'une hauteur tirées ; t : le moment du tracé (la main tremble : la rature bouge à peine d'un moment à l'autre)
-float rature(vec2 px, float t, float densite) {
-	vec2 cel = floor(px / 110.0);
-	if (hache(cel * 1.3 + 7.7) > densite) {
-		return 0.0;
+// le papier froissé : une page chiffonnée par les bords, le long de plis droits tirés une fois pour toutes (quinze qui partent du
+// bord vers le centre, sept en travers) ; chaque pli la penche d'un côté et de l'autre. Rend (xy : la pente de la page sous ce
+// point, ses pans plats, ses plis nets ; z : la distance au pli le plus proche ; w : ce pli, une arête (+) ou un creux (-)).
+// p : le point, en hauteurs d'écran depuis le centre
+vec4 froisse(vec2 p) {
+	vec2 g = vec2(0.0);
+	float pres = 9.0;
+	float cote = 0.0;
+	for (int i = 0; i < 22; i++) {
+		float fi = float(i);
+		vec2 o;
+		vec2 nrm;
+		if (i < 15) {
+			// (un pli qui part du bord vers le centre, à peu près)
+			float t = hache(vec2(fi, 1.3)) * 6.2832;
+			o = vec2(cos(t) * 0.86, sin(t) * 0.5);
+			float a = t + 1.5708 + (hache(vec2(fi, 4.2)) - 0.5) * 0.9;
+			nrm = vec2(cos(a), sin(a));
+		} else {
+			o = (vec2(hache(vec2(fi, 1.3)), hache(vec2(fi, 7.9))) - 0.5) * vec2(1.8, 1.0);
+			float a = hache(vec2(fi, 4.2)) * 3.1416;
+			nrm = vec2(cos(a), sin(a));
+		}
+		float amp = (0.4 + 0.6 * hache(vec2(fi, 9.4))) * sign(hache(vec2(fi, 2.6)) - 0.5);
+		float e = dot(p - o, nrm);
+		g += nrm * amp * clamp(e / 0.002, -1.0, 1.0);
+		if (abs(e) < pres) {
+			pres = abs(e);
+			cote = amp;
+		}
 	}
-	vec2 f = px / 110.0 - cel;
-	vec2 o = vec2(hache(cel + 3.3), hache(cel + 9.1)) * 0.3 + 0.35 + (vec2(hache(cel + vec2(t, 1.0)), hache(cel + vec2(t, 2.0))) - 0.5) * 0.012;
-	float a = hache(cel + 21.0) * 3.1416 + (hache(cel + vec2(t, 3.0)) - 0.5) * 0.06;
-	vec2 l = f - o;
-	vec2 r = vec2(cos(a) * l.x + sin(a) * l.y, -sin(a) * l.x + cos(a) * l.y);
-	float longueur = 0.26 + 0.14 * hache(cel + 5.5);
-	float hauteur = 0.05 + 0.05 * hache(cel + 6.6);
-	float frequence = 7.0 + 5.0 * hache(cel + 8.8);
-	float tri = abs(fract(r.x * frequence + hache(cel + 12.1)) * 2.0 - 1.0) * 2.0 - 1.0;
-	float pente = 4.0 * hauteur * frequence;
-	float dist = abs(r.y - tri * hauteur) / sqrt(1.0 + pente * pente);
-	float epais = 0.007 + 0.005 * hache(cel + 4.4);
-	float bout = 1.0 - smoothstep(longueur - 0.04, longueur, abs(r.x));
-	return (1.0 - smoothstep(epais, epais + 0.008, dist)) * bout;
+	return vec4(g, pres, cote);
 }
 
 // une couche de plus, par-dessus les autres (couleur, opacité)
@@ -114,24 +125,28 @@ void fragment() {
 	v = sur(v, encre.rgb, clamp(vi * (0.32 + 0.34 * peur + 0.1 * coeur) * (1.0 - 0.45 * voyance), 0.0, 0.85));
 	float effroi = smoothstep(0.35, 1.0, peur);
 	if (effroi > 0.01) {
-		// la peur : des ratures. Comme un carnet tenu d'une main qui tremble : çà et là, des mots barrés d'un zigzag d'encre serré,
-		// tracé vite, dans tous les sens ; ils gagnent par les bords, plus serrés à mesure que la peur monte, et la main tremble
-		// (redessinés huit fois par seconde, à peine ailleurs) ; à chaque coup du cœur, ils avancent
-		float t8 = floor(TIME * 8.0);
-		float n = texture(bruit, pp * 1.3 + vec2(t8 * 0.013, 0.0)).r;
-		float d = re + (n - 0.5) * 0.6 - mix(1.18, 0.6, effroi) + coeur * 0.05;
-		float zone = smoothstep(-0.05, 0.3, d);
-		float dens = zone * (0.45 + 0.5 * effroi);
-		float r = max(rature(FRAGCOORD.xy, t8, dens), rature(FRAGCOORD.xy + vec2(61.0, 37.0), t8 + 17.0, dens * 0.8));
-		v = sur(v, encre.rgb, clamp(zone * 0.12 * effroi, 0.0, 0.12));
-		// (la nuit, l'encre noire se perdrait dans le noir : la rature y est d'un violet pâle, comme une encre qui luit)
-		vec3 trait = mix(mix(encre.rgb, c_peur.rgb * 0.3, 0.2), c_peur.rgb * 0.62, clamp(nuit * 3.2, 0.0, 1.0) * 0.85);
-		v = sur(v, trait, clamp(r * (0.62 + 0.3 * effroi), 0.0, 0.92));
+		// la peur : la page se froisse. Par les bords, le papier se chiffonne en pans plats penchés, chacun sa lumière ou son ombre,
+		// le long de longs plis droits qui se croisent ; le froissé gagne vers le centre à mesure que la peur monte, et
+		// se serre à chaque coup du cœur (la passe qui lit l'image y décale le dessin d'un pan à l'autre). La nuit, les plis
+		// prennent la lumière : ils luisent pâles au lieu de se perdre dans le noir
+		float n = texture(bruit, pp * 1.2).r;
+		float d = re + (n - 0.5) * 0.55 - mix(1.16, 0.58, effroi) + coeur * 0.06;
+		float k = smoothstep(-0.08, 0.32, d) * (0.55 + 0.45 * effroi) * (1.0 + 0.45 * coeur);
+		vec4 fr = froisse(pp);
+		float l = clamp(dot(fr.xy, vec2(-0.6, 0.8)) * 0.36, -1.0, 1.0);
+		float pli = 1.0 - smoothstep(0.0012, 0.0032, fr.z);
+		float la_nuit = clamp(nuit * 3.2, 0.0, 1.0);
+		v = sur(v, papier.rgb * 0.82, clamp(0.12 * k, 0.0, 0.14));
+		v = sur(v, encre.rgb, clamp(max(-l, 0.0) * 0.62 * k, 0.0, 0.62));
+		v.rgb += papier.rgb * max(l, 0.0) * (0.2 + 0.1 * la_nuit) * k * (1.0 - v.a * 0.4);
+		// (le pli : une arête qui prend la lumière, ou un creux d'ombre)
+		v.rgb += papier.rgb * pli * step(0.0, fr.w) * (0.26 + 0.1 * coeur) * k;
+		v = sur(v, encre.rgb * 0.7, clamp(pli * step(fr.w, 0.0) * (0.5 + 0.15 * coeur) * k, 0.0, 0.6));
 	}
 	if (faim > 0.01) {
 		// la faim : la page jaunit. Par les bords, le papier se teinte d'un jaune sale qui s'avance en auréoles (un liseré plus
 		// sombre marque où il s'arrête, comme une tache d'eau séchée), et se pique de taches de rousseur, de plus en plus serrées ;
-		// l'encre pâlit (le voile éclaircit les noirs). Une crampe froisse la page : des plis passent, le jaune avance d'un coup
+		// l'encre pâlit (le voile éclaircit les noirs). Une crampe : le jaune avance d'un coup et s'assombrit, la vue se brouille
 		float n = texture(bruit, pp * 0.8 + vec2(TIME * 0.004, 0.0)).r * 0.7 + texture(bruit, pp * 2.6).r * 0.3;
 		float d = re + (n - 0.5) * 0.55 - mix(1.12, 0.52, sqrt(faim)) + (0.03 * sin(TIME * 1.4) + 0.24 * crampe) * faim;
 		float jauni = smoothstep(-0.05, 0.35, d);
@@ -142,15 +157,7 @@ void fragment() {
 		float dens = faim * (0.04 + 0.62 * smoothstep(-0.25, 0.3, d));
 		float pique = max(rousseurs(pp * 34.0, dens), rousseurs(pp * 15.0 + 5.3, dens * 0.55) * 0.9);
 		v = sur(v, roussi.rgb * 0.5, clamp(pique * 0.75, 0.0, 0.75));
-		if (crampe > 0.01) {
-			// (les plis : des arêtes du bruit, une ombre d'un côté, un clair de l'autre)
-			float pl = texture(bruit, pp * 0.55 + vec2(3.7, 1.9)).r;
-			float arete = 1.0 - smoothstep(0.0, 0.012, abs(pl - 0.5));
-			float clair = 1.0 - smoothstep(0.0, 0.02, abs(pl - 0.515));
-			float ou = crampe * smoothstep(0.1, 0.9, re + 0.25 * faim);
-			v = sur(v, encre.rgb * 0.8, arete * ou * 0.6);
-			v.rgb += papier.rgb * clair * ou * 0.12;
-		}
+		v = sur(v, roussi.rgb * 0.3, clamp(crampe * (0.2 + 0.3 * smoothstep(0.1, 1.0, re)), 0.0, 0.48));
 	}
 	if (agonie > 0.01) {
 		// la santé s'en va : de l'encre rouge boit le papier depuis les bords. Au bord, l'encre pleine ; devant elle, une frange qui
