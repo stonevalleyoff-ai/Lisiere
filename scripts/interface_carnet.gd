@@ -369,6 +369,7 @@ class Pause extends Control:
 	var page: Page
 	var _voile: ColorRect
 	var _sous: Label
+	var _lots: Label          # ce que le monde d'Orvane a reçu de la partie (scripts/lots.gd)
 	var _commandes: Commandes
 	# la carte de ce qu'on a parcouru et de ce qu'on y a écrit, à la place des commandes (un bouton passe de l'une aux autres) ;
 	# seulement si elle a fabriqué sa carte (scripts/reperes.gd)
@@ -403,6 +404,10 @@ class Pause extends Control:
 		v.add_child(_titre)
 		_sous = Encre.libelle("La nuit attend. Échap pour reprendre.", T.titre_italique(), 18, P.ENCRE_DOUCE)
 		v.add_child(_sous)
+		_lots = Encre.libelle("", T.texte(), 14, P.ENCRE_DOUCE)
+		_lots.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_lots.visible = false
+		v.add_child(_lots)
 		v.add_child(Filet.new(0.45))
 		_commandes = Commandes.new()
 		_commandes.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -521,6 +526,8 @@ class Pause extends Control:
 				terres, biomes.size(), "s" if biomes.size() > 1 else "", "" if avec_carte else " Sans carte : elle se fait à l'établi."]
 		else:
 			_sous.text = "Touche le bouton du haut pour reprendre." if tactile else "La nuit attend. Échap pour reprendre."
+		_lots.text = jeu.lots.texte() if jeu != null and jeu.get("lots") != null else ""
+		_lots.visible = _lots.text != ""
 		if not tactile and _boutons.size() > 0:
 			_boutons[0].grab_focus.call_deferred()
 

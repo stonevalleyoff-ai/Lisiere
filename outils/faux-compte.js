@@ -1,13 +1,21 @@
 // Lisière — UN FAUX SERVICE DE COMPTES (outils/faux-compte.js), pour l'essai
 // Ce que le jeu demande au Supabase de StoneValley pour garder la partie sur le compte (outils/sauvegarde.sql), joué en mémoire,
 // avec les mêmes règles : se connecter (mot de passe « bon »), lisiere_garder, lisiere_reprendre, lisiere_oublier, lisiere_avancee.
-// Rien ne part nulle part. L'essai le lance tout seul (scripts/essai.gd, la partie sur le compte) ; à la main :
+// Et, pour les lots (scripts/lots.gd), ce que le jeu demande au Supabase d'Orvane (hebergement/supabase.sql d'Orvane) :
+// orvane_deposer, avec les mêmes vérifications, sans compte (la clé publique et la clé du jeu suffisent).
+// Rien ne part nulle part. L'essai le lance tout seul (scripts/essai.gd, la partie sur le compte, les lots) ; à la main :
 //   node outils/faux-compte.js 8139        puis    LISIERE_SERVICE=http://127.0.0.1:8139 outils/godot.sh --path .
-// GET /__etat rend ce qu'il garde, POST /__vider l'oublie (pour l'essai).
+// GET /__etat rend ce qu'il garde, POST /__vider l'oublie (pour l'essai). GET /__lots rend les lots reçus ; POST /__refuser fait
+// refuser les dépôts suivants (comme Orvane au 49ᵉ lot d'un joueur dans la journée), POST /__accepter les reprend.
 'use strict';
 const http = require('http');
 const PORT = Number(process.argv[2] || 8139);
 const parties = {};        // uid → { donnees, resume, rev, appareil, maj_le }
+const lots = [];           // les lots reçus : { cle, compte, lot }
+let refuser = false;
+const ACTIONS = ['rencontre', 'prelevement', 'capture', 'liberation', 'nourrissage', 'reproduction', 'deplacement', 'habitat_perdu',
+  'habitat_gagne', 'defrichage', 'reboisement', 'assechement', 'irrigation', 'construction', 'transformation',
+  'blessure', 'effarouchement', 'pillage', 'attaque', 'joueur_tombe'];
 
 const repondre = (res, code, corps) => {
   res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -50,6 +58,24 @@ const FONCTIONS = {
   },
 };
 
+// le Supabase d'Orvane : ce qu'il vérifie d'un dépôt (hebergement/supabase.sql, orvane_deposer)
+const ORVANE = {
+  orvane_deposer(a) {
+    if (typeof a.p_cle !== 'string' || !/^orv_[0-9a-f]{32}$/.test(a.p_cle)) return { ok: false, erreur: 'clé de jeu inconnue' };
+    if (typeof a.p_compte !== 'string' || a.p_compte.length < 1 || a.p_compte.length > 128) return { ok: false, erreur: 'compte : 1 à 128 caractères' };
+    const l = a.p_lot;
+    if (!l || typeof l !== 'object' || Array.isArray(l) || !Array.isArray(l.evenements)) return { ok: false, erreur: 'lot mal formé' };
+    if (JSON.stringify(l).length > 65536 || l.evenements.length > 500) return { ok: false, erreur: 'lot trop gros' };
+    if (l.evenements.some(e => !e || typeof e !== 'object' || typeof e.biome !== 'string' || !ACTIONS.includes(e.action)
+        || typeof e.n !== 'number' || !(e.n >= 0 && e.n <= 10000) || ('taxon' in e && typeof e.taxon !== 'string')
+        || ('moyen' in e && typeof e.moyen !== 'string') || ('parcelle' in e && typeof e.parcelle !== 'string')))
+      return { ok: false, erreur: 'événement mal formé (schemas/pression.schema.json)' };
+    if (refuser) return { ok: false, erreur: "trop de dépôts aujourd'hui pour ce joueur" };
+    lots.push({ cle: a.p_cle, compte: a.p_compte, lot: l });
+    return { ok: true };
+  },
+};
+
 http.createServer((req, res) => {
   let texte = '';
   req.on('data', c => { texte += c; });
@@ -58,6 +84,8 @@ http.createServer((req, res) => {
     const chemin = req.url.split('?')[0];
     if (req.method === 'GET' && chemin === '/__etat') return repondre(res, 200, parties);
     if (req.method === 'POST' && chemin === '/__vider') { for (const k of Object.keys(parties)) delete parties[k]; return repondre(res, 200, {}); }
+    if (req.method === 'GET' && chemin === '/__lots') return repondre(res, 200, lots);
+    if (req.method === 'POST' && (chemin === '/__refuser' || chemin === '/__accepter')) { refuser = chemin === '/__refuser'; return repondre(res, 200, {}); }
     if (chemin === '/auth/v1/token') {
       if (corps.password !== 'bon') return repondre(res, 400, { error_code: 'invalid_credentials', msg: 'Invalid login credentials' });
       return repondre(res, 200, { access_token: 'jeton:' + corps.email, refresh_token: 'reprise:' + corps.email, expires_in: 3600,
@@ -65,6 +93,10 @@ http.createServer((req, res) => {
     }
     if (chemin === '/auth/v1/logout') return repondre(res, 204);
     const m = /^\/rest\/v1\/rpc\/(\w+)$/.exec(chemin);
+    if (m && ORVANE[m[1]]) {
+      if (!req.headers.apikey) return repondre(res, 401, { message: 'No API key found in request' });
+      return repondre(res, 200, ORVANE[m[1]](corps));
+    }
     if (m && FONCTIONS[m[1]]) {
       const moi = qui(req);
       if (!moi) return repondre(res, 401, { message: 'permission denied' });
