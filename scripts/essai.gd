@@ -623,6 +623,7 @@ func _lancer() -> void:
 	await _lieu_sans_bord()
 	await _la_flore()
 	await _les_pays()
+	await _l_artisanat()
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)
@@ -5019,3 +5020,377 @@ func _le_desert() -> void:
 		jeu.agir()
 	verif(not ca.is_empty() and int(j.inventaire["ferraille"]) == fer0 + 3 and T.reste(ca) == 0,
 		"une vieille carcasse, à demi ensablée : trois morceaux de ferraille, puis plus rien")
+
+
+
+# --- l'artisanat des plantes (scripts/flore.gd, scripts/atelier.gd, scripts/elevage.gd, scripts/pont.gd, scripts/botanique.gd) :
+# la fibre longue de l'agave et du papyrus, le filin qu'on en commet, et ce qu'il tient (une bête affolée par le noir, une
+# grosse proie, un pont) ; les aromates, leur baume et leur fumée. Une partie à elle, au désert (l'agave, l'aromatique), puis
+# au marais (les sangsues). Joué sans attendre, par les fonctions du jeu ---
+
+func _l_artisanat() -> void:
+	print("10. L'artisanat des plantes")
+	await jeu._commencer("desert")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var E = jeu.elevage
+	var B = jeu.botanique
+	var C = jeu.climat
+	var W = jeu.monde
+	var RR = jeu.R
+	var Flore = load("res://scripts/flore.gd")
+	var inv: Dictionary = j.inventaire
+	C.forcer("clair", 0.0, 9999.0)
+	_a_l_heure(false)
+	var ici := Vector2(-700.0, 700.0)
+	_remettre(ici)
+	j.torche = 0.0
+
+	# l'agave et le papyrus donnent la fibre longue ; l'agave pique toujours ; l'aromatique donne des aromates ; la bruyère garde
+	# ses fleurs
+	var de_forme := func(f: String, strate: String):
+		var mieux = null
+		for o in W.objets:
+			if is_instance_valid(o) and str(o.forme) == f and int(o.reste) > 0 and (mieux == null or o.position.distance_to(ici) < mieux.position.distance_to(ici)):
+				mieux = o
+		if mieux != null:
+			return mieux
+		for k in 800:
+			var o = W._poser(strate, ici + Vector2(0, 60), Color.WHITE, 9100 + k * 7919)
+			if o != null and str(o.forme) == f:
+				return o
+			if o != null:
+				W._defaire(o)
+		return null
+	var cueillir := func(o) -> Dictionary:
+		j.position = o.position + Vector2(0, 2)
+		for b in get_tree().get_nodes_in_group("betes"):
+			_oter(b)
+		# (un vestige, un coffre tout près : « Agir » le fouillerait d'abord)
+		for x in jeu.atelier.poses.duplicate():
+			if is_instance_valid(x) and x.position.distance_to(o.position) < 120.0:
+				jeu.atelier.poses.erase(x)
+				x.queue_free()
+		var avant := inv.duplicate()
+		jeu.agir()
+		var gagne := {}
+		for k in inv:
+			if int(inv[k]) != int(avant.get(k, 0)):
+				gagne[k] = int(inv[k]) - int(avant.get(k, 0))
+		return gagne
+	var agave = de_forme.call("agave", "sol")
+	var aromatique = de_forme.call("aromatique", "buisson")
+	j.sante = 80.0
+	var g_agave: Dictionary = cueillir.call(agave) if agave != null else {}
+	var pique: float = 80.0 - j.sante
+	j.sante = 100.0
+	var Objet = load("res://scripts/objet.gd")
+	var papyrus = Objet.new()
+	papyrus.preparer("touffe", Color.WHITE, 4242)
+	papyrus.porter_plante({"forme": "papyrus", "port": "roseau", "id": "essai-papyrus"})
+	var g_papyrus: Dictionary = papyrus.recolter()
+	var papyrus_pique: bool = papyrus.piquant
+	papyrus.free()
+	var g_aromatique: Dictionary = cueillir.call(aromatique) if aromatique != null else {}
+	var aromatique_entame: bool = aromatique != null and int(aromatique.reste) < int(aromatique.plein)
+	verif(agave != null and agave.piquant and g_agave == {"fibre_longue": 1} and absf(pique - RR.EPINES) < 0.01 and g_papyrus == {"fibre_longue": 1} and not papyrus_pique
+		and A.MATIERES.has("fibre_longue") and aromatique != null and g_aromatique == {"aromates": 1} and aromatique_entame and not aromatique.piquant
+		and Flore.donne("bruyere", "buisson", true, false) == "fleurs" and Flore.donne("aromatique", "buisson", false, false) == "aromates",
+		"au désert, un agave donne la fibre longue (%s), et pique toujours (-%d) ; un papyrus aussi (%s) ; un buisson aromatique, des aromates, en fleurs ou non (%s) ; la bruyère garde ses fleurs" % [
+		str(g_agave), int(pique), str(g_papyrus), str(g_aromatique)])
+
+	# le filin : trois fibres longues à l'établi ; la longe de filin, le grand filet
+	A.commencer()
+	for k in ["bois", "pierre", "fibre", "fibre_longue", "filin", "corde", "peau", "aromates", "eau", "baume_aromates"]:
+		inv[k] = 0
+	inv["bois"] = 20
+	inv["pierre"] = 12
+	inv["fibre"] = 10
+	inv["fibre_longue"] = 15
+	j.position = ici
+	# (rien ne gêne l'établi devant elle : un buisson, une touffe)
+	for o in W.autour(ici + Vector2(60.0, 6.0), 70.0):
+		if str(o.genre) == "buisson":
+			W.retirer(o)
+	A.fabriquer("etabli")
+	A.poser("etabli")
+	var sans_fibre: String = ""
+	var commis := 0
+	for k in 6:
+		if A.fabriquer("filin"):
+			commis += 1
+		else:
+			sans_fibre = A.empeche("filin")
+	var longe: bool = A.fabriquer("longe")
+	var grand: bool = A.fabriquer("filet_filin")
+	verif(commis == 5 and int(inv["fibre_longue"]) == 0 and sans_fibre.contains("fibres longues") and longe and grand and A.possede("longe") == 1
+		and A.possede("filet_filin") == 1 and int(inv["filin"]) == 0 and int(inv["pierre"]) == 12 - 2 - 4
+		and A.OBJETS["filin"]["cout"] == {"fibre_longue": 3} and A.OBJETS["longe"]["cout"] == {"filin": 2} and A.OBJETS["filet_filin"]["cout"] == {"filin": 3, "pierre": 4},
+		"à l'établi, trois fibres longues font un filin (cinq de quinze ; puis « %s ») ; deux filins, une longe de filin ; trois et quatre pierres, un grand filet" % sans_fibre)
+
+	# le grand filet tient une bête de vingt kilos, que le filet de corde laisse passer ; relevé, il donne sa viande et ses peaux
+	var proies: Array = jeu.faune["proies_jour"] + jeu.faune["proies_nuit"]
+	var e_grosse: Dictionary = {}
+	for e in proies:
+		e_grosse = e.duplicate()
+		break
+	e_grosse["masse"] = 20.0
+	e_grosse.erase("largeur")
+	inv["corde"] = 3
+	A.fabriquer("filet")
+	var p_filet: Vector2 = ici + Vector2(-260.0, 0.0)
+	var p_grand: Vector2 = ici + Vector2(-260.0, 160.0)
+	var filet = A._creer("filet", p_filet, {})
+	var grand_filet = A._creer("filet_filin", p_grand, {})
+	var b1 = _bete(e_grosse, "proie", p_filet, {})
+	A.maj(0.1)
+	var passe: bool = not filet.etat.has("prise") and is_instance_valid(b1) and b1.is_in_group("betes")
+	_oter(b1)
+	var b2 = _bete(e_grosse, "proie", p_grand + Vector2(12.0, 6.0), {})
+	A.maj(0.1)
+	var prise: bool = grand_filet.etat.has("prise") and not b2.is_in_group("betes")
+	j.position = p_grand + Vector2(-20.0, 0.0)
+	var peaux0 := int(inv.get("peau", 0))
+	var viande0 := int(inv.get("viande", 0))
+	A.agir()
+	var releve: bool = not grand_filet.etat.has("prise") and int(inv["peau"]) - peaux0 == A.peaux_de(20.0) and int(inv["viande"]) > viande0
+	verif(passe and prise and releve and RR.FILET_FILIN >= 20.0 and A.PRISE_MAX < 20.0,
+		"une bête de 20 kilos passe sur le filet de corde (%d kilos au plus) ; le grand filet, de filin, la tient (%d kilos au plus) : relevé, sa viande et %d peaux" % [
+		int(A.PRISE_MAX), int(RR.FILET_FILIN), A.peaux_de(20.0)])
+
+	# la longe de filin : la nuit, dans le noir, une bête au piquet s'affole et se débat, mais reste ; celle qui n'a que sa longe
+	# de chanvre la rompt et s'enfuit ; celle qui a sa longe de filin mais que rien ne tient, s'enfuit aussi
+	var e_bete: Dictionary = {}
+	var b_essai = null
+	for e in proies:
+		b_essai = _bete(e, "proie", ici, {})
+		var bonne: bool = E.apprivoisable(b_essai)
+		_oter(b_essai)
+		if bonne:
+			e_bete = e
+			break
+	if e_bete.is_empty():
+		verif(false, "le désert a une proie à quatre pattes à apprivoiser")
+		return
+	var piquet = A._creer("piquet", ici + Vector2(300.0, -200.0), {})
+	var apprivoiser := func(p: Vector2):
+		var b = _bete(e_bete, "proie", p, {"neophobie": 0.05})
+		A.objets["licol"] = 1
+		E.apprivoiser(b)
+		b.suit_la = false
+		b.maison = p
+		b.faim = 90.0
+		return b
+	var tenue_filin = apprivoiser.call(piquet.position + Vector2(18.0, 10.0))
+	var sans_filin = apprivoiser.call(piquet.position + Vector2(-18.0, 10.0))
+	var seule = apprivoiser.call(ici + Vector2(-600.0, -400.0))
+	# (la longe se passe depuis le sac, la bête tout près ; une seule longe : la seconde se fabrique)
+	j.position = tenue_filin.position + Vector2(30.0, 0.0)
+	jeu.ouvrir_page("sac")
+	var page_sac = jeu.ui._pages.get("sac")
+	var tuile_longe := false
+	if page_sac != null:
+		for sec in page_sac._sections():
+			for tu in sec["tuiles"]:
+				if str(tu["cle"]) == "bete:longe":
+					tuile_longe = true
+		page_sac._faire_au_jardin("bete:longe")
+	jeu.fermer_page()
+	A.objets["longe"] = 1
+	var passee: bool = E.harnacher(seule, "longe")
+	j.position = ici + Vector2(-900.0, 600.0)
+	_a_l_heure(true)
+	var faim0: float = float(tenue_filin.faim)
+	var faim_sans0: float = float(sans_filin.faim)
+	var debattue := false
+	for i in 40:
+		E.maj(1.0)
+		debattue = debattue or E.affolee(tenue_filin)
+	var reste: bool = E.betes.has(tenue_filin) and str(tenue_filin.role) == "compagne" and bool(tenue_filin.harnais.get("longe", false))
+	var a_eu_faim: float = faim0 - float(tenue_filin.faim)
+	var rompue: bool = not E.betes.has(sans_filin) and str(sans_filin.role) == "proie" and sans_filin.harnais.is_empty()
+	var fuie: bool = not E.betes.has(seule) and str(seule.role) == "proie"
+	# (affolée dix-huit secondes sur quarante, elle a eu faim deux fois plus vite pendant ce temps)
+	verif(tuile_longe and bool(tenue_filin.harnais.get("longe", false)) and passee and reste and debattue and rompue and fuie and a_eu_faim > E.FAIM * 40.0 * 1.3
+		and float(tenue_filin.faim) > 0.0,
+		"la longe de filin se passe depuis le sac ; la nuit, au piquet dans le noir, sa bête se débat au bout (affolée, elle a eu faim de %d en 40 secondes), mais le filin tient ; celle qui n'a que sa longe de chanvre la rompt au bout de %d secondes ; celle que rien ne tient s'enfuit" % [
+		int(a_eu_faim), int(E.NOIR)])
+	# (près d'un feu, elle se calme : plus d'affolement)
+	var feu_b = jeu.Feu.new()
+	feu_b.jeu = jeu
+	feu_b.position = tenue_filin.position + Vector2(40.0, 0.0)
+	feu_b.bois = 60.0
+	jeu.monde.add_child(feu_b)
+	jeu.feux.append(feu_b)
+	for i in 30:
+		E.maj(0.5)
+	verif(not E.affolee(tenue_filin) and E.betes.has(tenue_filin), "près d'un feu, la nuit, elle cesse de se débattre")
+	jeu.feux.erase(feu_b)
+	feu_b.queue_free()
+	_a_l_heure(false)
+
+	# le pont lié de filin : il tient trois fois plus, chaque passage l'use moins, la crue ne l'emporte qu'à son plus fort ; avec
+	# deux filins dans le sac, le pont se lie de filin, à la place de ses fibres
+	inv["filin"] = 0
+	inv["fibre"] = 3
+	inv["bois"] = 6
+	var cout_fibres: Dictionary = jeu.cout_de("pont")
+	inv["filin"] = 2
+	inv["fibre"] = 0
+	var cout_filin: Dictionary = jeu.cout_de("pont")
+	var garde_pp: bool = jeu.pont_possible
+	jeu.pont_possible = true
+	var faisable: bool = jeu.peut_fabriquer("pont")
+	jeu.pont_possible = garde_pp
+	var pa: Vector2 = ici + Vector2(400.0, 300.0)
+	var de_fibres = jeu.poser_pont(pa, pa + Vector2(160.0, 0.0), RR.PONT_DUREE)
+	var de_filin = jeu.poser_pont(pa + Vector2(0.0, 120.0), pa + Vector2(160.0, 120.0), RR.PONT_DUREE * RR.PONT_FILIN_DUREE, true)
+	# (elle passe sur chacun, une fois)
+	var usures := []
+	for pt in [de_fibres, de_filin]:
+		var t0: float = pt.tenue
+		j.position = (pt.a + pt.b) * 0.5 + Vector2(0.0, 200.0)
+		pt._process(0.0)
+		j.position = (pt.a + pt.b) * 0.5
+		pt._process(0.0)
+		j.position = (pt.a + pt.b) * 0.5 + Vector2(0.0, 200.0)
+		pt._process(0.0)
+		usures.append(t0 - pt.tenue)
+	# (le temps passe : quatre cents secondes)
+	for i in 400:
+		if is_instance_valid(de_fibres) and jeu.ponts.has(de_fibres):
+			de_fibres._process(1.0)
+		de_filin._process(1.0)
+	var fibres_tombe: bool = not jeu.ponts.has(de_fibres)
+	var filin_tient: bool = jeu.ponts.has(de_filin)
+	var de_fibres2 = jeu.poser_pont(pa + Vector2(0.0, 240.0), pa + Vector2(160.0, 240.0), RR.PONT_DUREE)
+	C.crue = 0.75
+	de_fibres2._process(0.1)
+	de_filin._process(0.1)
+	var crue_fibres: bool = not jeu.ponts.has(de_fibres2)
+	var crue_filin: bool = jeu.ponts.has(de_filin)
+	C.crue = 0.0
+	verif(cout_fibres == {"bois": 6, "fibre": 3} and cout_filin == {"bois": 6, "filin": RR.PONT_FILIN} and faisable and absf(float(usures[0]) - RR.PONT_PASSAGE) < 0.01
+		and absf(float(usures[1]) - RR.PONT_PASSAGE * RR.PONT_FILIN_USURE) < 0.01 and fibres_tombe and filin_tient and crue_fibres and crue_filin and de_filin.lie,
+		"avec deux filins, le pont se lie de filin (%s) ; un passage use un pont de fibres de %d secondes, lié de filin de %d ; quatre cents secondes plus tard, le pont de fibres a cédé, l'autre tient ; une crue à 0,75 emporte le premier, pas le second" % [
+		str(cout_filin), int(usures[0]), int(usures[1])])
+
+	# les aromates : pilés au mortier dans une gorgée d'eau, un baume ; il soigne longtemps, et chasse le poison bien plus vite
+	inv["aromates"] = 5
+	inv["eau"] = 2
+	A.objets.erase("mortier")
+	var sans_mortier: String = B.empeche_piler_aromates()
+	A.objets["mortier"] = 1
+	var pile: bool = B.piler_aromates()
+	var apres_pile: bool = int(inv["baume_aromates"]) == 1 and int(inv["aromates"]) == 5 - RR.AROMATES_BAUME and int(inv["eau"]) == 1
+	j.sante = 30.0
+	B.poison = B.POISON
+	var oint: bool = B.oindre()
+	var poison_t := 0.0
+	for i in 20:
+		B.maj(0.5)
+		if B.poison > 0.0:
+			poison_t += 0.5
+	var sante_10: float = j.sante
+	for i in 70:
+		B.maj(0.5)
+	var sante_fin: float = j.sante
+	# (le même poison, sans baume : il dure ses dix-huit secondes)
+	j.sante = 100.0
+	verif(sans_mortier.contains("mortier") and pile and apres_pile and oint and poison_t <= 5.0 and B.poison == 0.0 and B.onguent == 0.0 and sante_fin > 30.0 + RR.ONGUENT * RR.ONGUENT_SOIN - 12.0
+		and sante_10 > 30.0 and RR.ONGUENT * RR.ONGUENT_SOIN > 45.0,
+		"au mortier, %d aromates et une gorgée d'eau font un baume ; oint, le poison (%d secondes d'ordinaire) s'en va en %.1f, et la santé remonte de 30 à %d en %d secondes" % [
+		RR.AROMATES_BAUME, int(B.POISON), poison_t, int(sante_fin), int(RR.ONGUENT)])
+
+	# jetés dans un feu : une fumée bleue jusqu'au bord de sa lumière ; qui s'y tient sent sa peur tomber, et en garde l'odeur
+	# (sa bête reste au piquet : on ne la retire pas)
+	j.position = ici
+	j.peur = 0.0
+	var f = jeu.Feu.new()
+	f.jeu = jeu
+	f.position = ici + Vector2(40.0, 0.0)
+	f.bois = 80.0
+	jeu.monde.add_child(f)
+	jeu.feux.append(f)
+	inv["aromates"] = 1
+	var trop_peu: String = B.empeche_fumiger()
+	inv["aromates"] = 2
+	var journal = jeu.sons.journal
+	jeu.sons.journal = []
+	var jete: bool = B.fumiger()
+	var entendus: Array = jeu.sons.journal.map(func(x): return str(x[1]).rstrip("0123456789"))
+	jeu.sons.journal = journal
+	# (les brins volent encore : la fumée prend quand ils tombent dans le feu)
+	var fumee_vue := false
+	for i in 12:
+		await _attendre(0.25)
+		fumee_vue = f._encens != null and is_instance_valid(f._encens)
+		if fumee_vue:
+			break
+	j.position = f.position + Vector2(-30.0, 12.0)
+	j.peur = 80.0
+	var dans: float = B.dans_l_encens(j.position)
+	for i in 10:
+		B.maj(0.5)
+	var peur_dedans: float = j.peur
+	var impregnee: bool = B.impregnee()
+	# (hors de la fumée, au-delà de la lumière : rien ne l'apaise, l'odeur reste sur elle un moment)
+	j.position = f.position + Vector2(B.portee_encens(f) + 120.0, 0.0)
+	j.peur = 80.0
+	for i in 10:
+		B.maj(0.5)
+	var peur_dehors: float = j.peur
+	var encore: bool = B.impregnee() and B.parfum < RR.PARFUM
+	# (sa durée : une minute et demie)
+	for i in 74:
+		B.maj(1.0)
+	var tient_encore: bool = B.encens.has(f)
+	for i in 6:
+		B.maj(1.0)
+	var finie: bool = not B.encens.has(f)
+	verif(trop_peu.contains("aromates") and jete and int(inv["aromates"]) == 0 and entendus.has("aromates") and fumee_vue and dans > 0.9 and peur_dedans < 80.0 - RR.ENCENS_APAISE * 5.0 + 1.0
+		and impregnee and absf(peur_dehors - 80.0) < 0.01 and encore and tient_encore and finie,
+		"%d aromates jetés au feu (on les entend crépiter) : sa fumée bleue monte ; tenue dedans cinq secondes, la peur tombe de 80 à %d (dehors, rien) ; l'odeur lui reste ; la fumée dure %d secondes%s" % [
+		RR.AROMATES_FEU, int(peur_dedans), int(RR.ENCENS), "" if fumee_vue and entendus.has("aromates") and dans > 0.9 and tient_encore and finie else
+		" (vue %s, entendue %s, dedans %.2f, encore %s, finie %s, %s)" % [fumee_vue, entendus.has("aromates"), dans, tient_encore, finie, str(entendus)]])
+
+	# la partie gardée : ce qu'elle porte, son camp, sa bête et sa longe, le pont lié, le baume qui agit, la fumée sur son feu,
+	# l'odeur sur elle
+	inv["filin"] = 3
+	inv["aromates"] = 4
+	inv["baume_aromates"] = 1
+	B.encens[f] = 50.0
+	B.onguent = 12.0
+	B.parfum = 90.0
+	j.position = tenue_filin.position + Vector2(-30.0, 0.0)
+	var PG := load("res://scripts/partie_gardee.gd")
+	var gardee: Dictionary = JSON.parse_string(JSON.stringify(PG.photo(jeu)))
+	await jeu._commencer("desert", gardee)
+	var f2 = jeu.feux[0] if not jeu.feux.is_empty() else null
+	var lie: Array = jeu.ponts.filter(func(x): return is_instance_valid(x) and x.lie)
+	var b_revenue: Array = jeu.elevage.betes.filter(func(x): return bool(x.harnais.get("longe", false)))
+	var poses_rev: Array = jeu.atelier.poses.map(func(x): return str(x.genre))
+	var inv2: Dictionary = jeu.joueur.inventaire
+	verif(int(inv2.get("filin", 0)) == 3 and int(inv2.get("aromates", 0)) == 4 and int(inv2.get("baume_aromates", 0)) == 1 and poses_rev.has("filet_filin")
+		and b_revenue.size() == 1 and lie.size() == 1 and absf(float(jeu.botanique.onguent) - 12.0) < 0.2 and absf(float(jeu.botanique.parfum) - 90.0) < 0.2
+		and f2 != null and absf(float(jeu.botanique.encens.get(f2, 0.0)) - 50.0) < 0.2,
+		"reprise, elle retrouve son filin, ses aromates et leur baume, son grand filet, sa bête à la longe de filin, son pont lié, le baume qui agit encore, la fumée sur son feu et l'odeur sur elle")
+
+	# les sangsues : au marais, l'odeur des aromates les tient ; sans elle, elles mordent
+	await jeu._commencer("marais")
+	var C2 = jeu.climat
+	var T = jeu.terrain
+	C2.forcer("clair", 0.0, 9999.0)
+	_a_l_heure(false)
+	var fon: Dictionary = T.le_plus_proche("fondriere", Vector2(800.0, 800.0))
+	var o: Vector2 = fon.get("p", Vector2.ZERO)
+	var mordue := func(odeur: bool) -> float:
+		_remettre(o)
+		jeu.botanique.parfum = RR.PARFUM if odeur else 0.0
+		for k in 24:
+			T._dangers(0.25, jeu.joueur.position)
+		return float(jeu._maux.get("sangsues", 0.0))
+	var avec: float = mordue.call(true)
+	var sans: float = mordue.call(false)
+	verif(not fon.is_empty() and avec == 0.0 and sans > 0.5 and T.enlise > 0.95,
+		"au marais, enfoncée dans une fondrière, les sangsues ne mordent pas qui garde l'odeur des aromates ; sans elle, elles mordent (-%.1f)" % sans)

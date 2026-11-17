@@ -27,6 +27,11 @@ extends Node
 #   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac ;
 #   --fabrique tente,popote : à l'établi, elle fabrique ces choses l'une après l'autre ; --aupres tente : elle se tient
 #   près de cette chose (avec --dort : elle s'y couche)
+#   l'artisanat des plantes : --artisanat (avec --page : la fibre longue, le filin, les aromates, leur baume, un grand filet,
+#   une longe de filin dans le sac) ; --pose filet_filin ; --compagne longe ; --botanique encens,onguent,parfum ; --filin (avec
+#   --pont : le pont se lie de filin) ; --pont-ici : un pont lié de filin posé devant elle, pour le regarder (sans rivière) ;
+#   --compagne longe,piquet,affolee : sa bête au piquet posé (--pose piquet), la nuit déjà affolée ; --loupe 2 : la caméra
+#   deux fois plus près
 #   les herbes (scripts/botanique.gd) : --botanique poison,torpeur,visions,voyance,calme,fumee : cet état, tenu ; --herbes :
 #   son sac plein des herbes du lieu, la moitié reconnues, un mortier, une popote ; --geste gouter|piler|jeter
 #   le jardin, l'élevage : --pose carre,epouvantail,piquet,mangeoire,appat ; --etat lin,fleur,eau (ou baie, simple ; semis,
@@ -66,6 +71,7 @@ var _etats := {}
 var _fabrique: PackedStringArray = PackedStringArray()
 var _fabrique_k := 0
 var _dormir_dans = null
+var _affolee = null            # (--compagne affolee) la bête qu'on tient affolée au bout de sa longe, même de jour
 var _botanique := {}
 var _geste_atelier_t := 0.0
 var _brules: Array = []
@@ -236,6 +242,15 @@ func _lancer() -> void:
 		if ar2.has("--pays"):
 			j.inventaire["obsidienne"] = 3
 			j.inventaire["tourbe"] = 2
+		# (--artisanat : et ce que donnent l'agave et les aromates ; scripts/atelier.gd, scripts/botanique.gd)
+		if ar2.has("--artisanat"):
+			j.inventaire["fibre_longue"] = 6
+			j.inventaire["filin"] = 4
+			j.inventaire["aromates"] = 7
+			j.inventaire["baume_aromates"] = 1
+			jeu.atelier.objets["longe"] = 1
+			jeu.atelier.objets["filet_filin"] = 1
+			jeu.atelier.objets["mortier"] = 1
 		jeu.atelier.portes = {"sac_a_dos": true}
 		jeu.atelier.charge = 62.0
 		jeu.atelier._tenue()
@@ -289,6 +304,9 @@ func _lancer() -> void:
 					"filet":
 						if _etats.has("prise"):
 							s.etat["prise"] = {"id": "", "nom": "une bête", "masse": 2.4}
+					"filet_filin":
+						if _etats.has("prise"):
+							s.etat["prise"] = {"id": "", "nom": "une bête", "masse": 24.0}
 					"cerf_volant":
 						if _etats.has("branche") or _etats.has("foudre"):
 							jeu.atelier.objets["piles"] = 1
@@ -336,16 +354,38 @@ func _lancer() -> void:
 				continue
 			jeu.atelier.objets["licol"] = 1
 			jeu.elevage.apprivoiser(b)
-			for k in ["selle", "sacoche"]:
+			for k in ["selle", "sacoche", "longe"]:
 				if veut.has(k):
 					b.harnais[k] = true
 			if veut.has("reste"):
 				b.suit_la = false
 				b.maison = b.position
+			# (--compagne longe,piquet : au piquet posé avec --pose piquet, sa longe nouée à l'anneau)
+			if veut.has("piquet"):
+				for s2 in jeu.atelier.poses:
+					if str(s2.genre) == "piquet":
+						b.suit_la = false
+						b.maison = s2.position + Vector2(18.0, 10.0)
+						b.position = b.maison
+						break
 			if veut.has("monte"):
 				b.harnais["selle"] = true
 				jeu.elevage.monter(b)
+			# (--compagne longe,piquet,affolee : la nuit, déjà affolée par le noir, au bout de sa longe)
+			if veut.has("affolee"):
+				jeu.elevage._noir[b] = jeu.elevage.NOIR + 0.5
+				_affolee = b
 			break
+	# (--pont-ici : un pont lié de filin et un pont de fibres, posés devant elle à même le sol, pour en comparer le dessin)
+	if ar2.has("--pont-ici"):
+		var a0: Vector2 = j.position + Vector2(50.0, 46.0)
+		jeu.poser_pont(a0, a0 + Vector2(180.0, -24.0), R.PONT_DUREE * R.PONT_FILIN_DUREE, true)
+		jeu.poser_pont(a0 + Vector2(-20.0, 86.0), a0 + Vector2(160.0, 62.0), R.PONT_DUREE, false)
+		_plan = [[0.0, 1.0, "attendre"]]
+	# (--loupe 2 : la caméra deux fois plus près, pour regarder un dessin)
+	var i_lp := ar2.find("--loupe")
+	if i_lp >= 0 and i_lp + 1 < ar2.size():
+		jeu.effets.recul = float(ar2[i_lp + 1])
 	# (--botanique poison,torpeur,visions,voyance,calme,fumee : cet état des herbes, tenu ; --herbes : son sac plein d'herbes
 	# du lieu, la moitié reconnues ; scripts/botanique.gd)
 	var i_b := ar2.find("--botanique")
@@ -735,6 +775,19 @@ func _process(delta: float) -> void:
 			for f in jeu.feux:
 				if is_instance_valid(f):
 					B.fumees[f] = maxf(float(B.fumees.get(f, 0.0)), 6.0)
+		# (l'artisanat des plantes : la fumée des aromates sur les feux, le baume qui agit, l'odeur gardée)
+		if _botanique.has("encens"):
+			for f in jeu.feux:
+				if is_instance_valid(f):
+					B.encens[f] = maxf(float(B.encens.get(f, 0.0)), 6.0)
+		if _botanique.has("onguent"):
+			B.onguent = maxf(B.onguent, 6.0)
+			jeu.joueur.sante = minf(jeu.joueur.sante, 70.0)
+		if _botanique.has("parfum"):
+			B.parfum = maxf(B.parfum, 6.0)
+	# (--compagne affolee : elle se débat au bout de sa longe, même de jour, pour qu'on voie le filin se tendre)
+	if _affolee != null and is_instance_valid(_affolee) and jeu.elevage.betes.has(_affolee) and _affolee.longe != null:
+		jeu.elevage._affoler(_affolee, delta)
 	if _dormir_dans != null and u > 0.3 and not _fait.has("dort"):
 		_fait["dort"] = true
 		for b in get_tree().get_nodes_in_group("betes"):
@@ -786,6 +839,8 @@ func _process(delta: float) -> void:
 		_fait["pont"] = true
 		j.inventaire["bois"] = 40
 		j.inventaire["fibre"] = 12
+		if OS.get_cmdline_user_args().has("--filin"):
+			j.inventaire["filin"] = 4
 		jeu.fabriquer("pont")
 		if not jeu.ponts.is_empty():
 			var pt = jeu.ponts[0]
