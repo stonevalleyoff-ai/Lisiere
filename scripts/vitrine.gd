@@ -232,6 +232,10 @@ func _lancer() -> void:
 			j.inventaire["simples"] = 2
 			j.inventaire["lait"] = 1
 			j.inventaire["arrosages"] = 2
+		# (--pays : et ce que donnent les pays, l'obsidienne, la tourbe ; scripts/biomes.gd)
+		if ar2.has("--pays"):
+			j.inventaire["obsidienne"] = 3
+			j.inventaire["tourbe"] = 2
 		jeu.atelier.portes = {"sac_a_dos": true}
 		jeu.atelier.charge = 62.0
 		jeu.atelier._tenue()
@@ -437,6 +441,23 @@ func _lancer() -> void:
 				if n is CanvasItem:
 					n.visible = false
 			print("vitrine : sans ", quoi, " (", cibles.size(), ")")
+	# (--pres fondriere|faille|fumerolle|mare|obsidienne|tourbe|bois_flotte|carcasse : elle se tient à deux pas de la plus
+	# proche, et ne bouge plus ; --dedans : sur elle, pour voir ce qu'elle fait. Le sol des pays : scripts/biome_terrain.gd)
+	var i_pres := args.find("--pres")
+	if i_pres >= 0 and i_pres + 1 < args.size() and jeu.terrain != null:
+		jeu.terrain.suivre(jeu.joueur.position, true)
+		var s: Dictionary = jeu.terrain.le_plus_proche(args[i_pres + 1], jeu.joueur.position)
+		if not s.is_empty():
+			var ou: Vector2 = s["p"]
+			jeu.joueur.position = ou + (Vector2.ZERO if args.has("--dedans") else Vector2(-70.0, 46.0))
+			if jeu.ouvert:
+				jeu.monde.suivre(jeu.joueur.position, true)
+			jeu.terrain.suivre(jeu.joueur.position, true)
+			jeu.camera.reset_smoothing()
+			_plan = [[0.0, 1.0, "attendre"]]
+			print("vitrine : près de ", args[i_pres + 1], " en ", ou)
+		else:
+			print("vitrine : pas de ", args[i_pres + 1], " autour")
 	_pret = true
 
 

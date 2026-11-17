@@ -9,10 +9,14 @@ extends Node
 #  - l'orage jette la foudre : un présage (le sol pâlit), puis elle tombe, sur un arbre le plus souvent (celui sous lequel on
 #    s'abrite, une fois sur quatre ; sur la veilleuse, si elle est seule debout loin de tout arbre). Elle blesse autour
 #    d'elle (plus loin, les pieds dans l'eau), et met le feu (scripts/incendie.gd) ;
-#  - l'air a une température (le lieu, la saison, la nuit, le temps) : le corps de la veilleuse la suit (principal.gd, _temps_du_corps).
+#  - l'air a une température (le lieu, la saison, la nuit, le temps) : le corps de la veilleuse la suit (principal.gd, _temps_du_corps) ;
+#  - quatre pays ont leur caractère (scripts/biomes.gd) : la banquise a sa neige qui ne fond pas, ses nuits qui tuent, sa
+#    tourmente ; le volcan ses pluies de cendres ; le marais son brouillard ; le désert ses jours brûlants, ses nuits glacées,
+#    son sable qui freine, son vent de sable.
 # Tout ce qui se règle est dans scripts/regles.gd. Le hasard du temps est semé par la graine du lieu : une partie reprise
 # retrouve son ciel.
 #   jeu.climat.pluie, .orage, .neige, .brouillard, .vent (de 0 à 1), .air (de 0, glacial, à 1, brûlant), .temps (son nom)
+#   jeu.climat.tourmente, .cendre, .sable (de 0 à 1 : les temps de la banquise, du volcan, du désert)
 #   jeu.climat.boue, .crue, .neige_sol (de 0 à 1) ; .eau(p) (la profondeur d'eau en p) ; .allure(p, masse) ; .abri(p)
 
 signal change(temps: String)                 # le temps nommé vient de changer
@@ -20,8 +24,9 @@ signal presage(p: Vector2, dans: float)      # la foudre va tomber en p, dans «
 signal foudre(p: Vector2, sur)               # elle tombe en p (sur : l'objet frappé, ou null)
 
 const R := preload("res://scripts/regles.gd")
+const Biomes := preload("res://scripts/biomes.gd")
 const DUREES := {"clair": [55.0, 110.0], "couvert": [30.0, 60.0], "pluie": [45.0, 90.0], "orage": [35.0, 70.0], "neige": [50.0, 100.0],
-	"brouillard": [40.0, 80.0], "canicule": [60.0, 120.0]}
+	"brouillard": [40.0, 80.0], "canicule": [60.0, 120.0], "tourmente": [40.0, 80.0], "cendres": [45.0, 90.0], "sable": [35.0, 70.0]}
 
 var jeu
 var temps := "clair"
@@ -29,6 +34,10 @@ var pluie := 0.0
 var orage := 0.0
 var neige := 0.0
 var brouillard := 0.0
+# (les temps d'un pays : la tourmente de la banquise, qui neige aussi ; la pluie de cendres du volcan ; le vent de sable du désert)
+var tourmente := 0.0
+var cendre := 0.0
+var sable := 0.0
 var vent := 0.1
 var vent_dir := Vector2.RIGHT
 var chaleur := 0.0            # ce que l'épisode ajoute à l'air (la canicule), ou lui retire
@@ -44,6 +53,11 @@ var tiede := 0.5
 var du_monde := ""
 var boue_fond := 0.0          # un lieu gorgé d'eau (un marais) n'est jamais tout à fait sec
 var crue_fond := 0.0
+# le caractère du pays (scripts/biomes.gd) : son id, son identité ({} : aucune), la neige qui n'y fond jamais, ce que son sol freine
+var lieu := ""
+var identite: Dictionary = {}
+var neige_fond := 0.0
+var sol_frein := 0.0
 
 var _r := RandomNumberGenerator.new()
 var _force := 0.0             # la force de l'épisode en cours
@@ -54,8 +68,9 @@ var _relief := FastNoiseLite.new()
 var _flaques := FastNoiseLite.new()
 
 
-# le climat du lieu, au début d'une partie : graine, les axes du biome, la saison, le temps du cycle dans le monde (ou "")
-func preparer(graine: int, axes: Dictionary, meteo: Dictionary) -> void:
+# le climat du lieu, au début d'une partie : graine, les axes du biome, la saison, le temps du cycle dans le monde (ou "") ; l'id
+# du biome dit son caractère (scripts/biomes.gd)
+func preparer(graine: int, axes: Dictionary, meteo: Dictionary, lieu_: String = "") -> void:
 	_r.seed = graine + 77
 	_relief.seed = graine + 5
 	_relief.frequency = 0.0017
@@ -67,9 +82,10 @@ func preparer(graine: int, axes: Dictionary, meteo: Dictionary) -> void:
 	du_monde = str(meteo.get("temps", ""))
 	boue_fond = clampf((humide - 0.75) * 1.6, 0.0, 0.4)
 	crue_fond = clampf((humide - 0.85) * 3.0, 0.0, 0.3)
+	_caractere(lieu_)
 	boue = maxf(boue_fond, float(meteo.get("eaux", 0.0)) * 0.5)
 	crue = crue_fond
-	neige_sol = clampf(float(meteo.get("neige", 0.0)), 0.0, 1.0)
+	neige_sol = maxf(neige_fond, clampf(float(meteo.get("neige", 0.0)), 0.0, 1.0))
 	vent = clampf(0.1 + float(meteo.get("vent", 0.0)) * 0.6, 0.0, 1.0)
 	vent_dir = Vector2.from_angle(_r.randf() * TAU)
 	# (au réveil, un temps calme : de quoi ramasser du bois et faire un premier feu)
@@ -80,6 +96,9 @@ func preparer(graine: int, axes: Dictionary, meteo: Dictionary) -> void:
 	orage = 0.0
 	neige = 0.0
 	brouillard = 0.0
+	tourmente = 0.0
+	cendre = 0.0
+	sable = 0.0
 	chaleur = 0.0
 	_presages.clear()
 	_air(0.0)
@@ -87,13 +106,22 @@ func preparer(graine: int, axes: Dictionary, meteo: Dictionary) -> void:
 
 # le monde ouvert : la veilleuse passe dans un autre biome. Le ciel reste ce qu'il est ; ce qui viendra ensuite, l'air, ce que le
 # sol garde d'eau suivent le climat du nouveau lieu
-func changer_de_lieu(axes: Dictionary, meteo: Dictionary) -> void:
+func changer_de_lieu(axes: Dictionary, meteo: Dictionary, lieu_: String = "") -> void:
 	humide = clampf(float(axes.get("humidite", 0.5)), 0.0, 1.0)
 	tiede = clampf(float(axes.get("temperature", 0.5)), 0.0, 1.0)
 	du_monde = str(meteo.get("temps", ""))
 	boue_fond = clampf((humide - 0.75) * 1.6, 0.0, 0.4)
 	crue_fond = clampf((humide - 0.85) * 3.0, 0.0, 0.3)
+	_caractere(lieu_)
 	_air(0.0)
+
+
+# le caractère du pays (scripts/biomes.gd) : ce qui ne change pas d'un jour à l'autre
+func _caractere(lieu_: String) -> void:
+	lieu = lieu_
+	identite = Biomes.de(lieu_)
+	neige_fond = float(identite.get("neige_fond", 0.0))
+	sol_frein = float(identite.get("sol_frein", 0.0))
 
 
 func _process(delta: float) -> void:
@@ -116,8 +144,12 @@ func avancer(delta: float) -> void:
 	_toit_vu = maxf(toit, _toit_vu - delta * 0.5)
 	pluie = lerpf(pluie, _force * (1.0 if temps == "pluie" else (0.9 if temps == "orage" else 0.0)) * dehors, k)
 	orage = lerpf(orage, (_force if temps == "orage" else 0.0) * dehors, k)
-	neige = lerpf(neige, (_force if temps == "neige" else 0.0) * dehors, k)
+	# (la tourmente est une neige que le vent chasse : elle neige aussi)
+	neige = lerpf(neige, (_force if (temps == "neige" or temps == "tourmente") else 0.0) * dehors, k)
 	brouillard = lerpf(brouillard, (_force if temps == "brouillard" else 0.0) * dehors, k)
+	tourmente = lerpf(tourmente, (_force if temps == "tourmente" else 0.0) * dehors, k)
+	cendre = lerpf(cendre, (_force if temps == "cendres" else 0.0) * dehors, k)
+	sable = lerpf(sable, (_force if temps == "sable" else 0.0) * dehors, k)
 	# (la canicule est du jour : la nuit, elle retombe aux deux tiers)
 	var plein_jour: float = (0.35 + 0.65 * jeu.lumiere_du_jour()) if jeu != null else 1.0
 	chaleur = lerpf(chaleur, (0.3 * _force * plein_jour if temps == "canicule" else 0.0) * dehors, k)
@@ -129,6 +161,10 @@ func avancer(delta: float) -> void:
 			vent_cible = 0.5 + 0.4 * _force
 		"neige":
 			vent_cible = 0.25 + 0.3 * _force
+		"tourmente":
+			vent_cible = 0.72 + 0.28 * _force
+		"sable":
+			vent_cible = 0.66 + 0.3 * _force
 	vent = lerpf(vent, vent_cible * dehors, k * 0.5)
 	_air(delta)
 	_sol(delta)
@@ -139,7 +175,8 @@ func avancer(delta: float) -> void:
 func _suivant() -> void:
 	var ete: bool = jeu != null and str(jeu.saison) == "été"
 	var hiver: bool = jeu != null and str(jeu.saison) == "hiver"
-	var froid := _air_de_fond() < (0.36 if hiver else 0.3)
+	# (un pays où la neige ne fond jamais est froid, même au plus chaud d'un jour d'été)
+	var froid := _air_de_fond() < (0.36 if hiver else 0.3) or neige_fond > 0.0
 	var poids := {
 		"clair": 0.75 - 0.4 * humide,
 		"couvert": 0.2,
@@ -149,12 +186,25 @@ func _suivant() -> void:
 		# (la canicule : l'été, là où il fait bon et pas trop humide)
 		"canicule": 0.14 if (ete and tiede > 0.48 and humide < 0.6) else 0.0,
 		"neige": 0.0,
+		"tourmente": 0.0,
+		"cendres": 0.0,
+		"sable": 0.0,
 	}
 	if froid:
 		# (dans le froid, l'eau tombe en neige, et l'orage ne se forme pas)
 		poids["neige"] = poids["pluie"] + poids["orage"]
 		poids["pluie"] = 0.0
 		poids["orage"] = 0.0
+	# le caractère du pays : ce qui y vient plus souvent (scripts/biomes.gd)
+	var saison: String = str(jeu.saison) if jeu != null else "été"
+	if (identite.get("canicule", []) as Array).has(saison):
+		poids["canicule"] = maxf(float(poids["canicule"]), 0.14)
+	var siens: Dictionary = identite.get("temps", {})
+	for nom in siens:
+		# (la tourmente ne souffle que dans le froid ; la canicule, que dans ses saisons)
+		if (nom == "tourmente" and not froid) or (nom == "canicule" and float(poids["canicule"]) <= 0.0):
+			continue
+		poids[nom] = float(poids.get(nom, 0.0)) * float(siens[nom][0]) + float(siens[nom][1])
 	var m := du_monde
 	if m == "tempete":
 		m = "neige" if froid else "orage"
@@ -196,8 +246,11 @@ func forcer(nom: String, force: float = 1.0, duree: float = 60.0, d_un_coup: boo
 	if d_un_coup:
 		pluie = force * (1.0 if nom == "pluie" else (0.9 if nom == "orage" else 0.0))
 		orage = force if nom == "orage" else 0.0
-		neige = force if nom == "neige" else 0.0
+		neige = force if (nom == "neige" or nom == "tourmente") else 0.0
 		brouillard = force if nom == "brouillard" else 0.0
+		tourmente = force if nom == "tourmente" else 0.0
+		cendre = force if nom == "cendres" else 0.0
+		sable = force if nom == "sable" else 0.0
 		chaleur = 0.3 * force if nom == "canicule" else 0.0
 	_air(0.0)
 
@@ -217,6 +270,10 @@ func _air_de_fond() -> float:
 			a -= 0.04
 	if jeu != null:
 		a -= 0.11 * (1.0 - jeu.lumiere_du_jour())
+		# (le caractère du pays : la banquise plus froide, ses nuits bien plus ; le désert brûlant le jour, glacé la nuit)
+		if not identite.is_empty():
+			var jour_: float = jeu.lumiere_du_jour()
+			a += float(identite.get("air_jour", 0.0)) * jour_ + float(identite.get("air_nuit", 0.0)) * (1.0 - jour_)
 		# (sur les hauteurs du relief : scripts/carte.gd)
 		a -= R.FROID_PAR_PALIER * float(jeu.get("altitude")) if jeu.get("altitude") != null else 0.0
 	# (sous terre : un air frais, le même en toute saison, de jour comme de nuit)
@@ -224,7 +281,9 @@ func _air_de_fond() -> float:
 
 
 func _air(_delta: float) -> void:
-	air = clampf(_air_de_fond() - 0.07 * pluie - 0.05 * orage - 0.12 * neige - 0.05 * brouillard - 0.05 * neige_sol + chaleur, 0.0, 1.0)
+	# (la tourmente mord plus que la neige ; les cendres voilent le soleil ; le vent de sable est un vent brûlant)
+	air = clampf(_air_de_fond() - 0.07 * pluie - 0.05 * orage - 0.12 * neige - 0.05 * tourmente - 0.03 * cendre + 0.06 * sable - 0.05 * brouillard
+		- 0.05 * neige_sol + chaleur, 0.0, 1.0)
 
 
 # --- le sol ---
@@ -246,6 +305,9 @@ func _sol(delta: float) -> void:
 		neige_sol = minf(1.0, neige_sol + 0.012 * neige * delta)
 	elif air > 0.3:
 		neige_sol = maxf(0.0, neige_sol - 0.004 * (air - 0.2) * 4.0 * delta)
+	# (la banquise : un manteau qui ne fond jamais ; en y entrant, il gagne en une dizaine de secondes, il ne tombe pas d'un coup)
+	if neige_sol < neige_fond:
+		neige_sol = minf(neige_fond, neige_sol + 0.06 * delta)
 
 
 # le relief du lieu, de 0 (un creux) à 1 (une butte) : là où l'on s'éveille, c'est une butte
@@ -259,6 +321,9 @@ func eau(p: Vector2) -> float:
 	var gue := 0.0
 	if jeu != null and jeu.get("carte") != null:
 		gue = jeu.carte.gue_en(p)
+	# (une fondrière du marais : de l'eau noire, de la vase ; scripts/biome_terrain.gd)
+	if jeu != null and jeu.get("terrain") != null:
+		gue = maxf(gue, float(jeu.terrain.fondriere(p)))
 	if crue * (1.0 - toit) <= 0.01:
 		return gue
 	var seuil := lerpf(0.26, 0.5, crue)
@@ -280,6 +345,11 @@ func allure(p: Vector2, masse: float = 60.0) -> float:
 		a *= 1.0 - R.EAU_FREIN * e
 	if neige_sol * dehors > 0.2:
 		a *= 1.0 - R.NEIGE_FREIN * smoothstep(0.2, 0.6, neige_sol * dehors) * poids
+	# (le sable du désert, qui se dérobe ; le vent de sable, qu'on prend de face)
+	if sol_frein > 0.0:
+		a *= 1.0 - sol_frein * dehors * poids
+	if sable * dehors > 0.02:
+		a *= 1.0 - R.SABLE_FREIN * sable * dehors
 	# (le monde ouvert : un col se monte lentement ; scripts/carte.gd)
 	if jeu != null and jeu.get("carte") != null:
 		a *= float(jeu.carte.allure(p))
@@ -380,6 +450,7 @@ func _tomber(p: Vector2, sur) -> void:
 func photo() -> Dictionary:
 	return {"temps": temps, "force": snappedf(_force, 0.01), "reste": snappedf(_reste, 0.1), "pluie": snappedf(pluie, 0.01), "orage": snappedf(orage, 0.01),
 		"neige": snappedf(neige, 0.01), "brouillard": snappedf(brouillard, 0.01), "vent": snappedf(vent, 0.01), "vent_dir": snappedf(vent_dir.angle(), 0.01),
+		"tourmente": snappedf(tourmente, 0.01), "cendre": snappedf(cendre, 0.01), "sable": snappedf(sable, 0.01),
 		"boue": snappedf(boue, 0.01), "crue": snappedf(crue, 0.01), "neige_sol": snappedf(neige_sol, 0.01), "tirages": str(_r.state)}
 
 
@@ -393,6 +464,9 @@ func reprendre(d: Dictionary) -> void:
 	orage = float(d.get("orage", 0.0))
 	neige = float(d.get("neige", 0.0))
 	brouillard = float(d.get("brouillard", 0.0))
+	tourmente = float(d.get("tourmente", 0.0))
+	cendre = float(d.get("cendre", 0.0))
+	sable = float(d.get("sable", 0.0))
 	vent = float(d.get("vent", vent))
 	vent_dir = Vector2.from_angle(float(d.get("vent_dir", 0.0)))
 	boue = float(d.get("boue", boue))

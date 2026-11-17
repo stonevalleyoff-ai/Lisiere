@@ -6,7 +6,8 @@ extends RefCounted
 # torche, sa température, si elle est trempée) ; le temps qu'il fait, la boue, l'eau montée ; les feux et leur bois ; le lieu tel qu'on
 # l'a laissé (les arbres abattus ou brûlés, les rochers entamés, les buissons qui
 # repoussent, les brindilles ramassées ou tombées) ; ce qu'on a croisé et chassé, et les bêtes tuées dont les échos reviennent ;
-# le numéro de la partie au tableau des scores. Les bêtes, elles, reviennent d'elles-mêmes. À la fin d'une partie, elle s'efface.
+# le numéro de la partie au tableau des scores ; ce qu'elle a pris au sol des pays (l'obsidienne, la tourbe, le bois flotté, les
+# carcasses). Les bêtes, elles, reviennent d'elles-mêmes. À la fin d'une partie, elle s'efface.
 # Connectée, elle part aussi sur le compte StoneValley (scripts/session.gd, garder_partie), avec un résumé pour le portail ; à
 # l'écran-titre, la plus récente des deux se reprend (compte_plus_recent).
 
@@ -118,6 +119,8 @@ static func photo(jeu) -> Dictionary:
 		"botanique": jeu.botanique.photo() if jeu.get("botanique") != null else {},
 		# (la carte : ce qu'elle a parcouru d'un lieu, ce qu'elle y a écrit ; scripts/reperes.gd)
 		"reperes": jeu.reperes.photo() if jeu.get("reperes") != null else {},
+		# (ce qu'elle a pris au sol des pays : l'obsidienne taillée, la tourbe, le bois flotté, les carcasses ; scripts/biome_terrain.gd)
+		"terrain": jeu.terrain.photo() if jeu.get("terrain") != null else {},
 	}
 
 

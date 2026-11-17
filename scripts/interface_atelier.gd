@@ -1034,6 +1034,9 @@ class Feuille extends Control:
 	func _matieres() -> Array:
 		var cases := []
 		for k in Atelier.MATIERES:
+			# (ce que seuls certains pays donnent ne se montre qu'une fois trouvé : scripts/biomes.gd)
+			if (k == "obsidienne" or k == "tourbe") and atelier.possede(k) <= 0:
+				continue
 			var sur: int = atelier.capacite()
 			if k == "eau":
 				sur = Atelier.GORGEES if atelier.possede("gourde") > 0 else 0

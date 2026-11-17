@@ -24,7 +24,9 @@ const NOMS := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "fi
 	"houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire", "sacoche", "selle",
 	"carre", "appat", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "bete",
 	"herbier", "mortier", "baume", "tisane", "philtre", "botte", "appat_poison", "appat_dormant", "carte", "plume",
-	"fleurs", "champignons", "amanite", "infusion"]
+	"fleurs", "champignons", "amanite", "infusion",
+	# (ce que donnent les pays qui ont leur caractère : scripts/biomes.gd)
+	"obsidienne", "tourbe", "lance_obsidienne"]
 
 const TOILE := Color("aba888")          # (la bâche : une toile écrue, enduite, entre l'ivoire et la mousse)
 const TOILE_CLAIRE := Color("cbc6a4")
@@ -221,6 +223,13 @@ static func _icone(ci, id: String, w: float, m: Color) -> void:
 			_champignon(ci, w, m, true)
 		"infusion":
 			_infusion(ci, w, m)
+
+		"obsidienne":
+			_obsidienne(ci, w, m)
+		"tourbe":
+			_tourbe(ci, w, m)
+		"lance_obsidienne":
+			_lance_obsidienne(ci, w, m)
 
 
 # --- les briques ---
@@ -1462,3 +1471,46 @@ static func _infusion(ci, w: float, m: Color) -> void:
 	_forme(ci, _ellipse(Vector2(0, 4), 31.0, 6.8, 0.0, 26), BOUILLON.lerp(P.BRAISE_COEUR, 0.35), w * 0.7, m)
 	_fleur(ci, Vector2(6, 3), 7.0, P.PAPIER.lightened(0.15), P.BRAISE_COEUR, w * 0.8, m)
 	ci.draw_polyline(_bezier(Vector2(-31, 18), Vector2(0, 34), Vector2(31, 18), 12), Color(P.ENCRE, 0.3) * m, w * 0.5, true)
+
+# --- ce que donnent les pays (scripts/biomes.gd) ---
+
+# l'obsidienne : un éclat de verre noir, à facettes, une arête de lumière bleue, son tranchant clair
+static func _obsidienne(ci, w: float, m: Color) -> void:
+	var noir := P.ENCRE.lerp(P.NUIT_BLEUE, 0.45)
+	var face := P.NUIT_BLEUE.lerp(P.LUNE, 0.4)
+	var eclat := PackedVector2Array([Vector2(-38, 30), Vector2(-26, -14), Vector2(4, -44), Vector2(36, -26), Vector2(30, 18), Vector2(-4, 40)])
+	_forme(ci, eclat, noir, w, m)
+	_forme(ci, PackedVector2Array([Vector2(-26, -14), Vector2(4, -44), Vector2(6, 6), Vector2(-20, 22)]), face, w * 0.7, m)
+	_forme(ci, PackedVector2Array([Vector2(6, 6), Vector2(36, -26), Vector2(30, 18)]), noir.lerp(face, 0.35), w * 0.6, m)
+	ci.draw_line(Vector2(-22, -10), Vector2(0, -36), Color(P.PAPIER, 0.85) * m, w * 0.9, true)
+	ci.draw_line(Vector2(-14, 14), Vector2(2, 2), Color(P.PAPIER, 0.45) * m, w * 0.6, true)
+
+
+# la tourbe : une motte taillée, brune, fibreuse, sa coupe plus claire, de la mousse dessus
+static func _tourbe(ci, w: float, m: Color) -> void:
+	var brun := P.TERRE.darkened(0.45)
+	var coupe := P.TERRE.darkened(0.2)
+	var devant := PackedVector2Array([Vector2(-40, -6), Vector2(22, -6), Vector2(22, 36), Vector2(-40, 36)])
+	var dessus := PackedVector2Array([Vector2(-40, -6), Vector2(-20, -30), Vector2(42, -30), Vector2(22, -6)])
+	var cote := PackedVector2Array([Vector2(22, -6), Vector2(42, -30), Vector2(42, 12), Vector2(22, 36)])
+	_forme(ci, cote, brun, w, m)
+	_forme(ci, devant, coupe, w, m)
+	_forme(ci, dessus, P.MOUSSE.lerp(brun, 0.35), w, m)
+	for y in [4.0, 14.0, 24.0]:
+		ci.draw_line(Vector2(-34, y), Vector2(16, y + 2.0), Color(P.FAIM, 0.7) * m, w * 0.6, true)
+	for x in [-12.0, 8.0, 28.0]:
+		ci.draw_line(Vector2(x, -26), Vector2(x - 6.0, -12), Color(P.FEUILLE_SOMBRE, 0.8) * m, w * 0.6, true)
+
+
+# la lance d'obsidienne : la hampe et sa ligature, une pointe de verre noir, sa lumière bleue
+static func _lance_obsidienne(ci, w: float, m: Color) -> void:
+	_forme(ci, _capsule(Vector2(-42, 42), Vector2(10, -10), 6.5), MANCHE * m, w, m)
+	ci.draw_line(Vector2(-34, 30), Vector2(2, -6), Color(P.PAPIER, 0.3) * m, w * 0.6, true)
+	var lame := PackedVector2Array([Vector2(2, -2), Vector2(12, -32), Vector2(48, -48), Vector2(32, -12)])
+	_forme(ci, lame, P.ENCRE.lerp(P.NUIT_BLEUE, 0.45), w, m)
+	_forme(ci, PackedVector2Array([Vector2(2, -2), Vector2(12, -32), Vector2(48, -48)]), P.NUIT_BLEUE.lerp(P.LUNE, 0.4), w * 0.6, m)
+	ci.draw_line(Vector2(14, -26), Vector2(38, -42), Color(P.PAPIER, 0.85) * m, w * 0.8, true)
+	for i in 3:
+		var q := Vector2(-2, 2) + Vector2(-1, 1) * (i * 6.0)
+		ci.draw_line(q + Vector2(-8, -8), q + Vector2(8, 8), P.ENCRE * m, w * 1.9, true)
+		ci.draw_line(q + Vector2(-7, -7), q + Vector2(7, 7), CHANVRE * m, w * 0.9, true)

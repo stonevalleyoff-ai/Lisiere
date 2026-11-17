@@ -46,7 +46,7 @@ Chacune est jouable et vérifiée (l'essai, le téléphone émulé) avant la sui
    temps, la crue l'emporte, le feu le brûle. Les bêtes le prennent aussi, les chasseurs compris. Un pont gardé avec la partie.
 5. **Se repérer.** *Fait, sauf le tableau des scores.* Une carte dans le carnet, qui se dessine à mesure qu'on explore ; le
    nom de la région quand on y entre ; les régions découvertes au tableau des scores.
-6. **Des raisons de voyager.** Des ressources qui changent avec le biome, des repères, des camps.
+6. **Des raisons de voyager.** *Commencé : quatre pays ont leur caractère.* Des ressources qui changent avec le biome, des repères, des camps.
 
 ## Où on en est
 
@@ -181,6 +181,25 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
 - le contour d'une région (`Carte.contour`) ondule comme sa frontière dans le jeu ;
 - **reste à faire** : les régions découvertes au tableau des scores (il faut une colonne de plus dans la base de Stone
   Valley).
+
+**Étape 6, commencée : les pays** (`scripts/biomes.gd`, `scripts/biome_terrain.gd`, `scripts/biome_dessins.gd`, `scripts/climat.gd`) —
+d'un biome à l'autre, on jouait la même partie. Quatre ont maintenant un caractère, qui pose un problème et offre quelque chose :
+- **le climat** (`climat.changer_de_lieu(axes, meteo, id)`) : en entrant dans le pays, l'air prend son caractère (la banquise
+  plus froide, ses nuits bien plus ; le désert brûlant le jour, glacé la nuit), le temps qui vient aussi (la tourmente, la
+  pluie de cendres, le vent de sable ; le brouillard au marais ; la canicule hors de l'été au désert), et le sol (la neige
+  qui ne fond jamais sur la banquise, le sable qui freine). Le ciel en cours reste ce qu'il est jusqu'à son terme ;
+- **le sol** (`scripts/biome_terrain.gd`) : par cases de 600 pixels, d'après la graine, autour de la veilleuse (1 500 pixels ; un
+  lieu fermé, tout entier) : les fondrières, les failles, les fumerolles, les mares gelées, les dunes, les scories, et ce qu'on
+  ramasse (le bois flotté, surtout près de la mer ; l'obsidienne, la tourbe, les carcasses). Jamais dans l'eau, sur une crête,
+  une paroi, la roche. Une case se fait en une demi-milliseconde, se dessine en moins d'une, une fois ; elle se défait à 2 700
+  pixels. La partie gardée ne retient que ce qu'on y a pris ;
+- **on le dit** en y entrant (une fois par partie, avec le nom de la région) ;
+- vérifié : l'essai (25 vérifications, « 9. Les pays » : l'entrée au désert et au volcan dans le monde ouvert, puis chacun des
+  quatre dans un lieu fermé) ; la vitrine (`--pres faille`, `--temps tourmente`, `--ouvert --depuis -10724,40502` pour le
+  désert, `-29825,42639` le volcan, `9058,-15350` le marais, `31979,-149784` la banquise) ;
+- **reste à faire** : d'autres pays (la toundra, la caldeira, les braises, la tourbière en emprunteraient beaucoup) ; la mer
+  gelée au bord de la banquise, où l'on marcherait (l'eau reste une frontière) ; le climat ne se mêle pas d'un pays à l'autre à
+  leur frontière (il change d'un coup en la passant).
 
 **Ce que l'étape 3 ne fait pas encore** :
 - hors ligne, seuls les neuf lieux de la copie gardée ont leurs bêtes (forêt, prairie, lande, taïga, marais, banquise, volcan, désert, grotte) ; ailleurs, celles du biome d'avant restent ;

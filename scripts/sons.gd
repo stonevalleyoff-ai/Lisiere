@@ -253,6 +253,18 @@ func jouer(nom: String, volume_db: float = 0.0, hauteur: float = 1.0) -> void:
 		_son("gresille", volume_db + float(GAINS["gresille"]) + 3.0, 1.0, 0.0, 0.0, B_MONDE, true)
 
 
+# un son du lieu, là où il se fait (le sol des pays : scripts/biome_terrain.gd, une fumerolle qui crache, la vase qui
+# glougloute) : à sa place pour l'oreille, d'autant plus faible qu'il est loin ; rien au-delà de sa portée
+func au_loin(nom: String, p: Vector2, volume_db: float, hauteur: float = 1.0, portee: float = 900.0) -> void:
+	if _joueur == null or not is_instance_valid(_joueur) or _mort >= 0.0:
+		return
+	var d: float = p.distance_to(_joueur.position)
+	if d > portee:
+		return
+	var pres := 1.0 - d / portee
+	_son(nom, volume_db + lerpf(-26.0, 0.0, pres * pres), hauteur, pan_de(p), float(MOUILLE.get(nom.rstrip("0123456789"), 0.0)) * _espace, B_MONDE, not mobile)
+
+
 # un son de l'atelier (sons_atelier.gd), à son niveau propre : « marteau », « scie », « couture », « tresse », « toile »,
 # « piquet », « corde », « fouille », « gourde », « gorgee », « clic », « etincelle », « filet », « sangle ». Sans chiffre au
 # bout, une variante au hasard (jamais deux fois la même de suite). ou : où il se fait, s'il n'est pas dans ses mains

@@ -16,9 +16,11 @@ const R := preload("res://scripts/regles.gd")
 const Campement := preload("res://scripts/campement.gd")
 
 # les matières, dans l'ordre où on les montre ; celles du début sont dans le sac depuis toujours (regles.gd, NOMS)
-const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet"]
+const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet",
+	# (ce que seuls certains pays donnent : le volcan, le marais ; scripts/biomes.gd)
+	"obsidienne", "tourbe"]
 const NOMS_MATIERES := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "peau": "peau", "ferraille": "ferraille",
-	"corde": "corde", "bache": "bâche", "eau": "eau", "galet": "galets"}
+	"corde": "corde", "bache": "bâche", "eau": "eau", "galet": "galets", "obsidienne": "obsidienne", "tourbe": "tourbe"}
 # les familles, dans l'ordre de la page de l'établi : [la clé, son titre]
 const FAMILLES := [["matiere", "Les matières"], ["camp", "Le camp"], ["tenue", "La tenue"], ["outil", "Les outils"],
 	["jardin", "Le jardin"], ["elevage", "L'élevage"]]
@@ -87,10 +89,14 @@ const OBJETS := {
 		"dit": "Sur le dos d'une bête : à ses côtés, tu portes vingt de plus de chaque chose."},
 	"selle": {"nom": "Selle", "famille": "elevage", "ou": "etabli", "cout": {"peau": 3, "corde": 2, "bois": 1},
 		"dit": "Sur une bête assez forte, on la monte : on va bien plus vite. Elle te jette à terre quand elle a peur."},
+	# le volcan (scripts/biomes.gd) : son obsidienne est la seule pointe qu'on sache encore tailler ; la lance est aussitôt dans
+	# ses mains (fabriquer), elle ne se range pas
+	"lance_obsidienne": {"nom": "Lance d'obsidienne", "famille": "outil", "ou": "etabli", "cout": {"obsidienne": 2, "bois": 2, "corde": 1},
+		"dit": "Une pointe de verre noir, ligaturée sur une hampe. Elle frappe comme une lance ferrée."},
 }
 const ORDRE := ["corde", "bache", "galet", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
 	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "carte", "plume", "houe", "arrosoir", "epouvantail", "licol",
-	"piquet", "mangeoire", "sacoche", "selle"]
+	"piquet", "mangeoire", "sacoche", "selle", "lance_obsidienne"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
 const TEINTE := Color(0.86, 0.8, 0.66)
 const PORTEE := 54.0              # à quelle distance on se sert d'une chose posée, d'un établi
@@ -193,6 +199,9 @@ func fabriquer(id: String) -> bool:
 		inv[k] = int(inv.get(k, 0)) - int(o["cout"][k])
 	if MATIERES.has(id):
 		inv[id] = int(inv.get(id, 0)) + int(o.get("lot", 1))
+	elif id == "lance_obsidienne":
+		# (une lance : dans ses mains, toute neuve, à la place de celle qu'elle avait)
+		jeu.joueur.lance = R.USURE_LANCE
 	else:
 		objets[id] = int(objets.get(id, 0)) + 1
 		if bool(o.get("porte", false)) and id != "lampe":
