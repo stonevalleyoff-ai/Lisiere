@@ -13,8 +13,22 @@ extends Node2D
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const P := preload("res://scripts/palette.gd")
 const SHADER := preload("res://shaders/vegetation_feuillage.gdshader")
-const BUTIN := {"arbre": "bois", "sapin": "bois", "souche": "", "rocher": "pierre", "buisson": "baies", "touffe": "fibre", "brindille": "bois",
-	"champignon": "baies", "herbe": "herbe", "fleur": "fleurs", "aquatique": "fibre", "cepe": "champignons", "amanite": "amanite"}
+# (une entrée par ligne : chacun y ajoute la sienne sans toucher aux autres)
+const BUTIN := {
+	"arbre": "bois",
+	"sapin": "bois",
+	"souche": "",
+	"rocher": "pierre",
+	"buisson": "baies",
+	"touffe": "fibre",
+	"brindille": "bois",
+	"champignon": "baies",
+	"herbe": "herbe",
+	"fleur": "fleurs",
+	"aquatique": "fibre",
+	"cepe": "champignons",
+	"amanite": "amanite",
+}
 const Flore := preload("res://scripts/flore.gd")
 const Dessins := preload("res://scripts/flore_dessins.gd")
 const R_REPOUSSE_FLEURS := preload("res://scripts/regles.gd").REPOUSSE_FLEURS

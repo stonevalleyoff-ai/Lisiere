@@ -49,7 +49,15 @@ const FLEURISSENT := ["fleur", "bulbe", "orchidee", "bromelia", "bruyere", "arom
 # les stades d'Orvane où rien ne fleurit (« feuilles » : la plante est en pleine pousse, et celles qui fleurissent sont en fleurs)
 const SANS_FLEURS := ["nu", "nue", "dormance", "repos", "graines", "fruits", "sec", "seche", "fanee", "mort"]
 # ce que donne une forme, cueillie (sinon : le genre décide, scripts/objet.gd, BUTIN)
-const DONNE := {"liane": "fibre", "bambou": "bois", "algue": "fibre", "aromatique": "fleurs", "bruyere": "fleurs", "nenuphar": "fleurs"}
+# (une entrée par ligne : chacun y ajoute la sienne sans toucher aux autres)
+const DONNE := {
+	"liane": "fibre",
+	"bambou": "bois",
+	"algue": "fibre",
+	"aromatique": "fleurs",
+	"bruyere": "fleurs",
+	"nenuphar": "fleurs",
+}
 # les champignons des bois, de Lisière : la part d'amanites parmi eux
 const AMANITES := 0.35
 
