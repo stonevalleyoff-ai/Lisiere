@@ -30,6 +30,8 @@ static func sait(forme: String) -> bool:
 # --- ce que la forme change à l'objet : ses parts, son tronc, ce où l'on bute ---
 
 static func regler(o) -> void:
+	if bool(o.planche):
+		_planche(o)
 	match str(o.forme):
 		"pionnier":
 			o.epaisseur = 0.72
@@ -529,7 +531,7 @@ static func _palmier(o, p, r: RandomNumberGenerator, t: Color, fougere: bool) ->
 
 static func dessiner(o, p, r: RandomNumberGenerator) -> bool:
 	if bool(o.planche):
-		_planche(o)
+		# (sa planche est un nœud à part, posé une fois : regler)
 		return true
 	var f := str(o.forme)
 	match str(o.genre):
@@ -599,14 +601,15 @@ static func _planche(o) -> void:
 	if o.has_meta("planche"):
 		return
 	o.set_meta("planche", true)
-	var orvane = o.get_node_or_null("/root/Orvane") if o.is_inside_tree() else null
+	var boucle = Engine.get_main_loop()
+	var orvane = boucle.root.get_node_or_null("Orvane") if boucle is SceneTree else null
 	var tex: Texture2D = orvane.texture_plante(str(o.plante), 34.0) if orvane != null else null
 	if tex == null:
 		return
 	var s := Sprite2D.new()
 	s.texture = tex
 	s.offset = Vector2(0, -tex.get_height() * (144.0 / 150.0 - 0.5))
-	o.add_child.call_deferred(s)
+	o.add_child(s)
 
 
 # -- les buissons --

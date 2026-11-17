@@ -294,7 +294,7 @@ func poser(id: String) -> bool:
 	objets[id] = possede(id) - 1
 	# (elle dégage le sol : les brindilles, les touffes qui passeraient au travers)
 	for o in jeu.monde.autour(p, maxf(14.0, Campement.rayon(id)) + 4.0):
-		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe"]:
+		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe", "fleur", "cepe", "amanite", "aquatique"]:
 			jeu.monde.retirer(o)
 	_creer(id, p, {})
 	j.geste_atelier("monter")

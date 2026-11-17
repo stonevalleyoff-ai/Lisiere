@@ -4371,6 +4371,15 @@ func _la_flore() -> void:
 			"taiga":
 				verif(int(d["genres"].get("sapin", 0)) > 40 and int(d["formes"].get("conifere", 0)) == int(d["genres"].get("sapin", 0)) and int(d["genres"].get("arbre", 0)) > 200,
 					"taïga : ses sapins sont les conifères de son herbier (%d), parmi ses feuillus (%d)" % [int(d["genres"].get("sapin", 0)), int(d["genres"].get("arbre", 0))])
+	# une plante d'un port que Lisière ne connaît pas : la planche d'Orvane, en secours (un nœud à part, sans encre)
+	var une_planche: String = str(Orvane._herbiers.get("prairie", {}).get("plantes", {}).get("flore-prairie-fleur", {}).get("svg", ""))
+	Orvane.ajouter_herbier("essai-planche", {"plantes": {"flore-essai-inconnue": {"svg": une_planche, "nom": "Inconnue", "forme": "inconnue", "port": "inconnu", "part": 1.0}}})
+	var o_pl = W._poser("sol", Vector2(90000.0, 150000.0), Color.WHITE, 17, W.lieu_de("essai-planche"))
+	var sa_planche: bool = o_pl != null and o_pl.planche and o_pl.get_children().any(func(c): return c is Sprite2D and c.texture != null)
+	if o_pl != null:
+		W._defaire(o_pl)
+	Orvane.ajouter_herbier("essai-planche", {})
+	verif(une_planche != "" and sa_planche, "une plante d'un port inconnu se montre par la planche d'Orvane, en secours")
 	# sans herbier, la température décide encore : la banquise reprend ses sapins
 	var gardee: Dictionary = Orvane._herbiers.get("banquise", {})
 	Orvane.ajouter_herbier("banquise", {})

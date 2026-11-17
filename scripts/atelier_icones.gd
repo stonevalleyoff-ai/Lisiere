@@ -1392,28 +1392,33 @@ static func _plume(ci, w: float, m: Color) -> void:
 
 # --- la cueillette ---
 
-# une fleur des prés : cinq pétales autour d'un cœur, à la lumière en haut à gauche
+# une fleur des prés : une silhouette d'encre, cinq pétales posés dessus (sans cerne chacun : l'encre les noierait), un cœur
 static func _fleur(ci, c: Vector2, r: float, petale: Color, coeur: Color, w: float, m: Color) -> void:
+	var tour := PackedVector2Array()
+	for k in 30:
+		var a := TAU * k / 30.0
+		tour.append(c + Vector2(cos(a), sin(a)) * r * (1.0 + 0.16 * cos(a * 5.0 + PI * 0.5)) * 1.08)
+	ci.draw_colored_polygon(tour, P.ENCRE * m)
 	for k in 5:
 		var a := TAU * k / 5.0 - PI * 0.5
-		_forme(ci, _ellipse(c + Vector2(cos(a), sin(a)) * r * 0.62, r * 0.52, r * 0.4, a, 16), petale.lightened(0.08) if sin(a) < 0.2 else petale, w * 0.8, m)
-	_forme(ci, _ellipse(c, r * 0.32, r * 0.32, 0.0, 14), coeur, w * 0.7, m)
+		var pet := _ellipse(c + Vector2(cos(a), sin(a)) * r * 0.5, r * 0.5, r * 0.38, a, 16)
+		ci.draw_colored_polygon(pet, (petale.lightened(0.1) if sin(a) < 0.1 else petale.darkened(0.05)) * m)
+		ci.draw_line(c + Vector2(cos(a), sin(a)) * r * 0.32, c + Vector2(cos(a), sin(a)) * r * 0.78, Color(P.ENCRE, 0.25) * m, w * 0.35, true)
+	_forme(ci, _ellipse(c, r * 0.3, r * 0.3, 0.0, 14), coeur, w * 0.45, m)
 
 
 # les fleurs : un petit bouquet de fleurs des prés, des tiges liées d'un brin de paille
 static func _fleurs(ci, w: float, m: Color) -> void:
-	var tiges := [[Vector2(-4, 44), Vector2(-26, -12)], [Vector2(0, 44), Vector2(2, -26)], [Vector2(4, 44), Vector2(27, -8)], [Vector2(-2, 44), Vector2(-9, 4)], [Vector2(2, 44), Vector2(15, 8)]]
-	for t in tiges:
-		var ligne := _bezier(t[0], (t[0] + t[1]) * 0.5 + Vector2(0, 4), t[1], 8)
-		_cordon(ci, ligne, 3.2, VERT, w, m)
-	_limbe(ci, Vector2(-2, 22), Vector2(-22, 12), 5.5, VERT.lightened(0.08), w * 0.8, m)
-	_limbe(ci, Vector2(2, 26), Vector2(20, 18), 5.0, VERT, w * 0.8, m)
-	_cordon(ci, PackedVector2Array([Vector2(-8, 33), Vector2(8, 31)]), 4.0, CHANVRE, w, m)
-	_fleur(ci, Vector2(-9, 4), 9.0, P.PEUR.lerp(P.CREPUSCULE, 0.3).lightened(0.25), P.BRAISE_COEUR, w, m)
-	_fleur(ci, Vector2(15, 8), 9.0, P.BRAISE_COEUR.lightened(0.05), P.BRAISE.darkened(0.1), w, m)
-	_fleur(ci, Vector2(-26, -12), 11.0, P.PAPIER.lightened(0.15), P.BRAISE_COEUR, w, m)
-	_fleur(ci, Vector2(27, -8), 10.0, P.PAPIER.lightened(0.15), P.BRAISE_COEUR, w, m)
-	_fleur(ci, Vector2(2, -26), 12.0, P.PEUR.lerp(P.CREPUSCULE, 0.3).lightened(0.25), P.BRAISE_COEUR, w, m)
+	var tetes := [[Vector2(-21, -16), 14.0, P.PAPIER.lightened(0.15)], [Vector2(19, -20), 13.0, P.BRAISE_COEUR.lightened(0.05)],
+		[Vector2(-1, -34), 14.0, P.PEUR.lerp(P.CREPUSCULE, 0.25).lightened(0.3)], [Vector2(2, 2), 13.0, P.PAPIER.lightened(0.15)]]
+	for t in tetes:
+		var ligne := _bezier(Vector2(0, 46), Vector2((t[0].x) * 0.4, 20), t[0], 8)
+		_cordon(ci, ligne, 3.4, VERT, w * 0.8, m)
+	_limbe(ci, Vector2(-3, 28), Vector2(-26, 18), 6.0, VERT.lightened(0.08), w * 0.7, m)
+	_limbe(ci, Vector2(3, 31), Vector2(25, 22), 5.5, VERT, w * 0.7, m)
+	_cordon(ci, PackedVector2Array([Vector2(-9, 36), Vector2(9, 34)]), 4.5, CHANVRE, w * 0.8, m)
+	for t in tetes:
+		_fleur(ci, t[0], t[1], t[2], P.BRAISE_COEUR.darkened(0.05) if t[2].v > 0.85 and t[2].s < 0.3 else P.BRAISE.darkened(0.1), w, m)
 
 
 # un champignon des bois : le cèpe (chapeau brun, pied ventru, un fin réseau) ou l'amanite (rouge, ses verrues blanches, son
@@ -1436,8 +1441,9 @@ static func _champignon(ci, w: float, m: Color, amanite: bool) -> void:
 	var teinte := P.BRAISE_ROUGE.lerp(P.SANG, 0.12) if amanite else P.TERRE.lerp(P.BRAISE, 0.35)
 	_volume(ci, chapeau, teinte, w, m, 8.0, 0.3)
 	if amanite:
-		for q in [Vector2(-22, -18), Vector2(-6, -32), Vector2(12, -24), Vector2(26, -12), Vector2(-28, -4), Vector2(4, -12), Vector2(-14, -36)]:
-			_forme(ci, _ellipse(q, 4.2, 3.2, 0.3, 12), LAIT, w * 0.55, m)
+		for q in [Vector2(-22, -18), Vector2(-4, -31), Vector2(15, -22), Vector2(28, -8), Vector2(-30, -3), Vector2(5, -10)]:
+			ci.draw_colored_polygon(_ellipse(q, 6.0, 4.6, 0.3, 14), LAIT * m)
+			ci.draw_arc(q, 5.4, PI * 0.1, PI * 0.9, 6, Color(P.ENCRE, 0.35) * m, w * 0.3, true)
 	else:
 		ci.draw_polyline(_bezier(Vector2(-38, 2), Vector2(0, 9), Vector2(38, 2), 10), Color(P.BRAISE_COEUR, 0.7) * m, w * 1.1, true)
 	ci.draw_arc(Vector2(-6, -12), 28.0, PI * 1.08, PI * 1.42, 8, Color(P.PAPIER, 0.55) * m, w * 0.8, true)
