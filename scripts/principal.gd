@@ -47,6 +47,8 @@ const Botanique := preload("res://scripts/botanique.gd")
 const Reperes := preload("res://scripts/reperes.gd")
 const Galet := preload("res://scripts/galet.gd")
 const Lots := preload("res://scripts/lots.gd")
+const Biomes := preload("res://scripts/biomes.gd")
+const Terrain := preload("res://scripts/biome_terrain.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -104,6 +106,7 @@ var jardin                      # ce qu'elle sème et récolte (scripts/jardin.g
 var elevage                     # les bêtes qu'elle apprivoise (scripts/elevage.gd)
 var botanique                   # les herbes, ce qu'elle en sait, ce qu'elle en prépare (scripts/botanique.gd)
 var reperes                     # la carte : ce qu'elle a parcouru, ce qu'elle y a écrit (scripts/reperes.gd)
+var terrain                     # le sol des pays qui ont leur caractère : fondrières, failles, fumerolles, ce qu'on y ramasse (scripts/biome_terrain.gd)
 var page := ""                # la page d'atelier ouverte : « etabli », « sac » ("" : aucune) ; la partie attend, comme en pause
 var savoir: Dictionary = {}   # ce qu'elle a appris de chaque lignée, en secondes d'affût (le carnet des bêtes)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
@@ -607,7 +610,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	ciel.climat = climat
 	couche_ciel.add_child(ciel)
 	incendie.vider()
-	climat.preparer(graine, biome_info.get("axes", {}), meteo)
+	climat.preparer(graine, biome_info.get("axes", {}), meteo, biome)
 	# (ce que le temps dessine dans le lieu : le sol détrempé, l'eau, la foudre ; les flammes de l'incendie)
 	for dessin in [TempsSol.new(), IncendieFlammes.new()]:
 		dessin.jeu = self
@@ -620,6 +623,10 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	scene.add_child(traces)
 	var nappe: Node = scene.get_node_or_null("TempsSol")
 	scene.move_child(traces, nappe.get_index() + 1 if nappe != null else monde.get_index())
+	# (le sol des pays qui ont leur caractère : la banquise, le volcan, le marais, le désert ; scripts/biome_terrain.gd)
+	terrain = Terrain.new()
+	terrain.jeu = self
+	terrain.poser(scene)
 	if noire == null:
 		noire = Noire.new()
 		noire.jeu = self
@@ -677,10 +684,12 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		elevage.reprendre(gardee.get("elevage", {}))
 		botanique.reprendre(gardee.get("botanique", {}))
 		reperes.reprendre(gardee.get("reperes", {}))
+		terrain.reprendre(gardee.get("terrain", {}))
 		_herbes_a_redessiner()
 		if ouvert:
 			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
 			monde.suivre(joueur.position, true)
+		terrain.suivre(joueur.position, true)
 		ui.message("La partie reprend : %s, jour %d, %d nuit%s tenue%s." % [str(biome_info.get("nom", biome)), jour, nuits,
 			"s" if nuits > 1 else "", "s" if nuits > 1 else ""])
 		_garder()
@@ -695,6 +704,8 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 			session.partie_commence()
 		_ouvrir_au_tableau()
 	ui.message("Tu t'éveilles à la lisière : %s, %s. Le jour baisse vite." % [str(biome_info.get("nom", biome)), saison])
+	terrain.suivre(joueur.position, true)
+	_dire_le_pays(biome)
 	if donnees.memoire_forcee != "":
 		ui.message("Mémoire forcée, pour essayer : « %s ». Cette partie n'envoie rien à Orvane." % donnees.memoire_forcee, Color(0.75, 0.88, 1.0))
 	if climat.neige_sol >= R.NEIGE_AU_SOL:
@@ -728,6 +739,7 @@ func _vider() -> void:
 	monde = null
 	yeux = null
 	traces = null
+	terrain = null
 	pistage = null
 	page = ""
 	if atelier != null:
@@ -928,6 +940,7 @@ func _process(delta: float) -> void:
 	elevage.maj(delta)
 	botanique.maj(delta)
 	reperes.maj(delta)
+	terrain.maj(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
 	ui.maj_hud(self)
@@ -1104,6 +1117,9 @@ func agir() -> void:
 		return
 	# (une chose de son camp, un vestige : elle s'en sert ; scripts/atelier.gd)
 	if atelier.agir():
+		return
+	# (ce que le sol d'un pays donne : l'obsidienne, la tourbe, le bois flotté, une carcasse, la glace d'une mare ; scripts/biome_terrain.gd)
+	if terrain != null and terrain.agir():
 		return
 	var o = monde.plus_proche(p, R.PORTEE_RECOLTE)
 	if o == null:
@@ -1374,6 +1390,9 @@ func nourrir_feu() -> void:
 	if f == null:
 		ui.message("Aucun feu à portée.", Color(0.75, 0.7, 0.66))
 		return
+	# (la tourbe du marais d'abord : elle tient le feu bien plus longtemps ; scripts/biome_terrain.gd)
+	if terrain != null and terrain.nourrir(f):
+		return
 	if int(joueur.inventaire["bois"]) <= 0:
 		ui.message("Il te faut du bois.", Color(0.75, 0.7, 0.66))
 		return
@@ -1410,7 +1429,7 @@ func _corps(delta: float) -> void:
 	var lumiere := eclairage(joueur.position)
 	# (la torche brûle : DUREE_TORCHE secondes de lumière, comme le message le promet)
 	# (sous la pluie, et trempée, elle brûle plus vite)
-	joueur.torche = maxf(0.0, joueur.torche - delta * (1.0 + 0.6 * climat.pluie + (0.7 if joueur.trempe > 60.0 else 0.0)))
+	joueur.torche = maxf(0.0, joueur.torche - delta * (1.0 + 0.6 * climat.pluie + 0.6 * climat.tourmente + 0.4 * climat.sable + (0.7 if joueur.trempe > 60.0 else 0.0)))
 	joueur.faim = maxf(0.0, joueur.faim - R.FAIM * delta)
 	# (ce qui lui a fait mal ces dernières secondes s'oublie peu à peu : la fin dira ce qui l'a prise)
 	for cause in _maux:
@@ -1469,6 +1488,10 @@ func _titre_de_fin() -> String:
 			return "La foudre t'a prise."
 		"poison":
 			return "Le poison t'a prise."
+		"vapeur":
+			return "La vapeur d'une fumerolle t'a prise."
+		"sangsues":
+			return "La fondrière t'a prise."
 	return "La nuit t'a prise." if lumiere_du_jour() < 0.5 else "Le lieu t'a prise."
 
 
@@ -1859,7 +1882,11 @@ func _texte_appris() -> String:
 
 # ce que le sol fait à la marche là où est quelqu'un (la boue, l'eau, la neige) ; le froid engourdit la veilleuse
 func allure_sol(p: Vector2, masse: float = 60.0) -> float:
-	return climat.allure(p, masse) if climat != null else 1.0
+	var a: float = climat.allure(p, masse) if climat != null else 1.0
+	# (la veilleuse elle-même, enfoncée dans une fondrière : elle n'avance plus qu'à peine ; scripts/biome_terrain.gd)
+	if terrain != null and joueur != null and p == joueur.position:
+		a *= terrain.frein()
+	return a
 
 
 # chaque image : la veilleuse se mouille et sèche, son corps suit la température, elle brûle si elle a pris feu ; le feu de camp
@@ -1897,6 +1924,8 @@ func _temps_du_corps(delta: float) -> void:
 	var cible: float = 50.0 + (climat.air - 0.5) * 100.0
 	cible -= 24.0 * j.trempe / 100.0
 	cible -= 9.0 * climat.vent * (0.4 + 0.6 * j.trempe / 100.0) * (1.0 - 0.6 * abri)
+	# (la tourmente de la banquise mord à travers tout, sauf un abri)
+	cible -= R.TOURMENTE_FROID * climat.tourmente * (1.0 - 0.7 * abri)
 	if eau > 0.15:
 		cible -= 10.0 * eau
 	# (à l'ombre d'un arbre, la canicule pèse moins)
@@ -1905,6 +1934,9 @@ func _temps_du_corps(delta: float) -> void:
 	cible += 34.0 * feu + (22.0 if tout_pres else 0.0)
 	cible += 6.0 if j.torche > 0.0 else 0.0
 	cible += 70.0 * brasier
+	# (le sol chaud du volcan : une fumerolle, une faille, tout près ; scripts/biome_terrain.gd)
+	if terrain != null:
+		cible += terrain.chaleur(p)
 	# (sa tenue : la pelisse coupe le froid de moitié, et pèse sous la chaleur ; un duvet tient chaud à qui dort ; une tente aussi)
 	cible += 6.0 * atelier.abri(p)
 	cible = 50.0 + (cible - 50.0) * (atelier.froid_k() if cible < 50.0 else atelier.chaud_k())
@@ -1932,8 +1964,13 @@ func _temps_du_corps(delta: float) -> void:
 	_conseil("boue", climat.boue > 0.6, "Le sol est détrempé : la boue colle aux pieds.", Color(0.72, 0.82, 0.92))
 	_conseil("crue", climat.crue > climat.crue_fond + 0.25, "L'eau monte dans les creux. Un feu s'y noie : gagne les hauteurs.", Color(0.72, 0.82, 0.92))
 	_conseil("trempee", j.trempe > 85.0 and climat.pluie < 0.2, "Tu es trempée. Un feu te sèche vite.", Color(0.72, 0.82, 0.92))
+	# (les pays : la nuit qui tue sur la banquise, celle du désert qui gèle après un jour brûlant)
+	_conseil("nuit_banquise", climat.lieu == "banquise" and lumiere_du_jour() < 0.3 and j.temperature < R.FROID + 6.0,
+		"La nuit de la banquise tue qui n'a pas de feu. Reste contre les flammes, ou sous une tente, dans ta pelisse.", Color(0.72, 0.82, 0.92))
+	_conseil("nuit_desert", climat.lieu == "desert" and lumiere_du_jour() < 0.3 and j.temperature < R.FROID + 6.0,
+		"Le désert gèle la nuit, après avoir brûlé le jour. Un feu.", Color(0.72, 0.82, 0.92))
 	# --- le feu de camp : son bois part plus vite sous la pluie et le vent ; dans l'eau, il se noie ---
-	feu_temps = 1.0 + 0.55 * climat.pluie + 0.35 * climat.orage + 0.3 * climat.neige + 0.25 * climat.vent
+	feu_temps = 1.0 + 0.55 * climat.pluie + 0.35 * climat.orage + 0.3 * climat.neige + 0.25 * climat.vent + R.TOURMENTE_FEU * climat.tourmente + R.SABLE_FEU * climat.sable
 	for f in feux:
 		if is_instance_valid(f) and f.allume() and climat.eau(f.position) > 0.3:
 			f.bois = 0.0
@@ -1955,7 +1992,11 @@ func _temps_change(nom: String) -> void:
 	if not en_partie or essai != null:
 		return
 	var dit := {"pluie": "La pluie arrive.", "orage": "L'orage gronde. La foudre cherche ce qui dépasse.", "neige": "Il se met à neiger.",
-		"brouillard": "Le brouillard tombe.", "canicule": "La chaleur écrase le lieu.", "clair": "Le ciel se dégage.", "couvert": ""}
+		"brouillard": "Le brouillard tombe.", "canicule": "La chaleur écrase le lieu.", "clair": "Le ciel se dégage.", "couvert": "",
+		# (les temps des pays : scripts/biomes.gd)
+		"tourmente": "La tourmente se lève : on n'y voit plus, le froid mord, le feu dévore son bois. Un abri, un feu.",
+		"cendres": "Des cendres tombent du volcan : le ciel s'éteint.",
+		"sable": "Le vent de sable se lève : on n'y voit plus, on avance à peine."}
 	var t := str(dit.get(nom, ""))
 	if t != "":
 		ui.message(t, Color(0.72, 0.82, 0.92))
@@ -2037,10 +2078,17 @@ func _entrer_dans(reg: Dictionary, le_dire: bool) -> void:
 	if _faunes.has(type):
 		faune = _faunes[type]
 	meteo = _meteos.get(type, {})
-	climat.changer_de_lieu(axes, meteo)
+	climat.changer_de_lieu(axes, meteo, type)
 	sons.changer_de_lieu(axes)
 	if le_dire:
 		ui.carte(str(reg["nom"]), "")
+		_dire_le_pays(type)
+
+
+# un pays qui a son caractère (scripts/biomes.gd) : ce qu'il pose et ce qu'il offre, dit une fois par partie, en y entrant
+func _dire_le_pays(type: String) -> void:
+	var dit := str(Biomes.de(type).get("dit", ""))
+	_conseil("pays_" + type, dit != "", dit, Color(0.98, 0.86, 0.6))
 
 
 # un biome du monde, lu en approchant : ce qui y vit (dessiné d'avance, quelques bêtes par image), ses plantes, son temps

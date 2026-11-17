@@ -6,7 +6,10 @@ extends Node2D
 #  - le voile (shaders/temps_ciel.gdshader) : le ciel qui s'assombrit sous l'orage (l'ombre des nuages passe), les rideaux de
 #    la pluie, le brouillard qui ne laisse voir qu'autour de soi, le voile de la neige, la lumière écrasée de la canicule,
 #    l'éclat de la foudre (plus faible quand elle tombe hors de l'écran) : un appel de dessin, sans lire l'image ;
-#  - en qualité haute, l'air qui tremble sous la canicule (shaders/temps_chaleur.gdshader : il lit l'écran).
+#  - en qualité haute, l'air qui tremble sous la canicule (shaders/temps_chaleur.gdshader : il lit l'écran) ;
+#  - les temps des pays (scripts/biomes.gd) : la tourmente (la neige chassée à l'horizontale, un mur blanc à quelques pas), la
+#    pluie de cendres (le ciel éteint, des flocons gris, un voile brun au loin), le vent de sable (un mur ocre, des traînées qui
+#    filent sous le vent). Dans les mêmes appels de dessin : rien de plus à payer.
 # Ce que le temps fait au sol, et la foudre elle-même : scripts/temps_sol.gd. Un temps clair ne dessine rien.
 
 const P := preload("res://scripts/palette.gd")
@@ -59,6 +62,8 @@ func _ready() -> void:
 	_m_voile.set_shader_parameter("c_chaleur", P.BRAISE_COEUR.lerp(P.PAPIER, 0.55))
 	_m_voile.set_shader_parameter("c_feu", P.BRAISE.lerp(P.BRAISE_COEUR, 0.3))
 	_m_voile.set_shader_parameter("c_eclat", P.PAPIER.lerp(P.ECHO, 0.6).lightened(0.3))
+	_m_voile.set_shader_parameter("c_cendre", P.CENDRE.lerp(P.IVOIRE, 0.35))
+	_m_voile.set_shader_parameter("c_sable", P.IVOIRE.lerp(P.FAIM, 0.55).lerp(P.BRAISE, 0.12))
 	_voile = _plein(_m_voile)
 	_m_chute = ShaderMaterial.new()
 	_m_chute.shader = CHUTE
@@ -118,12 +123,16 @@ func _process(delta: float) -> void:
 	var neige: float = c.neige
 	var brouillard: float = c.brouillard
 	var chaleur: float = clampf(float(c.chaleur) / 0.3, 0.0, 1.0)
+	var tourmente: float = c.tourmente
+	var cendre: float = c.cendre
+	var sable: float = c.sable
 	_couvert = lerpf(_couvert, 1.0 if str(c.temps) == "couvert" else 0.0, clampf(delta / 5.0, 0.0, 1.0))
 	var eclat := _eclat(delta)
-	# (la nuit est déjà sombre : l'orage l'assombrit moins, on doit encore s'y retrouver)
-	var sombre := (0.4 * orage + 0.14 * pluie * (1.0 - orage) + 0.1 * _couvert + 0.07 * neige + 0.05 * brouillard) * lerpf(0.4, 1.0, jour)
-	var voile: bool = sombre > 0.01 or pluie > 0.03 or neige > 0.03 or brouillard > 0.01 or chaleur * jour > 0.01 or eclat > 0.0
-	var tombe: bool = pluie > 0.03 or neige > 0.03
+	# (la nuit est déjà sombre : l'orage l'assombrit moins, on doit encore s'y retrouver ; la cendre éteint le ciel)
+	var sombre := (0.4 * orage + 0.14 * pluie * (1.0 - orage) + 0.1 * _couvert + 0.07 * neige + 0.05 * brouillard + 0.3 * cendre + 0.08 * sable
+		+ 0.08 * tourmente) * lerpf(0.4, 1.0, jour)
+	var voile: bool = sombre > 0.01 or pluie > 0.03 or neige > 0.03 or brouillard > 0.01 or chaleur * jour > 0.01 or eclat > 0.0 or cendre > 0.01 or sable > 0.01
+	var tombe: bool = pluie > 0.03 or neige > 0.03 or cendre > 0.03
 	var tremble: bool = _tremble != null and chaleur * jour > 0.02
 	# (un ciel où rien ne tombe ne se dessine pas)
 	_voile.visible = voile
@@ -153,14 +162,16 @@ func _process(delta: float) -> void:
 		var m := _m_chute
 		m.set_shader_parameter("temps", _t)
 		m.set_shader_parameter("pluie", pluie)
-		m.set_shader_parameter("neige", neige * 0.7)
+		# (la tourmente : des flocons plus serrés, que le vent chasse presque à l'horizontale ; la cendre tombe comme une neige grise)
+		m.set_shader_parameter("neige", maxf(neige * 0.7 + 0.3 * tourmente, cendre * 0.55))
 		m.set_shader_parameter("pente", _pente)
-		m.set_shader_parameter("souffle", vd.x * vent * 170.0 * (0.7 + 0.6 * rafale))
+		m.set_shader_parameter("souffle", vd.x * vent * 170.0 * (0.7 + 0.6 * rafale) * (1.0 + 1.6 * tourmente))
 		m.set_shader_parameter("eclat", minf(1.0, eclat * 1.5))
 		# (la nuit, la pluie est un trait de lune, pas un trait de craie)
 		m.set_shader_parameter("c_pluie", P.NUIT_BLEUE.lerp(P.LUNE, 0.75).lerp(P.PAPIER.lerp(P.LUNE, 0.4), jour))
-		m.set_shader_parameter("c_neige", P.LUNE.lerp(P.PAPIER, 0.45).lerp(P.PAPIER.lightened(0.5), jour))
-		m.set_shader_parameter("c_ombre", P.NUIT_BLEUE.lerp(P.LUNE, 0.5).lerp(P.LUNE.lerp(P.PAPIER, 0.25), jour))
+		var gris := clampf(cendre / maxf(cendre + neige, 0.001), 0.0, 1.0)
+		m.set_shader_parameter("c_neige", P.LUNE.lerp(P.PAPIER, 0.45).lerp(P.PAPIER.lightened(0.5), jour).lerp(P.CENDRE.lerp(P.IVOIRE, 0.45 * jour), gris))
+		m.set_shader_parameter("c_ombre", P.NUIT_BLEUE.lerp(P.LUNE, 0.5).lerp(P.LUNE.lerp(P.PAPIER, 0.25), jour).lerp(P.ENCRE_DOUCE, gris))
 	if tremble:
 		_m_tremble.set_shader_parameter("temps", _t)
 		_m_tremble.set_shader_parameter("force", chaleur * jour)
@@ -183,6 +194,10 @@ func _process(delta: float) -> void:
 	v.set_shader_parameter("neige", neige)
 	v.set_shader_parameter("chaleur", chaleur)
 	v.set_shader_parameter("eclat", eclat)
+	v.set_shader_parameter("tourmente", tourmente)
+	v.set_shader_parameter("cendre", cendre)
+	v.set_shader_parameter("sable", sable)
+	v.set_shader_parameter("vent_dir", vd)
 	if brouillard > 0.01:
 		var l: Array = Sol.lumieres(_jeu, 1.0 - jour)
 		v.set_shader_parameter("feu0", l[0])

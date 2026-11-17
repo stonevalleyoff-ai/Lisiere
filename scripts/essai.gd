@@ -621,6 +621,7 @@ func _lancer() -> void:
 	verif(not jeu.ui._reprise.visible and jeu.ui._entrer.principal, "effacée, l'écran-titre ne propose plus que d'entrer dans la nuit")
 	_les_pattes()
 	await _lieu_sans_bord()
+	await _les_pays()
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)
@@ -4300,3 +4301,449 @@ func _l_atelier(F: Dictionary) -> void:
 	C.air = garde["air"]
 	C.vent = garde["vent"]
 
+
+
+# --- les pays qui ont leur caractère (scripts/biomes.gd, scripts/biome_terrain.gd) : chacun pèse à sa façon, et offre ce qu'on ne
+# trouve pas ailleurs. Joué sans attendre : le climat et le corps avancent par les fonctions du jeu, image par image ---
+
+# le corps tenu « secondes » à l'heure qu'il est (le climat avance, le corps le suit ; rien d'autre ne bouge) : [sa température, sa santé]
+func _tenir_au_climat(secondes: float, dt: float = 0.5) -> Array:
+	var C = jeu.climat
+	for k in int(secondes / dt):
+		C.avancer(dt)
+		jeu._temps_du_corps(dt)
+	return [jeu.joueur.temperature, jeu.joueur.sante]
+
+
+# au milieu du jour, ou au milieu de la nuit, d'aujourd'hui
+func _a_l_heure(nuit: bool) -> void:
+	var D: float = jeu.R.DUREE
+	var soir: float = D * (1.0 - jeu.part_nuit)
+	jeu.horloge = floorf(jeu.horloge / D) * D + (soir + D * jeu.part_nuit * 0.5 if nuit else soir * 0.5)
+	jeu.climat._air(0.0)
+
+
+# la veilleuse, remise à neuf là : rassasiée, calme, à 50, sèche, ni en feu ni enfoncée, sans bête autour ni feu
+func _remettre(p: Vector2) -> void:
+	var j = jeu.joueur
+	j.position = p
+	j.sante = 100.0
+	j.faim = 100.0
+	j.peur = 0.0
+	j.temperature = 50.0
+	j.trempe = 0.0
+	j.en_feu = 0.0
+	j.en_mouvement = false
+	jeu._maux = {}
+	jeu.terrain.enlise = 0.0
+	for b in jeu.get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	for f in jeu.feux:
+		if is_instance_valid(f):
+			f.queue_free()
+	jeu.feux.clear()
+
+
+# ce que le ciel (scripts/ciel.gd) donne à son voile, une fois qu'il a dessiné (deux images : il dessine pendant la seconde)
+func _voile(nom: String) -> float:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var v = jeu.ciel._m_voile.get_shader_parameter(nom)
+	return float(v) if v != null else 0.0
+
+
+# combien de fois chaque temps vient, sur tant de tirages, au climat du lieu
+func _tirages(combien: int) -> Dictionary:
+	var C = jeu.climat
+	var vus := {}
+	for k in combien:
+		C._suivant()
+		vus[C.temps] = int(vus.get(C.temps, 0)) + 1
+	C.forcer("clair", 0.0, 9999.0)
+	return vus
+
+
+func _les_pays() -> void:
+	print("9. Les pays")
+	var Biomes := load("res://scripts/biomes.gd")
+	verif(Biomes.de("banquise").has("dit") and Biomes.de("volcan").has("dit") and Biomes.de("marais").has("dit") and Biomes.de("desert").has("dit") and Biomes.de("prairie").is_empty(),
+		"quatre pays ont leur caractère (la banquise, le volcan, le marais, le désert) ; la prairie n'en a pas d'autre que ses axes")
+	await _les_pays_du_monde()
+	await _la_banquise()
+	await _le_volcan()
+	await _le_marais()
+	await _le_desert()
+
+
+# le monde ouvert : en passant de la steppe au désert, le climat prend le caractère du pays, on le dit, et son sol se fait ; en
+# revenant à la prairie, il le perd
+func _les_pays_du_monde() -> void:
+	var C = jeu.carte
+	var W = jeu.monde
+	var jo = jeu.joueur
+	var T = jeu.terrain
+	var vers := func(type: String) -> Vector2:
+		var mieux := -1
+		for k in C.regions.size():
+			if str(C.regions[k]["type"]) == type and (mieux < 0 or C.regions[k]["pos"].length() < C.regions[mieux]["pos"].length()):
+				mieux = k
+		return C.regions[mieux]["pos"] - C.tordre(C.regions[mieux]["pos"])
+	jeu._deja.erase("pays_desert")
+	# (la région où elle est, d'abord : c'est en la quittant pour le désert qu'on le dit)
+	jeu._regions()
+	var desert: Vector2 = vers.call("desert")
+	jo.position = desert
+	W.suivre(desert, true)
+	await jeu._lire_biome("desert")
+	jeu._regions()
+	T.suivre(desert, true)
+	var carcasse: Dictionary = T.le_plus_proche("carcasse", desert)
+	var dunes := 0
+	for k in T._cases:
+		for s in T._cases[k]:
+			if str(s["genre"]) == "dune":
+				dunes += 1
+	var au_desert: bool = jeu.biome == "desert" and jeu.climat.lieu == "desert" and jeu.climat.sol_frein > 0.0 and jeu._deja.has("pays_desert") and not carcasse.is_empty() \
+		and C.type_en(carcasse.get("p", Vector2.ZERO)) == "desert" and dunes >= 10
+	verif(au_desert, "le monde ouvert : entrée au désert, le climat prend son caractère, on le dit une fois, et son sol se fait autour d'elle (%d dunes, des carcasses)" % dunes)
+	if not au_desert:
+		print("    (biome %s, climat %s, frein %.2f, dit %s, carcasse %s, région %s)" % [jeu.biome, jeu.climat.lieu, jeu.climat.sol_frein, str(jeu._deja.has("pays_desert")),
+			str(carcasse.get("p", "aucune")), C.type_en(desert)])
+	var volcan: Vector2 = vers.call("volcan")
+	jo.position = volcan
+	W.suivre(volcan, true)
+	await jeu._lire_biome("volcan")
+	jeu._regions()
+	T.suivre(volcan, true)
+	var fum: Dictionary = T.le_plus_proche("fumerolle", volcan)
+	var faille: Dictionary = T.le_plus_proche("faille", volcan)
+	var tient: bool = not fum.is_empty() and not faille.is_empty() and C.retenir(fum["p"]) == fum["p"]
+	if tient:
+		for q in faille["trait"]:
+			if C.retenir(q).distance_to(q) > 1.0 or C.type_en(q) != "volcan":
+				tient = false
+	verif(jeu.climat.lieu == "volcan" and tient and fum.has("noeud") and is_instance_valid(fum["noeud"]),
+		"au volcan, des fumerolles et des failles, jamais sur une paroi, une crête ou dans l'eau")
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	jeu._regions()
+	T.suivre(Vector2.ZERO, true)
+	var hors := true
+	for k in T._cases:
+		if not T._cases[k].is_empty():
+			hors = false
+	verif(jeu.biome == "prairie" and jeu.climat.lieu == "prairie" and jeu.climat.identite.is_empty() and jeu.climat.sol_frein == 0.0 and jeu.climat.neige_fond == 0.0 and hors,
+		"revenue dans la prairie, le climat perd ce caractère, et le sol des pays lointains s'est défait")
+
+
+# la banquise : la nuit tue sans feu, la neige ne fond pas et freine, la tourmente ; le bois flotté, l'eau sous la glace
+func _la_banquise() -> void:
+	await jeu._commencer("banquise")
+	var C = jeu.climat
+	var T = jeu.terrain
+	var j = jeu.joueur
+	var RR = jeu.R
+	C.forcer("clair", 0.0, 9999.0)
+	# (un coin dégagé, loin de tout ce qui pose une question : pas de chose du pays à deux pas)
+	var ici := Vector2(-900.0, 600.0)
+	for k in 40:
+		var q := Vector2(-1500.0 + 75.0 * k, 900.0)
+		var libre := true
+		for s in T._autour(q, 200.0):
+			if Vector2(s["p"]).distance_to(q) < 160.0:
+				libre = false
+		if libre:
+			ici = q
+			break
+	_remettre(ici)
+	_a_l_heure(false)
+	for k in 120:
+		C.avancer(0.5)
+	var neige: float = C.neige_sol
+	verif(neige >= RR.NEIGE_AU_SOL and C.allure(ici) < 0.82, "la neige de la banquise ne fond pas, en plein jour d'été (%.2f) : on y marche à %d %% de l'allure" % [neige, int(C.allure(ici) * 100.0)])
+	var jour_ := _tenir_au_climat(80.0)
+	_remettre(ici)
+	_a_l_heure(true)
+	var nuit_ := _tenir_au_climat(80.0)
+	var titre: String = jeu._titre_de_fin()
+	verif(float(nuit_[1]) <= 0.0 and float(nuit_[0]) < 15.0 and titre == "Le froid t'a prise." and float(jour_[1]) > 50.0 and float(jour_[0]) < RR.FROID + 2.0,
+		"une nuit de banquise sans feu tue (son corps tombe à %d, sa santé à %d : « %s ») ; le jour, elle a froid sans en mourir (%d, santé %d)" % [
+			int(nuit_[0]), int(nuit_[1]), titre, int(jour_[0]), int(jour_[1])])
+	# près d'un feu, la même nuit se passe ; dans la pelisse, le froid mord bien moins
+	_remettre(ici)
+	var f = jeu.Feu.new()
+	f.jeu = jeu
+	f.position = ici + Vector2(30.0, 0.0)
+	f.bois = RR.FEU_MAX
+	jeu.monde.add_child(f)
+	jeu.feux.append(f)
+	var au_feu := _tenir_au_climat(80.0)
+	_remettre(ici)
+	jeu.atelier.portes["vetement_chaud"] = true
+	var pelisse := _tenir_au_climat(80.0)
+	jeu.atelier.portes.erase("vetement_chaud")
+	verif(float(au_feu[0]) > RR.FROID and float(au_feu[1]) >= 99.0 and float(pelisse[0]) > float(nuit_[0]) + 12.0,
+		"près d'un feu, la nuit se passe (corps à %d, santé %d) ; dans la pelisse, sans feu, le froid mord bien moins (%d)" % [int(au_feu[0]), int(au_feu[1]), int(pelisse[0])])
+	# la tourmente : on n'y voit plus, le vent se lève, le feu dévore son bois, le corps gèle plus vite
+	_remettre(ici)
+	_a_l_heure(false)
+	var calme := _tenir_au_climat(40.0)
+	var feu_calme: float = jeu.feu_temps
+	_remettre(ici)
+	C.forcer("tourmente", 1.0, 9999.0)
+	var dans := _tenir_au_climat(40.0)
+	var voile: float = await _voile("tourmente")
+	var horloge_dit: String = jeu.texte_horloge()
+	var tourmente_ok: bool = C.neige > 0.9 and C.vent > 0.75 and jeu.feu_temps > feu_calme + 0.7 and float(dans[0]) < float(calme[0]) - 8.0 and voile > 0.9 and horloge_dit.contains("tourmente")
+	verif(tourmente_ok, "la tourmente : la neige, un vent de %.2f, le feu mange son bois %.1f fois plus vite qu'au calme, le corps tombe à %d (contre %d), on n'y voit plus" % [
+		C.vent, jeu.feu_temps / maxf(feu_calme, 0.01), int(dans[0]), int(calme[0])])
+	if not tourmente_ok:
+		print("    (neige %.2f, voile %.2f, l'horloge : « %s »)" % [C.neige, voile, horloge_dit])
+	var tirages := _tirages(400)
+	verif(int(tirages.get("tourmente", 0)) >= 20 and int(tirages.get("pluie", 0)) == 0 and int(tirages.get("orage", 0)) == 0 and int(tirages.get("canicule", 0)) == 0,
+		"elle revient souvent (%d fois sur 400), et il ne pleut jamais sur la banquise : %s" % [int(tirages.get("tourmente", 0)), str(tirages)])
+	# le bois flotté : le seul bois ; trois prises, puis la mer en rapporte. Sous la glace d'une mare, de l'eau pour la gourde
+	var bf: Dictionary = T.le_plus_proche("bois_flotte", Vector2.ZERO)
+	_remettre(Vector2(bf["p"]) + Vector2(12.0, 4.0) if not bf.is_empty() else ici)
+	var bois0 := int(j.inventaire["bois"])
+	for k in 4:
+		jeu.agir()
+	var pris := int(j.inventaire["bois"]) - bois0
+	var vide: int = T.reste(bf) if not bf.is_empty() else -1
+	jeu.horloge += RR.BOIS_FLOTTE_REVIENT + 1.0
+	verif(not bf.is_empty() and pris == 6 and vide == 0 and T.reste(bf) == 3 and jeu._deja.has("butin_bois_flotte"),
+		"le bois flotté : trois prises, deux bois chacune (+%d), puis plus rien ; deux jours plus tard, la mer en a rapporté" % pris)
+	var mare: Dictionary = T.le_plus_proche("mare", Vector2.ZERO)
+	_remettre(Vector2(mare["p"]) + Vector2(0.0, 6.0) if not mare.is_empty() else ici)
+	j.inventaire["eau"] = 0
+	jeu.agir()
+	var sans_gourde := int(j.inventaire.get("eau", 0))
+	jeu.atelier.objets["gourde"] = 1
+	jeu.agir()
+	verif(not mare.is_empty() and sans_gourde == 0 and int(j.inventaire["eau"]) == jeu.atelier.GORGEES,
+		"sous la glace d'une mare, de l'eau : sans gourde, on ne l'emporte pas ; avec, elle est pleine (%d gorgées)" % int(j.inventaire["eau"]))
+	jeu.atelier.objets.erase("gourde")
+
+
+# le volcan : la fumerolle (sa chaleur, sa bouffée qui brûle), la faille (on y prend feu), la pluie de cendres ; l'obsidienne,
+# qui fait une lance ; ce qu'on y a pris se garde
+func _le_volcan() -> void:
+	await jeu._commencer("volcan")
+	var C = jeu.climat
+	var T = jeu.terrain
+	var j = jeu.joueur
+	var RR = jeu.R
+	C.forcer("clair", 0.0, 9999.0)
+	var fum: Dictionary = T.le_plus_proche("fumerolle", Vector2.ZERO)
+	var o: Vector2 = fum.get("p", Vector2.ZERO)
+	var pres: float = T.chaleur(o + Vector2(50.0, 0.0))
+	# (loin de toute fumerolle, de toute faille : le sol n'y chauffe pas)
+	var loin := -1.0
+	for k in 60:
+		var q := Vector2(-1800.0 + 60.0 * k, -1700.0)
+		var degage := true
+		for s in T._autour(q, 300.0):
+			if str(s["genre"]) in ["fumerolle", "faille"] and Vector2(s["p"]).distance_to(q) < 300.0:
+				degage = false
+		if degage:
+			loin = T.chaleur(q)
+			break
+	# (à l'heure où elle siffle, puis où elle crache)
+	var periode := float(fum.get("periode", 10.0))
+	var phase := float(fum.get("phase", 0.0))
+	var base := ceilf((jeu.horloge + phase) / periode) * periode - phase + periode
+	jeu.horloge = base + periode - 0.5
+	var siffle: bool = T.siffle(fum) and T.crache(fum) == 0.0
+	_remettre(o + Vector2(14.0, 6.0))
+	for k in 6:
+		T._dangers(0.25, j.position)
+	var avant_la_bouffee: float = j.sante
+	jeu.horloge = base + 1.2
+	var bouffee: float = T.crache(fum)
+	for k in 6:
+		T._dangers(0.25, j.position)
+	var brulee: float = j.sante
+	var titre: String = jeu._titre_de_fin()
+	verif(not fum.is_empty() and pres > 10.0 and loin == 0.0 and siffle and avant_la_bouffee == 100.0 and bouffee > 0.8 and brulee < 92.0 and titre.contains("fumerolle"),
+		"une fumerolle chauffe tout près (+%d au corps), siffle, puis crache : sa vapeur brûle qui est contre elle (santé %d, « %s »)" % [int(pres), int(brulee), titre])
+	# la faille : y mettre le pied, c'est prendre feu
+	var faille: Dictionary = T.le_plus_proche("faille", Vector2.ZERO)
+	var t: PackedVector2Array = faille.get("trait", PackedVector2Array([Vector2(9999, 9999), Vector2(9999, 9999)]))
+	var a_cote: Vector2 = t[3] + (t[4] - t[3]).normalized().orthogonal() * 60.0
+	_remettre(a_cote)
+	T._dangers(0.1, j.position)
+	var pas_encore: bool = j.en_feu <= 0.0
+	_remettre(t[3])
+	T._dangers(0.1, j.position)
+	verif(not faille.is_empty() and pas_encore and j.en_feu > 0.0 and T.chaleur(a_cote) > 0.0,
+		"une faille rougeoie : à côté, il fait chaud ; le pied dedans, elle prend feu")
+	_remettre(Vector2(-1500.0, -1500.0))
+	# la pluie de cendres : le ciel s'éteint, la vue se ferme ; elle revient au volcan, et seulement là
+	C.forcer("cendres", 1.0, 9999.0)
+	var voile: float = await _voile("cendre")
+	var cendreux: bool = jeu.ciel._voile.visible and jeu.ciel._chute.visible
+	var tirages := _tirages(400)
+	verif(voile > 0.9 and cendreux and int(tirages.get("cendres", 0)) >= 15 and not tirages.has("tourmente") and not tirages.has("sable"),
+		"il pleut des cendres sur le volcan (%d fois sur 400) : le ciel s'éteint, des flocons gris tombent" % int(tirages.get("cendres", 0)))
+	# l'obsidienne : on la taille, et à l'établi elle fait une lance
+	var obs: Dictionary = T.le_plus_proche("obsidienne", Vector2.ZERO)
+	_remettre(Vector2(obs.get("p", Vector2.ZERO)) + Vector2(10.0, 4.0))
+	for k in 3:
+		jeu.agir()
+	var taillee := int(j.inventaire.get("obsidienne", 0))
+	var A = jeu.atelier
+	var etabli = A._creer("etabli", j.position + Vector2(30.0, 0.0), {})
+	j.inventaire["bois"] = 5
+	j.inventaire["corde"] = 2
+	j.lance = 0
+	var faite: bool = A.fabriquer("lance_obsidienne")
+	verif(not obs.is_empty() and taillee == 3 and T.reste(obs) == 0 and faite and j.lance == RR.USURE_LANCE and int(j.inventaire["obsidienne"]) == 1
+		and int(j.inventaire["bois"]) == 3 and A.possede("lance_obsidienne") == 0,
+		"l'obsidienne se taille (trois éclats) ; à l'établi, deux éclats, du bois et une corde font une lance, aussitôt dans ses mains")
+	A.poses.erase(etabli)
+	etabli.queue_free()
+	# ce qu'on a pris au volcan se garde avec la partie
+	var gardee: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
+	await jeu._commencer("volcan", gardee)
+	var obs2: Dictionary = jeu.terrain.le_plus_proche("obsidienne", obs["p"])
+	verif(str(obs2.get("id", "")) == str(obs["id"]) and jeu.terrain.reste(obs2) == 0 and int(jeu.joueur.inventaire.get("obsidienne", 0)) == 1 and jeu.climat.lieu == "volcan",
+		"reprise, la partie retrouve le volcan pareil : l'obsidienne taillée l'est toujours, l'éclat qui reste est dans le sac")
+
+
+# le marais : la fondrière (on s'y enfonce si l'on s'arrête, les sangsues), le brouillard, les feux follets ; la tourbe, qui tient le feu
+func _le_marais() -> void:
+	await jeu._commencer("marais")
+	var C = jeu.climat
+	var T = jeu.terrain
+	var j = jeu.joueur
+	var RR = jeu.R
+	C.forcer("clair", 0.0, 9999.0)
+	_a_l_heure(false)
+	var fon: Dictionary = T.le_plus_proche("fondriere", Vector2(800.0, 800.0))
+	var o: Vector2 = fon.get("p", Vector2.ZERO)
+	_remettre(o)
+	var eau: float = C.eau(o)
+	var au_bord: float = C.allure(o)
+	# (elle s'arrête au milieu : elle s'enfonce ; les sangsues)
+	for k in 24:
+		T._dangers(0.25, j.position)
+	var enfoncee: float = T.enlise
+	var engluee: float = jeu.allure_sol(j.position)
+	var eau_enfoncee: float = C.eau(j.position)
+	var sangsues: float = float(jeu._maux.get("sangsues", 0.0))
+	verif(not fon.is_empty() and eau >= 0.45 and enfoncee > 0.95 and engluee < 0.2 and eau_enfoncee > 0.95 and sangsues > 0.5 and jeu._titre_de_fin() == "La fondrière t'a prise.",
+		"une fondrière : de l'eau aux genoux (%.2f) ; arrêtée, elle s'enfonce jusqu'aux cuisses, n'avance plus qu'à %d %% de l'allure, et les sangsues s'y mettent" % [eau, int(engluee * 100.0)])
+	# (elle marche : elle s'en tire, lentement)
+	j.en_mouvement = true
+	for k in 8:
+		T._dangers(0.25, j.position)
+	verif(T.enlise < enfoncee - 0.5 and jeu.allure_sol(j.position) > engluee * 2.0 and au_bord < 0.85,
+		"en marchant, elle s'en tire peu à peu (enfoncée à %d %%, deux secondes plus tard)" % int(T.enlise * 100.0))
+	# le brouillard : il vient bien plus souvent au marais
+	var siens := _tirages(400)
+	var garde: Dictionary = C.identite
+	C.identite = {}
+	var sans := _tirages(400)
+	C.identite = garde
+	verif(int(siens.get("brouillard", 0)) > int(sans.get("brouillard", 0)) * 2 and int(siens.get("brouillard", 0)) >= 40,
+		"le brouillard vient bien plus souvent au marais (%d fois sur 400, contre %d sans son caractère)" % [int(siens.get("brouillard", 0)), int(sans.get("brouillard", 0))])
+	# la nuit, des feux follets dansent au-dessus des fondrières, et fuient qui approche
+	_a_l_heure(true)
+	_remettre(Vector2(-1600.0, 1600.0))
+	var follets := 0
+	for i in 2:
+		for k in T._cases:
+			for s in T._cases[k]:
+				if str(s["genre"]) == "fondriere" and bool(s.get("follet", false)) and follets == 0:
+					j.position = Vector2(s["p"]) + Vector2(400.0, 0.0)
+		for k in 30:
+			T._follets_(0.25, j.position)
+		follets = 0
+		for id in T._follets:
+			if float(T._follets[id][1]) > 0.5:
+				follets += 1
+	var fuit := 1.0
+	var file := 0.0
+	for id in T._follets:
+		if float(T._follets[id][1]) > 0.5:
+			var avant: Vector2 = T._follets[id][0]
+			j.position = avant + Vector2(60.0, 0.0)
+			for k in 4:
+				T._follets_(0.25, j.position)
+			fuit = float(T._follets[id][1])
+			file = Vector2(T._follets[id][0]).distance_to(j.position) - 60.0
+			break
+	verif(follets >= 1 and fuit < 0.3 and file > 20.0, "la nuit, des feux follets luisent au-dessus des fondrières (%d) ; on s'en approche, ils s'éteignent et filent (%d pixels plus loin)" % [follets, int(file)])
+	_a_l_heure(false)
+	# la tourbe : on la coupe, et elle tient un feu bien plus longtemps qu'une bûche
+	var tb: Dictionary = T.le_plus_proche("tourbe", Vector2.ZERO)
+	_remettre(Vector2(tb.get("p", Vector2.ZERO)) + Vector2(10.0, 4.0))
+	jeu.agir()
+	var coupee := int(j.inventaire.get("tourbe", 0))
+	var f = jeu.Feu.new()
+	f.jeu = jeu
+	f.position = j.position + Vector2(40.0, 0.0)
+	f.bois = 10.0
+	jeu.monde.add_child(f)
+	jeu.feux.append(f)
+	var bois0 := int(j.inventaire["bois"])
+	jeu.nourrir_feu()
+	verif(not tb.is_empty() and coupee == 1 and absf(f.bois - 10.0 - RR.TOURBE_FEU) < 0.5 and int(j.inventaire["tourbe"]) == 0 and int(j.inventaire["bois"]) == bois0
+		and RR.TOURBE_FEU > RR.FEU_BUCHE * 2.0,
+		"la tourbe se coupe ; nourri d'une motte, le feu gagne %d secondes (une bûche : %d), sans toucher au bois" % [int(RR.TOURBE_FEU), int(RR.FEU_BUCHE)])
+
+
+# le désert : des jours qui brûlent et des nuits qui gèlent, la canicule hors de l'été, le vent de sable, le sable qui freine ;
+# les carcasses ensablées, et leur ferraille
+func _le_desert() -> void:
+	await jeu._commencer("desert")
+	var C = jeu.climat
+	var T = jeu.terrain
+	var j = jeu.joueur
+	var RR = jeu.R
+	C.forcer("clair", 0.0, 9999.0)
+	# (à découvert : pas un arbre au-dessus d'elle)
+	var ici := Vector2(-900.0, 900.0)
+	for k in 60:
+		var q := Vector2(-1500.0 + 55.0 * k, 1100.0)
+		if C.abri(q) == 0.0 and jeu.monde.autour(q, 120.0).filter(func(x): return x.couvert() > 0.0).is_empty():
+			ici = q
+			break
+	_remettre(ici)
+	_a_l_heure(false)
+	var air_jour: float = C.air
+	var jour_ := _tenir_au_climat(60.0)
+	_remettre(ici)
+	_a_l_heure(true)
+	var air_nuit: float = C.air
+	var nuit_ := _tenir_au_climat(60.0)
+	verif(air_jour - air_nuit > 0.4 and float(jour_[0]) > RR.CHAUD + 2.0 and float(nuit_[0]) < RR.FROID,
+		"le désert : le jour brûle à découvert (le corps monte à %d), la nuit gèle (il tombe à %d) ; l'air passe de %.2f à %.2f" % [int(jour_[0]), int(nuit_[0]), air_jour, air_nuit])
+	# la canicule y vient en toute saison, sauf l'hiver
+	var saison: String = jeu.saison
+	jeu.saison = "printemps"
+	var printemps := _tirages(400)
+	jeu.saison = "hiver"
+	var hiver := _tirages(400)
+	jeu.saison = saison
+	verif(int(printemps.get("canicule", 0)) >= 20 and int(hiver.get("canicule", 0)) == 0 and int(printemps.get("sable", 0)) >= 20,
+		"au printemps aussi, la canicule écrase le désert (%d fois sur 400), jamais l'hiver ; le vent de sable vient souvent (%d)" % [int(printemps.get("canicule", 0)), int(printemps.get("sable", 0))])
+	# le sable freine ; le vent de sable bien plus, et on n'y voit plus
+	_a_l_heure(false)
+	var au_sable: float = C.allure(ici)
+	C.forcer("sable", 1.0, 9999.0)
+	for k in 40:
+		C.avancer(0.5)
+	jeu._temps_du_corps(0.1)
+	var voile: float = await _voile("sable")
+	verif(au_sable < 0.95 and C.allure(ici) < au_sable * 0.8 and C.vent > 0.65 and voile > 0.9 and jeu.feu_temps > 1.4,
+		"le sable freine le pas (%d %% de l'allure) ; dans le vent de sable, bien plus (%d %%), on n'y voit plus, et le feu mange son bois plus vite" % [int(au_sable * 100.0), int(C.allure(ici) * 100.0)])
+	C.forcer("clair", 0.0, 9999.0)
+	# une carcasse ensablée : de la ferraille
+	var ca: Dictionary = T.le_plus_proche("carcasse", Vector2.ZERO)
+	_remettre(Vector2(ca.get("p", Vector2.ZERO)) + Vector2(10.0, 4.0))
+	var fer0 := int(j.inventaire.get("ferraille", 0))
+	for k in 3:
+		jeu.agir()
+	verif(not ca.is_empty() and int(j.inventaire["ferraille"]) == fer0 + 3 and T.reste(ca) == 0,
+		"une vieille carcasse, à demi ensablée : trois morceaux de ferraille, puis plus rien")
