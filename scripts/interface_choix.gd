@@ -85,8 +85,9 @@ func _draw() -> void:
 		var cx: float = (18.0 if sens < 0 else s.x - 18.0) + sens * -3.0 * float(_appui[j])
 		var h := 9.0 if compact else 11.0
 		var col := Color(P.IVOIRE, 0.55).lerp(P.BRAISE_COEUR, maxf(vise, float(_appui[j])))
+		# (un seul choix : pas de chevrons, il n'y a rien à côté)
 		if options.size() < 2:
-			col.a = 0.15
+			continue
 		var pointe := Vector2(cx + sens * h * 0.7, cy)
 		I.trait_encre(self, Vector2(cx - sens * h * 0.5, cy - h), pointe, 3.4, col)
 		I.trait_encre(self, Vector2(cx - sens * h * 0.5, cy + h), pointe, 3.4, col)

@@ -62,7 +62,7 @@ const SAVOIRS := [
 var jeu
 var acte := 0                    # celui de la nuit en cours, ou de la dernière (0 : elle n'est pas encore venue)
 var taniere := Vector2.ZERO
-var taniere_connue := false      # la veilleuse l'a trouvée (la carte du carnet la montre)
+var taniere_connue := false      # la veilleuse l'a trouvée (si elle a de quoi, elle l'écrit sur sa carte : scripts/reperes.gd)
 var ou := Vector2.ZERO           # où elle est : là où est son corps, ou sa place tant qu'elle n'en a pas
 var corps = null                 # sa bête (scripts/bete.gd), quand elle est assez près pour en avoir une
 var etat := "dort"               # dort, vient, guette, tourne, feinte, sursaut, recule, charge, rentre
@@ -379,6 +379,9 @@ func _dormir(j, nuit: bool) -> void:
 		if not taniere_connue and d < 340.0:
 			taniere_connue = true
 			_apprendre("taniere")
+			# (elle l'écrit sur sa carte, si elle a la carte, la plume et l'encre ; scripts/reperes.gd)
+			if jeu.get("reperes") != null and jeu.reperes.noter_taniere(taniere):
+				jeu.ui.message("Tu écris sa tanière sur ta carte.", TEINTE)
 		if d < R.NOIRE_REVEIL:
 			_reveiller()
 

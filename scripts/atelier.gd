@@ -7,7 +7,7 @@ extends RefCounted
 #  - un camp, qui se pose dans le lieu et se replie (scripts/campement.gd les dessine) : l'établi, la tente, le hamac, le
 #    récupérateur d'eau, le filet, le cerf-volant ;
 #  - une tenue, qui se porte et se voit sur elle (scripts/veilleuse_corps.gd) : le sac à dos, la pelisse, la cape de pluie ;
-#  - des outils : la gourde, la popote, le duvet, la lampe et ses piles.
+#  - des outils : la gourde, la popote, le duvet, la lampe et ses piles ; la carte, la plume et l'encre (scripts/reperes.gd).
 # Ici : la liste (OBJETS), ce qu'elle possède, et ce que chaque chose change au jeu. Ce que les autres scripts en lisent :
 # principal.gd (le froid, la pluie, l'abri, ce qu'elle peut porter, la cuisine, « Agir » sur une chose posée, le sommeil),
 # joueur.gd (sa tenue, sa lampe, ses gestes), les sons, la partie gardée.
@@ -64,6 +64,11 @@ const OBJETS := {
 		"dit": "Une pierre creuse et son pilon : on y broie les herbes qu'on a reconnues (l'herbier, dans ton sac)."},
 	"lance_pierre": {"nom": "Lance-pierre", "famille": "outil", "ou": "etabli", "unique": true, "cout": {"bois": 1, "corde": 1, "peau": 1},
 		"dit": "Une fourche, un boyau, une poche de cuir. Il porte loin, même vers des yeux dans le noir. Il lui faut des galets."},
+	# la carte et ce qu'on y écrit (scripts/reperes.gd)
+	"carte": {"nom": "Carte", "famille": "outil", "ou": "etabli", "unique": true, "cout": {"peau": 1, "corde": 1},
+		"dit": "Une peau grattée, roulée sur sa corde. Ce que tu as parcouru s'y dessine : tu la lis à la pause."},
+	"plume": {"nom": "Plume et encre", "famille": "outil", "ou": "etabli", "unique": true, "cout": {"fibre": 1, "baies": 2, "pierre": 1},
+		"dit": "Une plume taillée dans un roseau, une encre de baies écrasées dans un godet de pierre. Sur ta carte, tu écris ce que tu veux retrouver."},
 	# le jardin (scripts/jardin.gd)
 	"houe": {"nom": "Houe", "famille": "jardin", "ou": "etabli", "unique": true, "cout": {"bois": 2, "pierre": 1, "corde": 1},
 		"dit": "Elle retourne la terre : un carré de jardin, où l'on sème."},
@@ -84,8 +89,8 @@ const OBJETS := {
 		"dit": "Sur une bête assez forte, on la monte : on va bien plus vite. Elle te jette à terre quand elle a peur."},
 }
 const ORDRE := ["corde", "bache", "galet", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
-	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire",
-	"sacoche", "selle"]
+	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "carte", "plume", "houe", "arrosoir", "epouvantail", "licol",
+	"piquet", "mangeoire", "sacoche", "selle"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
 const TEINTE := Color(0.86, 0.8, 0.66)
 const PORTEE := 54.0              # à quelle distance on se sert d'une chose posée, d'un établi
@@ -120,9 +125,9 @@ var vent_force := -1.0            # (l'essai) le vent qu'on lui donne, à la pla
 
 # --- ce que la page de l'établi et celle du sac demandent ---
 
-# combien elle en a : une matière (dans son sac), ou une chose (pliée, portée)
+# combien elle en a : une matière (dans son sac ; les baies aussi, que l'encre demande), ou une chose (pliée, portée)
 func possede(id: String) -> int:
-	if MATIERES.has(id):
+	if MATIERES.has(id) or id == "baies":
 		return int(jeu.joueur.inventaire.get(id, 0))
 	return int(objets.get(id, 0))
 
@@ -194,7 +199,7 @@ func fabriquer(id: String) -> bool:
 			portes[id] = true
 	# (son geste, et ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; le bois se scie ; le reste se
 	# martèle, et chaque coup de maillet sonne quand il tombe : coup())
-	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet", "licol", "sacoche", "selle", "arrosoir"]
+	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet", "licol", "sacoche", "selle", "arrosoir", "carte"]
 	var scie: bool = not cousu and o["cout"].has("bois")
 	jeu.joueur.geste_atelier("coudre" if cousu else ("scier" if scie else "marteler"))
 	if id == "corde" or id == "filet":

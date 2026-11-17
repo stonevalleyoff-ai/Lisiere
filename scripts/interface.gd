@@ -287,9 +287,14 @@ func montrer_titre(lieux: Array, infos: String, record: int) -> void:
 		choix = 0
 	_choix.remplir(options, choix)
 	if lieux.is_empty():
-		_etat_titre.text = "Aucun lieu ne se lit pour l'instant."
+		_etat_titre.text = "Le monde ne se lit pas pour l'instant."
 	_apparaitre()
 	_dire_compte()
+
+
+# une ligne sous le choix du monde, à l'écran-titre (sans rien d'autre : la partie du compte, retrouvée)
+func dire_titre(t: String) -> void:
+	_etat_titre.text = t
 
 
 func message_titre(t: String) -> void:
@@ -594,7 +599,7 @@ func _montrer_page(quelle: String, oui: bool) -> bool:
 		if not oui or not ResourceLoader.exists("res://scripts/interface_atelier.gd"):
 			return false
 		var pages = load("res://scripts/interface_atelier.gd")
-		var p: Control = pages.Etabli.new() if quelle == "etabli" else (pages.Herbier.new() if quelle == "herbier" else pages.Sac.new())
+		var p: Control = pages.Etabli.new() if quelle == "etabli" else (pages.Herbier.new() if quelle == "herbier" else (pages.PageCarte.new() if quelle == "carte" else pages.Sac.new()))
 		p.theme = T.theme()
 		p.visible = false
 		p.fermer.connect(_fermer_page)

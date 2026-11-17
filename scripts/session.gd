@@ -7,10 +7,12 @@ extends Node
 # Dans un navigateur, la session est celle du portail et des autres jeux du site (même adresse, même stockage, sous la clé
 # « stonevalley:session ») : connecté au portail, on l'est ici en arrivant, et l'inverse ; se déconnecter déconnecte partout. Un
 # jeton de renouvellement ne sert qu'une fois : avant de renouveler, on regarde si un autre ne vient pas de le faire.
-# Sans compte, Lisière se joue pareil.
+# Sans compte, Lisière se joue pareil. Connecté, la partie en cours est aussi gardée sur le compte (plus bas : la partie sur le
+# compte), et le portail montre où l'on en est.
 #   var r = await jeu.session.connexion(adresse, mot_de_passe)     # { ok, erreur } ; puis jeu.session.connecte()
 
 signal change           # connecté, ou plus
+signal partie_en_conflit    # un autre appareil a continué la partie du compte : celle-ci n'y part plus
 
 const URL := "https://ldazucyrnpewkqdneznc.supabase.co"
 # (publique par nature, celle de Stone Valley : sans compte connecté, elle n'ouvre rien)
@@ -40,12 +42,16 @@ var renouveau := ""         # le jeton qui renouvelle la session (refresh_token)
 var expire := 0.0           # quand le jeton cesse de valoir (secondes, horloge du système)
 var uid := ""
 var email := ""
+# (l'essai joue contre un faux service : LISIERE_SERVICE, hors d'un navigateur seulement)
+var url := URL
 # revenu d'un lien « mot de passe oublié » : la porte s'ouvre pour en choisir un nouveau
 var nouveau_mdp := false
 var _renouvellement := false
 
 
 func _ready() -> void:
+	if not OS.has_feature("web") and OS.get_environment("LISIERE_SERVICE") != "":
+		url = OS.get_environment("LISIERE_SERVICE").trim_suffix("/")
 	_lire()
 	if OS.has_feature("web"):
 		await _retour_du_courriel()
@@ -144,7 +150,7 @@ func base(nom: String, args: Dictionary = {}) -> Dictionary:
 	var j := ""
 	if connecte():
 		j = await jeton_valide()
-	var r := await _http(URL + "/rest/v1/rpc/" + nom, args, HTTPClient.METHOD_POST, j)
+	var r := await _http(url + "/rest/v1/rpc/" + nom, args, HTTPClient.METHOD_POST, j)
 	# (les fonctions de Lisière répondent { ok, erreur } ; le tableau, une liste)
 	if r["ok"] and typeof(r["donnees"]) == TYPE_DICTIONARY and r["donnees"].has("ok") and not r["donnees"]["ok"]:
 		r["ok"] = false
@@ -205,6 +211,121 @@ func nommer(pseudo: String) -> Dictionary:
 	return r["donnees"] if r["ok"] else {"ok": false, "erreur": r["erreur"]}
 
 
+# --- la partie sur le compte (les fonctions lisiere_garder, lisiere_reprendre, lisiere_oublier : outils/sauvegarde.sql) ---
+# Connectée, la partie gardée sur l'appareil part aussi sur le compte StoneValley : au plus une fois par minute pendant qu'on
+# joue, et tout de suite à la pause, quand l'application passe derrière une autre, au retour au titre. À l'écran-titre, la plus
+# récente des deux se reprend : on continue d'un autre appareil. Chaque appareil a un nom, tiré une fois. La base n'écrase pas ce
+# qu'un autre appareil a écrit depuis la dernière révision que celui-ci a lue : elle le dit (« conflit »), et la partie ne part
+# plus d'ici (elle reste sur l'appareil ; à l'écran-titre, la plus récente se reprend). Une partie nouvelle remplace celle du
+# compte. Une partie finie s'efface du compte ; sans réseau, l'effacement attend (user://oubli.json).
+
+const APPAREIL := "user://appareil.txt"
+const OUBLI := "user://oubli.json"
+const ENVOI := 60.0             # secondes : au plus un envoi par minute, pendant qu'on joue
+
+var rev_partie := -1            # la révision de la partie du compte que cet appareil connaît (-1 : il n'en connaît pas)
+var partie_nouvelle := false    # la prochaine écriture est celle d'une partie nouvelle : elle remplace celle du compte
+var en_conflit := false         # un autre appareil a continué : cette partie ne part plus sur le compte
+var _envoi := false
+var _envoye_ms := -1000000
+var _appareil := ""
+
+
+# le nom de cet appareil : tiré une fois, gardé sur lui
+func appareil() -> String:
+	if _appareil != "":
+		return _appareil
+	if FileAccess.file_exists(APPAREIL):
+		_appareil = FileAccess.get_file_as_string(APPAREIL).strip_edges()
+	if _appareil.length() < 4:
+		_appareil = Crypto.new().generate_random_bytes(8).hex_encode()
+		var f := FileAccess.open(APPAREIL, FileAccess.WRITE)
+		if f != null:
+			f.store_string(_appareil)
+	return _appareil
+
+
+# une partie nouvelle commence : elle remplacera celle du compte
+func partie_commence() -> void:
+	rev_partie = -1
+	partie_nouvelle = true
+	en_conflit = false
+
+
+# une partie reprend ; rev : la révision du compte lue à l'écran-titre (-1 : pas lue)
+func partie_reprise(rev: int) -> void:
+	rev_partie = rev
+	partie_nouvelle = false
+	en_conflit = false
+
+
+# un envoi partirait-il maintenant ? (connectée, pas en conflit, pas d'envoi en cours, et la minute passée, sauf vite)
+func envoi_possible(vite: bool) -> bool:
+	return connecte() and not en_conflit and not _envoi and (vite or Time.get_ticks_msec() - _envoye_ms >= int(ENVOI * 1000.0))
+
+
+# la partie, sur le compte. vite : sans attendre la minute. Rend { ok, erreur } ; « conflit » : un autre appareil a continué
+func garder_partie(d: Dictionary, resume: Dictionary, vite: bool) -> Dictionary:
+	if not connecte():
+		return {"ok": false, "erreur": "pas de compte"}
+	if en_conflit:
+		return {"ok": false, "erreur": "conflit"}
+	if _envoi:
+		return {"ok": false, "erreur": "un envoi est en cours"}
+	if not vite and Time.get_ticks_msec() - _envoye_ms < int(ENVOI * 1000.0):
+		return {"ok": false, "erreur": "pas encore"}
+	_envoi = true
+	_envoye_ms = Time.get_ticks_msec()
+	var r := await base("lisiere_garder", {"p_donnees": d, "p_resume": resume, "p_appareil": appareil(),
+		"p_rev": rev_partie if rev_partie >= 0 else null, "p_nouvelle": partie_nouvelle})
+	_envoi = false
+	if r["ok"] and typeof(r["donnees"]) == TYPE_DICTIONARY:
+		rev_partie = int(r["donnees"].get("rev", rev_partie))
+		partie_nouvelle = false
+	elif str(r.get("erreur", "")) == "conflit":
+		en_conflit = true
+		partie_en_conflit.emit()
+	return r
+
+
+# la partie du compte : { lu (la base a répondu), partie ({ donnees, rev, maj_le, appareil }, ou null) }
+func partie_du_compte() -> Dictionary:
+	if not connecte():
+		return {"lu": false, "partie": null}
+	var r := await base("lisiere_reprendre")
+	if not r["ok"] or typeof(r["donnees"]) != TYPE_DICTIONARY:
+		return {"lu": false, "partie": null}
+	var p = r["donnees"].get("partie")
+	return {"lu": true, "partie": p if typeof(p) == TYPE_DICTIONARY else null}
+
+
+# la partie est finie : elle s'efface du compte (pas celle qu'un autre appareil a écrite depuis) ; sans réseau, cela attend
+func oublier_partie() -> void:
+	if not connecte():
+		return
+	var args := {"p_appareil": appareil(), "p_rev": rev_partie if rev_partie >= 0 else null}
+	rev_partie = -1
+	partie_nouvelle = false
+	var r := await base("lisiere_oublier", args)
+	if not r["ok"] and (int(r["code"]) == 0 or int(r["code"]) >= 500):
+		var f := FileAccess.open(OUBLI, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(args))
+
+
+# un effacement qui attendait le réseau (à l'écran-titre, avant de lire la partie du compte)
+func renvoyer_oubli() -> void:
+	if not connecte() or not FileAccess.file_exists(OUBLI):
+		return
+	var args = JSON.parse_string(FileAccess.get_file_as_string(OUBLI))
+	if typeof(args) != TYPE_DICTIONARY:
+		DirAccess.remove_absolute(OUBLI)
+		return
+	var r := await base("lisiere_oublier", args)
+	if r["ok"] or (int(r["code"]) > 0 and int(r["code"]) < 500):
+		DirAccess.remove_absolute(OUBLI)
+
+
 func _attente() -> Array:
 	if not FileAccess.file_exists(ATTENTE):
 		return []
@@ -232,7 +353,7 @@ func _ecrire_attente(liste: Array) -> void:
 
 # un appel à Supabase Auth : { ok, code, donnees, erreur } ; l'erreur est dite en français
 func _appeler(chemin: String, corps, methode: int = HTTPClient.METHOD_POST, avec_jeton: bool = false, j: String = "") -> Dictionary:
-	return await _http(URL + "/auth/v1" + chemin, corps, methode, (j if j != "" else jeton) if avec_jeton else "")
+	return await _http(url + "/auth/v1" + chemin, corps, methode, (j if j != "" else jeton) if avec_jeton else "")
 
 
 func _http(adresse: String, corps, methode: int, j: String) -> Dictionary:

@@ -572,6 +572,8 @@ func _lancer() -> void:
 	_l_atelier(F)
 	_le_jardin_et_les_betes(F)
 	_la_botanique(F)
+	await _la_carte()
+	await _la_partie_sur_le_compte()
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -1066,6 +1068,101 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		verif(remontee and jetee and refuse != "", "un chasseur tout près : sa monture se cabre et la jette à terre, et ne se laisse plus monter (« %s »)" % refuse)
 		bete.etat = "repos"
 
+		# le feu ne la fait pas fuir : tenue au piquet ou en licol, elle s'y sent à l'abri, même si sa population le craint
+		jeu.horloge = jour_h
+		bete.peur_feu = 1.0
+		bete.suit_la = false
+		bete.maison = piquet.position + Vector2(18.0, 10.0)
+		bete.position = bete.maison
+		j.position = piquet.position + Vector2(-140.0, 0.0)
+		var feu_camp = jeu.Feu.new()
+		feu_camp.jeu = jeu
+		feu_camp.position = piquet.position + Vector2(0.0, 110.0)
+		jeu.monde.add_child(feu_camp)
+		jeu.feux.append(feu_camp)
+		E.maj(0.1)
+		var a_l_abri: bool = jeu.feu_qui_protege(bete.position) == feu_camp and bete.tenue()
+		var maison0: Vector2 = bete.maison
+		var jamais_fui := true
+		var ecartee := 0.0
+		for k in 3:
+			# (une bûche, trois fois : la gerbe d'étincelles)
+			bete.gerbe(feu_camp)
+			for i in 20:
+				bete._conduire(0.1)
+				E.maj(0.1)
+				jamais_fui = jamais_fui and str(bete.etat) != "fuit"
+				ecartee = maxf(ecartee, bete.position.distance_to(maison0))
+		# (la foudre tombe à côté : dans la lumière du feu, elle tressaille, sans plus)
+		bete.effrayer(bete.position + Vector2(160.0, 0.0), 3.0)
+		jamais_fui = jamais_fui and str(bete.etat) != "fuit"
+		var au_piquet: bool = E.betes.has(bete) and bool(piquet.etat.get("attache", false)) and bete.maison == maison0
+		# (en licol, sa longe dans la main de la veilleuse, au bord du feu)
+		bete.suit_la = true
+		j.position = bete.position + Vector2(-60.0, 0.0)
+		E.maj(0.1)
+		var en_main: bool = bete.tenue() and Vector2(bete.longe).distance_to(j.position) < 1.0
+		for k in 3:
+			bete.gerbe(feu_camp)
+			for i in 20:
+				bete._conduire(0.1)
+				E.maj(0.1)
+				jamais_fui = jamais_fui and str(bete.etat) != "fuit"
+		var reste_en_main: bool = E.betes.has(bete) and bete.position.distance_to(j.position) < 150.0
+		verif(a_l_abri and jamais_fui and ecartee < 48.0 and au_piquet and en_main and reste_en_main,
+			"tenue au piquet ou en licol, sa bête ne fuit pas le feu (sa population le craint-elle) : une bûche, la foudre, elle reste au feu, attachée (à %d pixels au plus de sa place)" % int(ecartee))
+		jeu.feux.erase(feu_camp)
+		feu_camp.queue_free()
+
+		# ce qui l'effraie hors de la lumière (la foudre) : un écart au bout de sa longe, et elle se reprend, toujours au piquet
+		bete.suit_la = false
+		bete.maison = maison0
+		bete.position = maison0
+		bete.etat = "repos"
+		j.position = piquet.position + Vector2(-140.0, 0.0)
+		E.maj(0.1)
+		bete.effrayer(bete.position + Vector2(120.0, 0.0), 3.0)
+		var sursaute: bool = str(bete.etat) == "fuit"
+		var bout := 0.0
+		for i in 40:
+			bete._conduire(0.1)
+			E.maj(0.1)
+			bout = maxf(bout, bete.position.distance_to(maison0))
+		var reprise: bool = str(bete.etat) != "fuit" and bete.maison == maison0 and bool(piquet.etat.get("attache", false)) and E.betes.has(bete)
+		verif(sursaute and bout > 5.0 and bout < 50.0 and reprise,
+			"hors de la lumière, la foudre lui fait faire un écart au bout de sa longe (%d pixels), puis elle se reprend, toujours au piquet" % int(bout))
+		bete.peur_feu = 0.0
+		bete.etat = "repos"
+
+		# la torche en selle : une monture dont la lignée s'est faite au feu la souffre ; les autres se cabrent, et refusent
+		bete.suit_la = true
+		j.position = bete.position + Vector2(-30.0, 0.0)
+		j.torche = 0.0
+		var neutre_monte: bool = E.monter(bete)
+		j.torche = 20.0
+		E.maj(0.1)
+		var cabree: bool = E.monture == null and not bete.montee and j.monture == null
+		var refus_torche: String = E.empeche_monter(bete)
+		bete.etat = "repos"
+		A.objets["licol"] = 1
+		var faite = _bete(grande, "proie", j.position + Vector2(0.0, 120.0), {"neophobie": 0.05})
+		var apprivoisee: bool = E.apprivoiser(faite)
+		faite.harnais["selle"] = true
+		j.position = faite.position + Vector2(-30.0, 0.0)
+		var accepte: String = E.empeche_monter(faite)
+		var montee_torche: bool = E.monter(faite)
+		for i in 20:
+			E.maj(0.1)
+		var tient_torche: bool = E.monture == faite and faite.montee and j.monture == faite
+		E.descendre()
+		j.torche = 0.0
+		verif(not bete.faite_au_feu() and faite.faite_au_feu() and neutre_monte and cabree and refus_torche.contains("torche") and apprivoisee
+			and accepte == "" and montee_torche and tient_torche,
+			"la torche en selle : une monture dont la lignée s'est faite au feu (« %s ») la souffre ; une autre se cabre, la jette à terre, et refuse (« %s »)" % [
+			jeu.Donnees.dire_memoire(faite.memoire), refus_torche])
+		E.betes.erase(faite)
+		_oter(faite)
+
 		# la nuit : dans le noir, elle rompt sa longe ; dans la lumière d'un feu, elle reste ; la Noire prend celle qu'on y laisse
 		jeu.horloge = nuit_h
 		jeu.noire.acte = 1
@@ -1089,7 +1186,8 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		_oter(bete)
 
 		# la partie gardée
-		var b2 = _bete(grande, "proie", ici + Vector2(100.0, 0.0), {})
+		var b2 = _bete(grande, "proie", ici + Vector2(100.0, 0.0), {"neophobie": 0.05})
+		b2.ecart = 0.8
 		A.objets["licol"] = 1
 		jeu.horloge = jour_h
 		E.apprivoiser(b2)
@@ -1102,8 +1200,9 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		E.reprendre(photo)
 		var b3 = E.betes[0] if E.betes.size() == 1 else null
 		verif(b3 != null and b3 != b2 and str(b3.role) == "compagne" and bool(b3.harnais.get("selle", false)) and not b3.suit_la and absf(b3.faim - 61.0) < 0.2
-			and b3.position.distance_to(b2.position) < 1.0 and str(b3.id) == str(b2.id) and get_tree().get_nodes_in_group("betes").size() == avant_n + 1,
-			"la partie gardée retient ses bêtes : l'espèce, où elles sont, leur harnais, leur faim")
+			and b3.position.distance_to(b2.position) < 1.0 and str(b3.id) == str(b2.id) and get_tree().get_nodes_in_group("betes").size() == avant_n + 1
+			and b3.faite_au_feu() and absf(b3.ecart - 0.8) < 0.01,
+			"la partie gardée retient ses bêtes : l'espèce, où elles sont, leur harnais, leur faim, ce que les leurs ont appris (faite au feu), leur audace")
 		_oter(b2)
 		if b3 != null:
 			_oter(b3)
@@ -1131,6 +1230,250 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 	C.pluie = garde["pluie"]
 	C.air = garde["air"]
 	C.neige_sol = garde["neige"]
+
+
+# la carte, la plume et l'encre (scripts/reperes.gd) : elles se fabriquent à l'établi ; sans carte, la pause n'en montre pas ;
+# avec, ce qu'elle a parcouru du lieu ; la plume y écrit des repères là où elle se tient (le même tout près est récrit), on les
+# raye, la page de la carte le fait ; la tanière de la Noire s'écrit d'elle-même ; la partie gardée s'en souvient
+func _la_carte() -> void:
+	print("La carte")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var Rp = jeu.reperes
+	var inv: Dictionary = j.inventaire
+	var garde := {"p": j.position, "inv": inv.duplicate(), "objets": A.objets.duplicate(), "liste": Rp.liste.duplicate(true), "vus": Rp.vus.duplicate(),
+		"connue": jeu.noire.taniere_connue, "taniere": jeu.noire.taniere, "h": jeu.horloge}
+	var ici: Vector2 = j.position
+	var etabli = A._creer("etabli", jeu.monde.repousser(ici + Vector2(30.0, 0.0), 10.0), {})
+	A.objets.erase("carte")
+	A.objets.erase("plume")
+
+	# sans carte : rien à la pause, rien ne s'écrit ; à l'établi, la carte, puis la plume et l'encre
+	jeu.ui.montrer_pause(true)
+	var sans: bool = not jeu.ui._pause.carte_monde.visible and jeu.ui._pause._commandes.visible
+	jeu.ui.montrer_pause(false)
+	var refus: String = Rp.empeche_ecrire()
+	for k in ["peau", "corde", "fibre", "baies", "pierre"]:
+		inv[k] = 0
+	inv["peau"] = 1
+	inv["corde"] = 1
+	var fait_carte: bool = A.fabriquer("carte")
+	var sans_plume: String = Rp.empeche_ecrire()
+	var sans_baies: String = A.empeche("plume")
+	inv["fibre"] = 1
+	inv["baies"] = 2
+	inv["pierre"] = 1
+	var fait_plume: bool = A.fabriquer("plume")
+	var paye: bool = int(inv["peau"]) == 0 and int(inv["corde"]) == 0 and int(inv["fibre"]) == 0 and int(inv["baies"]) == 0 and int(inv["pierre"]) == 0
+	inv["peau"] = 1
+	inv["corde"] = 1
+	var une_seule: String = A.empeche("carte")
+	verif(sans and refus.contains("carte") and fait_carte and sans_plume.contains("plume") and sans_baies.contains("baies") and fait_plume and paye
+		and une_seule.contains("déjà") and A.possede("carte") == 1 and A.possede("plume") == 1,
+		"sans carte, la pause n'en montre pas et rien ne s'écrit ; à l'établi, la carte (une peau, une corde), la plume et l'encre (une fibre, deux baies, une pierre) ; une seule de chaque")
+
+	# ce qu'elle parcourt du lieu s'y dessine ; la pause montre la carte
+	Rp.vus.clear()
+	j.position = ici + Vector2(600.0, 0.0)
+	Rp.voir(j.position)
+	var vu_la: bool = Rp.vus.has(Rp.cle(j.position)) and not Rp.vus.has(Rp.cle(ici + Vector2(-1500.0, 0.0)))
+	Rp.voir(ici)
+	jeu.ui.montrer_pause(true)
+	var avec: bool = jeu.ui._pause.carte_monde.visible and not jeu.ui._pause._commandes.visible
+	# (la carte se dessine, de près puis de loin)
+	await get_tree().process_frame
+	jeu.ui._pause.carte_monde.loin = true
+	jeu.ui._pause.carte_monde.queue_redraw()
+	await get_tree().process_frame
+	jeu.ui._pause.carte_monde.loin = false
+	jeu.ui.montrer_pause(false)
+	verif(vu_la and avec and Rp.vus.size() >= 8, "la carte faite, la pause la montre : ce qu'elle a parcouru du lieu (%d cases), pas le reste" % Rp.vus.size())
+
+	# écrire, là où elle se tient : le même tout près est récrit, pas doublé ; un autre s'ajoute ; on le raye
+	Rp.liste.clear()
+	j.position = etabli.position + Vector2(-40.0, 10.0)
+	var la: String = Rp.ici()
+	var e1: bool = Rp.ecrire("camp")
+	j.position += Vector2(-100.0, 0.0)
+	var e2: bool = Rp.ecrire("camp")
+	var recrit: bool = Rp.liste.size() == 1 and Rp.position(Rp.liste[0]).distance_to(j.position) < 1.0
+	var camp: Vector2 = j.position
+	j.position = camp + Vector2(900.0, 0.0)
+	Rp.ecrire("eau")
+	Rp.ecrire("camp")
+	var trois: bool = Rp.liste.size() == 3
+	var proche: int = Rp.par_distance()[0]
+	var loin_: int = Rp.par_distance()[2]
+	var dit_loin: String = Rp.dire_ou(Rp.liste[loin_])
+	var dit_ici: String = Rp.dire_ou(Rp.liste[proche])
+	var raye: bool = Rp.rayer(Rp.liste.find(Rp.liste.filter(func(r): return str(r["genre"]) == "eau")[0]))
+	verif(la == "camp" and e1 and e2 and recrit and trois and dit_ici == "ici" and dit_loin.contains("pas") and dit_loin.contains("ouest") and raye and Rp.liste.size() == 2
+		and Rp.liste.filter(func(r): return str(r["genre"]) == "eau").is_empty(),
+		"la plume écrit là où elle se tient (près de l'établi : « %s ») ; le même tout près est récrit, pas doublé ; un repère loin d'elle est « %s » ; on le raye" % [la, dit_loin])
+
+	# la page de la carte, depuis le sac : écrire ce qui est là, rayer
+	var sac_la: bool = false
+	jeu.ouvrir_page("sac")
+	var sac = jeu.ui._pages.get("sac")
+	if sac != null:
+		for sec in sac._sections():
+			for tu in sec["tuiles"]:
+				if str(tu["cle"]) == "page:carte":
+					sac_la = true
+	jeu.fermer_page()
+	jeu.ouvrir_page("carte")
+	var pc = jeu.ui._pages.get("carte")
+	var ouverte: bool = pc != null and pc.visible and jeu.page == "carte"
+	var tuiles := 0
+	var ecrite := ""
+	var rayee := ""
+	if pc != null:
+		for sec in pc._sections():
+			tuiles += sec["tuiles"].size()
+		ecrite = pc._faire("ecrire:coffre")
+		var cle_coffre: String = pc._cle_de(Rp.liste[Rp.liste.size() - 1])
+		var fiche: Dictionary = pc._fiche_de(cle_coffre)
+		if str(fiche.get("bouton", "")) == "Rayer":
+			rayee = pc._faire(cle_coffre)
+	jeu.fermer_page()
+	verif(sac_la and ouverte and tuiles == 8 + 2 and ecrite == "Écrit" and rayee == "Rayé" and Rp.liste.size() == 2 and jeu.page == "",
+		"le sac ouvre la page de la carte : huit repères à écrire, ceux qu'elle a écrits ; elle y écrit un coffre, puis le raye")
+
+	# la tanière de la Noire, trouvée, s'écrit d'elle-même ; sans plume, non ; la partie gardée s'en souvient
+	var tan: Vector2 = camp + Vector2(0.0, -1200.0)
+	var ecrite_t: bool = Rp.noter_taniere(tan)
+	A.objets["plume"] = 0
+	var sans_plume_t: bool = not Rp.noter_taniere(tan + Vector2(800.0, 0.0))
+	A.objets["plume"] = 1
+	var photo: Dictionary = JSON.parse_string(JSON.stringify(Rp.photo()))
+	var avant_l: Array = Rp.liste.duplicate(true)
+	var avant_v: int = Rp.vus.size()
+	Rp.vider()
+	Rp.reprendre(photo)
+	var reprise: bool = Rp.liste.size() == avant_l.size() and Rp.vus.size() == avant_v and str(Rp.liste[2]["genre"]) == "taniere" and Rp.position(Rp.liste[2]).distance_to(tan) < 0.2
+	verif(ecrite_t and sans_plume_t and reprise, "la tanière de la Noire, trouvée, s'écrit d'elle-même sur la carte (pas sans la plume) ; la partie gardée retient les repères et ce qu'elle a parcouru")
+
+	# (tout remis comme avant)
+	A.poses.erase(etabli)
+	etabli.queue_free()
+	j.position = garde["p"]
+	for k in inv.keys():
+		inv[k] = garde["inv"].get(k, 0)
+	A.objets = garde["objets"]
+	Rp.liste = garde["liste"]
+	Rp.vus = garde["vus"]
+	jeu.noire.taniere_connue = garde["connue"]
+	jeu.horloge = garde["h"]
+
+
+# la partie sur le compte (scripts/session.gd, outils/sauvegarde.sql), contre un faux service (outils/faux-compte.js, lancé ici
+# si node est là ; ou celui que donne LISIERE_SERVICE) : rien ne part sans compte ; connectée, la partie part (une partie nouvelle,
+# puis la suite, au plus une fois par minute sauf « vite ») ; un autre appareil qui n'a pas lu la dernière révision ne l'écrase
+# pas (conflit) ; celui qui l'a lue continue ; la plus récente se reprend ; une partie finie s'efface, et sans réseau cela attend
+func _la_partie_sur_le_compte() -> void:
+	print("La partie sur le compte")
+	var S = jeu.session
+	var garde := {"url": S.url, "jeton": S.jeton, "renouveau": S.renouveau, "expire": S.expire, "uid": S.uid, "email": S.email, "app": S._appareil}
+	var pid := -1
+	var service := OS.get_environment("LISIERE_SERVICE")
+	if service == "":
+		pid = OS.create_process("node", [ProjectSettings.globalize_path("res://outils/faux-compte.js"), "8139"])
+		if pid <= 0:
+			print("  (node manque : la partie sur le compte n'est pas essayée)")
+			return
+		service = "http://127.0.0.1:8139"
+	S.url = service
+	var pret := false
+	for i in 300:
+		var r0: Dictionary = await S._http(service + "/__etat", null, HTTPClient.METHOD_GET, "")
+		if r0["ok"]:
+			pret = true
+			break
+		await get_tree().process_frame
+	if not pret:
+		print("  (le faux service ne répond pas : la partie sur le compte n'est pas essayée)")
+		S.url = garde["url"]
+		if pid > 0:
+			OS.kill(pid)
+		return
+	await S._http(service + "/__vider", {}, HTTPClient.METHOD_POST, "")
+	var conflits := [0]
+	var compter := func(): conflits[0] += 1
+	S.partie_en_conflit.connect(compter)
+	S.jeton = ""
+	S.uid = ""
+	var sans_compte: bool = not S.envoi_possible(true)
+	var connexion: Dictionary = await S.connexion("ada@exemple.fr", "bon")
+	var d: Dictionary = load("res://scripts/partie_gardee.gd").photo(jeu)
+	var resume: Dictionary = load("res://scripts/partie_gardee.gd").resume_portail(jeu)
+	var PG = load("res://scripts/partie_gardee.gd")
+
+	# une partie nouvelle, puis la suite ; pas deux envois dans la minute, sauf « vite »
+	S.partie_commence()
+	var r1: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var attend: bool = not S.envoi_possible(false) and S.envoi_possible(true)
+	var r2: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var etat: Dictionary = (await S._http(service + "/__etat", null, HTTPClient.METHOD_GET, ""))["donnees"]
+	var gardee: Dictionary = etat.get("u-ada", {})
+	verif(sans_compte and connexion["ok"] and S.connecte() and r1["ok"] and int(r1["donnees"]["rev"]) == 1 and attend and r2["ok"] and S.rev_partie == 2
+		and int(gardee.get("rev", 0)) == 2 and int(gardee["donnees"]["jour"]) == int(jeu.jour) and str(gardee["resume"].get("nom", "")) != ""
+		and int(gardee["resume"].get("jour", 0)) == int(jeu.jour) and gardee["resume"].has("nuits") and gardee["resume"].has("regions"),
+		"sans compte, rien ne part ; connectée, la partie part sur le compte (révision %d), avec son résumé pour le portail (« %s, jour %d ») ; pas deux fois dans la minute, sauf à la pause" % [
+		S.rev_partie, str(gardee.get("resume", {}).get("nom", "")), int(gardee.get("resume", {}).get("jour", 0))])
+
+	# un autre appareil, qui n'a pas lu la dernière révision : il n'écrase pas ; celui qui l'a lue continue
+	var ici: String = S.appareil()
+	S._appareil = "autre-appareil"
+	S.partie_reprise(-1)
+	var r3: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var bloque: bool = str(r3.get("erreur", "")) == "conflit" and S.en_conflit and conflits[0] == 1 and not S.envoi_possible(true)
+	S.partie_reprise(2)
+	var d2: Dictionary = d.duplicate(true)
+	d2["jour"] = int(jeu.jour) + 1
+	d2["quand"] = int(d["quand"]) + 100
+	var r4: Dictionary = await S.garder_partie(d2, resume, true)
+	S._appareil = ici
+	S.partie_reprise(2)
+	var r5: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var lue: Dictionary = await S.partie_du_compte()
+	var p = lue.get("partie")
+	var reprend: bool = (typeof(p) == TYPE_DICTIONARY and int(p["rev"]) == 3 and PG.compte_plus_recent(d, p["donnees"]) and PG.compte_plus_recent({}, p["donnees"])
+		and not PG.compte_plus_recent(d2.merged({"quand": int(d2["quand"]) + 1}, true), p["donnees"]) and not PG.compte_plus_recent(d, {"v": 99}))
+	verif(bloque and r4["ok"] and int(r4["donnees"]["rev"]) == 3 and str(r5.get("erreur", "")) == "conflit" and reprend and conflits[0] == 2,
+		"un autre appareil qui n'a pas lu la dernière révision n'écrase pas la partie (conflit, c'est dit) ; celui qui l'a lue continue (jour %d) ; à l'écran-titre, la plus récente se reprend" % int(d2["jour"]))
+
+	# une partie finie s'efface du compte ; sans réseau, l'effacement attend, puis part
+	S.partie_reprise(3)
+	S._appareil = "autre-appareil"
+	await S.oublier_partie()
+	var effacee: bool = (await S.partie_du_compte()).get("partie") == null
+	S.partie_commence()
+	await S.garder_partie(d.duplicate(true), resume, true)
+	S.url = "http://127.0.0.1:9"
+	await S.oublier_partie()
+	var en_attente: bool = FileAccess.file_exists(S.OUBLI)
+	S.url = service
+	var encore: bool = (await S.partie_du_compte()).get("partie") != null
+	await S.renvoyer_oubli()
+	var partie_apres = (await S.partie_du_compte()).get("partie")
+	verif(effacee and en_attente and encore and partie_apres == null and not FileAccess.file_exists(S.OUBLI),
+		"une partie finie s'efface du compte ; sans réseau, l'effacement attend sur l'appareil, et part à l'écran-titre")
+
+	# (tout remis comme avant)
+	S.partie_en_conflit.disconnect(compter)
+	S.url = garde["url"]
+	S.jeton = garde["jeton"]
+	S.renouveau = garde["renouveau"]
+	S.expire = garde["expire"]
+	S.uid = garde["uid"]
+	S.email = garde["email"]
+	S._appareil = garde["app"]
+	S.rev_partie = -1
+	S.partie_nouvelle = false
+	S.en_conflit = false
+	S._ecrire()
+	if pid > 0:
+		OS.kill(pid)
 
 
 # la botanique (scripts/botanique.gd) : les herbes, leurs vertus cachées, ce qu'on en apprend, ce qu'on en prépare
@@ -2130,15 +2473,9 @@ func _lieu_sans_bord() -> void:
 	print("8. Le lieu sans bord")
 	# (MONDE-OUVERT.md, étape 2 : le lieu se fabrique par morceaux autour de la veilleuse, et ne garde que ce qu'on y change)
 	var propose: Array = jeu._lieux_du_titre()
-	var rang_foret := -1
-	var rang_ouvert := -1
-	for i in propose.size():
-		if str(propose[i]["id"]) == "foret":
-			rang_foret = i
-		elif str(propose[i]["id"]) == "ouvert:monde":
-			rang_ouvert = i
-	verif(rang_ouvert == rang_foret + 1 and rang_foret >= 0 and propose.size() == jeu.donnees.lieux().size() + 1,
-		"l'écran-titre propose « %s » (%s) juste après la forêt, sur laquelle la liste s'ouvre" % [propose[rang_ouvert]["nom"], propose[rang_ouvert]["detail"]])
+	verif(propose.size() == 1 and str(propose[0]["id"]) == "ouvert:monde" and jeu.donnees.lieux().size() > 1,
+		"l'écran-titre ne propose que « %s » (%s) : plus les lieux d'un seul biome (%d se liraient)" % [propose[0]["nom"] if propose.size() > 0 else "?",
+		propose[0]["detail"] if propose.size() > 0 else "?", jeu.donnees.lieux().size()])
 	await jeu._commencer("prairie", {}, true)
 	var W = jeu.monde
 	var jo = jeu.joueur
@@ -2296,13 +2633,21 @@ func _les_regions() -> void:
 	var aire_ := 0.0
 	for k in co[0].size():
 		aire_ += co[0][k].cross(co[0][(k + 1) % co[0].size()])
+	# (sans carte fabriquée, le carnet n'en montre pas ; la carte faite, tout ce qu'elle a découvert y est)
+	var carte_avant: int = int(jeu.atelier.objets.get("carte", 0))
+	jeu.atelier.objets["carte"] = 0
+	jeu.ui.montrer_pause(true)
+	var sans_carte: bool = not jeu.ui._pause.carte_monde.visible and jeu.ui._pause._commandes.visible and str(jeu.ui._pause._sous.text).contains("établi")
+	jeu.ui.montrer_pause(false)
+	jeu.atelier.objets["carte"] = 1
 	jeu.ui.montrer_pause(true)
 	var page_carte: bool = jeu.ui._pause.carte_monde.visible and not jeu.ui._pause._commandes.visible and str(jeu.ui._pause._sous.text).contains("découverte")
 	jeu.ui.montrer_pause(false)
+	jeu.atelier.objets["carte"] = carte_avant
 	var gardee_d: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
 	verif(jeu.decouvertes.has(foret) and jeu.decouvertes.size() >= 2 and absf(aire_) * 0.5 > 0.3 * C.cote * C.cote and absf(aire_) * 0.5 < 3.0 * C.cote * C.cote
-		and page_carte and gardee_d["decouvertes"].has(str(C.regions[foret]["id"])),
-		"ce qu'on découvre se note (%d régions) et se garde ; à la pause, le carnet en montre la carte (« %s »)" % [jeu.decouvertes.size(), jeu.ui._pause._sous.text])
+		and sans_carte and page_carte and gardee_d["decouvertes"].has(str(C.regions[foret]["id"])),
+		"ce qu'on découvre se note (%d régions) et se garde ; sans carte, le carnet n'en montre pas ; la carte faite, il montre tout (« %s »)" % [jeu.decouvertes.size(), jeu.ui._pause._sous.text])
 	# une rivière traverse sa vallée : son lit arrête ; à gué on passe à pied ; ailleurs, un pont de fortune
 	var riv := -1
 	for k in C.regions.size():
@@ -3357,7 +3702,7 @@ func _l_atelier(F: Dictionary) -> void:
 		if o.is_empty() or str(o.get("nom", "")) == "" or str(o.get("dit", "")) == "" or not familles.has(o.get("famille")) or not (o.get("ou") in ["main", "etabli"]):
 			bon = false
 		for k in o.get("cout", {}):
-			if not A.MATIERES.has(k) or int(o["cout"][k]) <= 0:
+			if not (A.MATIERES.has(k) or k == "baies") or int(o["cout"][k]) <= 0:
 				bon = false
 		if bool(o.get("pose", false)) and not (str(o["famille"]) in ["camp", "jardin", "elevage"]):
 			bon = false

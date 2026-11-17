@@ -9,7 +9,8 @@ extends Node
 # attend, tourne, puis va là où ça se passe (sous un arbre, dans l'eau, près de l'arbre frappé, contre les flammes).
 #   --image <chemin> --a 0.3,0.6,0.9   écrit <chemin>_1.png, _2.png… à ces moments (en fractions de la durée)
 #   --ouvert   le lieu sans bord (MONDE-OUVERT.md) : la veilleuse marche droit devant elle
-#   --doigt    les boutons tactiles, comme sur un téléphone ; --carte : à la fin, la pause et la carte du carnet ;
+#   --doigt    les boutons tactiles, comme sur un téléphone ; --carte : à la fin, la pause et la carte du carnet (et ses repères) ;
+#   --carte toute : tout dévoilé (les régions de terre du monde, ou tout le lieu), la carte seule, en plein écran, de loin ;
 #   --depuis x,y : d'où elle part ; --pont : au bord d'une rivière, elle pose un pont de fortune et le passe
 #   --reste : elle ne bouge pas ; --vers x,y : elle marche vers ce point ; --recul 0.4 : la caméra recule d'autant (voir le
 #   relief d'un pays, le plan d'une grotte) ; --torche : elle part une torche à la main
@@ -629,18 +630,48 @@ func _process(delta: float) -> void:
 	if OS.get_cmdline_user_args().has("--tir") and int(_t / 1.1) != int((_t - delta) / 1.1):
 		jeu.tirer()
 	_tracer(delta)
-	# (--carte : à la fin, la pause, et la carte du carnet ; les régions à deux pas de là sont découvertes, pour la voir pleine)
-	if jeu.ouvert and u > 0.8 and not _fait.has("carte") and OS.get_cmdline_user_args().has("--carte") and jeu.carte != null:
+	# (--carte : à la fin, la pause, et la carte du carnet, avec la carte et la plume dans le sac et quelques repères écrits ;
+	# les régions à deux pas de là sont découvertes, ou, dans un lieu, ses environs parcourus, pour la voir pleine)
+	if u > 0.8 and not _fait.has("carte") and OS.get_cmdline_user_args().has("--carte"):
 		_fait["carte"] = true
-		for i in jeu.decouvertes.keys():
-			for v in jeu.carte.regions[i]["voisines"]:
-				if not jeu.carte.regions[v]["eau"]:
-					jeu.decouvertes[v] = true
-					for w in jeu.carte.regions[v]["voisines"]:
-						if not jeu.carte.regions[w]["eau"] and (w % 3) != 0:
-							jeu.decouvertes[w] = true
+		if jeu.carte != null:
+			for i in jeu.decouvertes.keys():
+				for v in jeu.carte.regions[i]["voisines"]:
+					if not jeu.carte.regions[v]["eau"]:
+						jeu.decouvertes[v] = true
+						for w in jeu.carte.regions[v]["voisines"]:
+							if not jeu.carte.regions[w]["eau"] and (w % 3) != 0:
+								jeu.decouvertes[w] = true
+		else:
+			for k in 9:
+				jeu.reperes.voir(j.position + Vector2.from_angle(TAU * k / 9.0) * (0.0 if k == 0 else 700.0))
+		jeu.atelier.objets["carte"] = 1
+		jeu.atelier.objets["plume"] = 1
+		jeu.reperes._noter("camp", j.position, -1)
+		for s in jeu.atelier.poses:
+			if is_instance_valid(s) and str(s.genre) in ["coffre", "vestige"]:
+				jeu.reperes._noter(str(s.genre), s.position, -1)
+		jeu.reperes._noter("eau", j.position + Vector2(-520.0, 260.0), -1)
+		jeu.reperes._noter("danger", j.position + Vector2(480.0, -340.0), -1)
+		jeu.reperes._noter("cueillette", j.position + Vector2(300.0, 380.0), -1)
+		if jeu.noire != null and Vector2(jeu.noire.taniere) != Vector2.ZERO:
+			jeu.reperes._noter("taniere", jeu.noire.taniere, -1)
+		var a := OS.get_cmdline_user_args()
+		var toute: bool = a.find("--carte") + 1 < a.size() and a[a.find("--carte") + 1] == "toute"
+		if toute:
+			if jeu.carte != null:
+				for k in jeu.carte.regions.size():
+					if not jeu.carte.regions[k]["eau"]:
+						jeu.decouvertes[k] = true
+			else:
+				var n := int(ceil(R.DEMI / jeu.reperes.CASE))
+				for x in range(-n, n):
+					for y in range(-n, n):
+						jeu.reperes.vus[Vector2i(x, y)] = true
 		jeu.en_pause = true
 		jeu.ui.montrer_pause(true)
+		if toute:
+			_carte_entiere()
 	if _page != "" and u > 0.5 and not _fait.has("page"):
 		_fait["page"] = true
 		jeu.ouvrir_page(_page)
@@ -870,3 +901,25 @@ func _quitter() -> void:
 	jeu.sons.arreter_brefs()
 	await get_tree().create_timer(0.3, true, false, true).timeout
 	get_tree().quit(0)
+
+
+# (--carte toute) la carte seule, en plein écran, de loin, tout dévoilé : ce que le carnet montrerait, en grand
+func _carte_entiere() -> void:
+	var couche := CanvasLayer.new()
+	couche.layer = 100
+	add_child(couche)
+	var fond := ColorRect.new()
+	fond.color = load("res://scripts/palette.gd").PAPIER
+	fond.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	couche.add_child(fond)
+	var cm = load("res://scripts/interface_carte_monde.gd").new()
+	couche.add_child(cm)
+	cm.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	cm.loin = true
+	cm.ouvrir(jeu)
+	# (le relief de chaque région, d'un coup : la carte ne se complète pas sous les yeux)
+	if jeu.carte != null:
+		for k in jeu.decouvertes:
+			cm._parois[k] = cm._relief_de(k)
+			cm._bouches[k] = cm._bouches_de(k)
+	cm.queue_redraw()

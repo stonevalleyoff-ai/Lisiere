@@ -4,7 +4,7 @@
 
 *Tenir jusqu'au matin.*
 
-Un jeu de survie et d'horreur en Godot 4, branché sur le monde vivant d'[Orvane](https://github.com/stonevalleyoff-ai/orvane). On s'éveille à la lisière d'un lieu vrai du monde : une forêt, une prairie, une lande. Le jour, on récolte, on fabrique, on chasse. La nuit, on tient près d'un feu, et les chasseurs du lieu viennent tourner au bord de la lumière. Chaque bête est une lignée vraie d'Orvane ; ce que le joueur croise et tue est renvoyé au monde.
+Un jeu de survie et d'horreur en Godot 4, branché sur le monde vivant d'[Orvane](https://github.com/stonevalleyoff-ai/orvane). On s'éveille dans le monde d'Orvane, d'un seul tenant : une prairie d'abord, puis tous ses biomes, à pied. Le jour, on récolte, on fabrique, on chasse. La nuit, on tient près d'un feu, et les chasseurs du lieu viennent tourner au bord de la lumière. Chaque bête est une lignée vraie d'Orvane ; ce que le joueur croise et tue est renvoyé au monde.
 
 - **Jouer** : https://stonevalleyoff-ai.github.io/Lisiere/, dans un navigateur, au clavier ou au doigt (un téléphone tenu à l'horizontale).
 - **L'installer comme une application** : depuis cette page, « Installer l'application » (Android, ordinateur) ou « Sur l'écran d'accueil » (iPhone, iPad). Plein écran, et sans réseau une fois ouvert une première fois.

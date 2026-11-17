@@ -6,7 +6,10 @@ extends RefCounted
 # sacoches (à ses côtés, la veilleuse porte davantage) ; assez forte, une selle : on la monte, et l'on va bien plus vite.
 # Nourrie (elle broute le jour, ou mange à la mangeoire), elle donne son lait.
 # Le noir les rend folles : la nuit, hors de la lumière d'un feu, une bête prend peur, rompt sa longe et s'enfuit ; et
-# quand la Noire vient, celle qui n'est pas dans la lumière est à elle. En selle, la peur de sa monture jette à terre.
+# quand la Noire vient, celle qui n'est pas dans la lumière est à elle. En selle, la peur de sa monture jette à terre ; la
+# torche aussi, sauf si sa lignée s'est faite au feu (ce que sa population a appris des joueurs : scripts/bete.gd, faite_au_feu).
+# Le feu, lui, est leur abri : elles n'en ont pas peur. Tenue (en licol ou au piquet), une bête ne s'enfuit pas : ce qui
+# l'effraie la fait tressaillir dans la lumière d'un feu, ou faire un écart au bout de sa longe (scripts/bete.gd, effrayer).
 # Les choses posées de l'élevage (scripts/campement.gd les dessine), leur état :
 #   appat     : « reste » (de 1 à 0 : ce qu'il en reste)
 #   piquet    : « attache » (vrai : une bête y est liée)
@@ -231,8 +234,9 @@ func empeche_monter(b) -> String:
 		return "Aucune bête à toi n'est là."
 	if not bool(b.harnais.get("selle", false)):
 		return "Il lui faut une selle."
-	if float(jeu.joueur.torche) > 0.0:
-		return "Pas la torche à la main : elle en a peur."
+	# (la torche : seule une bête dont la lignée s'est faite au feu la souffre ; scripts/bete.gd, faite_au_feu)
+	if float(jeu.joueur.torche) > 0.0 and not b.faite_au_feu():
+		return "Pas la torche à la main : elle en a peur. Les siens ne se sont pas faits au feu."
 	return _effroi(b)
 
 
@@ -248,11 +252,12 @@ func monter(b) -> bool:
 	jeu.joueur.position = b.position
 	jeu.joueur.monture = b
 	jeu.sons.atelier("sangle", -3.0, 1.1)
-	jeu.ui.message("En selle. « Agir » pour descendre.", TEINTE)
+	jeu.ui.message("En selle, la torche haute : les siens se sont faits au feu. « Agir » pour descendre." if float(jeu.joueur.torche) > 0.0
+		else "En selle. « Agir » pour descendre.", TEINTE)
 	return true
 
 
-func descendre(jetee: bool = false) -> void:
+func descendre(jetee: bool = false, devant: String = "") -> void:
 	if monture == null:
 		return
 	var b = monture
@@ -268,7 +273,7 @@ func descendre(jetee: bool = false) -> void:
 		jeu.joueur.sante = maxf(1.0, float(jeu.joueur.sante) - 6.0)
 		jeu.joueur.peur = minf(100.0, float(jeu.joueur.peur) + 12.0)
 		jeu.effets.secousse(0.5)
-		jeu.ui.message("Elle se cabre : tu es à terre.", ROUGE)
+		jeu.ui.message("Elle se cabre%s : tu es à terre." % ((" devant " + devant) if devant != "" else ""), ROUGE)
 
 
 # ce qui affole une bête, là où elle est ("" : rien)
@@ -469,8 +474,10 @@ func maj(delta: float) -> void:
 			monture.position = j.position
 			monture.regard = j.regard
 			monture.maison = j.position
-			if _effroi(monture) != "" or float(j.torche) > 0.0:
+			if _effroi(monture) != "":
 				descendre(true)
+			elif float(j.torche) > 0.0 and not monture.faite_au_feu():
+				descendre(true, "la torche")
 
 
 # elle s'enfuit : elle retourne au lieu, son harnais avec elle
@@ -508,7 +515,9 @@ func vider() -> void:
 func photo() -> Dictionary:
 	var la := []
 	for b in _vivantes():
-		la.append({"e": {"lignee": b.lignee, "id": str(b.id), "masse": float(b.masse), "largeur": float(b.largeur)},
+		# (ce que sa population a appris des joueurs, et son audace à elle : reprise, elle est la même bête)
+		la.append({"e": {"lignee": b.lignee, "id": str(b.id), "masse": float(b.masse), "largeur": float(b.largeur),
+			"memoire": b.memoire.duplicate(), "ecart": snappedf(float(b.ecart), 0.001)},
 			"x": snappedf(b.position.x, 0.1), "y": snappedf(b.position.y, 0.1), "harnais": b.harnais.duplicate(), "suit": bool(b.suit_la),
 			"faim": snappedf(float(b.faim), 0.1), "lait": snappedf(float(b.lait), 0.01), "maison": [snappedf(b.maison.x, 0.1), snappedf(b.maison.y, 0.1)]})
 	return {"betes": la}
@@ -518,7 +527,11 @@ func reprendre(d: Dictionary) -> void:
 	for x in d.get("betes", []):
 		if typeof(x) != TYPE_DICTIONARY or typeof(x.get("e")) != TYPE_DICTIONARY:
 			continue
-		var b = jeu._creer(x["e"], "compagne", Vector2(float(x.get("x", 0.0)), float(x.get("y", 0.0))))
+		var e: Dictionary = x["e"]
+		# (une partie gardée avant qu'on y garde sa mémoire : celle de sa lignée, ici)
+		if typeof(e.get("memoire")) != TYPE_DICTIONARY and typeof(e.get("lignee")) == TYPE_DICTIONARY and jeu.get("donnees") != null:
+			e["memoire"] = jeu.donnees.memoire_de(e["lignee"], str(jeu.biome))
+		var b = jeu._creer(e, "compagne", Vector2(float(x.get("x", 0.0)), float(x.get("y", 0.0))))
 		b.harnais = x.get("harnais", {"licol": true})
 		b.suit_la = bool(x.get("suit", true))
 		b.faim = float(x.get("faim", 80.0))

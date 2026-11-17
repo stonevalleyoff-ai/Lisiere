@@ -91,6 +91,7 @@ var peur_feu := 0.0              # (neophobie) de -1, faite au feu, à 1, elle l
 var agressivite := 0.0           # elle fait front au lieu de fuir : elle tient sa place, menace, charge qui l'approche
 var ecart := 0.0                 # son audace à elle, en écarts-types de celle de sa population : une bête n'est pas sa population
 var attitude := ""
+var memoire := {}                # ce que sa population a appris des joueurs, tel qu'Orvane le dit (avant son audace à elle)
 var touchee := false             # frappée par la veilleuse, et en vie : une « blessure », si elle s'en va ainsi
 var _effarouchee := -1           # le jour du jeu où un feu, une torche l'ont arrêtée (c'est compté une fois par nuit)
 var _assaut := 0.0               # le temps pendant lequel une morsure est encore du même assaut
@@ -145,6 +146,9 @@ var mange := 0.0                 # de 0 à 1 : la tête au sol, elle mange (un a
 var suit_la := true              # (compagne) elle suit la veilleuse ; faux : elle reste là où on l'a laissée (maison)
 var faim := 100.0                # (compagne) de 0 à 100 : affamée trop longtemps, elle s'en va
 var lait := 0.0                  # (compagne) de 0 à 1 : à 1, on peut la traire
+const ECART := 1.2               # (compagne) secondes : l'écart d'une bête tenue qu'une chose effraie, au bout de sa longe
+const ECART_PIQUET := 46.0       # (compagne) au piquet, jusqu'où l'écart la mène depuis sa place (elle broute à 40 pixels)
+var _tressailli := 0.0           # (compagne) secondes : elle vient de tressaillir, à l'abri d'un feu (pas deux fois de suite)
 var _tentation = null            # ce qui la tente (une chose posée : scripts/campement.gd ; une herbe : scripts/objet.gd)
 var endormie := 0.0              # secondes : un appât dormant l'a couchée (scripts/botanique.gd) ; un coup la réveille
 var empoisonnee := 0.0           # secondes : un appât empoisonné la tue à petit feu
@@ -402,6 +406,7 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 func _apprendre(m) -> void:
 	if typeof(m) != TYPE_DICTIONARY or m.is_empty():
 		return
+	memoire = m
 	if ecart != 0.0:
 		m = Orvane.individu(m, ecart)
 	crainte = clampf(float(m.get("mefiance", 0.0)), 0.0, 1.0)
@@ -779,7 +784,35 @@ func foudroyer(n: float, depuis: Vector2) -> void:
 func effrayer(depuis: Vector2, duree: float) -> void:
 	if pv <= 0.0 or role == "echo" or role == "noire":
 		return
+	if tenue():
+		# (sa bête, tenue en licol ou au piquet, ne s'enfuit pas. Dans la lumière d'un feu, elle est à l'abri : elle tressaille,
+		# sans plus ; ailleurs, elle fait un écart, au bout de sa longe, et se reprend)
+		if jeu != null and jeu.feu_qui_protege(position) != null:
+			_tressaillir()
+		else:
+			_fuir(depuis, minf(duree, ECART))
+		return
 	_fuir(depuis, duree if role != "chasseur" else duree * 0.6)
+
+
+# sa lignée s'est faite au feu, ici : le carnet le dit (« le feu ne l'effraie plus », scripts/donnees.gd, dire_memoire). C'est
+# ce que sa population a appris, pas son audace à elle : montée, elle souffre la torche (scripts/elevage.gd)
+func faite_au_feu() -> bool:
+	return (0.5 - float(memoire.get("neophobie", 0.5))) * 2.0 > Donnees.SEUIL_DIT
+
+
+# la bête apprivoisée, tenue : sa longe dans la main de la veilleuse, ou nouée à un piquet (scripts/elevage.gd)
+func tenue() -> bool:
+	return role == "compagne" and not montee and longe != null
+
+
+# elle tressaille, sur place : son corps se tasse, sa queue bat (une fois de temps en temps, même si la chose dure)
+func _tressaillir() -> void:
+	if _tressailli > 0.0:
+		return
+	_tressailli = 2.5
+	_ressort_v -= 0.08 * lerpf(22.0, 13.0, _poids)
+	_q_av += 4.0 * (1.0 if randf() < 0.5 else -1.0)
 
 
 # la Noire sursaute (une gerbe d'étincelles, un coup) : son corps se tasse, sa tête part en arrière, sa queue claque
@@ -799,6 +832,9 @@ func gerbe(feu) -> void:
 		if pv > 0.0 and ordre != "dort" and position.distance_to(feu.position) < feu.rayon() * 1.7:
 			sursauter()
 			jeu.noire.gerbe()
+		return
+	# (sa bête : le feu est son abri, quoi que sa population en pense ; une bûche ne lui fait rien, et rien n'est compté)
+	if role == "compagne":
 		return
 	# (posté devant ce feu, il voit la gerbe d'aussi loin qu'il se tient)
 	if pv <= 0.0 or role == "echo" or peur_feu <= 0.2 or (position.distance_to(feu.position) > feu.rayon() * 1.3 and _poste_feu != feu):
@@ -1087,17 +1123,29 @@ func _tentee(delta: float) -> bool:
 
 
 # la bête apprivoisée : en selle, la veilleuse la mène ; « suis-moi », elle marche à ses côtés ; sinon elle reste là où on
-# l'a laissée, et broute autour. Ce qui lui fait peur (le noir, la Noire) : scripts/elevage.gd, qui l'effraie (effrayer)
+# l'a laissée, et broute autour. Ce qui lui fait peur (le noir, la Noire) : scripts/elevage.gd, qui l'effraie (effrayer).
+# Le feu ne lui fait pas peur : c'est son abri. Tenue, elle ne s'enfuit pas : ce qui l'effraie la mène au bout de sa longe.
 func _compagne(delta: float) -> void:
 	var j = jeu.joueur
+	_tressailli = maxf(0.0, _tressailli - delta)
 	if montee:
 		mange = 0.0
 		return
 	if etat == "fuit":
 		mange = 0.0
-		_aller(_loin_de(_fuite_de), vitesse, delta)
+		var but := _loin_de(_fuite_de)
+		var tenue_la := tenue()
+		if tenue_la:
+			# (au piquet, pas plus loin que le cercle où elle broute ; en licol, pas plus loin que la longe tendue)
+			var centre: Vector2 = Vector2(longe) if suit_la else maison
+			var bout: float = 58.0 + largeur * 0.4 + Harnais.LONGE_MOU if suit_la else ECART_PIQUET
+			if but.distance_to(centre) > bout:
+				but = centre + (but - centre).normalized() * bout
+		_aller(but, vitesse * (0.7 if tenue_la else 1.0), delta)
 		if _t > _duree:
-			maison = position
+			# (au piquet, sa place reste au piquet : elle y revient)
+			if not (tenue_la and not suit_la):
+				maison = position
 			_changer("repos", 1.0)
 		return
 	# (elle ne se tient pas dans les flammes)

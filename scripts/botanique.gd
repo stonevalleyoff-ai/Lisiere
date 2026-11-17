@@ -462,7 +462,9 @@ func utiliser(p: String) -> bool:
 			var ou := ""
 			if N != null and Vector2(N.taniere) != Vector2.ZERO:
 				N.taniere_connue = true
-				ou = " Tu sais où elle dort : c'est sur ta carte."
+				# (elle l'écrit sur sa carte, si elle a la carte, la plume et l'encre ; scripts/reperes.gd)
+				var ecrite: bool = jeu.get("reperes") != null and jeu.reperes.noter_taniere(N.taniere)
+				ou = " Tu sais où elle dort : tu l'écris sur ta carte." if ecrite else " Tu sais où elle dort, vers %s." % str(CAPS[int(round(fposmod((Vector2(N.taniere) - j.position).angle(), TAU) / (TAU / 8.0))) % 8])
 			jeu.ui.message("Le philtre. Le noir s'ouvre : tu vois ce qui s'y tient.%s" % ou, TEINTE)
 		"botte":
 			var f = jeu._feu_proche(j.position, true)
