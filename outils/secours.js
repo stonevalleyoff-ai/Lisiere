@@ -16,7 +16,7 @@ if (!fs.existsSync(path.join(RACINE, 'monde/planches.js'))) {
 }
 const Planches = require(path.join(RACINE, 'monde/planches.js')), Herbier = require(path.join(RACINE, 'monde/herbier.js'));
 const DEPUIS = arg('--depuis', 'https://stonevalleyoff-ai.github.io/orvane/mondes/orvane/');
-const LIEUX = arg('--lieux', 'foret,prairie,lande,taiga,marais').split(',').filter(Boolean);
+const LIEUX = arg('--lieux', 'foret,prairie,lande,taiga,marais,banquise,volcan,desert,grotte').split(',').filter(Boolean);
 const lire = async c => {
   if (/^https?:/.test(DEPUIS)) { const r = await fetch(DEPUIS.replace(/\/?$/, '/') + 'morceaux/' + c, { cache: 'no-cache' }); if (!r.ok) throw new Error(`${c} : HTTP ${r.status}`); return r.json(); }
   return JSON.parse(fs.readFileSync(path.join(DEPUIS, 'morceaux', c), 'utf8'));

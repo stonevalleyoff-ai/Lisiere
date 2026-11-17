@@ -2879,13 +2879,20 @@ func _le_relief() -> void:
 	verif(C.palier(haut) == C.palier(bas) + 1 and C.retenir(p_paroi).distance_to(p_paroi) > 10.0 and C.palier(d_haut) == C.palier(haut) and C.palier(d_bas) == C.palier(bas)
 		and not C.paroi_en(d_haut) and not C.paroi_en(d_bas),
 		"une paroi sépare deux étages (%d en haut, %d en bas) : on ne la passe ni en descendant, ni en montant" % [C.palier(haut), C.palier(bas)])
-	# un col : on y monte à pied, lentement
+	# un col : on y monte à pied, lentement (ni boue, ni neige, ni crue : le col seul)
+	var temps_col := [jeu.climat.boue, jeu.climat.neige_sol, jeu.climat.crue]
+	jeu.climat.boue = 0.0
+	jeu.climat.neige_sol = 0.0
+	jeu.climat.crue = 0.0
 	var e_c: Array = C._paroi(p_col)
 	var monte_c: Vector2 = e_c[1]
 	var bas_c: Vector2 = p_col - monte_c * (C.PAROI + 14.0)
 	var arrivee := _marcher(bas_c, monte_c, 80)
 	verif(C.retenir(p_col) == p_col and C.col_en(p_col) and jeu.climat.allure(p_col) < 0.8 and jeu.climat.allure(bas_c) > 0.99 and C.palier(arrivee) == C.palier(bas_c) + 1,
 		"un col est une rampe dans la paroi : on y monte à pied, plus lentement (%.2f), d'un étage au suivant" % jeu.climat.allure(p_col))
+	jeu.climat.boue = temps_col[0]
+	jeu.climat.neige_sol = temps_col[1]
+	jeu.climat.crue = temps_col[2]
 	# rien ne pousse sur une paroi ; plus haut, l'air est plus froid
 	jo.position = bas
 	W.suivre(bas, true)

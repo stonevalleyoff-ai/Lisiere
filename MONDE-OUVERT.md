@@ -168,7 +168,7 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
 - vérifié : l'essai (81 vérifications, 5 pour les grottes) ; la vitrine (`--ouvert --depuis -53733,8744 --vers -55300,8500
   --torche`, et `--reste --recul 0.4` pour voir la bouche de haut) ;
 - la vitrine : `--herbier fichier.json` donne l'herbier d'un biome à la main (le jeu de l'essai n'a pas le réseau) ;
-- **reste à faire** : hors ligne, la grotte n'a ni ses bêtes ni son herbier (la copie gardée n'a que cinq biomes).
+- **fait le 17 novembre 2026** : hors ligne, la grotte a ses bêtes et son herbier (la copie gardée a maintenant neuf lieux, dont la grotte, la banquise, le volcan et le désert).
 
 **Étape 5, faite** (`scripts/interface_carte_monde.gd`, la page de pause de `scripts/interface_carnet.gd`) :
 - chaque région où l'on entre est notée (`jeu.decouvertes`), et gardée avec la partie (par le nom de la région) ;
@@ -183,12 +183,12 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
   Valley).
 
 **Ce que l'étape 3 ne fait pas encore** :
-- hors ligne, seuls les cinq biomes de la copie gardée ont leurs bêtes ; ailleurs, celles du biome d'avant restent ;
+- hors ligne, seuls les neuf lieux de la copie gardée ont leurs bêtes (forêt, prairie, lande, taïga, marais, banquise, volcan, désert, grotte) ; ailleurs, celles du biome d'avant restent ;
 - la faune est celle du biome, pas encore celle de la parcelle (la copie gardée ne dit pas la répartition par parcelle) ;
 - **pas mesuré sur un vrai téléphone** : la lecture d'un biome en marchant (le réseau, puis une vingtaine de bêtes à dessiner).
 
 ## Ce qui reste incertain
 
 - La fluidité sur un vrai téléphone quand le monde se fabrique en marchant : c'est l'objet de l'étape 2.
-- La copie du monde gardée dans le jeu (hors ligne) passerait de 5 à 32 lieux : un jeu plus lourd à télécharger.
+- La copie du monde gardée dans le jeu (hors ligne) passerait de 9 à 32 lieux : un jeu plus lourd à télécharger (neuf lieux : 2,3 Mo).
 - Les parties gardées d'aujourd'hui (un lieu) ne se convertissent pas.
