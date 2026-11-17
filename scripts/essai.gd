@@ -89,6 +89,7 @@ func _lancer() -> void:
 	# (--seulement cueillette : la cueillette nourricière seule, pour la mettre au point vite ; c'est l'essai entier qui fait foi)
 	if "--seulement" in OS.get_cmdline_user_args():
 		await _la_cueillette_nourriciere()
+		await _les_retouches()
 		await _conclure()
 		return
 	var L: Array = jeu.donnees.lieux()
@@ -632,7 +633,84 @@ func _lancer() -> void:
 	await _les_pays()
 	await _l_artisanat()
 	await _la_cueillette_nourriciere()
+	await _les_retouches()
 	await _conclure()
+
+
+# ce que la relecture de la cueillette et de l'artisanat a trouvé, et qui est réparé : en pause, rien ne repousse ; un arbre
+# chargé relâche ses fruits à son pied (l'affût y tient) ; une bête dont la cible a changé sous sa dent ne casse rien ; ce qui
+# rafraîchit ne réchauffe pas qui a froid ; un second baume s'ajoute au premier ; au doigt, « Manger » voit les fruits
+func _les_retouches() -> void:
+	print("12. Les retouches")
+	await jeu._commencer("foret")
+	var W = jeu.monde
+	var j = jeu.joueur
+	var RR = jeu.R
+	var O = jeu.ObjetDuLieu
+	var arbre = null
+	for x in W.objets:
+		if x.genre == "arbre" and int(x.fruits_plein) > 0 and int(x.tombes_plein) > 0:
+			arbre = x
+			break
+	if arbre == null:
+		print("    (pas d'arbre chargé dans ce lieu : les retouches des fruits ne sont pas essayées)")
+	else:
+		# en pause, ses fruits ne repoussent pas
+		arbre.fruits = 0
+		arbre.tombes = 0
+		arbre._lache = 0.0
+		arbre._vide_de_fruits()
+		var r0: float = arbre._repousse_fruits
+		O.en_pause = true
+		arbre._process(100.0)
+		var en_pause_r: float = arbre._repousse_fruits
+		O.en_pause = false
+		arbre._process(1.0)
+		verif(r0 > 0.0 and is_equal_approx(en_pause_r, r0) and arbre._repousse_fruits < r0,
+			"en pause, un arbre vidé ne repousse pas (%d s restent après cent secondes de pause) ; la partie reprise, si" % int(en_pause_r))
+		# un fruit tombé mangé : l'arbre en relâche un autre de ses branches
+		arbre._repousse_fruits = 0.0
+		arbre.fruits = int(arbre.fruits_plein)
+		arbre.tombes = 1
+		arbre.manger_tombe()
+		var vide_sol: int = int(arbre.tombes)
+		arbre._process(RR.FRUIT_TOMBE + 1.0)
+		verif(vide_sol == 0 and int(arbre.tombes) == 1 and int(arbre.fruits) == int(arbre.fruits_plein) - 1,
+			"un fruit tombé qu'une bête a mangé : l'arbre chargé en lâche un autre à son pied (%d s plus tard) ; l'affût y tient tant qu'il porte" % int(RR.FRUIT_TOMBE))
+	# une bête dont la cible a changé (un arbre devenu souche) : rien ne casse
+	var Objet := load("res://scripts/objet.gd")
+	var souche = Objet.new()
+	souche.preparer("souche", Color.WHITE, 77)
+	jeu.mangee(null, souche, 1.0)
+	souche.free()
+	verif(true, "une bête qui broutait sous un arbre devenu souche cherche autre chose, sans faute")
+	# ce qui rafraîchit ne réchauffe pas qui a froid
+	j.temperature = 20.0
+	jeu.fraicheur = 0.0
+	jeu._rafraichir(8.0)
+	var froide: float = j.temperature
+	var gardee: bool = jeu.fraicheur > 0.0
+	j.temperature = 76.0
+	jeu._rafraichir(8.0)
+	verif(froide == 20.0 and gardee and is_equal_approx(j.temperature, 68.0),
+		"une pulpe, une noix de coco ne réchauffent pas qui a froid (20 reste 20, la fraîcheur gardée pour plus tard) ; elles rafraîchissent qui a chaud (76 → %d)" % int(j.temperature))
+	jeu.fraicheur = 0.0
+	j.temperature = 50.0
+	# un second baume s'ajoute au premier
+	var B = jeu.botanique
+	B.onguent = RR.ONGUENT * 0.5
+	j.inventaire["baume_aromates"] = 1
+	B.oindre()
+	verif(is_equal_approx(B.onguent, RR.ONGUENT * 1.5), "un second baume d'aromates s'ajoute au premier qui agit encore (%d s de soin)" % int(B.onguent))
+	B.onguent = 0.0
+	# au doigt, « Manger » voit tout ce que E mange
+	for k in jeu.A_MANGER:
+		j.inventaire[k] = 0
+	var rien: bool = not jeu.tactile._disponible("manger")
+	j.inventaire["pomme"] = 1
+	var pomme: bool = jeu.tactile._disponible("manger")
+	j.inventaire["pomme"] = 0
+	verif(rien and pomme, "au doigt, le bouton « Manger » s'allume pour une pomme, comme pour la viande")
 
 
 func _conclure() -> void:
@@ -4817,6 +4895,10 @@ func _la_banquise() -> void:
 		"le bois flotté : trois prises, deux bois chacune (+%d), puis plus rien ; deux jours plus tard, la mer en a rapporté" % pris)
 	var mare: Dictionary = T.le_plus_proche("mare", Vector2.ZERO)
 	_remettre(Vector2(mare["p"]) + Vector2(0.0, 6.0) if not mare.is_empty() else ici)
+	# (pas de bête à portée de la main : « Agir » la frapperait au lieu de casser la glace)
+	for b in get_tree().get_nodes_in_group("betes"):
+		if is_instance_valid(b) and b.position.distance_to(j.position) < 260.0:
+			_oter(b)
 	j.inventaire["eau"] = 0
 	jeu.agir()
 	var sans_gourde := int(j.inventaire.get("eau", 0))

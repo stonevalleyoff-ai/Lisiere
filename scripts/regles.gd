@@ -218,6 +218,9 @@ const TOMBES := 2                 # au plus, les fruits tombés au pied d'un arb
 const TOMBE_MANGEE := 4.0         # secondes : une bête mange un fruit tombé
 const TOMBES_FLAIR := 260.0       # jusqu'où une bête qui broute les sent
 const REPOUSSE_FRUITS := 600.0    # secondes (deux jours et demi) : un arbre cueilli jusqu'au dernier fruit en porte de nouveau
+const FRUIT_TOMBE := 150.0        # secondes : un arbre chargé lâche un fruit de ses branches au pied, tant qu'il y a de la place
+# (sans cela, les fruits tombés qu'une bête avait mangés ne revenaient qu'une fois l'arbre vidé : l'affût au pied d'un arbre
+# chargé tient tant qu'il porte)
 # les grains : un épi mûr se cueille d'abord (des grains), sa paille ensuite (une fibre) ; crus, ils nourrissent peu, cuits en
 # gruau à la popote (des grains, une gorgée d'eau, un feu), ils font un vrai repas ; semés, une récolte (scripts/jardin.gd)
 const GRAINS_PAR_EPI := 2         # ce que donnent les épis d'une touffe de céréale, de riz sauvage

@@ -47,6 +47,7 @@ const Botanique := preload("res://scripts/botanique.gd")
 const Reperes := preload("res://scripts/reperes.gd")
 const Galet := preload("res://scripts/galet.gd")
 const Lots := preload("res://scripts/lots.gd")
+const ObjetDuLieu := preload("res://scripts/objet.gd")
 const Biomes := preload("res://scripts/biomes.gd")
 const Terrain := preload("res://scripts/biome_terrain.gd")
 const SAUVEGARDE := "user://lisiere.json"
@@ -865,6 +866,8 @@ func _lumieres() -> void:
 # --- chaque image ---
 
 func _process(delta: float) -> void:
+	# (en pause, ce qui repousse dans le lieu attend aussi : scripts/objet.gd)
+	ObjetDuLieu.en_pause = en_pause
 	if au_titre and essai == null and OS.has_feature("web"):
 		# (l'application installée : à l'écran-titre, une version nouvelle s'ouvre dès qu'elle est prête)
 		_maj_vue -= delta
@@ -1268,6 +1271,8 @@ func tentation(b):
 
 # elle y mange
 func mangee(b, quoi, delta: float) -> void:
+	if quoi == null or not is_instance_valid(quoi):
+		return
 	if str(quoi.genre) == "arbre":
 		# (un fruit tombé : quelques secondes, et il est mangé)
 		quoi.set_meta("broute", float(quoi.get_meta("broute", 0.0)) + delta)
@@ -1286,8 +1291,10 @@ func mangee(b, quoi, delta: float) -> void:
 		botanique.mangee(b, quoi, delta)
 	elif str(quoi.genre) == "appat":
 		elevage.mangee(quoi, delta)
-	else:
+	elif quoi.get("etat") is Dictionary:
 		jardin.mangee(quoi, delta)
+	# (sinon : ce qu'elle visait a changé sous sa dent — un arbre chargé qui a brûlé, abattu, n'est plus qu'une souche — ; elle
+	# cherchera autre chose)
 
 
 func _sur_impact(p: Vector2, genre: String) -> void:
@@ -1571,7 +1578,10 @@ func _manger(k: String) -> void:
 
 # quelque chose de frais : le corps perd un peu de sa chaleur tout de suite, et la chaleur pèse moins un moment (_temps_du_corps)
 func _rafraichir(de: float) -> void:
-	joueur.temperature = move_toward(float(joueur.temperature), 50.0, de)
+	# (ce qui rafraîchit ne réchauffe pas qui a froid : une pulpe, une noix de coco, au désert la nuit, ne la remontent pas ; la
+	# fraîcheur, elle, reste en elle, et ne pèse que contre la chaleur, plus tard au soleil)
+	if float(joueur.temperature) > 50.0:
+		joueur.temperature = move_toward(float(joueur.temperature), 50.0, de)
 	fraicheur = R.FRAICHEUR
 
 

@@ -530,7 +530,8 @@ func oindre() -> bool:
 		jeu.ui.message("Tu n'as pas de baume d'aromates.", GRIS)
 		return false
 	inv["baume_aromates"] = int(inv["baume_aromates"]) - 1
-	onguent = R.ONGUENT
+	# (un second baume, quand le premier agit encore, s'y ajoute : rien de perdu ; deux au plus à la fois)
+	onguent = minf(maxf(onguent, 0.0) + R.ONGUENT, R.ONGUENT * 2.0)
 	j.geste_atelier("boire")
 	jeu.sons.atelier("inspire", -4.0, 1.08)
 	jeu.ui.message("Le baume des aromates, frais puis chaud sur la peau.%s" % (" Le poison recule." if poison > 0.0 else " La douleur recule, lentement."), TEINTE)

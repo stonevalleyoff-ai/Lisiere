@@ -926,11 +926,13 @@ func _relever(s) -> void:
 	var viande := clampi(int(round(pow(float(prise["masse"]), 0.4))), 1, 6)
 	# (une grosse bête, prise au grand filet, donne ses peaux comme à la chasse)
 	var peaux := peaux_de(float(prise["masse"])) if str(s.genre) == "filet_filin" else 1
-	ranger("viande", viande)
-	ranger("peau", peaux)
+	# (ce qui entre vraiment dans le sac : le message dit ce qu'elle emporte, pas ce que la bête donnait)
+	var v_pris: int = ranger("viande", viande)
+	var p_pris: int = ranger("peau", peaux)
 	jeu.joueur.geste_atelier("monter")
 	jeu.sons.atelier("filet", -4.0, 0.9)
-	jeu.ui.message("%s : +%d viande, +%d peau%s." % [str(prise["nom"]), viande, peaux, "x" if peaux > 1 else ""], Color(0.85, 0.72, 0.6))
+	var plein := " Le sac est plein : le reste demeure." if v_pris < viande or p_pris < peaux else ""
+	jeu.ui.message("%s : +%d viande, +%d peau%s.%s" % [str(prise["nom"]), v_pris, p_pris, "x" if p_pris > 1 else "", plein], Color(0.85, 0.72, 0.6))
 
 
 # le cerf-volant : elle y branche ses piles, ou les reprend

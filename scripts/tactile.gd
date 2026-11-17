@@ -212,11 +212,18 @@ func _disponible(action: String) -> bool:
 		"feu", "torche", "tir", "pont":
 			return jeu.peut_fabriquer(action)
 		"manger":
-			return int(inv["baies"]) + int(inv["viande"]) + int(inv["viande_cuite"]) + int(inv.get("bouillon", 0)) > 0
+			# (tout ce que E sait manger : principal.gd, A_MANGER — les fruits, le gruau, la soupe, les grains… pas seulement la viande)
+			for k in jeu.A_MANGER:
+				if int(inv.get(k, 0)) > 0:
+					return true
+			return false
 		"nourrir":
 			return int(inv["bois"]) > 0 and not jeu.feux.is_empty()
 		"cuire":
-			return int(inv["viande"]) > 0 and not jeu.feux.is_empty()
+			# (la viande, ou ce que la popote fait de la cueillette : un gruau, une soupe de lichen)
+			if jeu.feux.is_empty():
+				return false
+			return int(inv["viande"]) > 0 or jeu.atelier.empeche_cuire("gruau") == "" or jeu.atelier.empeche_cuire("soupe_lichen") == ""
 	return true
 
 

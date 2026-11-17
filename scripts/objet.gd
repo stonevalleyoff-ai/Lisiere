@@ -46,6 +46,7 @@ const R_FRUITS := preload("res://scripts/regles.gd").FRUITS_DE_L_ARBRE
 const R_PORTE := preload("res://scripts/regles.gd").PORTE_FRUITS
 const R_TOMBES := preload("res://scripts/regles.gd").TOMBES
 const R_REPOUSSE_FRUITS := preload("res://scripts/regles.gd").REPOUSSE_FRUITS
+const R_FRUIT_TOMBE := preload("res://scripts/regles.gd").FRUIT_TOMBE
 const R_GRAINS := preload("res://scripts/regles.gd").GRAINS_PAR_EPI
 # le feu : ce qui brûle se peint par shaders/incendie_objet.gdshader, qui lit dans les UV ce que le dessin lui dit
 const SHADER_FEU := preload("res://shaders/incendie_objet.gdshader")
@@ -68,6 +69,8 @@ static var _bruit_flammes: Texture2D
 static var climat := {"froid": 0.0, "humide": 0.5}
 # la saison du monde, posée par le monde avant de semer : les fruits mûrissent l'été et l'automne (scripts/flore.gd, maturite)
 static var saison := "été"
+# la partie en pause (principal.gd le dit à chaque image) : ce qui repousse attend, comme l'horloge et la faim
+static var en_pause := false
 var _climat := {"froid": 0.0, "humide": 0.5}      # celui du lieu où il est né (deux biomes voisins n'ont pas le même)
 static var _pinceau
 
@@ -173,6 +176,7 @@ var fruits_plein := 0
 var tombes := 0
 var tombes_plein := 0
 var _repousse_fruits := 0.0
+var _lache := 0.0              # (dans tant de secondes, un fruit de ses branches tombe à son pied)
 var maturite := "murs"
 var epis_murs := false
 
@@ -371,6 +375,7 @@ func cueillir_fruit() -> Dictionary:
 		return {}
 	if tombes > 0:
 		tombes -= 1
+		_lacher_plus_tard()
 		queue_redraw()
 	else:
 		fruits -= 1
@@ -388,8 +393,15 @@ func manger_tombe() -> void:
 		return
 	tombes -= 1
 	_vide_de_fruits()
+	_lacher_plus_tard()
 	set_process(true)
 	queue_redraw()
+
+
+# un arbre qui porte encore lâche un fruit à son pied, un peu plus tard (pour qui l'a ramassé, ou la bête qui l'a mangé)
+func _lacher_plus_tard() -> void:
+	if fruits > 0 and tombes < tombes_plein and _lache <= 0.0:
+		_lache = R_FRUIT_TOMBE
 
 
 # le dernier pris : il en portera de nouveau, dans deux jours et demi (les fruits verts se voient grossir)
@@ -618,6 +630,20 @@ func _ombre_changee() -> void:
 
 func _process(delta: float) -> void:
 	var anime := false
+	# (en pause, ce qui pousse attend ; ce qui bouge — une couronne qui tombe, une braise qui refroidit — finit son geste)
+	var pousse := 0.0 if en_pause else delta
+	if _lache > 0.0:
+		_lache -= pousse
+		anime = true
+		if _lache <= 0.0:
+			_lache = 0.0
+			if fruits > 0 and tombes < tombes_plein and _chute < 0.0 and brule <= 0.0 and not calcine:
+				fruits -= 1
+				tombes += 1
+				queue_redraw()
+				if couronne != null:
+					couronne.queue_redraw()
+				_lacher_plus_tard()
 	if _secoue > 0.0:
 		_secoue = maxf(0.0, _secoue - delta)
 		anime = true
@@ -650,7 +676,7 @@ func _process(delta: float) -> void:
 	if _repousse_fruits > 0.0:
 		# (les fruits d'un arbre reviennent : verts, puis qui grossissent et mûrissent ; sa couronne se redessine à chaque quart)
 		var quart := int(_repousse_fruits / R_REPOUSSE_FRUITS * 4.0)
-		_repousse_fruits -= delta
+		_repousse_fruits -= pousse
 		anime = true
 		if _repousse_fruits <= 0.0:
 			_repousse_fruits = 0.0
@@ -661,9 +687,9 @@ func _process(delta: float) -> void:
 			couronne.queue_redraw()
 	if _repousse > 0.0:
 		# (une herbe repousse à vue : elle se redessine à chaque quart du chemin)
-		if (genre == "herbe" or genre == "fleur") and int(_repousse / _attente() * 4.0) != int((_repousse - delta) / _attente() * 4.0):
+		if (genre == "herbe" or genre == "fleur") and int(_repousse / _attente() * 4.0) != int((_repousse - pousse) / _attente() * 4.0):
 			queue_redraw()
-		_repousse -= delta
+		_repousse -= pousse
 		anime = true
 		if _repousse <= 0.0:
 			reste = plein
