@@ -3220,7 +3220,7 @@ func _la_durete() -> void:
 	var faim_vide: float = perd.call(0.0, 0.0)
 	var peur_haute: float = perd.call(100.0, 92.0)
 	var peur_moyenne: float = perd.call(100.0, 60.0)
-	verif(faim_basse > 0.8 and faim_moyenne <= 0.0 and faim_vide > faim_basse and 100.0 / RR.FAMINE < 60.0 and 100.0 / RR.FAIM < RR.DUREE * 1.5,
+	verif(faim_basse > 0.8 and faim_moyenne <= 0.0 and faim_vide > faim_basse and 100.0 / RR.FAMINE < 60.0 and 100.0 / RR.FAIM < RR.DUREE * 2.0,
 		"la faim tue : sous %d elle prend sur la santé (%.1f par seconde à 5, %.1f l'estomac vide : moins d'une minute pour en mourir) ; affamée en %d secondes" % [
 			int(RR.FAIM_MORD), faim_basse, faim_vide, int(100.0 / RR.FAIM)])
 	verif(peur_haute > 1.0 and peur_moyenne <= 0.0 and 100.0 / RR.PANIQUE < 30.0,
@@ -3258,7 +3258,7 @@ func _la_durete() -> void:
 	verif(t_froid == "Le froid t'a prise." and t_bete == "%s t'a prise." % b.nom and t_peur == "La peur t'a prise." and t_rien.ends_with("t'a prise."),
 		"la fin dit ce qui l'a prise : « %s », « %s », « %s » ; sinon « %s »" % [t_froid, t_bete, t_peur, t_rien])
 	b.queue_free()
-	# les baies : peu de buissons, deux poignées chacun, qui repoussent lentement
+	# les baies : peu de buissons, trois poignées chacun, qui repoussent lentement
 	var buissons: Array = jeu.monde.objets.filter(func(x): return x.genre == "buisson")
 	var un = null
 	for x in buissons:
@@ -4364,11 +4364,12 @@ func _la_flore() -> void:
 		match type:
 			"banquise", "volcan", "desert":
 				# (leur herbier n'a pas d'arbre : pas un sapin, pas un feuillu ; leurs places vont aux plantes du sol)
-				verif(arbres == 0 and int(d["genres"].get("touffe", 0)) > 600,
-					"%s : pas un arbre (l'herbier n'en a pas : %d sapins, %d feuillus) ; leurs places vont aux plantes du sol (%d)" % [type,
-					int(d["genres"].get("sapin", 0)), int(d["genres"].get("arbre", 0)), int(d["genres"].get("touffe", 0))])
+				# (et sans arbre, peu de bois mort : une brindille sur quatre)
+				verif(arbres == 0 and int(d["genres"].get("touffe", 0)) > 600 and int(d["genres"].get("brindille", 0)) < 260,
+					"%s : pas un arbre (l'herbier n'en a pas : %d sapins, %d feuillus) ; leurs places vont aux plantes du sol (%d) ; peu de bois mort (%d brindilles)" % [type,
+					int(d["genres"].get("sapin", 0)), int(d["genres"].get("arbre", 0)), int(d["genres"].get("touffe", 0)), int(d["genres"].get("brindille", 0))])
 			"marais":
-				verif(int(d["genres"].get("sapin", 0)) == 0 and int(d["genres"].get("arbre", 0)) > 400 and int(d["genres"].get("aquatique", 0)) > 40,
+				verif(int(d["genres"].get("sapin", 0)) == 0 and int(d["genres"].get("arbre", 0)) > 400 and int(d["genres"].get("aquatique", 0)) > 40 and int(d["genres"].get("brindille", 0)) > 450,
 					"marais : ses arbres sont ceux de son herbier (%d, palétuviers et fougères arborescentes compris, aucun sapin), ses mares portent nénuphars, lentilles d'eau et algues (%d)" % [
 					int(d["genres"].get("arbre", 0)), int(d["genres"].get("aquatique", 0))])
 			"taiga":

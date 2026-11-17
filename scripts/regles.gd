@@ -24,7 +24,7 @@ const NUIT_COULEUR := Color(0.03, 0.035, 0.07)
 # le corps
 const VITESSE := 165.0
 # (la faim, la peur, le froid, la chaleur tuent : chacune prend sur la santé avant d'être à son comble, de plus en plus)
-const FAIM := 0.3             # par seconde : de rassasié à affamé en un jour et demi
+const FAIM := 0.24            # par seconde : de rassasié à affamé en un peu moins de deux jours (un jour et demi, 0,3, était trop court)
 const FAIM_MORD := 15.0       # sous ce seuil, la faim prend sur la santé
 const FAMINE := 1.8           # la santé perdue par seconde, l'estomac vide (de moins en moins au-dessus, jusqu'à FAIM_MORD)
 const BAIE := 12.0            # ce qu'une poignée de baies rend à la faim
@@ -41,7 +41,7 @@ const MORSURE_MASSE := 11.0
 # la cueillette : peu de buissons, deux poignées de baies chacun, qui repoussent en près de deux jours
 const BUISSONS := 10.0        # par lieu (4 200 pixels de côté), au plus sec…
 const BUISSONS_HUMIDE := 30.0 # … et ce que l'humidité y ajoute
-const BAIES_PAR_BUISSON := 2
+const BAIES_PAR_BUISSON := 3
 const REPOUSSE_BAIES := 420.0 # secondes avant qu'un buisson cueilli (un champignon de grotte) ne redonne
 
 # les gestes

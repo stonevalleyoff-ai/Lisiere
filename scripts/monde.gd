@@ -452,6 +452,10 @@ func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Diction
 	if not ici.is_empty():
 		Objet.climat = ici["climat"]
 	var fl: Dictionary = ici["flore"] if not ici.is_empty() else flore
+	# (là où l'herbier n'a pas d'arbre — la banquise, le volcan, le désert —, le bois mort est rare : une brindille sur quatre ; au
+	# réveil, de quoi faire un premier feu reste à portée)
+	if genre == "brindille" and not fl.is_empty() and not fl.has("arbre") and graine % 4 != 0 and p.length() > 200.0:
+		return null
 	var vrai := genre
 	var pl := {}
 	var strate := Flore.strate_de(genre)
@@ -509,7 +513,10 @@ func semer_brindilles(n: int) -> void:
 			if not _morceaux.has(k) or _ajouts.get(nom, []).size() >= 6:
 				continue
 			var g := r.randi()
-			var o = _poser("brindille", q, Color.WHITE, g)
+			# (dans le biome de l'endroit : sous un ciel sans arbres, il en tombe peu)
+			var o = _poser("brindille", q, Color.WHITE, g, lieu_de(carte.type_en(q)) if carte != null else {})
+			if o == null:
+				continue
 			o.set_meta("m", k)
 			o.set_meta("ajout", true)
 			_morceaux[k]["objets"].append(o)
@@ -865,6 +872,8 @@ func _fabriquer_(k: Vector2i) -> void:
 			o.reprendre(str(c[0]), int(c[1]), reste_a_pousser, int(c[3]) == 1)
 	for e in _ajouts.get(nom, []):
 		var o = _poser(str(e[0]), Vector2(float(e[1]), float(e[2])), Color.WHITE, int(e[3]))
+		if o == null:
+			continue
 		o.set_meta("m", k)
 		o.set_meta("ajout", true)
 		liste.append(o)
