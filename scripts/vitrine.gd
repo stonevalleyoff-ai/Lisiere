@@ -230,6 +230,10 @@ func _lancer() -> void:
 			j.inventaire["simples"] = 2
 			j.inventaire["lait"] = 1
 			j.inventaire["arrosages"] = 2
+		# (--pays : et ce que donnent les pays, l'obsidienne, la tourbe ; scripts/biomes.gd)
+		if ar2.has("--pays"):
+			j.inventaire["obsidienne"] = 3
+			j.inventaire["tourbe"] = 2
 		jeu.atelier.portes = {"sac_a_dos": true}
 		jeu.atelier.charge = 62.0
 		jeu.atelier._tenue()
