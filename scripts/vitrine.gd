@@ -24,7 +24,8 @@ extends Node
 #   --noire reveil : de jour, endormie puis réveillée (sa charge, sa morsure, son départ, en pleine lumière)
 #   l'atelier (scripts/atelier.gd) : --pose etabli,tente,hamac,recuperateur,filet,cerf_volant,vestige : ces choses, posées
 #   autour d'elle dans une clairière ; --etat travail,occupe,eau,prise,branche,foudre,fouille,popote : dans cet état ;
-#   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac ;
+#   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac
+#   (--nourrir : le sac plein de la cueillette nourricière) ;
 #   --fabrique tente,popote : à l'établi, elle fabrique ces choses l'une après l'autre ; --aupres tente : elle se tient
 #   près de cette chose (avec --dort : elle s'y couche)
 #   les herbes (scripts/botanique.gd) : --botanique poison,torpeur,visions,voyance,calme,fumee : cet état, tenu ; --herbes :
@@ -33,7 +34,7 @@ extends Node
 #   pousse, mur ; gel ; regard, alerte ; foin ; attache) ; --compagne licol,selle,sacoche,grande,reste,monte : une bête à elle
 #   la cueillette (scripts/flore.gd) : --cueillette : elle va de fleur en champignon des bois, et les cueille (avec --ouvert
 #   --depuis x,y : dans le biome de son choix) ; --fruits : elle va d'arbre en arbre, ramasse les fruits tombés et cueille
-#   ceux des branches ; --planche arbres|sol : une planche de la cueillette nourricière, posée dans une clairière à côté
+#   ceux des branches (et les épis mûrs, le lichen des rennes, la pulpe des cactus) ; --planche arbres|sol : une planche de la cueillette nourricière, posée dans une clairière à côté
 #   d'elle, de près (les arbres et leurs fruits, à chaque état ; les épis, le lichen, le cactus, les grains au jardin ; « geste » :
 #   elle cueille un pommier, de tout près) ; --gros : la caméra va de l'une à l'autre, de tout près
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
@@ -240,6 +241,13 @@ func _lancer() -> void:
 		if ar2.has("--pays"):
 			j.inventaire["obsidienne"] = 3
 			j.inventaire["tourbe"] = 2
+		# (--nourrir : et ce que donne la cueillette nourricière, les fruits, les grains, le lichen, la pulpe, et ce que la
+		# popote en a fait ; un mortier, une popote)
+		if ar2.has("--nourrir"):
+			for k4 in ["pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe", "gruau", "soupe_lichen"]:
+				j.inventaire[k4] = 2 + k4.length() % 4
+			jeu.atelier.objets["mortier"] = 1
+			jeu.atelier.objets["popote"] = 1
 		jeu.atelier.portes = {"sac_a_dos": true}
 		jeu.atelier.charge = 62.0
 		jeu.atelier._tenue()
@@ -840,7 +848,7 @@ func _process(delta: float) -> void:
 					j.deplacer(Vector2.ZERO, delta, jeu.monde)
 					_cadence(geste, delta)
 		"fruits":
-			# (l'arbre le plus proche qui porte encore des fruits : elle se poste à son pied, de côté, et cueille)
+			# (ce qui nourrit, le plus proche : elle se poste à son pied, de côté, et cueille)
 			var arbre = _fruitier_proche()
 			if arbre != null:
 				var d3: Vector2 = arbre.position + Vector2(16.0 * (1.0 if j.position.x >= arbre.position.x else -1.0), 9.0) - j.position
@@ -916,13 +924,14 @@ func _plus_proche(genres: Array):
 	return meilleur
 
 
-# (--fruits) l'arbre le plus proche qui porte encore des fruits
+# (--fruits) ce qui nourrit, le plus proche : un arbre qui porte encore des fruits, des épis mûrs, du lichen des rennes, un cactus
 func _fruitier_proche():
 	var j = jeu.joueur
 	var meilleur = null
 	var d0 := INF
 	for o in jeu.monde.autour(j.position, 900.0):
-		if o.genre == "arbre" and o.porte_fruits():
+		var nourrit: bool = o.porte_fruits() if o.genre == "arbre" else (str(o.forme) in ["cereale", "riz", "lichen_rennes", "cactus"] and not o.epuise())
+		if nourrit:
 			var d: float = j.position.distance_to(o.position)
 			if d < d0:
 				d0 = d

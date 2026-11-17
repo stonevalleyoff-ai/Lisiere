@@ -1133,6 +1133,9 @@ class Sac extends Feuille:
 		for k in NOURRITURE_CUEILLIE:
 			if int(inv.get(k, 0)) > 0:
 				manger.append({"id": k, "nom": str(NOMS_COURTS[k]), "n": int(inv.get(k, 0)), "sur": 0})
+		# (trop de choses pour la bande : ce qu'elle n'a pas s'efface, pour que chaque nom se lise)
+		if manger.size() > 8:
+			manger = manger.filter(func(c): return int(c["n"]) > 0)
 		return [{"titre": "Ce que tu portes · %d de chaque, au plus" % int(atelier.capacite()), "cases": _matieres()}, {"titre": "À manger", "cases": manger}]
 
 	# ce qui est posé à portée de main, et qui se replie (un vestige ne se replie pas)

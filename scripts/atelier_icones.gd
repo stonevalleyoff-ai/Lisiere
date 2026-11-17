@@ -1590,19 +1590,28 @@ static func _pain_de_singe(ci, w: float, m: Color) -> void:
 
 # des grains : un épi doré couché, ses grains en chevrons, ses barbes ; quelques grains tombés
 static func _grains(ci, w: float, m: Color) -> void:
-	_cordon(ci, _bezier(Vector2(-44, 40), Vector2(-20, 22), Vector2(-2, 2), 8), 3.4, CHANVRE.darkened(0.08), w * 0.8, m)
-	var axe := (Vector2(34, -36) - Vector2(-2, 2)).normalized()
+	_cordon(ci, _bezier(Vector2(-44, 42), Vector2(-24, 26), Vector2(-8, 8), 8), 4.6, CHANVRE.darkened(0.08), w * 0.8, m)
+	var axe := (Vector2(34, -36) - Vector2(-8, 8)).normalized()
 	var nrm := axe.orthogonal()
-	for k in 6:
-		var q := Vector2(-2, 2) + axe * (6.0 + k * 8.0)
-		var t := 1.0 - k * 0.09
+	# (les barbes d'abord, sous les grains : courtes, qu'elles ne mangent pas l'épi)
+	for k in 5:
+		var q := Vector2(-8, 8) + axe * (8.0 + k * 10.0)
+		var t := 1.0 - k * 0.08
 		for cote in [-1.0, 1.0]:
-			var g: Vector2 = q + nrm * cote * 6.0 * t
-			var grain := _ellipse(g, 7.0 * t, 4.4 * t, axe.angle() + cote * 0.5, 16)
-			_volume(ci, grain, GRAIN, w * 0.8, m, 3.0, 0.25)
-			ci.draw_line(g + axe * 4.0 * t, g + axe * 18.0 * t + nrm * cote * 7.0, Color(P.ENCRE, 0.55) * m, w * 0.4, true)
-	for q in [Vector2(-30, 10), Vector2(-16, 30), Vector2(6, 38), Vector2(-36, 26)]:
-		var gr := _ellipse(q, 5.0, 3.2, 0.6, 14)
+			var g: Vector2 = q + nrm * cote * 7.0 * t
+			ci.draw_line(g + axe * 5.0 * t, g + axe * 15.0 * t + nrm * cote * 6.0, Color(P.ENCRE, 0.5) * m, w * 0.4, true)
+	for k in 5:
+		var q := Vector2(-8, 8) + axe * (8.0 + k * 10.0)
+		var t := 1.0 - k * 0.08
+		for cote in [-1.0, 1.0]:
+			var g: Vector2 = q + nrm * cote * 7.0 * t
+			var grain := _ellipse(g, 9.5 * t, 6.0 * t, axe.angle() + cote * 0.45, 16)
+			_volume(ci, grain, GRAIN, w * 0.8, m, 3.5, 0.25)
+		# (le grain du bout de l'épi, seul)
+		if k == 4:
+			_volume(ci, _ellipse(q + axe * 9.0, 8.0, 5.2, axe.angle(), 16), GRAIN, w * 0.8, m, 3.0, 0.25)
+	for q in [Vector2(-30, 12), Vector2(-14, 32), Vector2(8, 38), Vector2(-38, 30)]:
+		var gr := _ellipse(q, 6.5, 4.2, 0.6, 14)
 		_volume(ci, gr, GRAIN.darkened(0.05), w * 0.7, m, 2.0, 0.25)
 		ci.draw_line(q + Vector2(-2, -1), q + Vector2(2, 1), Color(P.ENCRE, 0.35) * m, w * 0.35, true)
 
