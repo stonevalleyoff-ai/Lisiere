@@ -621,6 +621,7 @@ func _lancer() -> void:
 	verif(not jeu.ui._reprise.visible and jeu.ui._entrer.principal, "effacée, l'écran-titre ne propose plus que d'entrer dans la nuit")
 	_les_pattes()
 	await _lieu_sans_bord()
+	await _la_flore()
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)
@@ -4300,3 +4301,241 @@ func _l_atelier(F: Dictionary) -> void:
 	C.air = garde["air"]
 	C.vent = garde["vent"]
 
+
+
+# --- la flore (scripts/flore.gd, scripts/flore_dessins.gd) : l'herbier d'Orvane fait les plantes du lieu, forme par forme, que
+# Lisière dessine ; on cueille les fleurs et les champignons des bois, ils servent, ils repoussent ---
+
+# un grand rectangle d'un biome, loin de tout, semé comme un morceau du monde ouvert (son plan, puis ses objets) : ce qu'il y
+# pousse, par forme (les objets sont défaits ensuite)
+func _semer_a_part(type: String, coin: Vector2) -> Dictionary:
+	var W = jeu.monde
+	var L: Dictionary = W.lieu_de(type)
+	var rect := Rect2(coin, Vector2(8400.0, 4200.0))
+	var r := RandomNumberGenerator.new()
+	r.seed = 4242
+	var plan: Array = []
+	W._prevoir_lieu(r, plan, rect, str(L["arbre"]), L["mesures"], type)
+	var rc := RandomNumberGenerator.new()
+	rc.seed = 4343
+	W._prevoir_cueillette(rc, plan, rect, type, W._arbres_du_plan(plan, rect))
+	var par_forme := {}
+	var genres := {}
+	var mal := []
+	var vides := 0
+	for e in plan:
+		var o = W._poser(str(e[0]), e[1], L["palette"][e[2]] if e[2] != "" else Color.WHITE, int(e[3]), L)
+		if o == null:
+			vides += 1
+			continue
+		genres[o.genre] = int(genres.get(o.genre, 0)) + 1
+		if o.plante != "":
+			par_forme[o.forme] = int(par_forme.get(o.forme, 0)) + 1
+			if not load("res://scripts/flore_dessins.gd").sait(o.forme) or o.planche:
+				mal.append(o.forme)
+		W._defaire(o)
+	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides}
+
+
+func _la_flore() -> void:
+	print("La flore")
+	var Fl := load("res://scripts/flore.gd")
+	var W = jeu.monde
+	var jo = jeu.joueur
+	# les biomes d'abord : chaque forme de leur herbier est semée, selon sa part, et dessinée par Lisière (aucune ne manque)
+	var i := 0
+	for type in ["banquise", "volcan", "desert", "marais", "taiga"]:
+		await jeu.donnees.charger_lieu(type)
+		W.flore_arrivee(type)
+		var attendues := {}
+		for e in Orvane.plantes(type):
+			attendues[str(Fl.sorte(e)["forme"])] = true
+		var d := _semer_a_part(type, Vector2(90000.0 + i * 12000.0, 90000.0))
+		i += 1
+		var manque: Array = attendues.keys().filter(func(x): return not d["formes"].has(x))
+		var arbres: int = int(d["genres"].get("arbre", 0)) + int(d["genres"].get("sapin", 0))
+		var dit := ", ".join(PackedStringArray(d["formes"].keys().map(func(x): return "%s %d" % [x, d["formes"][x]])))
+		verif(not attendues.is_empty() and manque.is_empty() and d["mal"].is_empty(),
+			"%s : les %d formes de son herbier poussent, dessinées par Lisière (%s)%s" % [type, attendues.size(), dit,
+			(" ; manquent : " + ", ".join(PackedStringArray(manque))) if not manque.is_empty() else (" ; sans dessin : " + str(d["mal"]) if not d["mal"].is_empty() else "")])
+		match type:
+			"banquise", "volcan", "desert":
+				# (leur herbier n'a pas d'arbre : pas un sapin, pas un feuillu ; leurs places vont aux plantes du sol)
+				verif(arbres == 0 and int(d["genres"].get("touffe", 0)) > 300,
+					"%s : pas un arbre (l'herbier n'en a pas : %d sapins, %d feuillus) ; leurs places vont aux plantes du sol (%d)" % [type,
+					int(d["genres"].get("sapin", 0)), int(d["genres"].get("arbre", 0)), int(d["genres"].get("touffe", 0))])
+			"marais":
+				verif(int(d["genres"].get("sapin", 0)) == 0 and int(d["genres"].get("arbre", 0)) > 200 and int(d["genres"].get("aquatique", 0)) > 20,
+					"marais : ses arbres sont ceux de son herbier (%d, palétuviers et fougères arborescentes compris, aucun sapin), ses mares portent nénuphars, lentilles d'eau et algues (%d)" % [
+					int(d["genres"].get("arbre", 0)), int(d["genres"].get("aquatique", 0))])
+			"taiga":
+				verif(int(d["genres"].get("sapin", 0)) > 20 and int(d["formes"].get("conifere", 0)) == int(d["genres"].get("sapin", 0)) and int(d["genres"].get("arbre", 0)) > 100,
+					"taïga : ses sapins sont les conifères de son herbier (%d), parmi ses feuillus (%d)" % [int(d["genres"].get("sapin", 0)), int(d["genres"].get("arbre", 0))])
+	# sans herbier, la température décide encore : la banquise reprend ses sapins
+	var gardee: Dictionary = Orvane._herbiers.get("banquise", {})
+	Orvane.ajouter_herbier("banquise", {})
+	W.flore_arrivee("banquise")
+	var sans := _semer_a_part("banquise", Vector2(90000.0, 120000.0))
+	Orvane.ajouter_herbier("banquise", gardee)
+	W.flore_arrivee("banquise")
+	verif(int(sans["genres"].get("sapin", 0)) > 50 and int(sans["genres"].get("arbre", 0)) == 0,
+		"sans herbier, la température décide encore : la banquise a ses sapins (%d)" % int(sans["genres"].get("sapin", 0)))
+
+	# dans le monde ouvert : à la forêt, les fleurs des prés et les champignons des bois sont des objets du lieu, qu'on cueille
+	var C = jeu.carte
+	var foret := -1
+	for k in C.regions.size():
+		if str(C.regions[k]["type"]) == "foret" and (foret < 0 or C.regions[k]["pos"].length() < C.regions[foret]["pos"].length()):
+			foret = k
+	var la: Vector2 = C.regions[foret]["pos"] - C.tordre(C.regions[foret]["pos"])
+	jo.position = la
+	W.suivre(la, true)
+	await jeu._lire_biome("foret")
+	jeu._regions()
+	# (le plus proche de là, de ce genre, loin de ce qu'elle a posé et seul à portée de main)
+	var le_plus_pres := func(genre: String):
+		var mieux = null
+		var d0 := INF
+		for x in W.autour(la, 1600.0):
+			if x.genre != genre or x.epuise() or not x.has_meta("rang"):
+				continue
+			if jeu.atelier.poses.any(func(y): return is_instance_valid(y) and y.position.distance_to(x.position) < 80.0):
+				continue
+			if W.autour(x.position, 6.0).filter(func(y): return y != x and not y.epuise()).size() > 0:
+				continue
+			if x.position.distance_to(la) < d0:
+				d0 = x.position.distance_to(la)
+				mieux = x
+		return mieux
+	var fleur = le_plus_pres.call("fleur")
+	var cepe = le_plus_pres.call("cepe")
+	var amanite = le_plus_pres.call("amanite")
+	verif(fleur != null and cepe != null and amanite != null and W.objets.filter(func(x): return x.genre in ["cepe", "amanite"]).size() >= 3,
+		"en forêt, les fleurs des prés et les champignons des bois (le cèpe, l'amanite) sont des objets du lieu : %d champignons, %d fleurs autour d'elle" % [
+		W.objets.filter(func(x): return x.genre in ["cepe", "amanite"]).size(), W.objets.filter(func(x): return x.genre == "fleur").size()])
+	if fleur == null or cepe == null or amanite == null:
+		return
+	var inv: Dictionary = jo.inventaire
+	var cueillir := func(o) -> Dictionary:
+		for b in get_tree().get_nodes_in_group("betes"):
+			if b.position.distance_to(o.position) < 300.0:
+				_oter(b)
+		jo.position = o.position + Vector2(0, 2)
+		var avant := inv.duplicate()
+		jeu.agir()
+		var gagne := {}
+		for k in inv:
+			if int(inv[k]) != int(avant.get(k, 0)):
+				gagne[k] = int(inv[k]) - int(avant.get(k, 0))
+		return gagne
+	var p_fleur: Vector2 = fleur.position
+	var p_cepe: Vector2 = cepe.position
+	var g_fleur: Dictionary = cueillir.call(fleur)
+	var g_cepe: Dictionary = cueillir.call(cepe)
+	var g_amanite: Dictionary = cueillir.call(amanite)
+	verif(g_fleur == {"fleurs": 1} and g_cepe == {"champignons": 1} and g_amanite == {"amanite": 1} and fleur.epuise() and cepe.epuise() and fleur._repousse > 0.0 and cepe._repousse > 0.0,
+		"« Agir » cueille : une fleur (%s), un cèpe (%s), une amanite (%s) ; cueillis, ils repousseront" % [str(g_fleur), str(g_cepe), str(g_amanite)])
+	# le cèpe se mange (E) ; l'amanite, mangée faute de mieux, empoisonne
+	for k in ["baies", "viande", "viande_cuite", "bouillon"]:
+		inv[k] = 0
+	jo.faim = 40.0
+	jeu.manger()
+	var faim_cepe: float = jo.faim - 40.0
+	jeu.botanique.poison = 0.0
+	jeu.manger()
+	var empoisonnee: bool = jeu.botanique.poison > 0.0
+	jeu.botanique.poison = 0.0
+	verif(absf(faim_cepe - jeu.R.CHAMPIGNON) < 0.01 and int(inv.get("champignons", 0)) == 0 and empoisonnee and int(inv.get("amanite", 0)) == 0,
+		"le cèpe se mange (E : +%d à la faim) ; l'amanite, mangée faute de mieux, empoisonne (un baume chasse le poison)" % int(faim_cepe))
+	# l'amanite, pilée au mortier avec de la viande : l'appât empoisonné des herbes
+	var A = jeu.atelier
+	inv["amanite"] = 1
+	inv["viande"] = 1
+	var sans_mortier: String = A.empeche_piler_amanite()
+	var mortier := int(A.objets.get("mortier", 0))
+	A.objets["mortier"] = 1
+	var appats := int(inv.get("appat_poison", 0))
+	var pile: bool = A.piler_amanite()
+	verif(sans_mortier.contains("mortier") and pile and int(inv.get("appat_poison", 0)) == appats + 1 and int(inv["amanite"]) == 0 and int(inv["viande"]) == 0
+		and jeu.botanique.empeche_utiliser("appat_poison") == "",
+		"au mortier, une amanite et de la viande font un appât empoisonné, qui se pose comme celui des herbes")
+	inv["appat_poison"] = appats
+	A.objets["mortier"] = mortier
+	# les fleurs : trois, une gorgée d'eau, à la popote sur un feu, font une infusion qui calme la peur
+	inv["fleurs"] = jeu.R.FLEURS_INFUSION
+	inv["eau"] = 1
+	var popote := int(A.objets.get("popote", 0))
+	A.objets["popote"] = 1
+	var sans_feu: String = A.empeche_infuser()
+	inv["bois"] = int(inv["bois"]) + 4
+	inv["pierre"] = int(inv["pierre"]) + 2
+	var feux_avant: int = jeu.feux.size()
+	jeu.fabriquer("feu")
+	var infuse: bool = A.infuser()
+	jo.peur = 60.0
+	var bue: bool = A.boire_infusion()
+	verif(sans_feu.contains("feu") and jeu.feux.size() == feux_avant + 1 and infuse and bue and int(inv["fleurs"]) == 0 and int(inv["eau"]) == 0
+		and int(inv.get("infusion", 0)) == 0 and absf(jo.peur - (60.0 - jeu.R.INFUSION_PEUR)) < 0.5,
+		"%d fleurs et une gorgée d'eau, à la popote sur un feu : une infusion ; bue, la peur tombe (60 → %d)" % [jeu.R.FLEURS_INFUSION, int(jo.peur)])
+	A.objets["popote"] = popote
+	# ce qui pique écorche les mains nues ; la pelisse les garde
+	var cactus = null
+	for k in 400:
+		var o = W._poser("sol", jo.position + Vector2(0, 30), Color.WHITE, 7000 + k * 7919, W.lieu_de("desert"))
+		if o != null and o.forme == "cactus":
+			cactus = o
+			break
+		if o != null:
+			W._defaire(o)
+	var sante0 := 80.0
+	jo.sante = sante0
+	var g_cactus: Dictionary = cueillir.call(cactus) if cactus != null else {}
+	var pique: float = sante0 - jo.sante
+	jo.sante = sante0
+	A.portes["vetement_chaud"] = true
+	if cactus != null:
+		cueillir.call(cactus)
+	var protegee: float = sante0 - jo.sante
+	A.portes.erase("vetement_chaud")
+	jo.sante = 100.0
+	verif(cactus != null and cactus.piquant and g_cactus.get("fibre", 0) == 1 and absf(pique - jeu.R.EPINES) < 0.01 and protegee < 0.01,
+		"un cactus (comme un roncier, un agave, un buisson d'épines) écorche les mains qui le cueillent (-%d) ; la pelisse les garde" % int(pique))
+	if cactus != null:
+		W._defaire(cactus)
+	# ce qu'on a cueilli reste cueilli : loin, puis de retour ; gardé avec la partie ; puis ça repousse
+	var a_cet_endroit := func(p: Vector2):
+		var l: Array = W.autour(p, 1.5)
+		return l[0] if not l.is_empty() else null
+	var gardee_f: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
+	var notes := 0
+	for nom_m in gardee_f["monde"]["changes"]:
+		for rang in gardee_f["monde"]["changes"][nom_m]:
+			var c = gardee_f["monde"]["changes"][nom_m][rang]
+			if typeof(c) == TYPE_ARRAY and str(c[0]) in ["fleur", "cepe"] and int(c[1]) == 0:
+				notes += 1
+	var loin := la + Vector2(9000.0, 0.0)
+	jo.position = loin
+	W.suivre(loin, true)
+	var partis: bool = a_cet_endroit.call(p_fleur) == null and a_cet_endroit.call(p_cepe) == null
+	jo.position = la
+	W.suivre(la, true)
+	var f2 = a_cet_endroit.call(p_fleur)
+	var c2 = a_cet_endroit.call(p_cepe)
+	verif(partis and notes >= 2 and f2 != null and c2 != null and f2.genre == "fleur" and f2.epuise() and c2.genre == "cepe" and c2.epuise()
+		and gardee_f["joueur"]["inventaire"].has("fleurs"),
+		"loin puis de retour, la fleur et le cèpe cueillis le sont toujours ; la partie gardée les retient (%d), et le sac aussi" % notes)
+	# (le temps passe sans elle : on les dit cueillis il y a longtemps, à quarante secondes de repousser)
+	f2._repousse = 40.0
+	c2._repousse = 40.0
+	jo.position = loin
+	W.suivre(loin, true)
+	jeu.horloge += 45.0
+	jo.position = la
+	W.suivre(la, true)
+	var f3 = a_cet_endroit.call(p_fleur)
+	var c3 = a_cet_endroit.call(p_cepe)
+	verif(f3 != null and c3 != null and f3.intact() and c3.intact() and not f3.epuise() and not c3.epuise(),
+		"le temps passé sans elle, la fleur a refleuri, le cèpe est ressorti")
+	jo.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)
+	jeu._regions()
