@@ -1132,6 +1132,35 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		bete.peur_feu = 0.0
 		bete.etat = "repos"
 
+		# la torche en selle : une monture dont la lignée s'est faite au feu la souffre ; les autres se cabrent, et refusent
+		bete.suit_la = true
+		j.position = bete.position + Vector2(-30.0, 0.0)
+		j.torche = 0.0
+		var neutre_monte: bool = E.monter(bete)
+		j.torche = 20.0
+		E.maj(0.1)
+		var cabree: bool = E.monture == null and not bete.montee and j.monture == null
+		var refus_torche: String = E.empeche_monter(bete)
+		bete.etat = "repos"
+		A.objets["licol"] = 1
+		var faite = _bete(grande, "proie", j.position + Vector2(0.0, 120.0), {"neophobie": 0.05})
+		var apprivoisee: bool = E.apprivoiser(faite)
+		faite.harnais["selle"] = true
+		j.position = faite.position + Vector2(-30.0, 0.0)
+		var accepte: String = E.empeche_monter(faite)
+		var montee_torche: bool = E.monter(faite)
+		for i in 20:
+			E.maj(0.1)
+		var tient_torche: bool = E.monture == faite and faite.montee and j.monture == faite
+		E.descendre()
+		j.torche = 0.0
+		verif(not bete.faite_au_feu() and faite.faite_au_feu() and neutre_monte and cabree and refus_torche.contains("torche") and apprivoisee
+			and accepte == "" and montee_torche and tient_torche,
+			"la torche en selle : une monture dont la lignée s'est faite au feu (« %s ») la souffre ; une autre se cabre, la jette à terre, et refuse (« %s »)" % [
+			jeu.Donnees.dire_memoire(faite.memoire), refus_torche])
+		E.betes.erase(faite)
+		_oter(faite)
+
 		# la nuit : dans le noir, elle rompt sa longe ; dans la lumière d'un feu, elle reste ; la Noire prend celle qu'on y laisse
 		jeu.horloge = nuit_h
 		jeu.noire.acte = 1
@@ -1155,7 +1184,8 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		_oter(bete)
 
 		# la partie gardée
-		var b2 = _bete(grande, "proie", ici + Vector2(100.0, 0.0), {})
+		var b2 = _bete(grande, "proie", ici + Vector2(100.0, 0.0), {"neophobie": 0.05})
+		b2.ecart = 0.8
 		A.objets["licol"] = 1
 		jeu.horloge = jour_h
 		E.apprivoiser(b2)
@@ -1168,8 +1198,9 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		E.reprendre(photo)
 		var b3 = E.betes[0] if E.betes.size() == 1 else null
 		verif(b3 != null and b3 != b2 and str(b3.role) == "compagne" and bool(b3.harnais.get("selle", false)) and not b3.suit_la and absf(b3.faim - 61.0) < 0.2
-			and b3.position.distance_to(b2.position) < 1.0 and str(b3.id) == str(b2.id) and get_tree().get_nodes_in_group("betes").size() == avant_n + 1,
-			"la partie gardée retient ses bêtes : l'espèce, où elles sont, leur harnais, leur faim")
+			and b3.position.distance_to(b2.position) < 1.0 and str(b3.id) == str(b2.id) and get_tree().get_nodes_in_group("betes").size() == avant_n + 1
+			and b3.faite_au_feu() and absf(b3.ecart - 0.8) < 0.01,
+			"la partie gardée retient ses bêtes : l'espèce, où elles sont, leur harnais, leur faim, ce que les leurs ont appris (faite au feu), leur audace")
 		_oter(b2)
 		if b3 != null:
 			_oter(b3)

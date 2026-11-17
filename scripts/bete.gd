@@ -91,6 +91,7 @@ var peur_feu := 0.0              # (neophobie) de -1, faite au feu, à 1, elle l
 var agressivite := 0.0           # elle fait front au lieu de fuir : elle tient sa place, menace, charge qui l'approche
 var ecart := 0.0                 # son audace à elle, en écarts-types de celle de sa population : une bête n'est pas sa population
 var attitude := ""
+var memoire := {}                # ce que sa population a appris des joueurs, tel qu'Orvane le dit (avant son audace à elle)
 var touchee := false             # frappée par la veilleuse, et en vie : une « blessure », si elle s'en va ainsi
 var _effarouchee := -1           # le jour du jeu où un feu, une torche l'ont arrêtée (c'est compté une fois par nuit)
 var _assaut := 0.0               # le temps pendant lequel une morsure est encore du même assaut
@@ -405,6 +406,7 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 func _apprendre(m) -> void:
 	if typeof(m) != TYPE_DICTIONARY or m.is_empty():
 		return
+	memoire = m
 	if ecart != 0.0:
 		m = Orvane.individu(m, ecart)
 	crainte = clampf(float(m.get("mefiance", 0.0)), 0.0, 1.0)
@@ -791,6 +793,12 @@ func effrayer(depuis: Vector2, duree: float) -> void:
 			_fuir(depuis, minf(duree, ECART))
 		return
 	_fuir(depuis, duree if role != "chasseur" else duree * 0.6)
+
+
+# sa lignée s'est faite au feu, ici : le carnet le dit (« le feu ne l'effraie plus », scripts/donnees.gd, dire_memoire). C'est
+# ce que sa population a appris, pas son audace à elle : montée, elle souffre la torche (scripts/elevage.gd)
+func faite_au_feu() -> bool:
+	return (0.5 - float(memoire.get("neophobie", 0.5))) * 2.0 > Donnees.SEUIL_DIT
 
 
 # la bête apprivoisée, tenue : sa longe dans la main de la veilleuse, ou nouée à un piquet (scripts/elevage.gd)
