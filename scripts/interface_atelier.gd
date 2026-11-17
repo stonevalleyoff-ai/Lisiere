@@ -22,15 +22,16 @@ const Atelier := preload("res://scripts/atelier.gd")
 const R := preload("res://scripts/regles.gd")
 
 const NOURRITURE := ["baies", "champignons", "viande", "viande_cuite", "bouillon"]
-# (la cueillette nourricière : ce qui ne se montre dans « À manger » qu'une fois qu'elle en a ; leurs noms, courts, sous l'icône)
-const NOURRITURE_CUEILLIE := ["pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe", "gruau", "soupe_lichen"]
+# ce qu'on cueille et qui sert (scripts/flore.gd) : les fleurs (une infusion), l'infusion, l'amanite (un appât) ; et leurs noms
+const CUEILLETTE := ["fleurs", "infusion", "amanite"]
+const NOMS_CUEILLETTE := {"fleurs": "Fleurs", "infusion": "Infusion de fleurs", "amanite": "Amanite", "champignons": "cèpes"}
+# la cueillette nourricière (scripts/atelier.gd, NOURRITURE_CUEILLIE) : ce qui ne se montre dans « À manger » qu'une fois qu'elle
+# en a, et son nom, court, sous l'icône ; ce qui a un usage dans le sac (les grains : un gruau ; le lichen : une soupe ; la pulpe :
+# pressée, de l'eau), et son nom
 const NOMS_COURTS := {"pomme": "Pommes", "figue": "Figues", "coco": "Coco", "pain_de_singe": "Baobab", "grains": "Grains", "lichen": "Lichen",
 	"pulpe": "Pulpe", "gruau": "Gruau", "soupe_lichen": "Soupe"}
-# ce qu'on cueille et qui sert (scripts/flore.gd) : les fleurs (une infusion), l'infusion, l'amanite (un appât), les grains (un
-# gruau), le lichen (une soupe), la pulpe (pressée, de l'eau) ; et leurs noms
-const CUEILLETTE := ["fleurs", "infusion", "amanite", "grains", "lichen", "pulpe"]
-const NOMS_CUEILLETTE := {"fleurs": "Fleurs", "infusion": "Infusion de fleurs", "amanite": "Amanite", "champignons": "cèpes",
-	"grains": "Grains", "lichen": "Lichen des rennes", "pulpe": "Pulpe de cactus"}
+const CUEILLETTE_NOURRICIERE := ["grains", "lichen", "pulpe"]
+const NOMS_NOURRICIERS := {"grains": "Grains", "lichen": "Lichen des rennes", "pulpe": "Pulpe de cactus"}
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
 const Botanique := preload("res://scripts/botanique.gd")
@@ -1130,7 +1131,7 @@ class Sac extends Feuille:
 		for k in NOURRITURE:
 			manger.append({"id": k, "nom": Plume.majuscule(str(R.NOMS.get(k, NOMS_CUEILLETTE.get(k, k)))), "n": int(inv.get(k, 0)), "sur": 0})
 		# (les fruits, les grains, le lichen, la pulpe, et ce que la popote en a fait : une fois qu'elle en a)
-		for k in NOURRITURE_CUEILLIE:
+		for k in Atelier.NOURRITURE_CUEILLIE:
 			if int(inv.get(k, 0)) > 0:
 				manger.append({"id": k, "nom": str(NOMS_COURTS[k]), "n": int(inv.get(k, 0)), "sur": 0})
 		# (trop de choses pour la bande : ce qu'elle n'a pas s'efface, pour que chaque nom se lise)
@@ -1205,10 +1206,10 @@ class Sac extends Feuille:
 			if n > 0:
 				dons.append({"cle": ("use:" if k in ["simples", "lait"] else "graine:") + k, "id": k, "nom": str(NOMS_DU_JARDIN[k]), "n": n})
 		# (ce qu'elle a cueilli et qui sert : des fleurs à infuser, une infusion à boire, une amanite à piler)
-		for k in CUEILLETTE:
+		for k in CUEILLETTE + CUEILLETTE_NOURRICIERE:
 			var nc := int(inv.get(k, 0))
 			if nc > 0:
-				dons.append({"cle": "use:" + k, "id": k, "nom": str(NOMS_CUEILLETTE[k]), "n": nc, "pale": _empeche_cueillette(k) != ""})
+				dons.append({"cle": "use:" + k, "id": k, "nom": str(NOMS_CUEILLETTE.get(k, NOMS_NOURRICIERS.get(k, k))), "n": nc, "pale": _empeche_cueillette(k) != ""})
 		# (et ce qu'elle a préparé de ses herbes : scripts/botanique.gd)
 		for p in Botanique.ORDRE_PREPARATIONS:
 			if int(inv.get(p, 0)) > 0:

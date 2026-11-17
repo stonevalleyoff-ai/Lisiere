@@ -569,6 +569,8 @@ const PLATS := {
 		"fait": "Le lichen bouilli perd son amertume : une soupe maigre, grise, chaude."},
 }
 const ORDRE_PLATS := ["gruau", "soupe_lichen"]
+# tout ce que la cueillette nourricière met dans le sac (scripts/principal.gd, manger ; interface_atelier.gd, le sac)
+const NOURRITURE_CUEILLIE := ["pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe", "gruau", "soupe_lichen"]
 
 
 # ce qui l'empêche de cuire ce plat ("" : rien) : ce qu'il y faut, la popote, un feu allumé tout près
@@ -1052,9 +1054,11 @@ func commencer() -> void:
 	_dit = {}
 	var inv: Dictionary = jeu.joueur.inventaire
 	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages",
-			"fleurs", "champignons", "amanite", "infusion",
-			# (la cueillette nourricière : les fruits des arbres, les grains, le lichen, la pulpe, et ce que la popote en fait)
-			"pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe", "gruau", "soupe_lichen"]:
+			"fleurs", "champignons", "amanite", "infusion"]:
+		if not inv.has(k):
+			inv[k] = 0
+	# (la cueillette nourricière : les fruits des arbres, les grains, le lichen, la pulpe, et ce que la popote en fait)
+	for k in NOURRITURE_CUEILLIE:
 		if not inv.has(k):
 			inv[k] = 0
 	_tenue()
