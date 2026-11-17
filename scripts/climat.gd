@@ -281,8 +281,8 @@ func _air_de_fond() -> float:
 
 
 func _air(_delta: float) -> void:
-	# (la tourmente mord plus que la neige ; les cendres, le sable voilent le soleil)
-	air = clampf(_air_de_fond() - 0.07 * pluie - 0.05 * orage - 0.12 * neige - 0.05 * tourmente - 0.03 * cendre - 0.05 * sable - 0.05 * brouillard
+	# (la tourmente mord plus que la neige ; les cendres voilent le soleil ; le vent de sable est un vent brûlant)
+	air = clampf(_air_de_fond() - 0.07 * pluie - 0.05 * orage - 0.12 * neige - 0.05 * tourmente - 0.03 * cendre + 0.06 * sable - 0.05 * brouillard
 		- 0.05 * neige_sol + chaleur, 0.0, 1.0)
 
 

@@ -4731,13 +4731,15 @@ func _le_desert() -> void:
 	# le sable freine ; le vent de sable bien plus, et on n'y voit plus
 	_a_l_heure(false)
 	var au_sable: float = C.allure(ici)
+	var air_clair: float = C.air
 	C.forcer("sable", 1.0, 9999.0)
 	for k in 40:
 		C.avancer(0.5)
 	jeu._temps_du_corps(0.1)
 	var voile: float = await _voile("sable")
-	verif(au_sable < 0.95 and C.allure(ici) < au_sable * 0.8 and C.vent > 0.65 and voile > 0.9 and jeu.feu_temps > 1.4,
-		"le sable freine le pas (%d %% de l'allure) ; dans le vent de sable, bien plus (%d %%), on n'y voit plus, et le feu mange son bois plus vite" % [int(au_sable * 100.0), int(C.allure(ici) * 100.0)])
+	verif(au_sable < 0.95 and C.allure(ici) < au_sable * 0.8 and C.vent > 0.65 and voile > 0.9 and jeu.feu_temps > 1.4 and C.air > air_clair + 0.03,
+		"le sable freine le pas (%d %% de l'allure) ; dans le vent de sable, bien plus (%d %%), on n'y voit plus, un vent brûlant (l'air passe de %.2f à %.2f), et le feu mange son bois plus vite" % [
+			int(au_sable * 100.0), int(C.allure(ici) * 100.0), air_clair, C.air])
 	C.forcer("clair", 0.0, 9999.0)
 	# une carcasse ensablée : de la ferraille
 	var ca: Dictionary = T.le_plus_proche("carcasse", Vector2.ZERO)

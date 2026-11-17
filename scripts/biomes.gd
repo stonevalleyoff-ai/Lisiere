@@ -12,7 +12,8 @@ extends RefCounted
 #  - le marais : la boue, l'eau dormante, le brouillard ; les fondrières avalent qui s'y arrête, et ses sangsues ; les feux
 #    follets, la nuit. La tourbe, qui tient un feu bien plus longtemps qu'une bûche ;
 #  - le désert : des jours qui brûlent (l'ombre, une tente, une gorgée sauvent), des nuits qui gèlent, la canicule en toute
-#    saison sauf l'hiver, le vent de sable ; le sable freine le pas. De vieilles carcasses ensablées : de la ferraille.
+#    saison sauf l'hiver, le vent de sable (un vent brûlant, qui aveugle et freine) ; le sable freine le pas. De vieilles
+#    carcasses ensablées : de la ferraille.
 # Le jeu lit ce tableau : le climat (scripts/climat.gd : l'air, le sol, le temps qui vient), et le sol avec ce qu'on y trouve
 # (scripts/biome_terrain.gd). Ce que chaque chose fait au corps se règle dans scripts/regles.gd (« les biomes »).
 
