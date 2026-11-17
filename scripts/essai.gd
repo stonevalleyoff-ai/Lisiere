@@ -1511,6 +1511,10 @@ func _les_lots(F: Dictionary) -> void:
 	Orvane._evenements.clear()
 	S.jeton = ""
 	L.nouvelle_partie()
+	# (le monde attend pendant qu'on parle au faux service : la partie en pause, comme quand on la quitte des yeux)
+	var pause0: bool = jeu.en_pause
+	jeu.en_pause = true
+	var etat := "en partie : %s, santé %d, à terre : %s" % [jeu.en_partie, int(jeu.joueur.sante), jeu._mort >= 0.0]
 
 	# ce qui est compté se garde à chaque sauvegarde (toutes les vingt secondes), sans faire de lot
 	Orvane.compter("essai-lot", "prairie", "rencontre", 2.0)
@@ -1519,7 +1523,7 @@ func _les_lots(F: Dictionary) -> void:
 	var dans_le_fichier: bool = typeof(f) == TYPE_DICTIONARY and JSON.stringify(f.get("evenements", [])).contains("essai-lot")
 	var r0: Array = await _lots_recus(service)
 	verif(ferme and L.permis() and dans_le_fichier and Orvane.lots_en_attente() == 0 and Orvane.en_cours() == 1 and r0.is_empty(),
-		"rien ne part d'une partie d'essai (sauf vers un faux Orvane) ; ce qui est compté se garde sur l'appareil à chaque sauvegarde, sans faire de lot")
+		"rien ne part d'une partie d'essai (sauf vers un faux Orvane) ; ce qui est compté se garde sur l'appareil à chaque sauvegarde, sans faire de lot (%s)" % etat)
 
 	# un quart d'heure de jeu plus tard : un lot se clôt, et part
 	L._clos_ms -= L.INTERVALLE
@@ -1591,6 +1595,7 @@ func _les_lots(F: Dictionary) -> void:
 	jeu.appris = garde["appris"]
 	A.objets["licol"] = garde["licol"]
 	L.nouvelle_partie()
+	jeu.en_pause = pause0
 	OS.kill(pid)
 
 
