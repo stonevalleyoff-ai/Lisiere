@@ -36,6 +36,7 @@ var _compte: Bouton          # « Se connecter », ou le compte ouvert (scripts/
 var _porte: Porte            # la page du compte, sur l'écran-titre (scripts/interface_porte.gd)
 var _tableau: Tableau        # le tableau des scores (scripts/interface_tableau.gd)
 var _tableau_b: Bouton
+var _portail_b: Bouton            # le retour au portail StoneValley
 var _ligne_compte: HBoxContainer
 var _reprise: Bouton       # « Reprendre · Forêt, jour 3 » : la partie gardée (scripts/partie_gardee.gd)
 var _confirmer := 0          # (une partie gardée : « Entrer dans la nuit » la remplace au second appui)
@@ -174,6 +175,10 @@ func _construire_titre() -> void:
 	_tableau_b = Bouton.new("Tableau des scores", 19)
 	_tableau_b.pressed.connect(func(): _tableau.ouvrir())
 	_ligne_compte.add_child(_tableau_b)
+	# (et le retour au portail StoneValley, où sont les autres jeux et le compte)
+	_portail_b = Bouton.new("Retour au portail", 19)
+	_portail_b.pressed.connect(aller_au_portail)
+	_ligne_compte.add_child(_portail_b)
 	_etat_titre = _centre(T.libelle("", T.texte_moyen(), 15, P.BRAISE))
 	_colonne.add_child(_etat_titre)
 	_record = _centre(T.libelle("", T.titre_italique(), 17, Color(P.IVOIRE, 0.72)))
@@ -199,6 +204,14 @@ func _construire_titre() -> void:
 	_tableau.fermee.connect(func(): _entrer.grab_focus())
 	_tableau.vers_le_compte.connect(func(): ouvrir_porte())
 	_titre.add_child(_tableau)
+
+
+# le portail StoneValley : dans un navigateur, on y va (la même fenêtre) ; sur un ordinateur, le navigateur l'ouvre
+func aller_au_portail() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.location.href = %s" % JSON.stringify(R.PORTAIL), true)
+	else:
+		OS.shell_open(R.PORTAIL)
 
 
 # le compte : la porte le connaît, le bouton du titre le dit ; revenu d'un lien « mot de passe oublié », la porte s'ouvre

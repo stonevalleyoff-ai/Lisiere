@@ -2473,6 +2473,8 @@ func _lieu_sans_bord() -> void:
 	print("8. Le lieu sans bord")
 	# (MONDE-OUVERT.md, étape 2 : le lieu se fabrique par morceaux autour de la veilleuse, et ne garde que ce qu'on y change)
 	var propose: Array = jeu._lieux_du_titre()
+	verif(jeu.ui._portail_b != null and jeu.ui._portail_b.get_parent() == jeu.ui._ligne_compte and jeu.R.PORTAIL == "https://stonevalleyoff-ai.github.io/",
+		"l'écran-titre a son « Retour au portail », à côté du compte et du tableau des scores")
 	verif(propose.size() == 1 and str(propose[0]["id"]) == "ouvert:monde" and jeu.donnees.lieux().size() > 1,
 		"l'écran-titre ne propose que « %s » (%s) : plus les lieux d'un seul biome (%d se liraient)" % [propose[0]["nom"] if propose.size() > 0 else "?",
 		propose[0]["detail"] if propose.size() > 0 else "?", jeu.donnees.lieux().size()])
