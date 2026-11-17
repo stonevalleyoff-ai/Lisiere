@@ -8,6 +8,8 @@ const CLE_JEU := "orv_3754ff9530cdad6b7f037328e0e4e5a4"
 # où vont les lots : « orvane », le monde partagé (le cycle de la nuit les lit, comme ceux de Stone Valley) ; « essai », le bac à
 # sable (gardés quatorze jours, lus par aucun monde)
 const MONDE_DES_LOTS := "orvane"
+# le portail StoneValley, où sont les autres jeux et le compte : l'écran-titre y ramène
+const PORTAIL := "https://stonevalleyoff-ai.github.io/"
 
 # le lieu : un carré de 4 200 pixels de côté, centré sur le réveil
 const DEMI := 2100.0
