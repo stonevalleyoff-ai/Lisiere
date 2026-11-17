@@ -176,10 +176,12 @@ func _lancer() -> void:
 
 	print("2. Les gestes")
 	var j = jeu.joueur
-	# (un arbre sans rien d'autre à prendre à son pied : les trois coups sont pour lui)
+	# (un arbre sans rien d'autre à prendre à son pied : les trois coups sont pour lui ; et sans fruits, qu'« Agir » cueillerait
+	# avant d'abattre : scripts/objet.gd, la cueillette nourricière)
 	var o = null
 	for x in jeu.monde.objets:
-		if (x.genre == "arbre" or x.genre == "sapin") and jeu.monde.autour(x.position + Vector2(0, 20), 70.0).filter(func(y): return y != x and not y.epuise()).is_empty():
+		if (x.genre == "arbre" or x.genre == "sapin") and int(x.fruits) == 0 and int(x.tombes) == 0 \
+				and jeu.monde.autour(x.position + Vector2(0, 20), 70.0).filter(func(y): return y != x and not y.epuise()).is_empty():
 			o = x
 			break
 	j.position = o.position + Vector2(0, 20)
@@ -2842,6 +2844,15 @@ func _les_regions() -> void:
 	verif(possible and pont != null and int(jo.inventaire["bois"]) == 14 and int(jo.inventaire["fibre"]) == 7 and C.lit(milieu) > 0.0 and C.retenir(milieu) == milieu
 		and jeu.climat.eau(milieu) == 0.0 and C.lit(pont.b) == 0.0,
 		"au bord, un pont de fortune se pose jusqu'à l'autre berge (%d pixels ; 6 bois, 3 fibres) : on y passe au sec" % int(pont.a.distance_to(pont.b)))
+	# (et il se voit : peint après le calque du relief, qui porte le lit de la rivière, et non dessous comme avant)
+	# (sans écran, le calque du relief n'est pas fait : alors après la nappe du temps qu'il fait, ou, sans elle, dans les calques)
+	var dessous_p: Node = jeu.scene.get_node_or_null("SolRelief")
+	if dessous_p == null:
+		dessous_p = jeu.scene.get_node_or_null("TempsSol")
+	var au_dessus: bool = pont != null and ((dessous_p == null and pont.get_parent() == jeu.monde._calques[2])
+		or (dessous_p != null and pont.get_parent() == jeu.scene and pont.get_index() > dessous_p.get_index()))
+	verif(au_dessus, "le pont se dessine par-dessus le lit de la rivière (après %s), son tablier se voit d'une berge à l'autre" % (
+		str(dessous_p.name) if dessous_p != null else "les calques du sol"))
 	var gardee_p: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
 	pont.tenue = 0.5
 	pont._process(1.0)
@@ -4016,6 +4027,10 @@ func _l_atelier(F: Dictionary) -> void:
 	verif(A.fabriquer("tente") and A.possede("tente") == 1, "à l'établi : une tente (2 bâches, 2 cordes, 4 bois)")
 	j.position = ici + Vector2(-220.0, 30.0)
 	j.regard = -1.0
+	# (la flore d'Orvane sème des buissons de toutes formes, et un buisson empêche de poser : on fait la place devant elle)
+	for x in jeu.monde.autour(A._devant("tente"), 90.0):
+		if str(x.genre) == "buisson":
+			jeu.monde.retirer(x)
 	var posee: bool = A.poser("tente")
 	var tente = A.poses[A.poses.size() - 1]
 	verif(posee and str(tente.genre) == "tente" and A.abri(tente.position) == 1.0 and C.abri(tente.position) == 1.0 and A.abri(tente.position + Vector2(90.0, 0.0)) == 0.0,
@@ -4787,6 +4802,11 @@ func _la_banquise() -> void:
 	# le bois flotté : le seul bois ; trois prises, puis la mer en rapporte. Sous la glace d'une mare, de l'eau pour la gourde
 	var bf: Dictionary = T.le_plus_proche("bois_flotte", Vector2.ZERO)
 	_remettre(Vector2(bf["p"]) + Vector2(12.0, 4.0) if not bf.is_empty() else ici)
+	# (rien d'autre à portée de la main : une bête de passage, « Agir » la frapperait ; et de la place dans le sac)
+	for b in get_tree().get_nodes_in_group("betes"):
+		if is_instance_valid(b) and b.position.distance_to(j.position) < 260.0:
+			_oter(b)
+	j.inventaire["bois"] = 0
 	var bois0 := int(j.inventaire["bois"])
 	for k in 4:
 		jeu.agir()
@@ -5083,7 +5103,11 @@ func _l_artisanat() -> void:
 				jeu.atelier.poses.erase(x)
 				x.queue_free()
 		var avant := inv.duplicate()
+		# (ni ce que le pays pose au sol, une carcasse du désert à deux pas : « Agir » la fouillerait d'abord)
+		var terrain_g = jeu.terrain
+		jeu.terrain = null
 		jeu.agir()
+		jeu.terrain = terrain_g
 		var gagne := {}
 		for k in inv:
 			if int(inv[k]) != int(avant.get(k, 0)):

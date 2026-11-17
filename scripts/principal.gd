@@ -1400,8 +1400,19 @@ func poser_pont(a: Vector2, b: Vector2, tenue: float, lie: bool = false):
 	p.b = b
 	p.tenue = tenue
 	p.lie = lie
-	# (posé à plat, sous tout ce qui se tient debout)
-	monde._calques[2].add_child(p)
+	# (posé à plat, sous tout ce qui se tient debout ; mais au-dessus de l'eau qu'il enjambe : dans le monde ouvert, le lit de la
+	# rivière est peint sur le calque du relief, posé par-dessus le temps qu'il fait (scripts/monde.gd, relief_au_dessus), et il
+	# en cachait le tablier : le pont passe juste après lui)
+	var dessous: Node = null
+	if scene != null:
+		dessous = scene.get_node_or_null("SolRelief")
+		if dessous == null:
+			dessous = scene.get_node_or_null("TempsSol")
+	if dessous != null:
+		scene.add_child(p)
+		scene.move_child(p, dessous.get_index() + 1)
+	else:
+		monde._calques[2].add_child(p)
 	ponts.append(p)
 	if carte != null:
 		carte.ponts.append([a, b])
