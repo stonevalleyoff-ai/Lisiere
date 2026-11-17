@@ -305,8 +305,9 @@ func _sol(delta: float) -> void:
 		neige_sol = minf(1.0, neige_sol + 0.012 * neige * delta)
 	elif air > 0.3:
 		neige_sol = maxf(0.0, neige_sol - 0.004 * (air - 0.2) * 4.0 * delta)
-	# (la banquise : un manteau qui ne fond jamais)
-	neige_sol = maxf(neige_sol, neige_fond)
+	# (la banquise : un manteau qui ne fond jamais ; en y entrant, il gagne en une dizaine de secondes, il ne tombe pas d'un coup)
+	if neige_sol < neige_fond:
+		neige_sol = minf(neige_fond, neige_sol + 0.06 * delta)
 
 
 # le relief du lieu, de 0 (un creux) à 1 (une butte) : là où l'on s'éveille, c'est une butte
