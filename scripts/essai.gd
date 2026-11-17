@@ -5354,6 +5354,34 @@ func _l_artisanat() -> void:
 		RR.AROMATES_FEU, int(peur_dedans), int(RR.ENCENS), "" if fumee_vue and entendus.has("aromates") and dans > 0.9 and tient_encore and finie else
 		" (vue %s, entendue %s, dedans %.2f, encore %s, finie %s, %s)" % [fumee_vue, entendus.has("aromates"), dans, tient_encore, finie, str(entendus)]])
 
+	# ce qu'on en voit : chaque chose a son icône ; le sac propose les aromates (un baume, au feu) et leur baume ; la carte du
+	# pont, au HUD, dit son filin quand elle en a
+	var Ic = load("res://scripts/atelier_icones.gd")
+	var dessinees := true
+	for id in ["fibre_longue", "filin", "filet_filin", "longe", "aromates", "baume_aromates", "fumigation"]:
+		dessinees = dessinees and Ic.connue(id)
+	inv["aromates"] = 3
+	inv["baume_aromates"] = 1
+	j.position = f.position + Vector2(-30.0, 12.0)
+	jeu.ouvrir_page("sac")
+	var sac2 = jeu.ui._pages.get("sac")
+	var tuiles_a := {}
+	if sac2 != null:
+		for sec in sac2._sections():
+			for tu in sec["tuiles"]:
+				if str(tu["cle"]) in ["use:aromates", "use:fumigation", "use:baume_aromates"]:
+					tuiles_a[str(tu["cle"])] = not bool(tu.get("pale", false))
+	var fiche_f: Dictionary = sac2._fiche_de("use:fumigation") if sac2 != null else {}
+	jeu.fermer_page()
+	var Hud = load("res://scripts/interface_hud.gd")
+	var carte_pont = Hud.Recette.new("pont")
+	carte_pont.maj(false, {"bois": 6, "filin": 2})
+	var cout_carte: Dictionary = carte_pont.cout.duplicate()
+	carte_pont.free()
+	verif(dessinees and tuiles_a.size() == 3 and bool(tuiles_a.get("use:fumigation", false)) and str(fiche_f.get("bouton", "")) == "Jeter au feu" and bool(fiche_f.get("actif", false))
+		and cout_carte == {"bois": 6, "filin": RR.PONT_FILIN},
+		"chaque chose a son icône à l'encre ; près d'un feu, le sac propose les aromates, « Jeter au feu » et leur baume ; la carte du pont dit son filin (%s)" % str(cout_carte))
+
 	# la partie gardée : ce qu'elle porte, son camp, sa bête et sa longe, le pont lié, le baume qui agit, la fumée sur son feu,
 	# l'odeur sur elle
 	inv["filin"] = 3
