@@ -742,7 +742,8 @@ func _prevoir_cueillette(r: RandomNumberGenerator, plan: Array, rect: Rect2, typ
 			q = arbres[r.randi() % arbres.size()] + Vector2.from_angle(r.randf() * TAU) * r.randf_range(15.0, 34.0) * Vector2(1.0, 0.6)
 		var g := r.randi()
 		var amanite := r.randf() < Flore.AMANITES
-		if q.length() < 150.0 or not rect.grow(40.0).has_point(q):
+		# (au pied d'un arbre, mais dans ce morceau : un morceau ne pose rien chez son voisin)
+		if q.length() < 150.0 or not rect.has_point(q):
 			continue
 		if terrain and float(Decor.sol_ici(_terrain, s, q)["neige"]) > 0.3:
 			continue
@@ -772,7 +773,8 @@ func _prevoir_cueillette(r: RandomNumberGenerator, plan: Array, rect: Rect2, typ
 			continue
 		# (des graines qui tirent la même plante : le même reste, modulo 10007)
 		for j in 2 + g % 3:
-			plan.append(["sol", q + Vector2(r.randf_range(-22.0, 22.0), r.randf_range(-12.0, 12.0)), "herbe", g + j * 10007, type])
+			var p_g: Vector2 = (q + Vector2(r.randf_range(-22.0, 22.0), r.randf_range(-12.0, 12.0))).clamp(rect.position, rect.end - Vector2(0.01, 0.01))
+			plan.append(["sol", p_g, "herbe", g + j * 10007, type])
 		n -= 1
 
 
