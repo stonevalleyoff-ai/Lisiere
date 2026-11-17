@@ -94,6 +94,7 @@ var ponts: Array = []         # les ponts de fortune qui tiennent encore (script
 var altitude := 0.0           # l'étage du relief où est la veilleuse (0 : en bas ; scripts/carte.gd, palier), lissé
 var sous_terre := 0.0         # de 0 (à l'air libre) à 1 (dans une grotte : ni jour, ni temps qu'il fait), lissé
 var _maux := {}               # ce qui a pris sur sa santé ces dernières secondes, par cause (faim, peur, froid, chaud, feu, foudre, bete)
+var fraicheur := 0.0          # secondes : elle a mangé quelque chose de frais (la pulpe d'un cactus, une noix de coco) ; la chaleur pèse moins
 var _mordeur := ""            # le nom de la dernière bête qui l'a mordue
 var _maj_vue := 0.0           # (l'application installée) avant de regarder de nouveau si une version nouvelle est prête
 var _maj_tentee := false      # on a voulu l'ouvrir, et la page ne s'est pas rechargée : l'écran-titre dit quoi faire
@@ -455,6 +456,7 @@ func _commencer(b: String, gardee: Dictionary = {}, ouvert_: bool = false) -> vo
 	altitude = 0.0
 	sous_terre = 0.0
 	_maux = {}
+	fraicheur = 0.0
 	_mordeur = ""
 	biome_info = donnees.biome(b)
 	saison = str(inst.get("cycle", {}).get("saison", {}).get("nom", "été"))
@@ -1124,6 +1126,10 @@ func agir() -> void:
 	var o = monde.plus_proche(p, R.PORTEE_RECOLTE)
 	if o == null:
 		return
+	# (un arbre qui porte des fruits : elle les cueille, ce qui est tombé à son pied d'abord ; seul un arbre sans fruits s'abat)
+	if o.porte_fruits():
+		_cueillir_fruit(o)
+		return
 	var genre: String = o.genre
 	# (une fleur, une plante d'eau, un champignon des bois se cueillent comme une baie ; leurs éclats sont ceux d'une touffe, ou
 	# de la terre qu'on remue)
@@ -1150,21 +1156,41 @@ func agir() -> void:
 			if deja:
 				ui.message("+1 %s" % Botanique.nom(str(o.herbe)).to_lower(), Color(0.75, 0.78, 0.72))
 			continue
-		# (ce qui entre dans son sac : elle ne porte pas tout ; scripts/atelier.gd)
-		var pris: int = atelier.ranger(k, int(g[k]))
-		if pris > 0:
-			if CUEILLETTE.has(k):
-				# (ce qu'on cueille et qui n'est pas une matière : son nom, et, la première fois, ce qu'on en fait)
-				ui.message("+%d %s" % [pris, str(CUEILLETTE[k][0 if pris == 1 else 1])], Color(0.75, 0.78, 0.72))
-				_conseil("cueillette-" + k, true, str(CUEILLETTE[k][2]), Color(0.72, 0.84, 0.6))
-			else:
-				ui.ramasse(k, pris, o.position)
-	# (cueillir rend parfois des graines : scripts/jardin.gd ; celles des baies, celles du lin — d'une herbe, pas d'un cactus)
-	if not g.is_empty() and (g.has("baies") or (genre == "touffe" and str(o.forme) in ["", "herbe", "cereale", "grande_herbe", "roseau", "jonc", "riz", "papyrus"])):
+		_ranger_cueilli(k, int(g[k]), o.position)
+	# (cueillir rend parfois des graines : scripts/jardin.gd ; celles des baies, celles du lin — d'une herbe, pas d'un cactus ; les
+	# grains d'un épi sont eux-mêmes des graines)
+	if not g.is_empty() and not g.has("grains") and (g.has("baies") or (genre == "touffe" and str(o.forme) in ["", "herbe", "cereale", "grande_herbe", "roseau", "jonc", "riz", "papyrus"])):
 		jardin.cueilli(genre)
 	if genre == "brindille" and o.epuise():
 		monde.retirer(o)
 	_conseil("feu", peut_fabriquer("feu") and feux.is_empty(), "Tu as de quoi faire un feu : touche 1.")
+
+
+# ce qu'elle a cueilli entre dans son sac (elle ne porte pas tout ; scripts/atelier.gd) : ce qui n'est pas une matière se dit
+# par son nom, et, la première fois, ce qu'on en fait ; une matière vole vers sa case
+func _ranger_cueilli(k: String, n: int, ou: Vector2) -> void:
+	var pris: int = atelier.ranger(k, n)
+	if pris <= 0:
+		return
+	if CUEILLETTE.has(k):
+		ui.message("+%d %s" % [pris, str(CUEILLETTE[k][0 if pris == 1 else 1])], Color(0.75, 0.78, 0.72))
+		_conseil("cueillette-" + k, true, str(CUEILLETTE[k][2]), Color(0.72, 0.84, 0.6))
+	else:
+		ui.ramasse(k, pris, ou)
+
+
+# un fruit, sur un arbre qui en porte (scripts/objet.gd, cueillir_fruit) : à son pied, elle se baisse et le ramasse ; dans ses
+# branches, elle tend le bras, la couronne frémit et lâche quelques feuilles
+func _cueillir_fruit(o) -> void:
+	var a_terre: bool = int(o.tombes) > 0
+	joueur.geste("brindille" if a_terre else "cueillir", o.position + (Vector2.ZERO if a_terre else Vector2(0.0, -30.0)))
+	var g: Dictionary = o.cueillir_fruit()
+	var haut: Vector2 = o.position + (Vector2(0.0, 6.0) if a_terre else Vector2(o._cc.x, o._cc.y + o._ry * 0.7))
+	_viser({"son": "herbe", "db": -7.0 if a_terre else -4.0, "p": haut, "genre": "cueillette" if a_terre else "buisson"})
+	for k in g:
+		_ranger_cueilli(k, int(g[k]), o.position)
+	if not a_terre and not o.porte_fruits():
+		_conseil("arbre-vide", true, "L'arbre n'a plus de fruits : il en portera d'autres. Vide, il s'abat pour son bois.", Color(0.72, 0.84, 0.6))
 
 
 # un geste part : ce qu'il fera quand il touchera (le geste d'avant, s'il n'a pas encore touché, touche d'abord)
@@ -1217,8 +1243,20 @@ func tentation(b):
 		t = jardin.tentation(b)
 	if t != null:
 		return t
-	# (les herbes du lieu : de temps en temps elle en broute une, de celles qui se broutent ; c'est un indice pour qui regarde)
+	# (les fruits tombés au pied d'un arbre chargé : elle y vient, la tête dans l'herbe ; qui s'est cachée à côté la tient à portée)
 	var deja = b._tentation
+	if deja != null and is_instance_valid(deja) and str(deja.genre) == "arbre" and int(deja.tombes) > 0:
+		return deja
+	if randf() < 0.25:
+		var pres = null
+		var d0 := INF
+		for o in monde.autour(b.position, R.TOMBES_FLAIR):
+			if str(o.genre) == "arbre" and int(o.tombes) > 0 and o.position.distance_squared_to(b.position) < d0:
+				d0 = o.position.distance_squared_to(b.position)
+				pres = o
+		if pres != null:
+			return pres
+	# (les herbes du lieu : de temps en temps elle en broute une, de celles qui se broutent ; c'est un indice pour qui regarde)
 	if deja != null and is_instance_valid(deja) and str(deja.genre) == "herbe" and int(deja.reste) > 0:
 		return deja
 	if randf() < 0.07:
@@ -1230,7 +1268,13 @@ func tentation(b):
 
 # elle y mange
 func mangee(b, quoi, delta: float) -> void:
-	if str(quoi.genre) == "herbe":
+	if str(quoi.genre) == "arbre":
+		# (un fruit tombé : quelques secondes, et il est mangé)
+		quoi.set_meta("broute", float(quoi.get_meta("broute", 0.0)) + delta)
+		if float(quoi.get_meta("broute")) >= R.TOMBE_MANGEE:
+			quoi.set_meta("broute", 0.0)
+			quoi.manger_tombe()
+	elif str(quoi.genre) == "herbe":
 		# (trois secondes, et l'herbe est mangée ; si la veilleuse le voit, elle le note)
 		quoi.set_meta("broute", float(quoi.get_meta("broute", 0.0)) + delta)
 		if float(quoi.get_meta("broute")) >= 3.0:
@@ -1371,53 +1415,132 @@ const CUEILLETTE := {
 	"fleurs": ["fleur", "fleurs", "Des fleurs. Trois, avec une gorgée d'eau, à la popote sur un feu : une infusion qui calme la peur (ton sac)."],
 	"champignons": ["cèpe", "cèpes", "Un cèpe, brun et ferme : il se mange (E)."],
 	"amanite": ["amanite", "amanites", "Une amanite, rouge piquée de blanc : elle empoisonne qui la mange. Pilée au mortier avec de la viande, elle fait un appât pour ce qui chasse (ton sac)."],
+	# (la cueillette nourricière : les fruits des arbres, les grains, le lichen, la pulpe)
+	"pomme": ["pomme", "pommes", "Une pomme sauvage, acide et ferme : elle se mange (E). L'arbre vidé en portera d'autres."],
+	"figue": ["figue", "figues", "Une figue, molle et sucrée : elle se mange (E), et pose un peu le cœur."],
+	"coco": ["noix de coco", "noix de coco", "Une noix de coco : sa chair nourrit, son eau rafraîchit (E)."],
+	"pain_de_singe": ["fruit du baobab", "fruits du baobab", "Le fruit du baobab, une gourde de velours : sa pulpe farineuse tient au corps (E)."],
+	"grains": ["grain", "grains", "Des grains. Crus, ils nourrissent à peine ; trois, avec une gorgée d'eau, à la popote sur un feu : un gruau (C). Semés, ils poussent."],
+	"lichen": ["lichen", "lichens", "Du lichen des rennes. Cru, il est amer ; deux, avec une gorgée d'eau, à la popote sur un feu : une soupe (C)."],
+	"pulpe": ["pulpe de cactus", "pulpes de cactus", "La pulpe du cactus, gorgée d'eau : mangée (E), elle rafraîchit ; pressée au mortier, elle remplit la gourde (ton sac)."],
 }
+# ce que « Manger » prend, du meilleur au pire : ce qui nourrit le plus d'abord ; ce qui fait mal en dernier (le lichen cru noue
+# le ventre, la viande crue passe mal, l'amanite empoisonne)
+const A_MANGER := ["bouillon", "gruau", "viande_cuite", "soupe_lichen", "pain_de_singe", "coco", "baies", "pomme", "figue", "champignons",
+	"grains", "pulpe", "lichen", "viande", "amanite"]
 
 
 func manger() -> void:
 	var inv: Dictionary = joueur.inventaire
-	if int(inv.get("bouillon", 0)) > 0:
-		# (le bouillon de la popote : il nourrit et réchauffe mieux que tout le reste)
-		inv["bouillon"] = int(inv["bouillon"]) - 1
-		joueur.faim = minf(100.0, joueur.faim + 50.0)
-		joueur.sante = minf(100.0, joueur.sante + 8.0)
-		joueur.peur = maxf(0.0, joueur.peur - 10.0)
-		if joueur.temperature < 58.0:
-			joueur.temperature = minf(58.0, joueur.temperature + 12.0)
-		ui.message("Un bouillon chaud. Il réchauffe jusqu'aux os.")
-	elif int(inv["viande_cuite"]) > 0:
-		inv["viande_cuite"] = int(inv["viande_cuite"]) - 1
-		joueur.faim = minf(100.0, joueur.faim + 35.0)
-		joueur.sante = minf(100.0, joueur.sante + 6.0)
-		joueur.peur = maxf(0.0, joueur.peur - 8.0)
-		ui.message("De la viande cuite. Ça réchauffe.")
-	elif int(inv["baies"]) > 0:
-		inv["baies"] = int(inv["baies"]) - 1
-		joueur.faim = minf(100.0, joueur.faim + R.BAIE)
-		ui.message("Une poignée de baies.")
-	elif int(inv.get("champignons", 0)) > 0:
-		# (un cèpe des bois, cueilli au pied d'un arbre)
-		inv["champignons"] = int(inv["champignons"]) - 1
-		joueur.faim = minf(100.0, joueur.faim + R.CHAMPIGNON)
-		ui.message("Un cèpe, cru. Il a le goût de la forêt.")
-	elif int(inv["viande"]) > 0:
-		inv["viande"] = int(inv["viande"]) - 1
-		joueur.faim = minf(100.0, joueur.faim + 18.0)
-		joueur.sante = maxf(0.0, joueur.sante - 6.0)
-		_maux["faim"] = float(_maux.get("faim", 0.0)) + 6.0
-		joueur.peur = minf(100.0, joueur.peur + 6.0)
-		ui.message("La viande crue passe mal. Cuis-la (C), près d'un feu.", Color(0.85, 0.6, 0.55))
-	elif int(inv.get("amanite", 0)) > 0:
-		# (rien d'autre : la faim fait manger l'amanite, et elle empoisonne comme une herbe vénéneuse ; un baume chasse le poison)
-		inv["amanite"] = int(inv["amanite"]) - 1
-		joueur.faim = minf(100.0, joueur.faim + 4.0)
-		botanique.poison = maxf(float(botanique.poison), Botanique.POISON * R.AMANITE_POISON)
-		joueur.peur = minf(100.0, joueur.peur + 10.0)
-		ui.message("L'amanite. La gorge se serre, le ventre se tord : tu es empoisonnée. Un baume chasse le poison.", Color(0.95, 0.5, 0.42))
-	else:
-		ui.message("Rien à manger.", Color(0.75, 0.7, 0.66))
-		return
-	sons.jouer("manger", -5.0)
+	var ordre: Array = A_MANGER
+	# (accablée de chaleur, elle prend d'abord ce qui rafraîchit : une noix de coco, la pulpe d'un cactus)
+	if joueur.temperature > R.MANGER_FRAIS:
+		ordre = ["coco", "pulpe"] + A_MANGER
+	for k in ordre:
+		if int(inv.get(k, 0)) > 0:
+			inv[k] = int(inv[k]) - 1
+			_manger(k)
+			return
+	ui.message("Rien à manger.", Color(0.75, 0.7, 0.66))
+
+
+# ce qu'une chose mangée fait au corps, et ce qu'elle dit
+func _manger(k: String) -> void:
+	var j = joueur
+	var son := 1.0
+	match k:
+		"bouillon":
+			# (le bouillon de la popote : il nourrit et réchauffe mieux que tout le reste)
+			j.faim = minf(100.0, j.faim + 50.0)
+			j.sante = minf(100.0, j.sante + 8.0)
+			j.peur = maxf(0.0, j.peur - 10.0)
+			if j.temperature < 58.0:
+				j.temperature = minf(58.0, j.temperature + 12.0)
+			ui.message("Un bouillon chaud. Il réchauffe jusqu'aux os.")
+		"gruau":
+			# (des grains, cuits dans l'eau de la popote : un vrai repas, chaud)
+			j.faim = minf(100.0, j.faim + R.GRUAU)
+			j.sante = minf(100.0, j.sante + R.GRUAU_SANTE)
+			if j.temperature < 58.0:
+				j.temperature = minf(58.0, j.temperature + R.GRUAU_CHAUD)
+			ui.message("Un gruau épais, chaud. Il tient au ventre.")
+			son = 0.85
+		"viande_cuite":
+			j.faim = minf(100.0, j.faim + 35.0)
+			j.sante = minf(100.0, j.sante + 6.0)
+			j.peur = maxf(0.0, j.peur - 8.0)
+			ui.message("De la viande cuite. Ça réchauffe.")
+		"soupe_lichen":
+			# (le lichen des rennes bouilli : maigre, mais chaud ; sur la banquise, c'est ce qui tient)
+			j.faim = minf(100.0, j.faim + R.SOUPE_LICHEN)
+			if j.temperature < 58.0:
+				j.temperature = minf(58.0, j.temperature + R.SOUPE_LICHEN_CHAUD)
+			ui.message("Une soupe de lichen, grise et chaude. Elle n'a presque pas de goût.")
+			son = 0.9
+		"pain_de_singe":
+			j.faim = minf(100.0, j.faim + R.PAIN_DE_SINGE)
+			j.sante = minf(100.0, j.sante + R.PAIN_DE_SINGE_SANTE)
+			ui.message("Le fruit du baobab : une pulpe farineuse, acidulée. Elle tient au corps.")
+			son = 0.95
+		"coco":
+			# (sa chair nourrit ; son eau rafraîchit comme une gorgée, et la chaleur pèse moins un moment)
+			j.faim = minf(100.0, j.faim + R.COCO)
+			_rafraichir(R.COCO_FRAIS)
+			sons.atelier("gorgee", -2.0)
+			ui.message("Tu fends la noix : son eau fraîche, puis sa chair blanche.")
+			son = 0.8
+		"baies":
+			j.faim = minf(100.0, j.faim + R.BAIE)
+			ui.message("Une poignée de baies.")
+		"pomme":
+			j.faim = minf(100.0, j.faim + R.POMME)
+			ui.message("Une pomme sauvage, acide et ferme.")
+			son = 1.1
+		"figue":
+			j.faim = minf(100.0, j.faim + R.FIGUE)
+			j.peur = maxf(0.0, j.peur - R.FIGUE_PEUR)
+			ui.message("Une figue, molle et sucrée. Le cœur se pose un peu.")
+			son = 1.15
+		"champignons":
+			# (un cèpe des bois, cueilli au pied d'un arbre)
+			j.faim = minf(100.0, j.faim + R.CHAMPIGNON)
+			ui.message("Un cèpe, cru. Il a le goût de la forêt.")
+		"grains":
+			j.faim = minf(100.0, j.faim + R.GRAINS_CRUS)
+			_conseil("grains-crus", true, "Des grains crus, durs sous la dent. Cuits en gruau, à la popote, ils nourriraient bien mieux.", Color(0.75, 0.7, 0.66))
+			ui.message("Des grains crus, durs sous la dent.", Color(0.75, 0.7, 0.66))
+			son = 1.3
+		"pulpe":
+			# (fade, mais fraîche : la chaleur pèse moins un moment)
+			j.faim = minf(100.0, j.faim + R.PULPE)
+			_rafraichir(R.PULPE_FRAIS)
+			ui.message("La pulpe du cactus, fade et fraîche. La chaleur pèse moins.", Color(0.72, 0.82, 0.92))
+			son = 1.2
+		"lichen":
+			# (cru, il noue le ventre)
+			j.faim = minf(100.0, j.faim + R.LICHEN_CRU)
+			j.peur = minf(100.0, j.peur + R.LICHEN_CRU_PEUR)
+			ui.message("Le lichen cru, amer : le ventre se noue. Bouilli, il nourrirait.", Color(0.85, 0.6, 0.55))
+			son = 1.25
+		"viande":
+			j.faim = minf(100.0, j.faim + 18.0)
+			j.sante = maxf(0.0, j.sante - 6.0)
+			_maux["faim"] = float(_maux.get("faim", 0.0)) + 6.0
+			j.peur = minf(100.0, j.peur + 6.0)
+			ui.message("La viande crue passe mal. Cuis-la (C), près d'un feu.", Color(0.85, 0.6, 0.55))
+		"amanite":
+			# (rien d'autre : la faim fait manger l'amanite, et elle empoisonne comme une herbe vénéneuse ; un baume chasse le poison)
+			j.faim = minf(100.0, j.faim + 4.0)
+			botanique.poison = maxf(float(botanique.poison), Botanique.POISON * R.AMANITE_POISON)
+			j.peur = minf(100.0, j.peur + 10.0)
+			ui.message("L'amanite. La gorge se serre, le ventre se tord : tu es empoisonnée. Un baume chasse le poison.", Color(0.95, 0.5, 0.42))
+	sons.jouer("manger", -5.0, son)
+
+
+# quelque chose de frais : le corps perd un peu de sa chaleur tout de suite, et la chaleur pèse moins un moment (_temps_du_corps)
+func _rafraichir(de: float) -> void:
+	joueur.temperature = move_toward(float(joueur.temperature), 50.0, de)
+	fraicheur = R.FRAICHEUR
 
 
 func nourrir_feu() -> void:
@@ -1445,7 +1568,9 @@ func cuire() -> void:
 		ui.message("Il faut un feu allumé, tout près.", Color(0.75, 0.7, 0.66))
 		return
 	if int(joueur.inventaire["viande"]) <= 0:
-		ui.message("Rien à cuire.", Color(0.75, 0.7, 0.66))
+		# (sans viande : ce que la popote fait de la cueillette, un gruau, une soupe de lichen ; scripts/atelier.gd)
+		if not atelier.cuire_cueillette(f):
+			ui.message("Rien à cuire.", Color(0.75, 0.7, 0.66))
 		return
 	# (avec une popote et de l'eau : un bouillon ; scripts/atelier.gd)
 	if atelier.cuisiner(f):
@@ -1975,6 +2100,11 @@ func _temps_du_corps(delta: float) -> void:
 	# (sa tenue : la pelisse coupe le froid de moitié, et pèse sous la chaleur ; un duvet tient chaud à qui dort ; une tente aussi)
 	cible += 6.0 * atelier.abri(p)
 	cible = 50.0 + (cible - 50.0) * (atelier.froid_k() if cible < 50.0 else atelier.chaud_k())
+	# (elle a mangé quelque chose de frais, la pulpe d'un cactus, une noix de coco : la chaleur pèse moins, un moment)
+	if fraicheur > 0.0:
+		fraicheur = maxf(0.0, fraicheur - delta)
+		if cible > 50.0:
+			cible = maxf(50.0, cible - R.FRAICHEUR_CIBLE * clampf(fraicheur / 8.0, 0.0, 1.0))
 	if j.en_feu > 0.0:
 		cible = 110.0
 	var k := 1.0 - exp(-delta * R.TEMPERATURE_ALLURE * (3.0 if (j.en_feu > 0.0 or brasier > 0.5) else 1.0))

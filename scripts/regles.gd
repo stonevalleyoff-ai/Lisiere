@@ -184,6 +184,47 @@ const INFUSION_PEUR := 30.0       # la peur qu'elle apaise
 const INFUSION_CHAUD := 8.0       # et ce qu'elle rend de chaleur au corps (une boisson chaude)
 const AMANITE_POISON := 1.0       # une amanite mangée : le poison d'une herbe vénéneuse goûtée, en parts (scripts/botanique.gd, POISON)
 
+# --- la cueillette nourricière : les fruits des arbres, les grains, le lichen des rennes, la pulpe du cactus (scripts/flore.gd,
+# objet.gd, principal.gd : agir, manger, cuire ; atelier.gd : la popote, le mortier ; jardin.gd : les grains semés) ---
+# (pour juger : la faim perd FAIM × DUREE, près de 58, en un jour ; une poignée de baies rend 12, un cèpe 9, la viande cuite 35,
+# le bouillon 50. Un arbre ne nourrit pas mieux qu'un buisson : ce qu'il a de plus, c'est d'être là où il n'y a pas de buisson)
+const POMME := 11.0               # une pomme sauvage du fruitier, acide et ferme
+const FIGUE := 9.0                # une figue : moins, mais sucrée…
+const FIGUE_PEUR := 4.0           # … elle pose un peu le cœur
+const COCO := 14.0                # une noix de coco : sa chair…
+const COCO_FRAIS := 9.0           # … et son eau, qui rafraîchit comme une gorgée (scripts/atelier.gd, boire)
+const PAIN_DE_SINGE := 15.0       # le fruit du baobab, farineux : il tient au corps
+const PAIN_DE_SINGE_SANTE := 2.0
+const FRUITS_DE_L_ARBRE := {"pomme": [3, 5], "figue": [4, 6], "coco": [2, 3], "pain_de_singe": [2, 3], "baies": [2, 3]}
+const PORTE_FRUITS := 0.7         # la part des arbres fruitiers qui portent, cette année (les autres se reposent)
+const TOMBES := 2                 # au plus, les fruits tombés au pied d'un arbre chargé : les bêtes qui broutent viennent les manger
+const TOMBE_MANGEE := 4.0         # secondes : une bête mange un fruit tombé
+const TOMBES_FLAIR := 260.0       # jusqu'où une bête qui broute les sent
+const REPOUSSE_FRUITS := 600.0    # secondes (deux jours et demi) : un arbre cueilli jusqu'au dernier fruit en porte de nouveau
+# les grains : un épi mûr se cueille d'abord (des grains), sa paille ensuite (une fibre) ; crus, ils nourrissent peu, cuits en
+# gruau à la popote (des grains, une gorgée d'eau, un feu), ils font un vrai repas ; semés, une récolte (scripts/jardin.gd)
+const GRAINS_PAR_EPI := 2         # ce que donnent les épis d'une touffe de céréale, de riz sauvage
+const GRAINS_CRUS := 4.0          # une poignée de grains crus : à peine
+const GRUAU_GRAINS := 3           # ce qu'il faut de grains pour un gruau (et une gorgée d'eau)
+const GRUAU := 40.0               # un gruau : presque un bouillon…
+const GRUAU_SANTE := 4.0
+const GRUAU_CHAUD := 8.0          # … chaud
+# le lichen des rennes : ce qui pousse sur la banquise. Cru, amer, il noue le ventre ; bouilli à la popote, une soupe maigre mais
+# vraie : deux soupes et un peu plus par jour tiennent la faim (il faut un feu, de l'eau sous la glace, et deux lichens chacune)
+const LICHEN_CRU := 3.0
+const LICHEN_CRU_PEUR := 5.0
+const SOUPE_LICHENS := 2          # ce qu'il faut de lichens pour une soupe (et une gorgée d'eau)
+const SOUPE_LICHEN := 26.0
+const SOUPE_LICHEN_CHAUD := 10.0
+# la pulpe du cactus : l'eau du désert. Mangée, elle nourrit à peine, mais rafraîchit, et la chaleur pèse moins un moment ;
+# pressée au mortier, elle remplit la gourde (deux pulpes, une gorgée)
+const PULPE := 3.0
+const PULPE_FRAIS := 8.0          # ce qu'elle retire tout de suite à la chaleur du corps
+const FRAICHEUR := 45.0           # secondes : le temps qu'un fruit frais (la pulpe, la coco) allège la chaleur…
+const FRAICHEUR_CIBLE := 10.0     # … de tant (la chaleur que le corps cherche, en plein soleil : un désert passe de 78 à 68)
+const PULPES_GORGEE := 2
+const MANGER_FRAIS := 66.0        # au-dessus, « Manger » prend d'abord ce qui rafraîchit (une coco, la pulpe)
+
 const NOMS := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "baies": "baies", "viande": "viande crue", "viande_cuite": "viande cuite"}
 const ORDRE_INVENTAIRE := ["bois", "pierre", "fibre", "baies", "viande", "viande_cuite"]
 

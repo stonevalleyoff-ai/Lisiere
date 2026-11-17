@@ -57,9 +57,29 @@ const DONNE := {
 	"aromatique": "fleurs",
 	"bruyere": "fleurs",
 	"nenuphar": "fleurs",
+	"cereale": "grains",
+	"riz": "grains",
+	"lichen_rennes": "lichen",
+	"cactus": "pulpe",
 }
 # les champignons des bois, de Lisière : la part d'amanites parmi eux
 const AMANITES := 0.35
+# la cueillette nourricière : le fruit de chaque arbre qui en porte un à lui (une entrée par ligne). Un autre arbre qu'Orvane dit
+# aux fruits charnus (un pionnier, un géant…) porte des grappes de baies, des sorbes ; un conifère n'en porte pas (ses cônes ne
+# se mangent pas). Les fruits se dessinent sur l'arbre (scripts/flore_dessins.gd), on les cueille d'« Agir » (scripts/objet.gd,
+# cueillir_fruit), et ce n'est qu'un arbre sans fruits qu'on abat pour son bois
+const FRUITS := {
+	"fruitier": "pomme",
+	"figuier": "figue",
+	"palmier": "coco",
+	"bouteille": "pain_de_singe",
+}
+# les graminées dont les épis donnent des grains (le premier geste les prend ; le second, la paille : une fibre)
+const EPIS := ["cereale", "riz"]
+# les stades d'Orvane où les fruits sont mûrs en toute saison ; ceux où l'arbre est en fleurs ; ceux où il n'a rien
+const STADES_MURS := ["fruits", "graines"]
+const STADES_FLEURS := ["fleurs", "floraison"]
+const STADES_NUS := ["nu", "nue", "dormance", "repos", "sec", "seche", "fanee", "mort"]
 
 
 # ce qu'est une plante de l'herbier pour Lisière : { forme (celle qu'on dessine), genre, strate, planche (vrai : seule la planche
@@ -115,12 +135,45 @@ static func pique(forme: String, genre: String, epineux: bool) -> bool:
 	return EPINEUSES.has(forme) or (genre == "buisson" and epineux)
 
 
-# ce qu'elle donne à la cueillette ("" : ce que dit son genre)
-static func donne(forme: String, genre: String, en_fleurs: bool, a_fruits: bool) -> String:
+# le fruit d'un arbre ("" : il n'en porte pas) : celui de sa forme, ou des baies s'il est dit aux fruits charnus
+static func fruit_de(forme: String, genre: String, caracteres) -> String:
+	if genre != "arbre":
+		return ""
+	if FRUITS.has(forme):
+		return str(FRUITS[forme])
+	if typeof(caracteres) == TYPE_ARRAY and caracteres.has("fruits_charnus"):
+		return "baies"
+	return ""
+
+
+# où en sont les fruits d'un arbre et les épis d'une graminée, à cette saison et à ce stade : « murs », « fleurs » (l'arbre
+# fleurit, l'épi est vert : rien à manger encore) ou "" (rien : l'hiver, un stade nu). Le stade d'Orvane passe avant la saison ;
+# sans lui, l'été et l'automne mûrissent, le printemps fleurit, l'hiver dépouille (hors ligne, c'est toujours l'été)
+static func maturite(saison: String, stade: String) -> String:
+	var s := stade.to_lower()
+	if STADES_MURS.has(s):
+		return "murs"
+	if STADES_FLEURS.has(s):
+		return "fleurs"
+	if STADES_NUS.has(s):
+		return ""
+	match saison:
+		"printemps":
+			return "fleurs"
+		"hiver":
+			return ""
+	return "murs"
+
+
+# ce qu'elle donne à la cueillette ("" : ce que dit son genre) ; epis : une graminée a encore ses épis mûrs (sinon, sa paille)
+static func donne(forme: String, genre: String, en_fleurs: bool, a_fruits: bool, epis: bool = true) -> String:
 	if genre == "fleur":
 		return "fleurs" if en_fleurs else ""
 	if DONNE.has(forme):
 		var d: String = DONNE[forme]
+		# (des épis cueillis, ou verts : la paille)
+		if d == "grains" and not epis:
+			return "fibre"
 		# (ce qui ne fleurit plus donne ses tiges)
 		return d if d != "fleurs" or en_fleurs else "fibre"
 	if genre == "buisson" and not a_fruits:

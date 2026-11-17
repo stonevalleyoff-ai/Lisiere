@@ -559,6 +559,97 @@ func piler_amanite() -> bool:
 	return true
 
 
+# --- la cueillette nourricière (scripts/flore.gd) : le gruau, la soupe de lichen, la pulpe pressée ---
+
+# ce que la popote fait de la cueillette, sur un feu, avec une gorgée d'eau : son nom, ce qu'il y faut, ce qu'on en dit
+const PLATS := {
+	"gruau": {"nom": "Gruau", "avec": {"grains": R.GRUAU_GRAINS, "eau": 1},
+		"fait": "Les grains gonflent dans l'eau de la popote : un gruau épais."},
+	"soupe_lichen": {"nom": "Soupe de lichen", "avec": {"lichen": R.SOUPE_LICHENS, "eau": 1},
+		"fait": "Le lichen bouilli perd son amertume : une soupe maigre, grise, chaude."},
+}
+const ORDRE_PLATS := ["gruau", "soupe_lichen"]
+
+
+# ce qui l'empêche de cuire ce plat ("" : rien) : ce qu'il y faut, la popote, un feu allumé tout près
+func empeche_cuire(quoi: String) -> String:
+	var inv: Dictionary = jeu.joueur.inventaire
+	var avec: Dictionary = PLATS[quoi]["avec"]
+	for k in avec:
+		if int(inv.get(k, 0)) < int(avec[k]):
+			if k == "eau":
+				return "Il te faut une gorgée d'eau."
+			return "Il te faut %d %s." % [int(avec[k]), "grains" if k == "grains" else "lichens"]
+	if possede("popote") <= 0:
+		return "Il te faut une popote."
+	if jeu._feu_proche(jeu.joueur.position, true) == null:
+		return "Il faut un feu allumé, tout près."
+	return ""
+
+
+# elle le cuit à la popote, sur ce feu : faux si elle ne peut pas (elle dit pourquoi)
+func cuire_plat(quoi: String, feu = null) -> bool:
+	var pourquoi := empeche_cuire(quoi)
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	var avec: Dictionary = PLATS[quoi]["avec"]
+	for k in avec:
+		inv[k] = int(inv[k]) - int(avec[k])
+	inv[quoi] = int(inv.get(quoi, 0)) + 1
+	mijoter(feu if feu != null else jeu._feu_proche(jeu.joueur.position, true))
+	jeu.joueur.geste_atelier("remuer")
+	jeu.sons.jouer("allume", -10.0, 0.62)
+	jeu.ui.message(str(PLATS[quoi]["fait"]), Color(0.95, 0.75, 0.45))
+	return true
+
+
+# « Cuire » (C), sans viande : le premier plat qu'elle peut faire ; sinon, si elle a de quoi en faire un, ce qui lui manque.
+# Faux : elle n'a rien de ce qu'il faut (le jeu dit « Rien à cuire »)
+func cuire_cueillette(feu = null) -> bool:
+	for quoi in ORDRE_PLATS:
+		if empeche_cuire(quoi) == "":
+			return cuire_plat(quoi, feu)
+	var inv: Dictionary = jeu.joueur.inventaire
+	for quoi in ORDRE_PLATS:
+		var principal: String = "grains" if quoi == "gruau" else "lichen"
+		if int(inv.get(principal, 0)) > 0:
+			jeu.ui.message("%s : %s" % [str(PLATS[quoi]["nom"]), empeche_cuire(quoi).to_lower()], Color(0.75, 0.7, 0.66))
+			return true
+	return false
+
+
+# ce qui l'empêche de presser la pulpe d'un cactus ("" : rien) : deux pulpes, le mortier, la gourde, et de la place dedans
+func empeche_presser() -> String:
+	var inv: Dictionary = jeu.joueur.inventaire
+	if int(inv.get("pulpe", 0)) < R.PULPES_GORGEE:
+		return "Il te faut %d pulpes de cactus." % R.PULPES_GORGEE
+	if possede("mortier") <= 0:
+		return "Il te faut un mortier."
+	if possede("gourde") <= 0:
+		return "Il te faut une gourde, pour garder l'eau."
+	if int(inv.get("eau", 0)) >= GORGEES:
+		return "Ta gourde est pleine."
+	return ""
+
+
+# la pulpe, pressée au mortier : son eau coule dans la gourde (deux pulpes, une gorgée). L'eau du désert, sans pluie
+func presser() -> bool:
+	var pourquoi := empeche_presser()
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	inv["pulpe"] = int(inv["pulpe"]) - R.PULPES_GORGEE
+	inv["eau"] = int(inv.get("eau", 0)) + 1
+	jeu.joueur.geste_atelier("piler")
+	jeu.sons.atelier("tresse", -5.0, 0.7)
+	jeu.sons.atelier("gourde", -4.0, 1.15)
+	jeu.ui.message("La pulpe écrasée rend son eau, verte et fade : une gorgée dans ta gourde.", TEINTE)
+	return true
+
+
 # la popote reste un moment sur ce feu : elle y frémit (un bouillon, une décoction : scripts/botanique.gd)
 func mijoter(feu) -> void:
 	if feu == null or not is_instance_valid(feu):
@@ -961,7 +1052,9 @@ func commencer() -> void:
 	_dit = {}
 	var inv: Dictionary = jeu.joueur.inventaire
 	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages",
-			"fleurs", "champignons", "amanite", "infusion"]:
+			"fleurs", "champignons", "amanite", "infusion",
+			# (la cueillette nourricière : les fruits des arbres, les grains, le lichen, la pulpe, et ce que la popote en fait)
+			"pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe", "gruau", "soupe_lichen"]:
 		if not inv.has(k):
 			inv[k] = 0
 	_tenue()

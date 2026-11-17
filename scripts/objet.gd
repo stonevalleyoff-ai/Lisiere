@@ -41,6 +41,12 @@ const Herbe := preload("res://scripts/herbe.gd")
 const R_BAIES := preload("res://scripts/regles.gd").BAIES_PAR_BUISSON
 const R_REPOUSSE_BAIES := preload("res://scripts/regles.gd").REPOUSSE_BAIES
 const R_LUEUR := preload("res://scripts/regles.gd").INCENDIE_LUEUR
+# (la cueillette nourricière : scripts/regles.gd)
+const R_FRUITS := preload("res://scripts/regles.gd").FRUITS_DE_L_ARBRE
+const R_PORTE := preload("res://scripts/regles.gd").PORTE_FRUITS
+const R_TOMBES := preload("res://scripts/regles.gd").TOMBES
+const R_REPOUSSE_FRUITS := preload("res://scripts/regles.gd").REPOUSSE_FRUITS
+const R_GRAINS := preload("res://scripts/regles.gd").GRAINS_PAR_EPI
 # le feu : ce qui brûle se peint par shaders/incendie_objet.gdshader, qui lit dans les UV ce que le dessin lui dit
 const SHADER_FEU := preload("res://shaders/incendie_objet.gdshader")
 const FEU_FLAMMES := 23.0      # un pan de flammes
@@ -60,6 +66,8 @@ static var incendie: ShaderMaterial
 static var _bruit_flammes: Texture2D
 # le climat du lieu, posé par le monde avant de semer (de 0 à 1) : la neige, la mousse
 static var climat := {"froid": 0.0, "humide": 0.5}
+# la saison du monde, posée par le monde avant de semer : les fruits mûrissent l'été et l'automne (scripts/flore.gd, maturite)
+static var saison := "été"
 var _climat := {"froid": 0.0, "humide": 0.5}      # celui du lieu où il est né (deux biomes voisins n'ont pas le même)
 static var _pinceau
 
@@ -155,6 +163,18 @@ var couleur_fleur := Color(0, 0, 0, 0)
 var epaisseur := 1.0
 var ecorce_teinte := Color(0, 0, 0, 0)
 var haut_touffe := 1.0
+# (la cueillette nourricière : scripts/flore.gd) un arbre qui porte des fruits : lequel (« pomme », « figue », « coco »,
+# « pain_de_singe », « baies » ; "" : aucun), combien il en porte encore et au plus, ceux qui sont tombés à son pied (les bêtes
+# qui broutent viennent les manger), le temps avant qu'il en porte de nouveau. Où en est la saison : des fruits mûrs, des fleurs
+# (le printemps : l'arbre fleurit, l'épi est vert), ou rien. Une graminée : ses épis sont-ils mûrs (le premier geste les prend)
+var fruit := ""
+var fruits := 0
+var fruits_plein := 0
+var tombes := 0
+var tombes_plein := 0
+var _repousse_fruits := 0.0
+var maturite := "murs"
+var epis_murs := false
 
 
 func preparer(g: String, couleur: Color, s: int) -> void:
@@ -219,8 +239,13 @@ func porter_plante(e: Dictionary) -> void:
 	var c = e.get("couleur")
 	if typeof(c) == TYPE_COLOR and c.s > 0.08:
 		teinte = Color.from_hsv(c.h, lerpf(teinte.s, c.s, 0.35), teinte.v)
+	# (ses fruits, ses épis : selon sa forme, la saison du monde et son stade)
+	maturite = Flore.maturite(saison, stade)
+	fruit = Flore.fruit_de(forme, genre, e.get("caracteres", []))
+	epis_murs = Flore.EPIS.has(forme) and maturite == "murs"
 	Dessins.regler(self)
 	reste = plein
+	_porter_fruits()
 	_mesurer()
 	var k := float(e.get("taille", 1.0))
 	if absf(k - 1.0) > 0.01:
@@ -316,15 +341,93 @@ func _mesurer() -> void:
 	Dessins.mesurer(self, r)
 
 
+# --- la cueillette nourricière : les fruits d'un arbre ---
+
+# combien il en porte, d'après sa graine (un arbre fruitier sur trois, ou presque, se repose cette année) et la saison : à
+# l'automne, il en tombe un de plus à son pied
+func _porter_fruits() -> void:
+	fruits_plein = 0
+	tombes_plein = 0
+	_repousse_fruits = 0.0
+	if fruit != "" and maturite == "murs" and R_FRUITS.has(fruit):
+		# (des parts de la graine que le tirage de la plante ne regarde pas)
+		var g := absi(graine)
+		if float((g / 7) % 100) < R_PORTE * 100.0:
+			var n: Array = R_FRUITS[fruit]
+			fruits_plein = int(n[0]) + (g / 13) % (int(n[1]) - int(n[0]) + 1)
+			tombes_plein = mini(R_TOMBES, (g / 17) % 3) + (1 if saison == "automne" else 0)
+	fruits = fruits_plein
+	tombes = tombes_plein
+
+
+# porte-t-il quelque chose qu'on mange, dans ses branches ou à son pied ? (alors « Agir » cueille, et ne l'abat pas)
+func porte_fruits() -> bool:
+	return (fruits > 0 or tombes > 0) and (genre == "arbre") and _chute < 0.0 and brule <= 0.0 and not calcine
+
+
+# un fruit : ramassé à son pied d'abord, sinon cueilli dans ses branches (qui frémissent). Ce qu'il donne ({} : rien)
+func cueillir_fruit() -> Dictionary:
+	if not porte_fruits():
+		return {}
+	if tombes > 0:
+		tombes -= 1
+		queue_redraw()
+	else:
+		fruits -= 1
+		_secoue = 0.22
+		if couronne != null:
+			couronne.queue_redraw()
+	_vide_de_fruits()
+	set_process(true)
+	return {fruit: 1}
+
+
+# une bête qui broute a mangé un fruit tombé
+func manger_tombe() -> void:
+	if tombes <= 0:
+		return
+	tombes -= 1
+	_vide_de_fruits()
+	set_process(true)
+	queue_redraw()
+
+
+# le dernier pris : il en portera de nouveau, dans deux jours et demi (les fruits verts se voient grossir)
+func _vide_de_fruits() -> void:
+	if fruits <= 0 and tombes <= 0 and _repousse_fruits <= 0.0:
+		_repousse_fruits = R_REPOUSSE_FRUITS
+
+
+# où en sont ses fruits qui repoussent, de 0 (on vient de prendre le dernier) à 1 (mûrs) ; 1 s'il n'en attend pas
+func pousse_fruits() -> float:
+	return 1.0 - clampf(_repousse_fruits / R_REPOUSSE_FRUITS, 0.0, 1.0) if _repousse_fruits > 0.0 else 1.0
+
+
+# une partie reprise : ses fruits tels qu'on les avait laissés
+func reprendre_fruits(f: int, t: int, repousse: float) -> void:
+	if fruits_plein <= 0 and tombes_plein <= 0:
+		return
+	fruits = clampi(f, 0, fruits_plein)
+	tombes = clampi(t, 0, tombes_plein)
+	_repousse_fruits = maxf(0.0, repousse)
+	if _repousse_fruits > 0.0:
+		set_process(true)
+	if couronne != null:
+		couronne.queue_redraw()
+	queue_redraw()
+
+
 # un geste : ce qu'il donne ({ "bois": 1 }), ou rien
 func recolter() -> Dictionary:
 	if reste <= 0:
 		return {}
-	reste -= 1
+	# (ce qu'il donne se lit avant le geste : une graminée a encore ses épis tant qu'on n'y a pas touché)
 	var item := butin()
+	reste -= 1
 	if (genre == "arbre" or genre == "sapin") and reste <= 0:
 		genre = "souche"
 		rayon = 6.0
+		_sans_fruits()
 		_chute = 0.0
 		_sens = 1.0 if graine % 2 == 0 else -1.0
 		material = fixe
@@ -335,17 +438,30 @@ func recolter() -> Dictionary:
 	set_process(true)
 	queue_redraw()
 	_ombre_changee()
-	return {item: 1} if item != "" else {}
+	if item == "":
+		return {}
+	# (les épis d'une touffe de céréale : quelques grains d'un coup)
+	return {item: R_GRAINS if item == "grains" else 1}
 
 
 func epuise() -> bool:
 	return reste <= 0
 
 
-# ce que donne un geste : ce que dit sa forme (scripts/flore.gd : des fleurs, des tiges, du bois mort…), sinon son genre
+# ce que donne un geste : ce que dit sa forme (scripts/flore.gd : des fleurs, des tiges, du bois mort, des grains…), sinon son
+# genre. (une graminée : ses épis mûrs d'abord, tant qu'elle est entière ; sa paille ensuite)
 func butin() -> String:
-	var d := Flore.donne(forme, genre, en_fleurs, a_fruits) if forme != "" else ""
+	var d := Flore.donne(forme, genre, en_fleurs, a_fruits, epis_murs and reste >= plein) if forme != "" else ""
 	return d if d != "" else str(BUTIN.get(genre, ""))
+
+
+# un arbre abattu, brûlé : ses fruits s'en vont avec lui
+func _sans_fruits() -> void:
+	fruits = 0
+	tombes = 0
+	fruits_plein = 0
+	tombes_plein = 0
+	_repousse_fruits = 0.0
 
 
 # le temps qu'il lui faut pour repousser, cueillie
@@ -428,6 +544,7 @@ func calciner() -> void:
 		genre = "souche"
 		reste = 0
 		rayon = 6.0
+		_sans_fruits()
 		if couronne != null:
 			couronne.queue_free()
 			couronne = null
@@ -461,7 +578,8 @@ func eclaire(p: Vector2) -> float:
 # une partie reprise : l'objet tel qu'on l'avait laissé (entamé, abattu en souche, ou qui repousse), sans le geste qui l'y a mené
 # tel qu'il a été semé : ni entamé, ni abattu, ni brûlé, ni en train de repousser (un lieu sans bord ne garde que ce qui a changé)
 func intact() -> bool:
-	return reste >= plein and _repousse <= 0.0 and not calcine and brule <= 0.0 and genre == _espece
+	return reste >= plein and _repousse <= 0.0 and not calcine and brule <= 0.0 and genre == _espece \
+		and fruits >= fruits_plein and tombes >= tombes_plein and _repousse_fruits <= 0.0
 
 
 func reprendre(g: String, r: int, repousse: float, brule_: bool = false) -> void:
@@ -473,6 +591,7 @@ func reprendre(g: String, r: int, repousse: float, brule_: bool = false) -> void
 	if g == "souche" and genre != "souche":
 		genre = "souche"
 		rayon = 6.0
+		_sans_fruits()
 		material = fixe
 		if couronne != null:
 			couronne.queue_free()
@@ -528,6 +647,18 @@ func _process(delta: float) -> void:
 			_tiede = -1.0
 			if brule <= 0.0:
 				material = _matiere_au_repos()
+	if _repousse_fruits > 0.0:
+		# (les fruits d'un arbre reviennent : verts, puis qui grossissent et mûrissent ; sa couronne se redessine à chaque quart)
+		var quart := int(_repousse_fruits / R_REPOUSSE_FRUITS * 4.0)
+		_repousse_fruits -= delta
+		anime = true
+		if _repousse_fruits <= 0.0:
+			_repousse_fruits = 0.0
+			fruits = fruits_plein
+			tombes = tombes_plein
+			queue_redraw()
+		if couronne != null and (_repousse_fruits <= 0.0 or int(_repousse_fruits / R_REPOUSSE_FRUITS * 4.0) != quart):
+			couronne.queue_redraw()
 	if _repousse > 0.0:
 		# (une herbe repousse à vue : elle se redessine à chaque quart du chemin)
 		if (genre == "herbe" or genre == "fleur") and int(_repousse / _attente() * 4.0) != int((_repousse - delta) / _attente() * 4.0):
@@ -604,6 +735,9 @@ func _draw() -> void:
 		"arbre", "sapin":
 			if not Dessins.pied(self, p, r):
 				_pied(p, r, false)
+			# (ses fruits tombés, dans l'herbe à son pied : scripts/flore_dessins.gd)
+			if tombes > 0:
+				Dessins.tombes(self, p)
 		"souche":
 			_pied(p, r, true)
 		"rocher":
@@ -650,6 +784,9 @@ func _dessiner_couronne(c: CanvasItem) -> void:
 		_sapin(p, r)
 	elif not Dessins.couronne(self, p, r):
 		_feuillu(p, r)
+	# (ses fruits, ou ses fleurs au printemps, ou ses fruits verts qui reviennent : scripts/flore_dessins.gd ; le feu les emporte)
+	if fruit != "" and not en_feu:
+		Dessins.fruits_couronne(self, p)
 	if en_feu:
 		# (devant : des flammes plus basses, qui laissent voir les feuilles roussir)
 		_marquer(p, depuis, false)
