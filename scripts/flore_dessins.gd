@@ -1123,8 +1123,8 @@ static func _succulente(o, p, r: RandomNumberGenerator) -> void:
 	var k: float = 1.0 if o.reste >= o.plein else 0.65
 	var rx: float = (o._rx + 2.0) * k
 	# (le vert glauque d'une plante grasse, que le lieu teinte à peine : sur la terre sèche, elle ne pâlit pas en caillou)
-	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.3).lightened(0.1).lerp(o.teinte, 0.2)
-	var bord := P.BRAISE_ROUGE.lerp(P.PEUR, 0.35).lightened(0.18)
+	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.24).darkened(0.04).lerp(o.teinte, 0.15)
+	var bord := P.BRAISE_ROUGE.lerp(P.PEUR, 0.35).lightened(0.1)
 	var c0 := Vector2(0, -4.0 * k)
 	var feuilles := []
 	for anneau in 2:

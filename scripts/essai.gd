@@ -3261,7 +3261,9 @@ func _la_durete() -> void:
 	var buissons: Array = jeu.monde.objets.filter(func(x): return x.genre == "buisson")
 	var un = null
 	for x in buissons:
-		if x.intact():
+		# (un buisson à baies : la flore suit l'herbier, et tous ses buissons n'en portent pas — une liane donne des fibres, un
+		# buisson d'épines sans fruits son bois mort : scripts/flore.gd)
+		if x.intact() and x.butin() == "baies":
 			un = x
 			break
 	var pleins: bool = un != null and un.plein == RR.BAIES_PAR_BUISSON
