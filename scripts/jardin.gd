@@ -82,7 +82,7 @@ func becher() -> bool:
 	var A = _atelier()
 	var p: Vector2 = A._devant("carre")
 	for o in jeu.monde.autour(p, 30.0):
-		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe"]:
+		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe", "fleur", "cepe", "amanite", "aquatique"]:
 			jeu.monde.retirer(o)
 	A._creer("carre", p, {"culture": "", "stade": 0.0, "eau": 0.3 + 0.7 * float(jeu.climat.boue)})
 	jeu.joueur.geste_atelier("becher")

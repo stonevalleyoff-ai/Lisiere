@@ -31,6 +31,8 @@ extends Node
 #   son sac plein des herbes du lieu, la moitié reconnues, un mortier, une popote ; --geste gouter|piler|jeter
 #   le jardin, l'élevage : --pose carre,epouvantail,piquet,mangeoire,appat ; --etat lin,fleur,eau (ou baie, simple ; semis,
 #   pousse, mur ; gel ; regard, alerte ; foin ; attache) ; --compagne licol,selle,sacoche,grande,reste,monte : une bête à elle
+#   la cueillette (scripts/flore.gd) : --cueillette : elle va de fleur en champignon des bois, et les cueille (avec --ouvert
+#   --depuis x,y : dans le biome de son choix)
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -230,6 +232,10 @@ func _lancer() -> void:
 			j.inventaire["simples"] = 2
 			j.inventaire["lait"] = 1
 			j.inventaire["arrosages"] = 2
+		# (--pays : et ce que donnent les pays, l'obsidienne, la tourbe ; scripts/biomes.gd)
+		if ar2.has("--pays"):
+			j.inventaire["obsidienne"] = 3
+			j.inventaire["tourbe"] = 2
 		jeu.atelier.portes = {"sac_a_dos": true}
 		jeu.atelier.charge = 62.0
 		jeu.atelier._tenue()
@@ -407,6 +413,9 @@ func _lancer() -> void:
 		var i_r := ar.find("--recul")
 		if i_r >= 0 and i_r + 1 < ar.size():
 			jeu.effets.recul = float(ar[i_r + 1])
+	# (--cueillette : elle cueille les fleurs et les champignons des bois autour d'elle)
+	if OS.get_cmdline_user_args().has("--cueillette"):
+		_plan = [[0.0, 0.08, "attendre"], [0.08, 1.0, "cueillette"]]
 	# (--sans son,ciel,sol,flammes : pour chercher ce qui coûte, on éteint une chose à la fois)
 	var args := OS.get_cmdline_user_args()
 	var i_sans := args.find("--sans")
@@ -432,6 +441,23 @@ func _lancer() -> void:
 				if n is CanvasItem:
 					n.visible = false
 			print("vitrine : sans ", quoi, " (", cibles.size(), ")")
+	# (--pres fondriere|faille|fumerolle|mare|obsidienne|tourbe|bois_flotte|carcasse : elle se tient à deux pas de la plus
+	# proche, et ne bouge plus ; --dedans : sur elle, pour voir ce qu'elle fait. Le sol des pays : scripts/biome_terrain.gd)
+	var i_pres := args.find("--pres")
+	if i_pres >= 0 and i_pres + 1 < args.size() and jeu.terrain != null:
+		jeu.terrain.suivre(jeu.joueur.position, true)
+		var s: Dictionary = jeu.terrain.le_plus_proche(args[i_pres + 1], jeu.joueur.position)
+		if not s.is_empty():
+			var ou: Vector2 = s["p"]
+			jeu.joueur.position = ou + (Vector2.ZERO if args.has("--dedans") else Vector2(-70.0, 46.0))
+			if jeu.ouvert:
+				jeu.monde.suivre(jeu.joueur.position, true)
+			jeu.terrain.suivre(jeu.joueur.position, true)
+			jeu.camera.reset_smoothing()
+			_plan = [[0.0, 1.0, "attendre"]]
+			print("vitrine : près de ", args[i_pres + 1], " en ", ou)
+		else:
+			print("vitrine : pas de ", args[i_pres + 1], " autour")
 	_pret = true
 
 
@@ -785,8 +811,8 @@ func _process(delta: float) -> void:
 				d = Vector2.RIGHT
 			var vers := d.normalized().orthogonal() + d.normalized() * (110.0 - d.length()) / 60.0
 			j.deplacer(vers.limit_length(1.0), delta, jeu.monde)
-		"couper", "cueillir":
-			var genres := ["arbre", "sapin"] if geste == "couper" else ["buisson", "touffe"]
+		"couper", "cueillir", "cueillette":
+			var genres := ["arbre", "sapin"] if geste == "couper" else (["fleur", "cepe", "amanite"] if geste == "cueillette" else ["buisson", "touffe"])
 			var o = _plus_proche(genres)
 			if o != null:
 				# (de côté, pour que le geste se lise)

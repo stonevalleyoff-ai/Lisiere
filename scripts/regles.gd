@@ -24,7 +24,7 @@ const NUIT_COULEUR := Color(0.03, 0.035, 0.07)
 # le corps
 const VITESSE := 165.0
 # (la faim, la peur, le froid, la chaleur tuent : chacune prend sur la santé avant d'être à son comble, de plus en plus)
-const FAIM := 0.3             # par seconde : de rassasié à affamé en un jour et demi
+const FAIM := 0.24            # par seconde : de rassasié à affamé en un peu moins de deux jours (un jour et demi, 0,3, était trop court)
 const FAIM_MORD := 15.0       # sous ce seuil, la faim prend sur la santé
 const FAMINE := 1.8           # la santé perdue par seconde, l'estomac vide (de moins en moins au-dessus, jusqu'à FAIM_MORD)
 const BAIE := 12.0            # ce qu'une poignée de baies rend à la faim
@@ -41,7 +41,7 @@ const MORSURE_MASSE := 11.0
 # la cueillette : peu de buissons, deux poignées de baies chacun, qui repoussent en près de deux jours
 const BUISSONS := 10.0        # par lieu (4 200 pixels de côté), au plus sec…
 const BUISSONS_HUMIDE := 30.0 # … et ce que l'humidité y ajoute
-const BAIES_PAR_BUISSON := 2
+const BAIES_PAR_BUISSON := 3
 const REPOUSSE_BAIES := 420.0 # secondes avant qu'un buisson cueilli (un champignon de grotte) ne redonne
 
 # les gestes
@@ -73,7 +73,8 @@ const FEU_MAX := 150.0
 const FEU_TEMPS := {"pluie": 1.4, "orage": 1.7, "tempete": 2.0, "neige": 1.25, "brouillard": 1.1}
 const NEIGE_AU_SOL := 0.3     # à partir de ce manteau, on marche dans la neige
 const ALLURE_NEIGE := 0.8
-const TEMPS := {"clair": "temps clair", "couvert": "ciel couvert", "pluie": "pluie", "orage": "orage", "neige": "neige", "gel": "gel", "canicule": "canicule", "tempete": "tempête", "brouillard": "brouillard"}
+const TEMPS := {"clair": "temps clair", "couvert": "ciel couvert", "pluie": "pluie", "orage": "orage", "neige": "neige", "gel": "gel", "canicule": "canicule", "tempete": "tempête", "brouillard": "brouillard",
+	"tourmente": "tourmente", "cendres": "pluie de cendres", "sable": "vent de sable"}
 const TEMPS_DIT := {"pluie": "Il pleut : le feu mange son bois plus vite.", "orage": "L'orage gronde : le feu mange son bois bien plus vite.", "tempete": "La tempête passe : un feu ne tiendra pas longtemps.",
 	"neige": "Il neige : le feu mange son bois plus vite.", "brouillard": "Le brouillard est tombé.", "gel": "Il gèle.", "canicule": "La chaleur écrase le lieu."}
 
@@ -137,6 +138,25 @@ const PONT_PASSAGE := 25.0    # ce que chaque passage de la veilleuse lui retire
 const FROID_PAR_PALIER := 0.03   # ce que chaque étage retire à la température de l'air
 const VUE_PAR_PALIER := 0.05     # et de combien la caméra recule
 const AIR_SOUS_TERRE := 0.44     # l'air d'une grotte : frais, constant
+
+# --- les biomes : ce que chaque pays pèse, et ce qu'il offre (scripts/biomes.gd, scripts/biome_terrain.gd) ---
+# (le climat de chacun, ses temps à lui et ses sorts de sol sont dans scripts/biomes.gd ; ici, ce qu'ils font au corps)
+const TOURMENTE_FROID := 9.0     # ce que la tourmente (la banquise) retire encore au corps, à découvert
+const TOURMENTE_FEU := 0.6       # et ce qu'elle ajoute à l'appétit du feu (le vent fouette les braises)
+const SABLE_FEU := 0.35          # le vent de sable aussi
+const SABLE_FREIN := 0.25        # dans le vent de sable, la part de l'allure perdue
+const FUMEROLLE_BRULE := 38.0    # le rayon de la bouffée d'une fumerolle, qui brûle
+const FUMEROLLE_DEGATS := 9.0    # la santé perdue par seconde dans la bouffée
+const FUMEROLLE_CHAUD := 150.0   # jusqu'où l'on sent sa chaleur
+const FUMEROLLE_CHALEUR := 32.0  # ce qu'elle ajoute au corps, tout contre (une nuit au volcan se passe au bord d'une fumerolle)
+const FAILLE_CHAUD := 90.0       # jusqu'où l'on sent la chaleur d'une faille
+const FAILLE_CHALEUR := 16.0
+const FONDRIERE_ENLISE := 0.45   # par seconde, ce qu'elle s'enfonce dans une fondrière si elle s'arrête (à 1 : jusqu'aux cuisses)
+const FONDRIERE_SORT := 0.35     # ce qu'elle en sort par seconde, en marchant (enfoncée, trois secondes à peiner)
+const FONDRIERE_FREIN := 0.8     # enfoncée jusqu'aux cuisses, la part de l'allure perdue
+const SANGSUES := 0.6            # la santé perdue par seconde, enfoncée depuis plus de trois secondes
+const TOURBE_FEU := 60.0         # ce qu'une motte de tourbe donne au feu, en secondes (une bûche : FEU_BUCHE)
+const BOIS_FLOTTE_REVIENT := 480.0   # la mer rapporte du bois flotté sur le rivage en deux jours
 # la Noire (scripts/noire.gd) : une seule bête, qui n'est pas d'Orvane ; elle vient d'acte en acte, nuit après nuit
 const NOIRE_LARGEUR := 330.0     # son dessin, en pixels du lieu (un chasseur de 35 kg en fait 110, la veilleuse 22)
 const NOIRE_VITESSE := 215.0     # sa charge (la veilleuse court à 165 : on ne la sème pas à la course)
@@ -154,6 +174,16 @@ const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0]     # par acte : le temps que l
 const NOIRE_PRESAGE := 1.4       # elle s'aplatit et gronde ce temps-là, avant de charger
 const NOIRE_PEUR := 5.0          # la peur gagnée par seconde sous son regard
 const NOIRE_REVEIL := 120.0      # le jour, à cette distance de sa tanière, on la réveille
+# --- la cueillette : les fleurs, les champignons des bois, les épines (scripts/flore.gd, principal.gd : agir, manger) ---
+const CHAMPIGNON := 9.0           # ce qu'un cèpe rend à la faim (cru : moins qu'une poignée de baies)
+const REPOUSSE_FLEURS := 300.0    # secondes avant qu'une fleur cueillie refleurisse
+const REPOUSSE_CHAMPIGNONS := 480.0   # avant qu'un champignon cueilli ressorte de la mousse
+const EPINES := 2.0               # la santé que prennent les épines (un cactus, un roncier…), cueillis à mains nues
+const FLEURS_INFUSION := 3        # des fleurs, une gorgée d'eau, à la popote sur un feu : une infusion
+const INFUSION_PEUR := 30.0       # la peur qu'elle apaise
+const INFUSION_CHAUD := 8.0       # et ce qu'elle rend de chaleur au corps (une boisson chaude)
+const AMANITE_POISON := 1.0       # une amanite mangée : le poison d'une herbe vénéneuse goûtée, en parts (scripts/botanique.gd, POISON)
+
 const NOMS := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "baies": "baies", "viande": "viande crue", "viande_cuite": "viande cuite"}
 const ORDRE_INVENTAIRE := ["bois", "pierre", "fibre", "baies", "viande", "viande_cuite"]
 

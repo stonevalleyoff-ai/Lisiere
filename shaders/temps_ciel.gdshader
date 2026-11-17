@@ -2,7 +2,9 @@
 // Ce que le temps met entre l'œil et le lieu, sur tout l'écran, sans lire l'image (scripts/ciel.gd) : le ciel qui s'assombrit
 // (l'ombre des nuages passe sur le lieu, poussée par le vent), les rideaux de la pluie, le brouillard (des nappes qui dérivent,
 // épaisses au loin : on ne voit bien qu'autour de soi, et dans la lumière d'un feu), le voile de la neige, la lumière écrasée
-// de la canicule, l'éclat de la foudre. Les nappes sont lues en coordonnées du lieu : elles restent où elles sont quand on marche.
+// de la canicule, l'éclat de la foudre ; les temps des pays (scripts/biomes.gd) : la tourmente, la pluie de cendres, le vent
+// de sable, qui ne laissent voir qu'à quelques pas. Les nappes sont lues en coordonnées du lieu : elles restent où elles sont
+// quand on marche.
 // Alpha prémultiplié : il assombrit et il éclaire.
 shader_type canvas_item;
 render_mode blend_premul_alpha, unshaded;
@@ -21,6 +23,10 @@ uniform float pluie = 0.0;
 uniform float neige = 0.0;
 uniform float chaleur = 0.0;
 uniform float eclat = 0.0;
+uniform float tourmente = 0.0;
+uniform float cendre = 0.0;
+uniform float sable = 0.0;
+uniform vec2 vent_dir = vec2(1.0, 0.0);  // d'où à où souffle le vent (le même sens à l'écran que dans le lieu)
 uniform vec4 feu0 = vec4(0.0);         // xy : où, z : le rayon, w : la force (0 : rien)
 uniform vec4 feu1 = vec4(0.0);
 uniform vec4 torche = vec4(0.0);
@@ -32,6 +38,8 @@ uniform vec4 c_neige : source_color = vec4(0.9, 0.92, 0.95, 1.0);
 uniform vec4 c_chaleur : source_color = vec4(1.0, 0.9, 0.66, 1.0);
 uniform vec4 c_feu : source_color = vec4(0.97, 0.66, 0.35, 1.0);
 uniform vec4 c_eclat : source_color = vec4(0.9, 0.94, 1.0, 1.0);
+uniform vec4 c_cendre : source_color = vec4(0.45, 0.42, 0.4, 1.0);
+uniform vec4 c_sable : source_color = vec4(0.82, 0.68, 0.45, 1.0);
 
 // une couche de plus, par-dessus les autres (couleur, opacité)
 vec4 sur(vec4 dessous, vec3 c, float a) {
@@ -85,6 +93,32 @@ void fragment() {
 		a *= 1.0 - 0.5 * l;
 		vec3 cb = mix(c_brume_nuit.rgb, c_brume.rgb, jour) + c_feu.rgb * l * 0.3 * (1.0 - jour);
 		v = sur(v, cb, clamp(a, 0.0, 0.92));
+	}
+
+	// la tourmente : la neige que le vent chasse ; un mur blanc à quelques pas, des rafales qui passent
+	if (tourmente > 0.01) {
+		vec2 q = (UV - 0.5) * vue;
+		vec2 d = normalize(vent_dir + vec2(0.0001));
+		float rafale = texture(bruit, vec2((dot(q, d) - dot(derive, d) * 2.0) / 900.0, dot(q, vec2(d.y, -d.x)) / 150.0 + 0.4)).r;
+		float r = length((p - joueur) * vec2(1.0, 1.2)) + (n - 0.5) * 160.0;
+		float a = tourmente * (0.1 + 0.62 * smoothstep(80.0, 360.0, r) + 0.18 * smoothstep(0.45, 0.75, rafale));
+		v = sur(v, c_neige.rgb * clair, clamp(a, 0.0, 0.88));
+	}
+
+	// la pluie de cendres : un voile brun-gris, épais au loin
+	if (cendre > 0.01) {
+		float r = length((p - joueur) * vec2(1.0, 1.2)) + (n - 0.5) * 220.0;
+		v = sur(v, c_cendre.rgb * clair, cendre * (0.12 + 0.5 * smoothstep(150.0, 520.0, r)));
+	}
+
+	// le vent de sable : un mur ocre ; des traînées qui filent sous le vent
+	if (sable > 0.01) {
+		vec2 q = (UV - 0.5) * vue;
+		vec2 d = normalize(vent_dir + vec2(0.0001));
+		float trainee = texture(bruit, vec2((dot(q, d) - dot(derive, d) * 3.0) / 650.0, dot(q, vec2(d.y, -d.x)) / 70.0)).r;
+		float r = length((p - joueur) * vec2(1.0, 1.2)) + (n - 0.5) * 200.0;
+		float a = sable * (0.14 + 0.6 * smoothstep(100.0, 420.0, r) + 0.2 * smoothstep(0.5, 0.78, trainee));
+		v = sur(v, c_sable.rgb * clair, clamp(a, 0.0, 0.9));
 	}
 
 	// la canicule : la lumière écrase tout, les ombres se vident, les bords de la vue brûlent

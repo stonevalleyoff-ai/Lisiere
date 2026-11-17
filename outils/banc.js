@@ -55,7 +55,9 @@ const chasse = t => t.regime === 'carnivore' || (t.regime === 'omnivore' && t.ma
 const proposes = new Set(index.biomes.filter(b => ['terrestre', 'amphibie'].includes(b.milieu || 'terrestre')).map(b => b.id).filter(id => {
   const ici = index.taxons.filter(t => (t.famille || 'animale') === 'animale' && t.statut !== 'eteint' && (t.biomes || []).includes(id) && t.masse_kg >= 0.2 && !['vegetal', 'synthetique'].includes(t.regime));
   return ici.some(t => !chasse(t)) && ici.some(t => chasse(t) && t.masse_kg >= 1); }));
-const oublies = lieux.filter(b => !proposes.has(b));
+// (une grotte, sous terre, ne se propose pas : on y entre par sa bouche, dans le monde ouvert ; on la garde pour l'y jouer hors ligne)
+const souterrains = new Set(index.biomes.filter(b => b.milieu === 'souterrain').map(b => b.id));
+const oublies = lieux.filter(b => !proposes.has(b) && !souterrains.has(b));
 verif(!oublies.length, 'le jeu propose chaque lieu gardé à son écran-titre' + (oublies.length ? ` ; jamais proposés : ${oublies.join(', ')}` : ''));
 // les règles de scripts/donnees.gd (faune), en JavaScript
 const TERRE = new Set(['marche', 'course', 'saut', 'fouissage', 'grimpe', 'reptation']);

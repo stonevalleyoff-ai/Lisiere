@@ -16,9 +16,11 @@ const R := preload("res://scripts/regles.gd")
 const Campement := preload("res://scripts/campement.gd")
 
 # les matières, dans l'ordre où on les montre ; celles du début sont dans le sac depuis toujours (regles.gd, NOMS)
-const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet"]
+const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet",
+	# (ce que seuls certains pays donnent : le volcan, le marais ; scripts/biomes.gd)
+	"obsidienne", "tourbe"]
 const NOMS_MATIERES := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "peau": "peau", "ferraille": "ferraille",
-	"corde": "corde", "bache": "bâche", "eau": "eau", "galet": "galets"}
+	"corde": "corde", "bache": "bâche", "eau": "eau", "galet": "galets", "obsidienne": "obsidienne", "tourbe": "tourbe"}
 # les familles, dans l'ordre de la page de l'établi : [la clé, son titre]
 const FAMILLES := [["matiere", "Les matières"], ["camp", "Le camp"], ["tenue", "La tenue"], ["outil", "Les outils"],
 	["jardin", "Le jardin"], ["elevage", "L'élevage"]]
@@ -87,10 +89,14 @@ const OBJETS := {
 		"dit": "Sur le dos d'une bête : à ses côtés, tu portes vingt de plus de chaque chose."},
 	"selle": {"nom": "Selle", "famille": "elevage", "ou": "etabli", "cout": {"peau": 3, "corde": 2, "bois": 1},
 		"dit": "Sur une bête assez forte, on la monte : on va bien plus vite. Elle te jette à terre quand elle a peur."},
+	# le volcan (scripts/biomes.gd) : son obsidienne est la seule pointe qu'on sache encore tailler ; la lance est aussitôt dans
+	# ses mains (fabriquer), elle ne se range pas
+	"lance_obsidienne": {"nom": "Lance d'obsidienne", "famille": "outil", "ou": "etabli", "cout": {"obsidienne": 2, "bois": 2, "corde": 1},
+		"dit": "Une pointe de verre noir, ligaturée sur une hampe. Elle frappe comme une lance ferrée."},
 }
 const ORDRE := ["corde", "bache", "galet", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
 	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "carte", "plume", "houe", "arrosoir", "epouvantail", "licol",
-	"piquet", "mangeoire", "sacoche", "selle"]
+	"piquet", "mangeoire", "sacoche", "selle", "lance_obsidienne"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
 const TEINTE := Color(0.86, 0.8, 0.66)
 const PORTEE := 54.0              # à quelle distance on se sert d'une chose posée, d'un établi
@@ -193,6 +199,9 @@ func fabriquer(id: String) -> bool:
 		inv[k] = int(inv.get(k, 0)) - int(o["cout"][k])
 	if MATIERES.has(id):
 		inv[id] = int(inv.get(id, 0)) + int(o.get("lot", 1))
+	elif id == "lance_obsidienne":
+		# (une lance : dans ses mains, toute neuve, à la place de celle qu'elle avait)
+		jeu.joueur.lance = R.USURE_LANCE
 	else:
 		objets[id] = int(objets.get(id, 0)) + 1
 		if bool(o.get("porte", false)) and id != "lampe":
@@ -294,7 +303,7 @@ func poser(id: String) -> bool:
 	objets[id] = possede(id) - 1
 	# (elle dégage le sol : les brindilles, les touffes qui passeraient au travers)
 	for o in jeu.monde.autour(p, maxf(14.0, Campement.rayon(id)) + 4.0):
-		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe"]:
+		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe", "fleur", "cepe", "amanite", "aquatique"]:
 			jeu.monde.retirer(o)
 	_creer(id, p, {})
 	j.geste_atelier("monter")
@@ -470,6 +479,83 @@ func cuisiner(feu = null) -> bool:
 	inv["bouillon"] = int(inv.get("bouillon", 0)) + 1
 	jeu.joueur.geste_atelier("remuer")
 	jeu.ui.message("Un bouillon frémit dans la popote.", Color(0.95, 0.75, 0.45))
+	return true
+
+
+# --- la cueillette (scripts/flore.gd) : l'infusion de fleurs, l'appât d'amanite ---
+
+# ce qui l'empêche d'infuser ses fleurs ("" : rien) : des fleurs, une gorgée d'eau, la popote, un feu allumé tout près
+func empeche_infuser() -> String:
+	var inv: Dictionary = jeu.joueur.inventaire
+	if int(inv.get("fleurs", 0)) < R.FLEURS_INFUSION:
+		return "Il te faut %d fleurs." % R.FLEURS_INFUSION
+	if possede("popote") <= 0:
+		return "Il te faut une popote."
+	if int(inv.get("eau", 0)) <= 0:
+		return "Il te faut une gorgée d'eau."
+	if jeu._feu_proche(jeu.joueur.position, true) == null:
+		return "Il faut un feu allumé, tout près."
+	return ""
+
+
+# des fleurs et de l'eau, à la popote sur un feu : une infusion
+func infuser() -> bool:
+	var pourquoi := empeche_infuser()
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	inv["fleurs"] = int(inv["fleurs"]) - R.FLEURS_INFUSION
+	inv["eau"] = int(inv["eau"]) - 1
+	inv["infusion"] = int(inv.get("infusion", 0)) + 1
+	mijoter(jeu._feu_proche(jeu.joueur.position, true))
+	jeu.joueur.geste_atelier("remuer")
+	jeu.sons.jouer("allume", -10.0, 0.6)
+	jeu.ui.message("Les fleurs frémissent dans la popote : une infusion.", Color(0.95, 0.75, 0.45))
+	return true
+
+
+# elle boit une infusion : la peur se pose, le corps se réchauffe un peu
+func boire_infusion() -> bool:
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	if int(inv.get("infusion", 0)) <= 0:
+		return false
+	inv["infusion"] = int(inv["infusion"]) - 1
+	j.peur = maxf(0.0, float(j.peur) - R.INFUSION_PEUR)
+	if float(j.temperature) < 58.0:
+		j.temperature = minf(58.0, float(j.temperature) + R.INFUSION_CHAUD)
+	j.geste_atelier("boire")
+	jeu.sons.atelier("gorgee")
+	jeu.ui.message("L'infusion, chaude et douce. Le cœur se pose.", TEINTE)
+	return true
+
+
+# ce qui l'empêche de piler une amanite en appât ("" : rien)
+func empeche_piler_amanite() -> String:
+	var inv: Dictionary = jeu.joueur.inventaire
+	if int(inv.get("amanite", 0)) <= 0:
+		return "Tu n'as pas d'amanite."
+	if possede("mortier") <= 0:
+		return "Il te faut un mortier."
+	if int(inv.get("viande", 0)) <= 0:
+		return "Il te faut de la viande crue."
+	return ""
+
+
+# une amanite pilée avec de la viande : l'appât empoisonné des herbes (scripts/botanique.gd, « appat_poison »), qui se pose de même
+func piler_amanite() -> bool:
+	var pourquoi := empeche_piler_amanite()
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	inv["amanite"] = int(inv["amanite"]) - 1
+	inv["viande"] = int(inv["viande"]) - 1
+	inv["appat_poison"] = int(inv.get("appat_poison", 0)) + 1
+	jeu.joueur.geste_atelier("piler")
+	jeu.sons.atelier("tresse", -4.0, 0.8)
+	jeu.ui.message("Un appât empoisonné : de la viande frottée d'amanite. Pose-le loin du camp (ton sac) : ce qui chasse viendra le manger.", TEINTE)
 	return true
 
 
@@ -874,7 +960,8 @@ func commencer() -> void:
 	lit = null
 	_dit = {}
 	var inv: Dictionary = jeu.joueur.inventaire
-	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages"]:
+	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages",
+			"fleurs", "champignons", "amanite", "infusion"]:
 		if not inv.has(k):
 			inv[k] = 0
 	_tenue()

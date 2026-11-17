@@ -126,7 +126,9 @@ func maj(jeu, j, dt: float, morte: bool, comble: float) -> void:
 	orage = C.orage
 	vent = C.vent
 	chaleur = clampf(float(C.chaleur) / 0.2, 0.0, 1.0)
-	etouffe = clampf(0.85 * smoothstep(0.15, 0.7, float(C.neige_sol)) + 0.4 * float(C.neige) + 0.3 * float(C.brouillard), 0.0, 1.0)
+	# (la cendre qui tombe étouffe tout, comme la neige ; le vent de sable couvre les bêtes)
+	etouffe = clampf(0.85 * smoothstep(0.15, 0.7, float(C.neige_sol)) + 0.4 * float(C.neige) + 0.3 * float(C.brouillard) + 0.45 * float(C.cendre)
+		+ 0.35 * float(C.sable), 0.0, 1.0)
 	# ce qui se tait : vite quand la pluie vient, lentement quand elle s'en va ; puis l'éclaircie
 	var mouille := maxf(smoothstep(0.06, 0.3, pluie), smoothstep(0.1, 0.4, orage))
 	var tu := 1.0 - sec
