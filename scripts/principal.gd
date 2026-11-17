@@ -1139,8 +1139,8 @@ func agir() -> void:
 		if pris > 0:
 			if CUEILLETTE.has(k):
 				# (ce qu'on cueille et qui n'est pas une matière : son nom, et, la première fois, ce qu'on en fait)
-				ui.message("+%d %s" % [pris, str(CUEILLETTE[k][0])], Color(0.75, 0.78, 0.72))
-				_conseil("cueillette-" + k, true, str(CUEILLETTE[k][1]), Color(0.72, 0.84, 0.6))
+				ui.message("+%d %s" % [pris, str(CUEILLETTE[k][0 if pris == 1 else 1])], Color(0.75, 0.78, 0.72))
+				_conseil("cueillette-" + k, true, str(CUEILLETTE[k][2]), Color(0.72, 0.84, 0.6))
 			else:
 				ui.ramasse(k, pris, o.position)
 	# (cueillir rend parfois des graines : scripts/jardin.gd ; celles des baies, celles du lin — d'une herbe, pas d'un cactus)
@@ -1349,12 +1349,12 @@ func _voir_les_ponts(delta: float) -> void:
 	pont_possible = carte != null and _region >= 0 and bool(carte.regions[_region]["riviere"]) and not carte.pont_depuis(joueur.position).is_empty()
 
 
-# ce qu'on cueille qui n'est pas une matière : [son nom, ce qu'on en dit la première fois] (scripts/flore.gd ; la cueillette
-# dans regles.gd)
+# ce qu'on cueille qui n'est pas une matière : [son nom, au pluriel, ce qu'on en dit la première fois] (scripts/flore.gd ; la
+# cueillette dans regles.gd)
 const CUEILLETTE := {
-	"fleurs": ["fleurs", "Des fleurs. Trois, avec une gorgée d'eau, à la popote sur un feu : une infusion qui calme la peur (ton sac)."],
-	"champignons": ["cèpe", "Un cèpe, brun et ferme : il se mange (E)."],
-	"amanite": ["amanite", "Une amanite, rouge piquée de blanc : elle empoisonne qui la mange. Pilée au mortier avec de la viande, elle fait un appât pour ce qui chasse (ton sac)."],
+	"fleurs": ["fleur", "fleurs", "Des fleurs. Trois, avec une gorgée d'eau, à la popote sur un feu : une infusion qui calme la peur (ton sac)."],
+	"champignons": ["cèpe", "cèpes", "Un cèpe, brun et ferme : il se mange (E)."],
+	"amanite": ["amanite", "amanites", "Une amanite, rouge piquée de blanc : elle empoisonne qui la mange. Pilée au mortier avec de la viande, elle fait un appât pour ce qui chasse (ton sac)."],
 }
 
 

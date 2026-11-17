@@ -4311,7 +4311,7 @@ func _l_atelier(F: Dictionary) -> void:
 func _semer_a_part(type: String, coin: Vector2) -> Dictionary:
 	var W = jeu.monde
 	var L: Dictionary = W.lieu_de(type)
-	var rect := Rect2(coin, Vector2(8400.0, 4200.0))
+	var rect := Rect2(coin, Vector2(8400.0, 8400.0))
 	var r := RandomNumberGenerator.new()
 	r.seed = 4242
 	var plan: Array = []
@@ -4361,24 +4361,24 @@ func _la_flore() -> void:
 		match type:
 			"banquise", "volcan", "desert":
 				# (leur herbier n'a pas d'arbre : pas un sapin, pas un feuillu ; leurs places vont aux plantes du sol)
-				verif(arbres == 0 and int(d["genres"].get("touffe", 0)) > 300,
+				verif(arbres == 0 and int(d["genres"].get("touffe", 0)) > 600,
 					"%s : pas un arbre (l'herbier n'en a pas : %d sapins, %d feuillus) ; leurs places vont aux plantes du sol (%d)" % [type,
 					int(d["genres"].get("sapin", 0)), int(d["genres"].get("arbre", 0)), int(d["genres"].get("touffe", 0))])
 			"marais":
-				verif(int(d["genres"].get("sapin", 0)) == 0 and int(d["genres"].get("arbre", 0)) > 200 and int(d["genres"].get("aquatique", 0)) > 20,
+				verif(int(d["genres"].get("sapin", 0)) == 0 and int(d["genres"].get("arbre", 0)) > 400 and int(d["genres"].get("aquatique", 0)) > 40,
 					"marais : ses arbres sont ceux de son herbier (%d, palétuviers et fougères arborescentes compris, aucun sapin), ses mares portent nénuphars, lentilles d'eau et algues (%d)" % [
 					int(d["genres"].get("arbre", 0)), int(d["genres"].get("aquatique", 0))])
 			"taiga":
-				verif(int(d["genres"].get("sapin", 0)) > 20 and int(d["formes"].get("conifere", 0)) == int(d["genres"].get("sapin", 0)) and int(d["genres"].get("arbre", 0)) > 100,
+				verif(int(d["genres"].get("sapin", 0)) > 40 and int(d["formes"].get("conifere", 0)) == int(d["genres"].get("sapin", 0)) and int(d["genres"].get("arbre", 0)) > 200,
 					"taïga : ses sapins sont les conifères de son herbier (%d), parmi ses feuillus (%d)" % [int(d["genres"].get("sapin", 0)), int(d["genres"].get("arbre", 0))])
 	# sans herbier, la température décide encore : la banquise reprend ses sapins
 	var gardee: Dictionary = Orvane._herbiers.get("banquise", {})
 	Orvane.ajouter_herbier("banquise", {})
 	W.flore_arrivee("banquise")
-	var sans := _semer_a_part("banquise", Vector2(90000.0, 120000.0))
+	var sans := _semer_a_part("banquise", Vector2(90000.0, 130000.0))
 	Orvane.ajouter_herbier("banquise", gardee)
 	W.flore_arrivee("banquise")
-	verif(int(sans["genres"].get("sapin", 0)) > 50 and int(sans["genres"].get("arbre", 0)) == 0,
+	verif(int(sans["genres"].get("sapin", 0)) > 100 and int(sans["genres"].get("arbre", 0)) == 0,
 		"sans herbier, la température décide encore : la banquise a ses sapins (%d)" % int(sans["genres"].get("sapin", 0)))
 
 	# dans le monde ouvert : à la forêt, les fleurs des prés et les champignons des bois sont des objets du lieu, qu'on cueille

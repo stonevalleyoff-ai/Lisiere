@@ -1119,7 +1119,8 @@ static func _lichen_rennes(o, p, r: RandomNumberGenerator) -> void:
 static func _succulente(o, p, r: RandomNumberGenerator) -> void:
 	var k: float = 1.0 if o.reste >= o.plein else 0.65
 	var rx: float = (o._rx + 2.0) * k
-	var t: Color = o.teinte.lerp(P.LUNE, 0.35).lightened(0.08)
+	# (le vert glauque d'une plante grasse, que le lieu teinte à peine : sur la terre sèche, elle ne pâlit pas en caillou)
+	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.3).lightened(0.1).lerp(o.teinte, 0.2)
 	var bord := P.BRAISE_ROUGE.lerp(P.PEUR, 0.35).lightened(0.18)
 	var c0 := Vector2(0, -4.0 * k)
 	var feuilles := []
@@ -1148,7 +1149,7 @@ static func _succulente(o, p, r: RandomNumberGenerator) -> void:
 static func _agave(o, p, r: RandomNumberGenerator) -> void:
 	var rx: float = o._rx * (1.0 if o.reste > 0 else 0.6)
 	var h: float = o._ry * (1.0 if o.reste > 0 else 0.6)
-	var t: Color = o.teinte.lerp(P.LUNE, 0.35).lightened(0.04)
+	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.38).lightened(0.06).lerp(o.teinte, 0.2)
 	var feuilles := []
 	for i in 12:
 		var a := lerpf(-PI + 0.1, -0.1, i / 11.0) + r.randf_range(-0.08, 0.08)
@@ -1179,7 +1180,7 @@ static func _agave(o, p, r: RandomNumberGenerator) -> void:
 static func _cactus(o, p, r: RandomNumberGenerator) -> void:
 	var h: float = o._ry
 	var w: float = o._rx
-	var t: Color = o.teinte.lerp(P.MOUSSE, 0.35).lerp(P.LUNE, 0.12)
+	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.12).lerp(o.teinte, 0.3)
 	var bras := []
 	var nb := 2 if o.graine % 3 != 0 else 1
 	if o.reste < o.plein:

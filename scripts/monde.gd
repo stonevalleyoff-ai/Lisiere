@@ -33,7 +33,8 @@ const OUBLI := 2300.0          # plus loin, un morceau est défait : on ne garde
 # la cueillette (par lieu de 4 200 pixels de côté) : les fleurs des prés (et ce que l'herbe du sol y ajoute), les champignons
 # des bois (sous un couvert humide), les mares et leurs plantes d'eau (ce que la boue y ajoute)
 const FLEURS := 20.0
-const FLEURS_HERBE := 160.0
+const FLEURS_HERBE := 140.0
+const SOL_NU := 35.0          # sur le sol nu (peu de couvert) : des groupes de plantes du sol en plus, de deux à quatre
 const CHAMPIGNONS := 130.0
 const EAUX := 10.0
 const EAUX_BOUE := 80.0
@@ -371,10 +372,16 @@ func lieu_de(type: String) -> Dictionary:
 	return L
 
 
-# les plantes d'un biome viennent d'arriver (son herbier se lit en approchant) : ce qu'on y sèmera désormais les porte
+# les plantes d'un biome viennent d'arriver (son herbier se lit en approchant) : ce qu'on y sèmera désormais les porte ; les
+# morceaux déjà faits de ce biome (une partie reprise loin du réveil, un pas plus vite que la lecture) l'ont été sans elles :
+# on les refait, avec ce qu'on y avait changé
 func flore_arrivee(type: String) -> void:
 	if _lieux.has(type):
 		_lieux[type]["flore"] = _flore_de(type, str(_lieux[type]["arbre"]))
+		for k in _morceaux.keys():
+			if _morceaux[k].get("types", {}).has(type):
+				_oublier(k)
+				_fabriquer(k)
 
 
 # la couleur d'une plante : la moyenne des verts de son dessin de l'herbier, rendu petit une fois (null : pas de dessin)
@@ -712,7 +719,7 @@ func _prevoir_cueillette(r: RandomNumberGenerator, plan: Array, rect: Rect2, typ
 	var froid := float(s["froid"])
 	var sec := float(s["sec"])
 	var terrain := not _terrain.is_empty()
-	var n := Decor._nombre(r, (FLEURS + FLEURS_HERBE * float(s["herbe"])) * (1.0 - froid * 0.8) * (1.0 - sec * 0.5) * ka)
+	var n := Decor._nombre(r, (FLEURS + FLEURS_HERBE * float(s["herbe"])) * (1.0 - froid * 0.8) * (1.0 - sec * 0.85) * ka)
 	var essais := n * 6
 	while n > 0 and essais > 0:
 		essais -= 1
@@ -752,6 +759,20 @@ func _prevoir_cueillette(r: RandomNumberGenerator, plan: Array, rect: Rect2, typ
 		if terrain and float(Decor.sol_ici(_terrain, s, q)["boue"]) < 0.5 and r.randf() > 0.3:
 			continue
 		plan.append(["eau", q, "feuilles", g, type])
+		n -= 1
+	# le sol nu : des plantes du sol en plus, par petits groupes de la même (un bouquet de lichens, une colonie de plantes grasses,
+	# des coussins serrés) ; c'est par elles que se lit un lieu sans arbres
+	n = Decor._nombre(r, SOL_NU * (1.0 - float(s["couvert"])) * ka)
+	essais = n * 4
+	while n > 0 and essais > 0:
+		essais -= 1
+		var q := Decor._dans(r, rect)
+		var g := r.randi() % 100000000
+		if q.length() < 170.0:
+			continue
+		# (des graines qui tirent la même plante : le même reste, modulo 10007)
+		for j in 2 + g % 3:
+			plan.append(["sol", q + Vector2(r.randf_range(-22.0, 22.0), r.randf_range(-12.0, 12.0)), "herbe", g + j * 10007, type])
 		n -= 1
 
 
@@ -804,6 +825,7 @@ func _fabriquer_(k: Vector2i) -> void:
 	var changes: Dictionary = _changes.get(nom, {})
 	var heure: float = float(jeu.horloge) if jeu != null and jeu.get("horloge") != null else 0.0
 	var liste: Array = []
+	var types := {}
 	var plan := _plan_m(k)
 	for i in plan.size():
 		var e: Array = plan[i]
@@ -817,16 +839,20 @@ func _fabriquer_(k: Vector2i) -> void:
 		if carte != null and str(e[0]) == "champignon" and carte.sous_terre(e[1]) < 0.6:
 			continue
 		var tons: Dictionary = ici["palette"] if carte != null else palette
+		types[str(e[4])] = true
 		var o = _poser(str(e[0]), e[1], tons[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), ici)
 		if o == null:
-			# (une place que l'herbier laisse vide : pas d'arbre sur la banquise)
+			# (une place que l'herbier laisse vide : une mare sans plante d'eau)
 			continue
 		if str(e[0]) == "herbe" and carte != null:
 			o.porter_herbe(str(e[4]))
 		o.set_meta("m", k)
 		o.set_meta("rang", i)
 		liste.append(o)
-		if typeof(c) == TYPE_ARRAY and c.size() >= 5:
+		if typeof(c) == TYPE_ARRAY and c.size() >= 5 and str(c[0]) != o.genre and not (str(c[0]) == "souche" and o.genre in ["arbre", "sapin"]):
+			# (ce qui a changé n'est plus ce qui pousse là : l'herbier est arrivé depuis, et la place porte une autre plante)
+			changes.erase(str(i))
+		elif typeof(c) == TYPE_ARRAY and c.size() >= 5:
 			# (ce qui repoussait a continué de repousser pendant qu'on était loin)
 			var reste_a_pousser := float(c[2])
 			if reste_a_pousser > 0.0:
@@ -862,7 +888,7 @@ func _fabriquer_(k: Vector2i) -> void:
 		Decor.exclure = Callable()
 	elif _racine != null and not _outils.is_empty():
 		noeuds = Decor.semer_dans(self, _calques, _terrain, _parts, palette, hash(Vector3i(_graine + 7, k.x, k.y)), _mobile, rect, _outils, liste)
-	_morceaux[k] = {"objets": liste, "noeuds": noeuds}
+	_morceaux[k] = {"objets": liste, "noeuds": noeuds, "types": types}
 
 
 # ce qu'on a changé dans un morceau (un arbre abattu ou brûlé, un buisson cueilli, un rocher entamé), noté pour le retrouver
