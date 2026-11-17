@@ -19,7 +19,7 @@ extends Node2D
 const P := preload("res://scripts/palette.gd")
 # (les tons de la veilleuse, scripts/veilleuse_corps.gd : sa peau, son cuir, son chanvre ; le harnais sort du même atelier)
 const CHANVRE := Color("9c9168")
-# (le filin : la fibre longue de l'agave, blonde, tirée de la braise pâle vers l'ivoire ; ses torons, d'un ton plus sombre)
+# (le filin : la fibre longue de l'agave, blonde, la braise pâle tirée d'un tiers vers la terre ; ses torons, plus sombres)
 const FILIN := Color("c9ad6e")
 const FILIN_TORON := Color("8c7546")
 const TAPIS := Color("8f8763")

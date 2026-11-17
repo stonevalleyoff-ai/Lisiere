@@ -784,7 +784,8 @@ func _process(delta: float) -> void:
 			B.onguent = maxf(B.onguent, 6.0)
 			jeu.joueur.sante = minf(jeu.joueur.sante, 70.0)
 		if _botanique.has("parfum"):
-			B.parfum = maxf(B.parfum, 6.0)
+			# (tout frais : elle sort de la fumée, l'odeur monte d'elle)
+			B.parfum = maxf(B.parfum, R.PARFUM - 5.0)
 	# (--compagne affolee : elle se débat au bout de sa longe, même de jour, pour qu'on voie le filin se tendre)
 	if _affolee != null and is_instance_valid(_affolee) and jeu.elevage.betes.has(_affolee) and _affolee.longe != null:
 		jeu.elevage._affoler(_affolee, delta)

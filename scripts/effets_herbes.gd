@@ -13,11 +13,14 @@ extends RefCounted
 #  - la voyance : chaque bête se devine dans le noir (un contour pâle, à la couleur de ses yeux), un fil de lueur part vers la
 #    tanière de la Noire ;
 #  - la fumée âcre d'un feu (la classe Fumee, que scripts/feu.gd monte le temps qu'elle dure) ; et, de la même classe, la
-#    fumée bleue des aromates jetés au feu (sorte « encens »), plus fine, qui monte plus haut et sent la résine.
+#    fumée bleue des aromates jetés au feu (sorte « encens »), plus fine, qui monte plus haut et sent la résine ;
+#  - l'odeur des aromates qu'elle garde sur elle, sortie de leur fumée : deux ou trois volutes bleues montent encore de ses
+#    épaules, de plus en plus rares.
 # Rien ici ne change une règle.
 
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/effets_textures.gd")
+const R := preload("res://scripts/regles.gd")
 const NAPPE := preload("res://shaders/fumee_nappe.gdshader")
 const COLONNE := preload("res://shaders/fumee_colonne.gdshader")
 const C_POISON := Color(0.45, 0.55, 0.17)
@@ -66,6 +69,7 @@ var _guet_dans := 0.0
 var _guet_n := 0
 var _avant := Vector2.INF
 var _calque: Node2D
+var _odeur: CPUParticles2D       # l'odeur des aromates, qui monte d'elle (créée la première fois qu'il le faut)
 var _mobile := false
 var _nuit := 0.0
 
@@ -106,6 +110,9 @@ func vider() -> void:
 	if _calque != null and is_instance_valid(_calque):
 		_calque.queue_free()
 	_calque = null
+	if _odeur != null and is_instance_valid(_odeur):
+		_odeur.queue_free()
+	_odeur = null
 
 
 # vrai quand l'image doit être lue (la passe d'écran, en qualité haute : scripts/effets_ecran.gd)
@@ -140,12 +147,61 @@ func maj(delta: float, nuit: float) -> Dictionary:
 	if j != null:
 		_hanter(delta, nuit, j)
 		_guetter(delta, j)
+		_sentir(B, j)
 	# la caméra : elle tangue avec le poison, plonge au haut-le-cœur ; la torpeur la fait pencher, très lentement
 	tangage = poison * (0.02 * sin(_t * 1.15) + 0.008 * pouls) + nausee * 0.02 + torpeur * 0.007 * sin(_t * 0.52)
 	derive = Vector2(sin(_t * 0.9) * 5.0, cos(_t * 0.7) * 3.0) * poison + Vector2(0.0, 9.0 * nausee + 5.0 * paupiere)
 	devie = poison * (0.34 * sin(_t * 1.7) + 0.2 * sin(_t * 0.63 + 1.3)) + nausee * 0.3 * sin(_t * 9.0)
 	return {"poison": poison, "pouls": clampf(pouls + 0.9 * nausee, 0.0, 1.4), "torpeur": torpeur, "paupiere": paupiere,
 		"flou": clampf(paupiere * 1.15 + torpeur * 0.22, 0.0, 1.0), "visions": visions, "voyance": voyance}
+
+
+# --- l'odeur des aromates ---
+
+# sortie de leur fumée, l'odeur gardée sur elle (scripts/botanique.gd, parfum) se voit : des volutes bleues montent de ses
+# épaules, quelques-unes, puis de plus en plus rares (une bouffée toutes les cinq secondes, jusqu'à ce qu'elle s'en aille).
+# Dans la fumée même, rien : elle y est déjà
+func _sentir(B, j) -> void:
+	var parfum: float = float(B.parfum) if B != null else 0.0
+	if parfum <= 0.0 or bool(j.morte):
+		if _odeur != null and is_instance_valid(_odeur):
+			_odeur.emitting = false
+		return
+	if _odeur == null or not is_instance_valid(_odeur):
+		_odeur = CPUParticles2D.new()
+		_odeur.amount = 3 if _mobile else 5
+		_odeur.lifetime = 3.0
+		_odeur.lifetime_randomness = 0.3
+		_odeur.texture = Fumee.bouffee()
+		_odeur.material = T.materiau(false, true)
+		_odeur.position = Vector2(0.0, -34.0)
+		# (par-dessus son manteau : ses calques sont ses enfants aussi)
+		_odeur.z_index = 1
+		_odeur.emission_shape = CPUParticles2D.EMISSION_SHAPE_SPHERE
+		_odeur.emission_sphere_radius = 5.0
+		_odeur.direction = Vector2(0, -1)
+		_odeur.spread = 30.0
+		_odeur.initial_velocity_min = 8.0
+		_odeur.initial_velocity_max = 14.0
+		_odeur.gravity = Vector2(0.0, -3.0)
+		_odeur.angle_min = 0.0
+		_odeur.angle_max = 360.0
+		_odeur.angular_velocity_min = -14.0
+		_odeur.angular_velocity_max = 14.0
+		_odeur.scale_amount_min = 0.14
+		_odeur.scale_amount_max = 0.24
+		_odeur.scale_amount_curve = T.courbe([[0.0, 0.5], [0.4, 1.0], [1.0, 1.7]])
+		# (un lavis bleu de lune, plus soutenu que la fumée du feu : il doit se lire sur le sable clair comme sur la terre)
+		var ton := P.LUNE.lerp(ENCENS, 0.45)
+		var clair := ton.lerp(P.IVOIRE, 0.35)
+		_odeur.color_ramp = T.rampe([[0.0, Color(ton, 0.0)], [0.18, Color(ton, 0.55)], [0.6, Color(clair, 0.32)], [1.0, Color(clair, 0.0)]])
+		# (l'odeur la suit : elle est sur elle)
+		_odeur.local_coords = true
+		j.add_child(_odeur)
+	var frais := clampf((parfum - (R.PARFUM - 30.0)) / 30.0, 0.0, 1.0)
+	var dedans: bool = B.dans_l_encens(j.position) > 0.3
+	_odeur.emitting = not dedans and (frais > 0.0 or fmod(_t, 5.0) < 0.7)
+	_odeur.gravity = Vector2(float(jeu.vent()) * 8.0 if jeu != null and jeu.has_method("vent") else 0.0, -3.0)
 
 
 # --- le poison ---
