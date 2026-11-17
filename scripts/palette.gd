@@ -33,6 +33,7 @@ const VISAGE := Color("dccdb3")
 
 # ce qui se lit : la peur, les échos, les yeux
 const PEUR := Color("8a6fd6")
+const FAIM := Color("9a7a43")            # la faim : un ocre de poussière, le monde qui se fane (scripts/effets.gd)
 const ECHO := Color("bfe3ff")
 const OEIL_CHASSEUR := Color("ffc252")
 const OEIL_PROIE := Color("b8e6ff")

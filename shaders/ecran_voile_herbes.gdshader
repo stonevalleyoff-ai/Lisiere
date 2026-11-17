@@ -1,6 +1,7 @@
 // Lisière — le voile de l'écran, avec ce que les herbes font voir (shaders/ecran_voile_herbes.gdshader)
 // Le voile de toujours (shaders/ecran_voile.gdshader : la nuit, la vignette, la morsure, le givre, la fournaise, l'aube, l'écho,
-// la fin, le grain), et dans le même passage, sans lire l'image : le poison (un vert malade qui gagne par les bords, en veines
+// la fin, le grain ; et le corps qui faiblit : la faim qui fane le monde par les bords, ses crampes, la santé qui s'en va, au
+// bord rouge qui bat avec un cœur lourd), et dans le même passage, sans lire l'image : le poison (un vert malade qui gagne par les bords, en veines
 // qui battent avec le cœur), la torpeur (les paupières : deux pans d'ombre, frangés de cils, qui se ferment), les visions (les
 // couleurs glissent au bord de l'œil), la voyance (le noir s'ouvre, froid et bleu, dans un iris de givre). Les herbes à zéro,
 // l'image est celle du voile de toujours, au même prix. Alpha prémultiplié : il peut assombrir et éclairer.
@@ -17,6 +18,11 @@ uniform float blessure = 0.0;
 uniform float froid = 0.0;
 uniform float givre = 0.0;
 uniform float fournaise = 0.0;
+// le corps qui faiblit (scripts/effets.gd, _le_corps) : la faim, une crampe (de 1 à 0), la santé qui s'en va, un coup du cœur lourd
+uniform float faim = 0.0;
+uniform float crampe = 0.0;
+uniform float agonie = 0.0;
+uniform float lourd = 0.0;
 uniform float aube = 0.0;
 uniform float echo = 0.0;
 uniform float fin = 0.0;
@@ -33,6 +39,7 @@ uniform vec4 encre : source_color = vec4(0.04, 0.05, 0.094, 1.0);
 uniform vec4 ombre : source_color = vec4(0.1, 0.14, 0.25, 1.0);
 uniform vec4 sang : source_color = vec4(0.48, 0.11, 0.11, 1.0);
 uniform vec4 c_peur : source_color = vec4(0.54, 0.44, 0.84, 1.0);
+uniform vec4 c_faim : source_color = vec4(0.6, 0.48, 0.26, 1.0);
 uniform vec4 c_froid : source_color = vec4(0.44, 0.53, 0.72, 1.0);
 uniform vec4 c_givre : source_color = vec4(0.8, 0.89, 0.97, 1.0);
 uniform vec4 c_braise : source_color = vec4(0.93, 0.44, 0.15, 1.0);
@@ -64,6 +71,31 @@ void fragment() {
 	float ouvre = mix(0.58, 0.16, peur) - coeur * 0.12 + voyance * 0.22;
 	float vi = smoothstep(ouvre, ouvre + 0.9, re);
 	v = sur(v, encre.rgb, clamp(vi * (0.32 + 0.5 * peur + 0.12 * coeur) * (1.0 - 0.45 * voyance), 0.0, 0.92));
+	if (faim > 0.01) {
+		// la faim : le monde se fane, et par les bords un creux d'ocre sombre se resserre, en taches lentes ; il respire comme un
+		// ventre vide (lentement, pour que l'œil le voie bouger) ; une crampe le serre d'un coup et l'assombrit, puis il se relâche.
+		// Sans la passe qui lit l'image, un lavis gris-jaune éteint les couleurs à sa place
+		float n = texture(bruit, UV * vec2(ratio, 1.0) * 0.8 + vec2(TIME * 0.006, 0.0)).r * 0.7 + texture(bruit, UV * vec2(ratio, 1.0) * 2.6).r * 0.3;
+		float respire = 0.5 + 0.5 * sin(TIME * 2.1);
+		float d = re + (n - 0.5) * 0.5 - mix(1.08, 0.5, faim) + (0.05 * respire + 0.26 * crampe) * faim;
+		float bord = smoothstep(0.0, 0.38, d);
+		v = sur(v, vec3(0.42, 0.37, 0.25), faim * 0.28 * seul);
+		v = sur(v, c_faim.rgb * 0.2, faim * 0.07);
+		v = sur(v, mix(encre.rgb, c_faim.rgb, 0.38 + 0.3 * n - 0.12 * seul), clamp(bord * (0.5 + 0.42 * faim + 0.08 * seul), 0.0, 0.92));
+		// (au ras du creux, un liseré d'ocre clair : on voit où il s'arrête)
+		v.rgb += c_faim.rgb * (1.0 - abs(d * 6.0 - 0.6)) * step(0.0, d) * step(d, 0.2) * 0.16 * faim * (1.0 - v.a * 0.5);
+		v = sur(v, encre.rgb * 0.7, clamp(crampe * (0.28 + 0.45 * smoothstep(0.1, 1.0, re)), 0.0, 0.68));
+	}
+	if (agonie > 0.01) {
+		// la santé s'en va : le monde s'éloigne dans le noir, le bord rougit et se resserre à chaque coup du cœur lourd
+		float n = texture(bruit, UV * vec2(ratio, 1.0) * 0.7 + vec2(0.0, TIME * 0.004)).r;
+		float d = re + (n - 0.5) * 0.42 - mix(1.02, 0.46, agonie) + lourd * 0.13 * (0.4 + 0.6 * agonie);
+		float bord = smoothstep(0.0, 0.42, d);
+		v = sur(v, encre.rgb, clamp(agonie * (0.14 + 0.3 * smoothstep(0.25, 1.1, re)), 0.0, 0.48));
+		v = sur(v, vec3(0.42), agonie * 0.14 * seul);
+		v = sur(v, sang.rgb * (0.75 + 0.45 * n + 0.45 * lourd), clamp(bord * (0.5 + 0.4 * agonie + 0.2 * lourd), 0.0, 0.94));
+		v = sur(v, sang.rgb * 0.8, lourd * agonie * 0.14);
+	}
 	if (blessure > 0.01) {
 		float n = texture(bruit, UV * vec2(ratio, 1.0) * 0.9).r;
 		// (un bord net, mangé par le bruit : de l'encre, pas un nuage ; il gagne vers le centre au plus fort de la morsure)
@@ -82,9 +114,9 @@ void fragment() {
 	if (fournaise > 0.01) {
 		// la chaleur accable, ou elle brûle : les bords rougeoient et montent comme une flamme
 		float n = texture(bruit, UV * vec2(ratio, 1.0) * 1.1 + vec2(0.0, TIME * 0.4)).r;
-		float bord = smoothstep(0.0, 0.32, re + (n - 0.5) * 0.5 - mix(1.16, 0.84, fournaise));
-		v = sur(v, c_braise.rgb * 0.8, fournaise * 0.08);
-		v = sur(v, c_braise.rgb * (0.5 + 0.5 * n), clamp(bord * (0.2 + 0.42 * fournaise), 0.0, 0.7));
+		float bord = smoothstep(0.0, 0.26, re + (n - 0.5) * 0.5 - mix(1.12, 0.72, fournaise));
+		v = sur(v, c_braise.rgb * 0.8, fournaise * 0.1);
+		v = sur(v, c_braise.rgb * (0.5 + 0.5 * n), clamp(bord * (0.28 + 0.5 * fournaise), 0.0, 0.78));
 	}
 	if (poison > 0.01) {
 		// le poison : le vert malade gagne par les bords, en veines qui rampent vers le centre (le bruit, étiré le long du rayon,
