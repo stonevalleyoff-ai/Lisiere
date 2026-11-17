@@ -869,6 +869,9 @@ func _le_lance_pierre(F: Dictionary) -> void:
 	guet.conduite = false
 	guet.pv = 500.0
 	guet.pv_max = 500.0
+	# (un traqueur entier : la première nuit, sa traque est rabattue de moitié, et il pourrait alors, une fois sur huit, fuir
+	# au lieu de changer de poste ; ce n'est pas ce qu'on regarde ici)
+	guet.traque = 1.0
 	guet._poste_feu = guet
 	guet._af = guet.Affut.POSTE
 	var Af = guet.Affut
