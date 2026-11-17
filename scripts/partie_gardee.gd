@@ -7,6 +7,8 @@ extends RefCounted
 # l'a laissé (les arbres abattus ou brûlés, les rochers entamés, les buissons qui
 # repoussent, les brindilles ramassées ou tombées) ; ce qu'on a croisé et chassé, et les bêtes tuées dont les échos reviennent ;
 # le numéro de la partie au tableau des scores. Les bêtes, elles, reviennent d'elles-mêmes. À la fin d'une partie, elle s'efface.
+# Connectée, elle part aussi sur le compte StoneValley (scripts/session.gd, garder_partie), avec un résumé pour le portail ; à
+# l'écran-titre, la plus récente des deux se reprend (compte_plus_recent).
 
 const Feu := preload("res://scripts/feu.gd")
 const FICHIER := "user://partie.json"
@@ -17,9 +19,30 @@ static func lire() -> Dictionary:
 	if not FileAccess.file_exists(FICHIER):
 		return {}
 	var d = JSON.parse_string(FileAccess.get_file_as_string(FICHIER))
-	if typeof(d) != TYPE_DICTIONARY or int(d.get("v", 0)) != VERSION or str(d.get("biome", "")) == "":
-		return {}
-	return d
+	return d if valide(d) else {}
+
+
+# une partie gardée que ce jeu sait reprendre
+static func valide(d) -> bool:
+	return typeof(d) == TYPE_DICTIONARY and int(d.get("v", 0)) == VERSION and str(d.get("biome", "")) != ""
+
+
+# celle du compte se reprend-elle plutôt que celle de l'appareil ? Oui si elle est plus récente, ou s'il n'y en a pas ici
+static func compte_plus_recent(appareil: Dictionary, compte) -> bool:
+	if not valide(compte):
+		return false
+	return appareil.is_empty() or int(compte.get("quand", 0)) > int(appareil.get("quand", 0))
+
+
+# ce que le portail montre de la partie en cours (le résumé gardé avec elle sur le compte)
+static func resume_portail(jeu) -> Dictionary:
+	var biomes := {}
+	if jeu.get("carte") != null:
+		for k in jeu.decouvertes:
+			biomes[jeu.carte.regions[k]["type"]] = true
+	return {"nom": "Le monde d'Orvane" if jeu.ouvert else str(jeu.biome_info.get("nom", jeu.biome)), "lieu": str(jeu.biome_info.get("nom", jeu.biome)),
+		"jour": int(jeu.jour), "nuits": int(jeu.nuits), "saison": str(jeu.saison), "regions": jeu.decouvertes.size(), "biomes": biomes.size(),
+		"croisees": int(jeu.croisees), "chassees": int(jeu.chassees), "sante": int(round(float(jeu.joueur.sante))), "quand": int(Time.get_unix_time_from_system())}
 
 
 static func effacer() -> void:

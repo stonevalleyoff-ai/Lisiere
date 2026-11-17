@@ -124,6 +124,8 @@ var session
 # la graine du lieu (il se sème d'après elle) ; le numéro de la partie au tableau des scores ("" : elle n'y est pas)
 var graine := 0
 var partie_id := ""
+var _reprise_compte := {}       # la partie du compte, plus récente que celle de l'appareil : c'est elle que « Reprendre » reprend
+var _rev_compte := -1           # la révision de la partie du compte, lue à l'écran-titre (-1 : pas lue ; 0 : il n'y en a pas)
 var _garde_ms := 0
 var _directeur := 0.0
 var _vague := 0.0
@@ -170,6 +172,9 @@ func _ready() -> void:
 	# le compte, le même que celui de Stone Valley (scripts/session.gd) : facultatif, la partie se joue pareil
 	session = Session.new()
 	add_child(session)
+	# (connectée ou déconnectée à l'écran-titre : la partie du compte se relit ; un autre appareil a continué : on le dit)
+	session.change.connect(_compte_change)
+	session.partie_en_conflit.connect(_partie_en_conflit)
 	ui = Interface.new()
 	add_child(ui)
 	ui.relier_session(session)
@@ -336,6 +341,7 @@ func _titre() -> void:
 	ui.montrer_reprise(PartieGardee.lire() if essai == null else {})
 	sons.titre()
 	au_titre = true
+	_reprise_du_compte()
 	if session != null and essai == null:
 		session.renvoyer_attente()
 	if OS.has_feature("web") and essai == null:
@@ -482,13 +488,48 @@ func _dessiner_la_faune(laquelle: Dictionary = {}, entre: float = 0.0) -> void:
 				debut = Time.get_ticks_msec()
 
 
-# la partie gardée sur l'appareil, reprise là où on l'avait laissée (scripts/partie_gardee.gd)
+# la partie gardée, reprise là où on l'avait laissée (scripts/partie_gardee.gd) : celle de l'appareil, ou celle du compte si
+# elle est plus récente
 func reprendre() -> void:
-	var d := PartieGardee.lire()
+	var d := _reprise_compte if not _reprise_compte.is_empty() else PartieGardee.lire()
 	if d.is_empty():
 		ui.message_titre("Il n'y a plus de partie à reprendre.")
 		return
+	if session != null:
+		session.partie_reprise(_rev_compte)
 	await _commencer(str(d["biome"]), d)
+
+
+func _compte_change() -> void:
+	if au_titre and essai == null:
+		_reprise_du_compte()
+
+
+func _partie_en_conflit() -> void:
+	if en_partie:
+		ui.message("Cette partie a continué sur un autre appareil : d'ici, elle n'est plus gardée sur ton compte. Elle reste sur cet appareil.",
+			Color(0.95, 0.75, 0.45))
+
+
+# à l'écran-titre : la partie gardée sur le compte (connectée). Plus récente que celle de l'appareil, c'est elle que « Reprendre »
+# propose : on continue d'un autre appareil. Un effacement qui attendait le réseau part d'abord.
+func _reprise_du_compte() -> void:
+	_reprise_compte = {}
+	_rev_compte = -1
+	var ici := PartieGardee.lire() if essai == null else {}
+	ui.montrer_reprise(ici)
+	if essai != null or session == null or not session.connecte():
+		return
+	await session.renvoyer_oubli()
+	var r: Dictionary = await session.partie_du_compte()
+	if not au_titre or not bool(r.get("lu", false)) or not session.connecte():
+		return
+	var p = r.get("partie")
+	_rev_compte = int(p.get("rev", 0)) if typeof(p) == TYPE_DICTIONARY else 0
+	if typeof(p) == TYPE_DICTIONARY and PartieGardee.compte_plus_recent(ici, p.get("donnees")):
+		_reprise_compte = p["donnees"]
+		ui.montrer_reprise(_reprise_compte)
+		ui.dire_titre("Ta partie te suit : la plus récente est sur ton compte.")
 
 
 # sur un téléphone, les sons se fabriquent avant la partie (sons.gd, mobile) : pendant qu'on joue, ils figeraient l'image
@@ -635,6 +676,9 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	atelier.semer_vestiges()
 	if essai == null:
 		PartieGardee.effacer()
+		# (une partie nouvelle : elle remplacera celle du compte)
+		if session != null:
+			session.partie_commence()
 		_ouvrir_au_tableau()
 	ui.message("Tu t'éveilles à la lisière : %s, %s. Le jour baisse vite." % [str(biome_info.get("nom", biome)), saison])
 	if donnees.memoire_forcee != "":
@@ -826,7 +870,7 @@ func _process(delta: float) -> void:
 	_regler_image(delta)
 	# (toutes les vingt secondes, à l'horloge de l'appareil : sur un téléphone qui rame, le temps du jeu avance moins vite)
 	if Time.get_ticks_msec() - _garde_ms >= 20000:
-		_garder()
+		_garder(false)
 	if _mort >= 0.0:
 		# (elle est tombée : le monde continue un instant sans elle, puis l'écran de fin)
 		_mort += delta
@@ -1703,6 +1747,9 @@ func _fin() -> void:
 	_sauver()
 	if essai == null:
 		PartieGardee.effacer()
+		# (la partie est finie : elle s'efface du compte aussi)
+		if session != null:
+			session.oublier_partie()
 	var nr := 0
 	var np := 0
 	for k in rencontres:
@@ -1977,12 +2024,18 @@ func _lire_biome(type: String) -> void:
 
 # --- la partie gardée, le tableau des scores ---
 
-# la partie en cours, sur l'appareil (scripts/partie_gardee.gd) ; l'essai et la vitrine ne gardent rien
-func _garder() -> void:
+# la partie en cours, sur l'appareil (scripts/partie_gardee.gd) ; connectée, sur le compte aussi (scripts/session.gd) : au plus
+# une fois par minute pendant qu'on joue, tout de suite sinon (vite : la pause, l'application derrière une autre, le retour au
+# titre). L'essai et la vitrine ne gardent rien
+func _garder(vite: bool = true) -> void:
 	_garde_ms = Time.get_ticks_msec()
 	if essai != null or not en_partie or _mort >= 0.0 or joueur == null or monde == null:
 		return
-	PartieGardee.ecrire(self)
+	var d := PartieGardee.photo(self)
+	PartieGardee.ecrire_donnees(d)
+	if session != null and session.connecte() and session.envoi_possible(vite):
+		# (une copie : la partie peut changer, ou s'en aller, avant que l'envoi ne parte)
+		session.garder_partie(d.duplicate(true), PartieGardee.resume_portail(self), vite)
 
 
 # l'application passe derrière une autre, la fenêtre perd la main, on la ferme : la partie se met en pause, et se garde

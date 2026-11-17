@@ -573,6 +573,7 @@ func _lancer() -> void:
 	_le_jardin_et_les_betes(F)
 	_la_botanique(F)
 	await _la_carte()
+	await _la_partie_sur_le_compte()
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -1363,6 +1364,116 @@ func _la_carte() -> void:
 	Rp.vus = garde["vus"]
 	jeu.noire.taniere_connue = garde["connue"]
 	jeu.horloge = garde["h"]
+
+
+# la partie sur le compte (scripts/session.gd, outils/sauvegarde.sql), contre un faux service (outils/faux-compte.js, lancé ici
+# si node est là ; ou celui que donne LISIERE_SERVICE) : rien ne part sans compte ; connectée, la partie part (une partie nouvelle,
+# puis la suite, au plus une fois par minute sauf « vite ») ; un autre appareil qui n'a pas lu la dernière révision ne l'écrase
+# pas (conflit) ; celui qui l'a lue continue ; la plus récente se reprend ; une partie finie s'efface, et sans réseau cela attend
+func _la_partie_sur_le_compte() -> void:
+	print("La partie sur le compte")
+	var S = jeu.session
+	var garde := {"url": S.url, "jeton": S.jeton, "renouveau": S.renouveau, "expire": S.expire, "uid": S.uid, "email": S.email, "app": S._appareil}
+	var pid := -1
+	var service := OS.get_environment("LISIERE_SERVICE")
+	if service == "":
+		pid = OS.create_process("node", [ProjectSettings.globalize_path("res://outils/faux-compte.js"), "8139"])
+		if pid <= 0:
+			print("  (node manque : la partie sur le compte n'est pas essayée)")
+			return
+		service = "http://127.0.0.1:8139"
+	S.url = service
+	var pret := false
+	for i in 300:
+		var r0: Dictionary = await S._http(service + "/__etat", null, HTTPClient.METHOD_GET, "")
+		if r0["ok"]:
+			pret = true
+			break
+		await get_tree().process_frame
+	if not pret:
+		print("  (le faux service ne répond pas : la partie sur le compte n'est pas essayée)")
+		S.url = garde["url"]
+		if pid > 0:
+			OS.kill(pid)
+		return
+	await S._http(service + "/__vider", {}, HTTPClient.METHOD_POST, "")
+	var conflits := [0]
+	var compter := func(): conflits[0] += 1
+	S.partie_en_conflit.connect(compter)
+	S.jeton = ""
+	S.uid = ""
+	var sans_compte: bool = not S.envoi_possible(true)
+	var connexion: Dictionary = await S.connexion("ada@exemple.fr", "bon")
+	var d: Dictionary = load("res://scripts/partie_gardee.gd").photo(jeu)
+	var resume: Dictionary = load("res://scripts/partie_gardee.gd").resume_portail(jeu)
+	var PG = load("res://scripts/partie_gardee.gd")
+
+	# une partie nouvelle, puis la suite ; pas deux envois dans la minute, sauf « vite »
+	S.partie_commence()
+	var r1: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var attend: bool = not S.envoi_possible(false) and S.envoi_possible(true)
+	var r2: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var etat: Dictionary = (await S._http(service + "/__etat", null, HTTPClient.METHOD_GET, ""))["donnees"]
+	var gardee: Dictionary = etat.get("u-ada", {})
+	verif(sans_compte and connexion["ok"] and S.connecte() and r1["ok"] and int(r1["donnees"]["rev"]) == 1 and attend and r2["ok"] and S.rev_partie == 2
+		and int(gardee.get("rev", 0)) == 2 and int(gardee["donnees"]["jour"]) == int(jeu.jour) and str(gardee["resume"].get("nom", "")) != ""
+		and int(gardee["resume"].get("jour", 0)) == int(jeu.jour) and gardee["resume"].has("nuits") and gardee["resume"].has("regions"),
+		"sans compte, rien ne part ; connectée, la partie part sur le compte (révision %d), avec son résumé pour le portail (« %s, jour %d ») ; pas deux fois dans la minute, sauf à la pause" % [
+		S.rev_partie, str(gardee.get("resume", {}).get("nom", "")), int(gardee.get("resume", {}).get("jour", 0))])
+
+	# un autre appareil, qui n'a pas lu la dernière révision : il n'écrase pas ; celui qui l'a lue continue
+	var ici: String = S.appareil()
+	S._appareil = "autre-appareil"
+	S.partie_reprise(-1)
+	var r3: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var bloque: bool = str(r3.get("erreur", "")) == "conflit" and S.en_conflit and conflits[0] == 1 and not S.envoi_possible(true)
+	S.partie_reprise(2)
+	var d2: Dictionary = d.duplicate(true)
+	d2["jour"] = int(jeu.jour) + 1
+	d2["quand"] = int(d["quand"]) + 100
+	var r4: Dictionary = await S.garder_partie(d2, resume, true)
+	S._appareil = ici
+	S.partie_reprise(2)
+	var r5: Dictionary = await S.garder_partie(d.duplicate(true), resume, true)
+	var lue: Dictionary = await S.partie_du_compte()
+	var p = lue.get("partie")
+	var reprend: bool = (typeof(p) == TYPE_DICTIONARY and int(p["rev"]) == 3 and PG.compte_plus_recent(d, p["donnees"]) and PG.compte_plus_recent({}, p["donnees"])
+		and not PG.compte_plus_recent(d2.merged({"quand": int(d2["quand"]) + 1}, true), p["donnees"]) and not PG.compte_plus_recent(d, {"v": 99}))
+	verif(bloque and r4["ok"] and int(r4["donnees"]["rev"]) == 3 and str(r5.get("erreur", "")) == "conflit" and reprend and conflits[0] == 2,
+		"un autre appareil qui n'a pas lu la dernière révision n'écrase pas la partie (conflit, c'est dit) ; celui qui l'a lue continue (jour %d) ; à l'écran-titre, la plus récente se reprend" % int(d2["jour"]))
+
+	# une partie finie s'efface du compte ; sans réseau, l'effacement attend, puis part
+	S.partie_reprise(3)
+	S._appareil = "autre-appareil"
+	await S.oublier_partie()
+	var effacee: bool = (await S.partie_du_compte()).get("partie") == null
+	S.partie_commence()
+	await S.garder_partie(d.duplicate(true), resume, true)
+	S.url = "http://127.0.0.1:9"
+	await S.oublier_partie()
+	var en_attente: bool = FileAccess.file_exists(S.OUBLI)
+	S.url = service
+	var encore: bool = (await S.partie_du_compte()).get("partie") != null
+	await S.renvoyer_oubli()
+	var partie_apres = (await S.partie_du_compte()).get("partie")
+	verif(effacee and en_attente and encore and partie_apres == null and not FileAccess.file_exists(S.OUBLI),
+		"une partie finie s'efface du compte ; sans réseau, l'effacement attend sur l'appareil, et part à l'écran-titre")
+
+	# (tout remis comme avant)
+	S.partie_en_conflit.disconnect(compter)
+	S.url = garde["url"]
+	S.jeton = garde["jeton"]
+	S.renouveau = garde["renouveau"]
+	S.expire = garde["expire"]
+	S.uid = garde["uid"]
+	S.email = garde["email"]
+	S._appareil = garde["app"]
+	S.rev_partie = -1
+	S.partie_nouvelle = false
+	S.en_conflit = false
+	S._ecrire()
+	if pid > 0:
+		OS.kill(pid)
 
 
 # la botanique (scripts/botanique.gd) : les herbes, leurs vertus cachées, ce qu'on en apprend, ce qu'on en prépare

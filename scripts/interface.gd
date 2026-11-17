@@ -292,6 +292,11 @@ func montrer_titre(lieux: Array, infos: String, record: int) -> void:
 	_dire_compte()
 
 
+# une ligne sous le choix du monde, à l'écran-titre (sans rien d'autre : la partie du compte, retrouvée)
+func dire_titre(t: String) -> void:
+	_etat_titre.text = t
+
+
 func message_titre(t: String) -> void:
 	_montrer(_titre)
 	_etat_titre.text = t
