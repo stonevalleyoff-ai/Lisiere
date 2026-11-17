@@ -7,7 +7,9 @@ extends Node2D
 #    sans personne au bout, elle est nouée court et pend sous le menton ; en selle, ce sont les rênes ;
 #  - les sacoches : deux poches de peau de part et d'autre du dos (celle de l'autre flanc dépasse derrière l'échine), leur
 #    rabat, leur bouton d'os, une sangle sous le ventre ; elles ballottent au pas ;
-#  - la selle : de peau, sur un tapis de chanvre à liseré rouille, sa sangle et sa boucle, un étrier de corde à marche de bois.
+#  - la selle : de peau, sur un tapis de chanvre à liseré rouille, sa sangle et sa boucle, un étrier de corde à marche de bois ;
+#  - la longe de filin (scripts/elevage.gd : harnais « longe ») : à la place de la longe de chanvre, un filin blond de fibre
+#    longue, plus gros, dont on voit tourner les torons ; noué court sous le menton, son bout a une surliure sombre.
 # Rien n'est écrit pour une espèce : la ligne du dos, celle du ventre, le museau, la nuque se lisent sur le dessin de la
 # bête (l'image de son corps, celle de sa tête), une fois. Chaque pièce est dessinée une seule fois, dans un calque qui
 # suit le corps (ou la tête) comme ses images le suivent : seule la longe se redessine, quand un de ses bouts bouge.
@@ -17,6 +19,9 @@ extends Node2D
 const P := preload("res://scripts/palette.gd")
 # (les tons de la veilleuse, scripts/veilleuse_corps.gd : sa peau, son cuir, son chanvre ; le harnais sort du même atelier)
 const CHANVRE := Color("9c9168")
+# (le filin : la fibre longue de l'agave, blonde, tirée de la braise pâle vers l'ivoire ; ses torons, d'un ton plus sombre)
+const FILIN := Color("c9ad6e")
+const FILIN_TORON := Color("8c7546")
 const TAPIS := Color("8f8763")
 const TAPIS_OMBRE := Color("6a6348")
 const PEAU := Color("8a6038")
@@ -78,6 +83,7 @@ var _long := 80.0
 var _fleche := 0.0
 var _graine := 0.0
 var _cavaliere = null
+var _filin := false              # sa longe est de filin (elle se dessine blonde, plus grosse, ses torons visibles)
 
 
 # --- la pose : une fois, sur la bête montée (son squelette, ses images) ---
@@ -255,7 +261,7 @@ func suivre() -> void:
 	var licol := bool(h.get("licol", false))
 	var selle := bool(h.get("selle", false))
 	var sacoche := bool(h.get("sacoche", false))
-	var cle := (1 if licol else 0) + (2 if selle else 0) + (4 if sacoche else 0)
+	var cle := (1 if licol else 0) + (2 if selle else 0) + (4 if sacoche else 0) + (8 if bool(h.get("longe", false)) else 0)
 	if cle != _porte:
 		_porte = cle
 		_poser(licol, selle, sacoche)
@@ -318,8 +324,9 @@ func suivre() -> void:
 	var avant := _fleche
 	_fleche = lerpf(_fleche, fleche, 1.0 - exp(-dt * 7.0)) if corde == _corde else fleche
 	if corde != _corde or cav != null or cav != _cavaliere or absf(_fleche - avant) > 0.02 or absf(_bal_v) > 0.03 \
-			or ici.distance_squared_to(_ca) > 0.01 or but.distance_squared_to(_cb) > 0.01:
+			or ici.distance_squared_to(_ca) > 0.01 or but.distance_squared_to(_cb) > 0.01 or bool(h.get("longe", false)) != _filin:
 		_corde = corde
+		_filin = bool(h.get("longe", false))
 		_cavaliere = cav
 		_ca = ici
 		_cb = but
@@ -498,8 +505,15 @@ func _peindre_licol(c: CanvasItem) -> void:
 # la longe nouée court : une boucle et son bout, sous l'anneau (elle tourne : _bout.rotation)
 func _peindre_bout(c: CanvasItem) -> void:
 	var w := _w
-	_brin(c, PackedVector2Array([Vector2(0.0, 0.8) * w, Vector2(1.2, 2.6) * w, Vector2(0.2, 4.6) * w, Vector2(-1.0, 2.8) * w, Vector2(0.0, 1.0) * w]), w * 0.8)
-	_brin(c, PackedVector2Array([Vector2(0.0, 1.2) * w, Vector2(0.5, 4.2) * w, Vector2(-0.2, 6.8) * w]), w * 0.8)
+	var filin: bool = bete != null and bool(bete.harnais.get("longe", false))
+	var ton := FILIN if filin else CHANVRE
+	var e := w * (1.0 if filin else 0.8)
+	_brin(c, PackedVector2Array([Vector2(0.0, 0.8) * w, Vector2(1.2, 2.6) * w, Vector2(0.2, 4.6) * w, Vector2(-1.0, 2.8) * w, Vector2(0.0, 1.0) * w]), e, ton)
+	_brin(c, PackedVector2Array([Vector2(0.0, 1.2) * w, Vector2(0.5, 4.2) * w, Vector2(-0.2, 7.4 if filin else 6.8) * w]), e, ton)
+	if filin:
+		# (son bout surlié : trois tours de fil sombre, pour qu'il ne s'effiloche pas)
+		var bout := Vector2(-0.1, 6.0) * w
+		c.draw_line(bout + Vector2(-0.9, 0.0) * w, bout + Vector2(0.9, -0.2) * w, FILIN_TORON.darkened(0.3), 0.9 * w, true)
 
 
 # la longe (les rênes), et celle qui la monte
@@ -540,4 +554,12 @@ func _draw() -> void:
 			ombre.clear()
 	if ombre.size() > 1:
 		draw_polyline(ombre, Color(0, 0, 0, 0.12), 1.5, true)
-	_brin(self, pts, _w * (0.85 if libre else 0.75))
+	if _filin and libre:
+		# (la longe de filin : plus grosse, blonde ; ses torons tournent en biais, un sur deux points)
+		_brin(self, pts, _w * 1.05, FILIN)
+		for i in range(1, pts.size() - 1, 2):
+			var sens := (pts[i + 1] - pts[i - 1]).normalized()
+			var t := sens.orthogonal() * 0.42 * _w
+			draw_line(pts[i] - t - sens * 0.5 * _w, pts[i] + t + sens * 0.5 * _w, FILIN_TORON, 0.45 * _w, true)
+	else:
+		_brin(self, pts, _w * (0.85 if libre else 0.75))

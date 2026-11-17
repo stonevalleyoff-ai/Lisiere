@@ -12,7 +12,8 @@ extends RefCounted
 #    pâle d'une proie : on apprend à ne pas les croire), et des guetteurs au bord de l'écran, toujours dans son dos ;
 #  - la voyance : chaque bête se devine dans le noir (un contour pâle, à la couleur de ses yeux), un fil de lueur part vers la
 #    tanière de la Noire ;
-#  - la fumée âcre d'un feu (la classe Fumee, que scripts/feu.gd monte le temps qu'elle dure).
+#  - la fumée âcre d'un feu (la classe Fumee, que scripts/feu.gd monte le temps qu'elle dure) ; et, de la même classe, la
+#    fumée bleue des aromates jetés au feu (sorte « encens »), plus fine, qui monte plus haut et sent la résine.
 # Rien ici ne change une règle.
 
 const P := preload("res://scripts/palette.gd")
@@ -23,6 +24,9 @@ const C_POISON := Color(0.45, 0.55, 0.17)
 const C_VOYANCE := Color(0.53, 0.72, 0.95)
 const OCRE := Color(0.69, 0.5, 0.25)
 const OCRE_SOMBRE := Color(0.3, 0.23, 0.15)
+# (la fumée des aromates : la lune et l'ivoire, un souffle de mousse ; son ombre, le bleu de la nuit vers la mousse)
+const ENCENS := Color(0.59, 0.62, 0.64)
+const ENCENS_SOMBRE := Color(0.18, 0.24, 0.24)
 const MACHE := 1.0               # secondes : tant qu'elle mâche (le geste « gouter »), rien ne l'a encore prise
 const NAUSEE := 1.15             # secondes : un haut-le-cœur
 const SOUPIR := 2.0              # secondes : le poison la quitte, elle se redresse et souffle
@@ -525,9 +529,15 @@ class Guetteurs extends Node2D:
 # des bouffées qui s'en détachent et dérivent ; des escarbilles ; et au sol, sous tout ce qui se tient debout, la nappe qui
 # s'étale jusqu'où les chasseurs sont tenus (shaders/fumee_nappe.gdshader). Elle prend en une seconde, s'étale en quatre,
 # s'éteint avec « force ».
+# Des aromates dans un feu (sorte « encens » : scripts/botanique.gd, encens_de) : la même, en bleu-gris de lune ; une colonne
+# plus fine qui monte plus haut, des volutes qui tournent lentement, quelques brins qui crépitent, et la nappe jusqu'au bord de
+# la lumière du feu.
 class Fumee extends Node2D:
 	const LARGE := 220.0
 	const HAUTE := 200.0
+	var sorte := "acre"           # « acre », « encens » (à dire avant poser)
+	var _ton := OCRE
+	var _ton_sombre := OCRE_SOMBRE
 	var _colonne: Sprite2D
 	var _nappe: Sprite2D
 	var _bouffees: CPUParticles2D
@@ -558,10 +568,16 @@ class Fumee extends Node2D:
 
 	func poser(sol: Node2D, mobile: bool, graine: int) -> void:
 		var g := float(graine % 1000) * 0.137
+		var encens := sorte == "encens"
+		if encens:
+			_ton = ENCENS
+			_ton_sombre = ENCENS_SOMBRE
+		# (l'encens : plus fin, plus haut)
+		var taille := Vector2(LARGE * 0.62, HAUTE * 1.2) if encens else Vector2(LARGE, HAUTE)
 		_colonne = Sprite2D.new()
 		_colonne.texture = T.blanc()
-		_colonne.scale = Vector2(LARGE, HAUTE) / 4.0
-		_colonne.position = Vector2(0.0, -HAUTE * 0.5 - 6.0)
+		_colonne.scale = taille / 4.0
+		_colonne.position = Vector2(0.0, -taille.y * 0.5 - 6.0)
 		_colonne.material = _materiau(COLONNE, g)
 		add_child(_colonne)
 		_bouffees = CPUParticles2D.new()
@@ -586,14 +602,25 @@ class Fumee extends Node2D:
 		_bouffees.scale_amount_min = 0.55
 		_bouffees.scale_amount_max = 0.9
 		_bouffees.scale_amount_curve = T.courbe([[0.0, 0.4], [0.35, 0.85], [1.0, 1.7]])
-		var clair := OCRE.lerp(P.IVOIRE, 0.25)
-		_bouffees.color_ramp = T.rampe([[0.0, Color(OCRE, 0.0)], [0.14, Color(OCRE, 0.5)], [0.55, Color(clair, 0.26)], [1.0, Color(clair, 0.0)]])
+		var clair := _ton.lerp(P.IVOIRE, 0.25)
+		_bouffees.color_ramp = T.rampe([[0.0, Color(_ton, 0.0)], [0.14, Color(_ton, 0.5)], [0.55, Color(clair, 0.26)], [1.0, Color(clair, 0.0)]])
+		if encens:
+			# (des volutes plus petites, qui montent plus haut et tournent lentement sur elles-mêmes, comme une odeur qui s'en va)
+			_bouffees.position = Vector2(0.0, -90.0)
+			_bouffees.lifetime = 6.4
+			_bouffees.scale_amount_min = 0.36
+			_bouffees.scale_amount_max = 0.62
+			_bouffees.angular_velocity_min = -12.0
+			_bouffees.angular_velocity_max = 12.0
+			_bouffees.tangential_accel_min = -6.0
+			_bouffees.tangential_accel_max = 6.0
 		_bouffees.local_coords = false
 		_bouffees.emitting = false
 		add_child(_bouffees)
 		# les escarbilles : des brins qui brûlent encore, montent en tournant, retombent
 		_escarbilles = CPUParticles2D.new()
-		_escarbilles.amount = 6 if mobile else 14
+		# (l'encens : quelques brins gommeux qui crépitent, pas une gerbe)
+		_escarbilles.amount = (3 if mobile else 6) if encens else (6 if mobile else 14)
 		_escarbilles.lifetime = 2.6
 		_escarbilles.lifetime_randomness = 0.5
 		_escarbilles.texture = T.eclat()
@@ -631,8 +658,8 @@ class Fumee extends Node2D:
 		m.shader = sh
 		m.set_shader_parameter("bruit", T.bruit())
 		m.set_shader_parameter("graine", graine)
-		m.set_shader_parameter("ocre", OCRE)
-		m.set_shader_parameter("sombre", OCRE_SOMBRE)
+		m.set_shader_parameter("ocre", _ton)
+		m.set_shader_parameter("sombre", _ton_sombre)
 		m.set_shader_parameter("braise", P.BRAISE)
 		return m
 
@@ -651,7 +678,8 @@ class Fumee extends Node2D:
 		var jour := clampf((ambiance.r + ambiance.g + ambiance.b) / 3.0, 0.0, 1.0)
 		var lueur := clampf(vif, 0.0, 1.0) * lerpf(1.0, 0.3, smoothstep(0.3, 0.9, jour))
 		var m: ShaderMaterial = _colonne.material
-		m.set_shader_parameter("force", force)
+		# (l'encens est une fumée claire : on voit le camp au travers)
+		m.set_shader_parameter("force", force * (0.72 if sorte == "encens" else 1.0))
 		m.set_shader_parameter("monte", monte)
 		m.set_shader_parameter("vent", clampf(vent, -1.0, 1.0))
 		m.set_shader_parameter("ambiance", ambiance)

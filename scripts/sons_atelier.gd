@@ -2,7 +2,8 @@ extends RefCounted
 # Lisière — les sons de l'atelier (scripts/sons_atelier.gd)
 # Ce qu'on entend à l'établi et au camp (scripts/atelier.gd) : le maillet, la scie, l'alêne et le fil, les fibres, la bâche,
 # le piquet, la corde, la ferraille d'un vestige, l'eau dans la gourde et dans la gorge, le bouillon, la lampe, le fil du
-# cerf-volant, les piles qui chargent, la bête prise au filet, la sangle. Faits comme ceux de sons_recettes.gd, avec les
+# cerf-volant, les piles qui chargent, la bête prise au filet, la sangle ; et l'artisanat des plantes : le filin qui se tend et
+# grince, les aromates qui crépitent dans un feu, le souffle de qui respire leur fumée. Faits comme ceux de sons_recettes.gd, avec les
 # mêmes outils (sons_outils.gd) : du bruit filtré, des éclats, des résonances amorties. Courts, mats ; rien qui tienne une note.
 # fabriquer(nom, r) rend [échantillons, taux] ; un chiffre au bout du nom tire une variante (« marteau1 », « etincelle2 » :
 # tout nom en accepte un, chaque tirage est différent ; pour le marteau et la scie, il choisit aussi le caractère).
@@ -18,11 +19,12 @@ const VIF := O.VIF
 const TAUX := {
 	"marteau": VIF, "scie": VIF, "couture": VIF, "tresse": VIF, "toile": VIF, "piquet": VIF, "corde": SOURD, "fouille": VIF,
 	"gourde": LENT, "gorgee": LENT, "bouillon": SOURD, "clic": VIF, "fil": SOURD, "etincelle": VIF, "filet": VIF, "sangle": VIF,
+	"filin": SOURD, "aromates": VIF, "inspire": LENT,
 }
 # tous les noms, avec leurs variantes (ce qui revient souvent en a plusieurs : on ne reconnaît pas deux fois la même étincelle)
 const NOMS := ["marteau0", "marteau1", "marteau2", "scie0", "scie1", "couture", "tresse", "toile", "piquet", "corde", "fouille",
 	"gourde", "gorgee", "bouillon0", "bouillon1", "clic", "fil0", "fil1", "etincelle0", "etincelle1", "etincelle2", "filet0", "filet1",
-	"sangle"]
+	"sangle", "filin", "aromates", "inspire"]
 # les deux couches continues, en tuiles qui se chevauchent comme celles de sons_recettes.gd : [longueur, fondu] (en secondes)
 const TUILES := {"bouillon": [3.6, 0.9], "fil": [4.0, 1.2]}
 # le niveau conseillé de chaque son (en dB : tout son volume, pas un appoint), celui où il pèse à l'oreille ce qu'il faut à
@@ -31,8 +33,8 @@ const TUILES := {"bouillon": [3.6, 0.9], "fil": [4.0, 1.2]}
 # fait tout contre soi n'en a pas
 const NIVEAUX := {"marteau": -7.0, "scie": -16.0, "couture": -12.0, "tresse": -16.0, "toile": -9.0, "piquet": -8.0, "corde": -16.0,
 	"fouille": -12.0, "gourde": -17.0, "gorgee": -15.0, "clic": -10.0, "etincelle": -11.0, "filet": -13.0, "sangle": -17.0,
-	"bouillon": -15.0, "fil": -14.0}
-const MOUILLE := {"marteau": 0.3, "scie": 0.15, "toile": 0.3, "piquet": 0.35, "corde": 0.1, "fouille": 0.2, "filet": 0.25}
+	"bouillon": -15.0, "fil": -14.0, "filin": -13.0, "aromates": -12.0, "inspire": -19.0}
+const MOUILLE := {"marteau": 0.3, "scie": 0.15, "toile": 0.3, "piquet": 0.35, "corde": 0.1, "fouille": 0.2, "filet": 0.25, "filin": 0.15, "aromates": 0.1}
 # un choc part juste après le fondu d'entrée (O.bords, 1,5 ms), qui sinon lui mange son attaque
 const T0 := 0.002
 # chaque son est réglé par son énergie (c'est elle qui pèse à l'oreille : d'un tirage à l'autre il sonne aussi fort), sans
@@ -77,6 +79,12 @@ static func fabriquer(nom: String, r: RandomNumberGenerator) -> Array:
 			return [_filet(r), TAUX[base]]
 		"sangle":
 			return [_sangle(r), TAUX[base]]
+		"filin":
+			return [_filin(r), TAUX[base]]
+		"aromates":
+			return [_aromates(r), TAUX[base]]
+		"inspire":
+			return [_inspire(r), TAUX[base]]
 	return []
 
 
@@ -598,3 +606,68 @@ static func _sangle(r: RandomNumberGenerator) -> PackedFloat32Array:
 	O.bas(s, 5000.0, VIF)
 	O.niveau(s, 0.095, CRETE)
 	return O.bords(s, VIF)
+
+
+# --- l'artisanat des plantes ---
+
+# le filin qu'on tend : plus lourd que la corde. Ses torons grincent lentement, par à-coups espacés, plus bas qu'une corde ; il
+# se tend d'un coup (un bruit sourd, qui porte : la fibre longue ne cède pas) ; un dernier crissement de brins qui se serrent
+static func _filin(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.95, SOURD)
+	var k := r.randf_range(0.94, 1.06)
+	var a := _grince(0.5, 12.0, 34.0, [[390.0 * k, 5.0, 1.0], [960.0 * k, 6.0, 0.5], [1750.0 * k, 6.0, 0.2]], 0.3, SOURD, r)
+	O.enveloppe(a, 0.08, 0.06, SOURD)
+	_mettre(s, a, 0.0, 0.85, SOURD)
+	_souffle(s, 0.02, 0.5, 900.0, 1300.0, 1.2, 0.12, SOURD, r, 0.6)
+	# (il se tend : un coup sourd, que le corps du filin prolonge)
+	var tc := r.randf_range(0.5, 0.54)
+	var c := O.vide(0.03, SOURD)
+	O.eclat(c, 0.0, 0.003, 1.0, r, SOURD)
+	O.bas(c, 1600.0, SOURD)
+	_mettre(s, c, tc, 0.7, SOURD)
+	O.mode(s, tc, 330.0 * k, 0.05, 0.55, SOURD, 0.94)
+	O.mode(s, tc, 610.0 * k, 0.025, 0.3, SOURD, 0.96)
+	O.mode(s, tc, 150.0, 0.06, 0.3, SOURD, 0.9)
+	var b := _grince(0.2, 50.0, 90.0, [[700.0 * k, 6.0, 1.0], [1600.0 * k, 7.0, 0.4]], 0.4, SOURD, r)
+	O.enveloppe(b, 0.02, 0.1, SOURD)
+	_mettre(s, b, tc + 0.12, 0.35, SOURD)
+	O.niveau(s, 0.09, CRETE)
+	return O.bords(s, SOURD)
+
+
+# des aromates qu'on jette dans un feu : ils tombent sur les braises (un souffle), puis la résine prend : un grésillement
+# clair qui monte et s'étire, semé de mille petits crépitements, et deux ou trois bulles de sève qui éclatent. C'est leur
+# odeur, à l'oreille : plus vive, plus claire que le feu de bois
+static func _aromates(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(1.7, VIF)
+	_souffle(s, 0.0, 0.3, 500.0, 1100.0, 0.8, 0.45, VIF, r, 0.3)
+	# (le grésillement : un bruit clair, qui monte vers l'aigu puis s'éteint lentement)
+	_souffle(s, 0.12, 1.5, 2600.0, 4200.0, 1.6, 0.5, VIF, r, 0.25)
+	_souffle(s, 0.2, 1.3, 1500.0, 1900.0, 1.1, 0.22, VIF, r, 0.35)
+	# (les crépitements, serrés au début)
+	_grains(s, 0.1, 1.45, 90, 3600.0, 1.2, 0.9, VIF, r, Vector2(0.00015, 0.0006), 1.6)
+	_grains(s, 0.15, 1.2, 30, 1800.0, 1.0, 0.5, VIF, r, Vector2(0.0003, 0.001), 1.3)
+	# (la sève qui éclate : une bulle, un « tic » mouillé)
+	for i in r.randi_range(2, 3):
+		var t := r.randf_range(0.25, 1.1)
+		var f := r.randf_range(900.0, 1500.0)
+		var c := O.vide(0.01, VIF)
+		O.eclat(c, 0.0, 0.0006, 1.0, r, VIF)
+		O.bande(c, 2600.0, 1.4, VIF)
+		_mettre(s, c, t, 0.5, VIF)
+		O.mode(s, t, f, 0.012, 0.35, VIF, 1.12)
+	O.bas(s, 7000.0, VIF)
+	O.niveau(s, 0.06, CRETE)
+	return O.bords(s, VIF)
+
+
+# elle respire une odeur : une inspiration lente par le nez, qui monte (un souffle dans le haut-médium), un temps, et le
+# souffle qui ressort, plus doux, plus bas. Tout près d'elle, sans réverbère
+static func _inspire(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(1.7, LENT)
+	var k := r.randf_range(0.95, 1.05)
+	_souffle(s, 0.0, 0.7, 900.0 * k, 1700.0 * k, 2.2, 0.8, LENT, r, 0.85)
+	_souffle(s, 0.02, 0.65, 2400.0 * k, 3000.0 * k, 3.0, 0.25, LENT, r, 0.85)
+	_souffle(s, 0.88, 0.8, 1100.0 * k, 600.0 * k, 1.6, 0.5, LENT, r, 0.2)
+	O.niveau(s, 0.06, CRETE)
+	return O.bords(s, LENT)

@@ -9,7 +9,8 @@ extends Node2D
 #     etabli       : « travail » (de 0 à 1 : on y fabrique quelque chose, des copeaux volent)
 #     tente, hamac : « occupe » (vrai : la veilleuse y dort)
 #     recuperateur : « eau » (de 0 à 6 : ce qu'il tient)
-#     filet        : « prise » ({ nom, masse } : une bête s'y est prise, elle se débat)
+#     filet        : « prise » ({ nom, masse } : une bête s'y est prise, elle se débat) ; de même le grand filet
+#                    (« filet_filin ») : une maille plus large de filin blond, plus grosse, lestée de grosses pierres
 #     cerf_volant  : « vent » (de 0 à 1), « branche » (vrai : les piles sont au fil), « charge » (de 0 à 1), « foudre » (un
 #                    instant : la foudre vient de le prendre)
 #     vestige      : « fouille » (vrai : il n'y a plus rien), « riche » (0 ou 1)
@@ -51,6 +52,7 @@ const TOILE := Color("b9a585")      # la bâche : une toile enduite, entre l'ivo
 const TOILE_CLAIR := Color("d2c3a2")
 const TOILE_OMBRE := Color("7b6f5e")
 const CORDE := Color("c4a877")      # la fibre tressée
+const FILIN := Color("c9ad6e")      # le filin de fibre longue (l'agave, le papyrus) : plus blond, plus gros
 const BOIS := Color("8a6a45")       # le bois pelé d'une perche
 const BOIS_CLAIR := Color("c2a57c") # le bois fendu, un copeau
 const ECORCE := Color("4a3c2c")
@@ -83,7 +85,7 @@ const CARRE_RANGS := [-6.5, 0.5, 7.5]
 const ANNEAU := Vector2(2.0, -9.0)
 const BOITES := {
 	"etabli": Rect2(-44.0, -40.0, 96.0, 62.0), "tente": Rect2(-44.0, -58.0, 90.0, 88.0), "hamac": Rect2(-110.0, -70.0, 220.0, 150.0),
-	"recuperateur": Rect2(-30.0, -44.0, 60.0, 66.0), "filet": Rect2(-40.0, -30.0, 80.0, 50.0),
+	"recuperateur": Rect2(-30.0, -44.0, 60.0, 66.0), "filet": Rect2(-40.0, -30.0, 80.0, 50.0), "filet_filin": Rect2(-52.0, -42.0, 104.0, 66.0),
 	"cerf_volant": Rect2(-60.0, -900.0, 260.0, 930.0), "vestige": Rect2(-50.0, -52.0, 100.0, 76.0), "coffre": Rect2(-24.0, -34.0, 48.0, 46.0),
 	"carre": Rect2(-30.0, -32.0, 60.0, 52.0), "epouvantail": Rect2(-28.0, -54.0, 60.0, 62.0), "piquet": Rect2(-16.0, -20.0, 32.0, 30.0),
 	"mangeoire": Rect2(-24.0, -30.0, 48.0, 42.0), "appat": Rect2(-12.0, -8.0, 24.0, 16.0),
@@ -185,6 +187,8 @@ static func hauteur(g: String) -> float:
 			return 33.0
 		"filet":
 			return 4.0
+		"filet_filin":
+			return 5.0
 		"cerf_volant":
 			return 17.0
 		"vestige":
@@ -302,8 +306,8 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_hamac(p)
 				"recuperateur":
 					_recuperateur(p)
-				"filet":
-					_ombre(p, Vector2(1.0, 1.0), 31.0, 10.5, 0.2)
+				"filet", "filet_filin":
+					_ombre(p, Vector2(1.0, 1.0), 31.0 if genre == "filet" else 41.0, 10.5 if genre == "filet" else 14.0, 0.2)
 					if not etat.has("prise"):
 						_filet(p)
 				"cerf_volant":
@@ -332,7 +336,7 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_hamac_vif(p)
 				"recuperateur":
 					_recuperateur_vif(p)
-				"filet":
+				"filet", "filet_filin":
 					if etat.has("prise"):
 						_filet(p)
 				"cerf_volant":
@@ -383,7 +387,7 @@ func _lire(dt: float) -> void:
 			_tete = rotate_toward(_tete, _regard_voulu(), dt * 0.3)
 		"coffre":
 			_lire_coffre(dt)
-		"filet":
+		"filet", "filet_filin":
 			if etat.has("prise") != _pris:
 				_pris = not _pris
 				_prise_t = _tr
@@ -445,7 +449,7 @@ func _cadence() -> float:
 	# (le couvercle qui se lève, sa poussière : une seconde et demie, image par image)
 	if genre == "coffre" and _coffre_bouge():
 		return (1.0 / 30.0) if _mobile else 0.0
-	if genre == "filet" and _pris and _sursaut() > 0.0:
+	if genre in ["filet", "filet_filin"] and _pris and _sursaut() > 0.0:
 		return (1.0 / 20.0) if _mobile else 0.0
 	if genre == "cerf_volant" and _monte > 0.02:
 		return (1.0 / 20.0) if _mobile else (1.0 / 30.0)
@@ -469,7 +473,7 @@ func _remue() -> bool:
 			return _vent > 0.03 or _pluie > 0.05 or _occupe > 0.0
 		"recuperateur":
 			return _vent > 0.05 or _pluie > 0.02
-		"filet":
+		"filet", "filet_filin":
 			return _pris
 		"cerf_volant":
 			return _monte > 0.0
@@ -500,7 +504,7 @@ func _cle_du_fond() -> String:
 			k += "-%s" % bool(etat.get("occupe", false))
 		"recuperateur":
 			k += "-%d" % int(clampf(float(etat.get("eau", 0.0)), 0.0, 6.0) * 4.0 + 0.5)
-		"filet":
+		"filet", "filet_filin":
 			k += "-%s" % etat.has("prise")
 		"cerf_volant":
 			k += "-%s-%s-%d-%s" % [_monte <= 0.0, bool(etat.get("branche", false)), int(clampf(float(etat.get("charge", 0.0)), 0.0, 1.0) * 3.0 + 0.01), _roussi]
@@ -1451,11 +1455,14 @@ func _sursaut() -> float:
 func _filet(p) -> void:
 	var r := _hasard(6)
 	var pierre := _pierre_du_lieu()
-	var coins := [Vector2(-24.0, -7.5), Vector2(23.0, -9.0), Vector2(27.0, 7.0), Vector2(-22.0, 9.0)]
+	# (le grand filet, de filin : plus large d'un tiers, une maille plus lâche de filin blond, plus gros, et de grosses pierres)
+	var grand := genre == "filet_filin"
+	var k_g := 1.32 if grand else 1.0
+	var coins := [Vector2(-24.0, -7.5) * k_g, Vector2(23.0, -9.0) * k_g, Vector2(27.0, 7.0) * k_g, Vector2(-22.0, 9.0) * k_g]
 	var prise: bool = etat.has("prise")
 	var masse := 1.0
 	if prise and typeof(etat["prise"]) == TYPE_DICTIONARY:
-		masse = clampf(float(etat["prise"].get("masse", 1.0)), 0.1, 12.0)
+		masse = clampf(float(etat["prise"].get("masse", 1.0)), 0.1, 40.0 if grand else 12.0)
 	var rb := 5.8 + 2.4 * pow(masse, 0.42)
 	var t := _tr - _prise_t if prise else 0.0
 	var rue := _sursaut() if prise else 0.0
@@ -1506,7 +1513,7 @@ func _filet(p) -> void:
 			p.disque(oeil, 1.5, 1.4, ENCRE)
 			p.disque(oeil, 0.95, 0.9, P.OEIL_PROIE)
 	# la maille : ses nœuds (une grille), puis deux familles de fils qui les joignent en losanges ; leur ombre sur le sol d'abord
-	var n := 7
+	var n := 6 if grand else 7
 	var noeuds: Array = []
 	for j in n + 1:
 		var rang := PackedVector2Array()
@@ -1531,9 +1538,20 @@ func _filet(p) -> void:
 			for q in fil:
 				bas.append(q + Vector2(0.6, 1.5))
 			p.tracer(bas, 0.7, Color(P.ENCRE, 0.26), false)
-	var fibre := CORDE.darkened(0.1 + 0.15 * _mouille_cran())
+	var fibre := (FILIN if grand else CORDE).darkened(0.1 + 0.15 * _mouille_cran())
 	for fil in fils:
-		p.tracer(fil, 0.8, fibre, false)
+		if grand:
+			# (le filin : un trait plus gros, cerné, et ses nœuds, gros comme des pois)
+			p.tracer(fil, 1.9, ENCRE, false)
+			p.tracer(fil, 1.15, fibre, false)
+		else:
+			p.tracer(fil, 0.8, fibre, false)
+	if grand:
+		for j in range(1, n):
+			for i in range(1, n):
+				var q: Vector2 = noeuds[j][i]
+				p.disque(q, 1.25, 1.0, ENCRE)
+				p.disque(q + Vector2(-0.2, -0.2), 0.75, 0.6, fibre.lightened(0.12))
 	# la ralingue, autour ; les pierres qui la tiennent (une bête prise en a bousculé une)
 	var tour_ := PackedVector2Array()
 	for i in n + 1:
@@ -1544,13 +1562,15 @@ func _filet(p) -> void:
 		tour_.append(noeuds[n][i])
 	for j in range(n - 1, -1, -1):
 		tour_.append(noeuds[j][0])
-	_corde(p, tour_, 1.1, fibre.lightened(0.08))
+	_corde(p, tour_, 1.8 if grand else 1.1, fibre.lightened(0.08))
 	var poids := [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.52, 0.0], [0.45, 1.0]]
+	if grand:
+		poids.append_array([[0.0, 0.5], [1.0, 0.48]])
 	for i in poids.size():
 		var q: Vector2 = pt.call(float(poids[i][0]), float(poids[i][1]))
 		if prise and i == 4:
-			q += Vector2(6.0, -4.5)
-		var rr := r.randf_range(3.6, 5.0)
+			q += Vector2(6.0, -4.5) * (0.5 if grand else 1.0)
+		var rr := r.randf_range(3.6, 5.0) * (1.35 if grand else 1.0)
 		_ombre(p, q + Vector2(0.6, rr * 0.5), rr * 1.3, rr * 0.5, 0.35)
 		_caillou(p, q + Vector2(0.0, -rr * 0.35), rr, rr * 0.72, pierre.lerp(P.IVOIRE, r.randf_range(0.0, 0.2)), r)
 		if _neige_cran() > 0.25:
