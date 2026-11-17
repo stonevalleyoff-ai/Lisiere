@@ -3966,11 +3966,14 @@ func _l_atelier(F: Dictionary) -> void:
 	verif(ote and A.porte("sac_a_dos"), "une tenue s'ôte et se remet")
 	verif(A.peaux_de(2.0) >= 1 and A.peaux_de(300.0) > A.peaux_de(2.0) and A.peaux_de(900.0) <= 4, "la chasse donne des peaux : %d pour une bête de 2 kg, %d pour une de 300" % [A.peaux_de(2.0), A.peaux_de(300.0)])
 
-	# la pelisse contre le froid, la cape contre la pluie
+	# la pelisse contre le froid, la cape contre la pluie (trente secondes de grand froid prennent sur la santé : on la lui rend après
+	# chaque mesure, sinon, déjà mordue plus tôt dans l'essai, elle en mourait une fois sur quelques-unes)
+	var sante_avant: float = j.sante
 	var refroidir := func() -> float:
 		j.temperature = 50.0
 		j.trempe = 0.0
 		for i in 30:
+			j.sante = 100.0
 			jeu._temps_du_corps(1.0)
 		return j.temperature
 	C.air = 0.12
@@ -3991,6 +3994,7 @@ func _l_atelier(F: Dictionary) -> void:
 	A.fabriquer("vetement_pluie")
 	var au_sec: float = se_mouiller.call()
 	C.pluie = 0.0
+	j.sante = sante_avant
 	verif(A.porte("vetement_pluie") and mouillee > 10.0 and au_sec < mouillee * 0.3, "la cape de pluie : six secondes d'averse la trempent à %d sans elle, à %d avec" % [int(mouillee), int(au_sec)])
 
 	# la tente : un abri
