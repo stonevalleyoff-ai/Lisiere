@@ -1436,9 +1436,11 @@ static func _cactus(o, p, r: RandomNumberGenerator) -> void:
 	var entames: int = int(o.plein) - int(o.reste)
 	var tous := nb
 	nb = maxi(0, nb - entames)
+	var racines := []
 	for i in tous:
 		var cote := -1.0 if (i + o.graine) % 2 == 0 else 1.0
 		var b := [cote, r.randf_range(0.3, 0.55) * h, r.randf_range(0.6, 0.85) * h, r.randf_range(w * 1.8, w * 2.6)]
+		racines.append(b)
 		if i < nb:
 			bras.append(b)
 	# (les bras derrière la colonne d'abord, du côté de l'ombre)
@@ -1450,9 +1452,25 @@ static func _cactus(o, p, r: RandomNumberGenerator) -> void:
 		# (là où un bras a été coupé, à sa racine ; sans bras qui reste, une tranche prise au flanc de la colonne)
 		var i_bras := tous - 1 - k
 		var cote := -1.0 if (i_bras + o.graine) % 2 == 0 else 1.0
-		var q := Vector2(w * cote * 0.55, -h * (0.42 if i_bras >= 0 else 0.26))
-		p.disque(q, 3.7, 2.9, ENCRE)
-		p.disque(q, 3.0, 2.3, chair, Pinceau.DOME)
+		var q: Vector2
+		var face: PackedVector2Array
+		if i_bras >= 0:
+			# (le bras coupé à sa racine : un moignon qui sort du flanc, sa coupe tournée vers le dehors)
+			var y := -float(racines[i_bras][1])
+			var ep := w * 0.62
+			var a := Vector2(cote * w * 0.7, y)
+			q = Vector2(cote * (w + 3.2), y - 0.6)
+			p.tracer(PackedVector2Array([a, q]), ep * 2.0 + 1.4, ENCRE, false)
+			p.tracer(PackedVector2Array([a, q]), ep * 2.0, t.darkened(0.06), false)
+			face = Pinceau.ellipse(q, 1.9, ep * 0.95, 14)
+		else:
+			# (une tranche prise au flanc de la colonne, plus bas : une coupe en biais)
+			q = Vector2(-w * 0.3, -h * 0.24)
+			face = Pinceau.ellipse(q, 3.3, 2.6, 14)
+			for n in face.size():
+				face[n] = q + (face[n] - q).rotated(-0.35)
+		p.aplat(_grossi(face, q, 0.75), ENCRE)
+		p.aplat(face, chair, Pinceau.DOME, q, Vector2(3.0, 3.0))
 		# (la peau autour, ses fibres vertes ; la chair, ses points ; une goutte qui perle et coule)
 		p.tracer(Pinceau.ellipse(q, 2.2, 1.6, 12), 0.45, Color(P.MOUSSE.darkened(0.2), 0.7), false)
 		p.disque(q + Vector2(-0.5, -0.3), 0.3, 0.3, Color(P.MOUSSE.darkened(0.35), 0.8))
