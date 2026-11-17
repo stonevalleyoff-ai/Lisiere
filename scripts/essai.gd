@@ -4008,11 +4008,13 @@ func _l_atelier(F: Dictionary) -> void:
 	C.pluie = 0.0
 	j.torche = 0.0
 	j.regard = 1.0
-	# (un endroit sans arbre au-dessus de la tête)
+	# (un endroit sans arbre au-dessus de la tête, le sol sec devant elle, sans buisson où poser l'établi ; le lieu est tiré au sort)
 	var ici := Vector2(60.0, 40.0)
-	for k in 40:
-		var q := Vector2(60.0 + 55.0 * (k % 8), 40.0 + 60.0 * (k / 8))
-		if float(C.abri(q)) == 0.0:
+	for k in 160:
+		var q := Vector2(60.0 + 55.0 * (k % 16), 40.0 + 60.0 * (k / 16))
+		var devant_q := q + Vector2(60.0, 6.0)
+		if float(C.abri(q)) == 0.0 and float(C.eau(q)) <= 0.05 and float(C.eau(devant_q)) <= 0.05 \
+				and jeu.monde.autour(devant_q, 60.0).filter(func(x): return str(x.genre) == "buisson").is_empty():
 			ici = q
 			break
 	j.position = ici
@@ -4199,7 +4201,8 @@ func _l_atelier(F: Dictionary) -> void:
 	for o in jeu.monde.objets:
 		if is_instance_valid(o) and str(o.genre) in ["arbre", "sapin"] and not bool(o.get("calcine")):
 			j.position = o.position + Vector2(40.0, 30.0)
-			if A.empeche_poser("hamac") == "" and A._l_arbre(A._devant("hamac"), 90.0) == o:
+			var ph: Vector2 = A._devant("hamac")
+			if A.empeche_poser("hamac") == "" and A._l_arbre(ph, 90.0) == o and ph.y > o.position.y and ph.distance_to(o.position) < 100.0:
 				arbre = o
 				break
 	if arbre == null:
@@ -4210,6 +4213,8 @@ func _l_atelier(F: Dictionary) -> void:
 		var pourquoi_h: String = A.empeche_poser("hamac")
 		var tendu: bool = A.poser("hamac")
 		var hamac = A.poses[A.poses.size() - 1]
+		if not (tendu and str(hamac.genre) == "hamac" and hamac.position.y > arbre.position.y and hamac.position.distance_to(arbre.position) < 100.0 and hamac._arbre != null):
+			print("    (tendu %s, %s à %s de l'arbre, noué %s)" % [str(tendu), str(hamac.genre), str(hamac.position - arbre.position), str(hamac._arbre != null)])
 		verif(tendu and str(hamac.genre) == "hamac" and hamac.position.y > arbre.position.y and hamac.position.distance_to(arbre.position) < 100.0 and hamac._arbre != null,
 			"le hamac se tend à côté de son arbre, en avant de lui (sa couronne ne le cache pas), et s'y noue (« %s »)" % pourquoi_h)
 		A.poses.erase(hamac)
@@ -5688,6 +5693,11 @@ func _les_fruits() -> void:
 			break
 	if arbre != null and not espece.is_empty():
 		arbre.tombes = arbre.tombes_plein
+		# (les fruitiers voisins n'ont rien à terre : c'est vers celui-ci qu'elle doit venir, pas vers un autre plus près d'elle)
+		for x in jeu.monde.autour(arbre.position, RR.TOMBES_FLAIR + 200.0):
+			if x != arbre and str(x.genre) == "arbre" and int(x.tombes) > 0:
+				x.tombes = 0
+				x._lache = 1.0e9
 		j.position = arbre.position + Vector2(-700.0, 0.0)
 		# (le sous-bois est serré : elle n'est pas loin, du côté dégagé)
 		for x in jeu.monde.autour(arbre.position + Vector2(60.0, 20.0), 50.0):
