@@ -1,11 +1,12 @@
 extends RefCounted
 # Lisière — le jardin (scripts/jardin.gd)
 # Ce que la veilleuse sème et récolte. Avec une houe (scripts/atelier.gd), elle retourne un carré de terre ; elle y sème des
-# graines, qu'elle trouve en cueillant (un buisson rend parfois des graines de baies, une touffe des graines de lin) ou dans
-# les vestiges (les simples : des herbes qui pansent et apaisent). Ce qui pousse veut de l'eau : la pluie, ou son arrosoir.
+# graines, qu'elle trouve en cueillant (un buisson rend parfois des graines de baies, une touffe des graines de lin ; les épis
+# d'une céréale, d'un riz sauvage, des grains, qui se mangent et se sèment) ou dans les vestiges (les simples : des herbes qui
+# pansent et apaisent). Ce qui pousse veut de l'eau : la pluie, ou son arrosoir.
 # Les bêtes qui broutent viennent manger ce qui pousse, si rien ne garde le jardin : elle, ou un épouvantail.
 # Les carrés et l'épouvantail sont des choses posées (scripts/campement.gd les dessine) ; leur état :
-#   carre       : « culture » ("" : rien de semé ; « baie », « lin », « simple »), « stade » (de 0, semé, à 3, mûr),
+#   carre       : « culture » ("" : rien de semé ; « baie », « lin », « simple », « grain »), « stade » (de 0, semé, à 3, mûr),
 #                 « eau » (de 0 à 1 : la terre est humide), « broute » (de 0 à 1 : une bête y mange), « gel » (vrai : il gèle)
 #   epouvantail : « regard » (un angle : d'où vient la Noire, la nuit ; sans la clé : il ne regarde rien), « alerte » (de 0 à 1)
 
@@ -13,13 +14,16 @@ const R := preload("res://scripts/regles.gd")
 const Campement := preload("res://scripts/campement.gd")
 
 # ce qui se cultive : son nom, sa graine, ce que rend un carré mûr, les jours qu'il lui faut (la terre humide)
+# (les grains : ce qu'on cueille aux épis d'une céréale, d'un riz sauvage, est aussi ce qu'on sème ; un carré mûr en rend, avec
+# ses trois de semence, de quoi faire trois gruaux, et sa paille)
 const CULTURES := {
 	"baie": {"nom": "Baies", "graine": "graine_baie", "donne": {"baies": 6}, "jours": 1.5},
 	"lin": {"nom": "Lin", "graine": "graine_lin", "donne": {"fibre": 8}, "jours": 1.0},
 	"simple": {"nom": "Simples", "graine": "graine_simple", "donne": {"simples": 3}, "jours": 2.0},
+	"grain": {"nom": "Grains", "graine": "grains", "donne": {"grains": 6, "fibre": 2}, "jours": 1.5},
 }
-const ORDRE := ["baie", "lin", "simple"]
-const NOMS_GRAINES := {"graine_baie": "graines de baies", "graine_lin": "graines de lin", "graine_simple": "graines de simples"}
+const ORDRE := ["baie", "lin", "simple", "grain"]
+const NOMS_GRAINES := {"graine_baie": "graines de baies", "graine_lin": "graines de lin", "graine_simple": "graines de simples", "grains": "grains"}
 const TEINTE := Color(0.72, 0.84, 0.6)
 const GRIS := Color(0.75, 0.7, 0.66)
 const GRAINES := 2                # ce qu'il faut de graines pour un carré
@@ -110,14 +114,17 @@ func graines(culture: String) -> int:
 	return int(jeu.joueur.inventaire.get(str(info(culture)["graine"]), 0))
 
 
-# ce qu'elle sèmerait là, sans choisir : ce dont elle a le plus de graines ("" : elle n'en a pas assez)
+# ce qu'elle sèmerait là, sans choisir : ce dont elle a le plus de graines ("" : elle n'en a pas assez). Les grains, qui se
+# mangent aussi, en dernier : seulement si elle n'a pas d'autres graines
 func culture_par_defaut() -> String:
 	var mieux := ""
 	var n0 := GRAINES - 1
 	for c in ORDRE:
-		if graines(c) > n0:
+		if c != "grain" and graines(c) > n0:
 			n0 = graines(c)
 			mieux = c
+	if mieux == "" and graines("grain") >= GRAINES:
+		mieux = "grain"
 	return mieux
 
 
@@ -191,8 +198,11 @@ func recolter(s) -> bool:
 	var c: Dictionary = info(culture)
 	var A = _atelier()
 	var dits := PackedStringArray()
+	# (des grains : ce qu'on récolte est aussi ce qu'on sème, les grains de semence sont dans la récolte ; une herbe, elle, se
+	# ressème d'elle-même, plus bas)
+	var semence := bool(c["donne"].has(str(c["graine"]))) and not est_une_herbe(culture)
 	for k in c["donne"]:
-		var n: int = A.ranger(k, int(c["donne"][k]))
+		var n: int = A.ranger(k, int(c["donne"][k]) + (RENDUES if semence and k == str(c["graine"]) else 0))
 		dits.append("+%d %s" % [n, str(c["nom"]).to_lower() if est_une_herbe(culture) else str(R.NOMS.get(k, A.NOMS_MATIERES.get(k, k)))])
 	var inv: Dictionary = jeu.joueur.inventaire
 	if est_une_herbe(culture):
@@ -203,12 +213,16 @@ func recolter(s) -> bool:
 		jeu.sons.jouer("herbe", -4.0, 1.0)
 		jeu.ui.message("%s." % ", ".join(dits), TEINTE)
 		return true
-	inv[str(c["graine"])] = int(inv.get(str(c["graine"]), 0)) + RENDUES
+	if not semence:
+		inv[str(c["graine"])] = int(inv.get(str(c["graine"]), 0)) + RENDUES
 	s.etat["culture"] = ""
 	s.etat["stade"] = 0.0
 	jeu.joueur.geste_atelier("fouiller")
 	jeu.sons.jouer("herbe", -4.0, 1.0)
-	jeu.ui.message("%s : %s, et %d graines." % [str(c["nom"]), ", ".join(dits), RENDUES], TEINTE)
+	if semence:
+		jeu.ui.message("%s : %s. Gardes-en pour semer." % [str(c["nom"]), ", ".join(dits)], TEINTE)
+	else:
+		jeu.ui.message("%s : %s, et %d graines." % [str(c["nom"]), ", ".join(dits), RENDUES], TEINTE)
 	return true
 
 

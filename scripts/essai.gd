@@ -86,6 +86,11 @@ func _lancer() -> void:
 	print("Lisière — l'essai")
 	jeu.donnees.hors_ligne_force = not ("--en-ligne" in OS.get_cmdline_user_args())
 	await jeu.donnees.charger_index()
+	# (--seulement cueillette : la cueillette nourricière seule, pour la mettre au point vite ; c'est l'essai entier qui fait foi)
+	if "--seulement" in OS.get_cmdline_user_args():
+		await _la_cueillette_nourriciere()
+		await _conclure()
+		return
 	var L: Array = jeu.donnees.lieux()
 	verif(L.size() >= 3, "%d lieux jouables (%s)" % [L.size(), ", ".join(PackedStringArray(L.map(func(x): return str(x["nom"]))))])
 	# (chaque lieu proposé à l'écran-titre se charge, et a de quoi chasser et de quoi faire peur, comme _commencer le demande)
@@ -624,6 +629,11 @@ func _lancer() -> void:
 	await _la_flore()
 	await _les_pays()
 	await _l_artisanat()
+	await _la_cueillette_nourriciere()
+	await _conclure()
+
+
+func _conclure() -> void:
 	print("\n%s (%d vérifications)" % ["tout passe" if ok else "ÉCHEC", n])
 	# (des sons qui jouent encore quand Godot s'arrête, il dit qu'ils fuient : on les arrête, et l'on laisse au serveur audio
 	# le temps de les lâcher)
@@ -4531,7 +4541,8 @@ func _la_flore() -> void:
 	var protegee: float = sante0 - jo.sante
 	A.portes.erase("vetement_chaud")
 	jo.sante = 100.0
-	verif(cactus != null and cactus.piquant and g_cactus.get("fibre", 0) == 1 and absf(pique - jeu.R.EPINES) < 0.01 and protegee < 0.01,
+	# (le cactus donne sa pulpe, plus ses fibres : la cueillette nourricière en fait l'eau du désert ; _la_cueillette_nourriciere)
+	verif(cactus != null and cactus.piquant and g_cactus.get("pulpe", 0) == 1 and absf(pique - jeu.R.EPINES) < 0.01 and protegee < 0.01,
 		"un cactus (comme un roncier, un agave, un buisson d'épines) écorche les mains qui le cueillent (-%d) ; la pelisse les garde" % int(pique))
 	if cactus != null:
 		W._defaire(cactus)
@@ -5422,3 +5433,550 @@ func _l_artisanat() -> void:
 	var sans: float = mordue.call(false)
 	verif(not fon.is_empty() and avec == 0.0 and sans > 0.5 and T.enlise > 0.95,
 		"au marais, enfoncée dans une fondrière, les sangsues ne mordent pas qui garde l'odeur des aromates ; sans elle, elles mordent (-%.1f)" % sans)
+
+
+# --- la cueillette nourricière (scripts/flore.gd, objet.gd, flore_dessins.gd ; principal.gd : agir, manger, cuire ; atelier.gd :
+# la popote, le mortier ; jardin.gd : les grains semés) : les fruits des arbres, les grains, le lichen des rennes, la pulpe du
+# cactus ; ce qu'on en mange, ce que la popote en fait, ce que la partie en garde. Chaque partie se lance à part ---
+
+func _la_cueillette_nourriciere() -> void:
+	print("11. La cueillette nourricière")
+	await _les_fruits()
+	_les_grains()
+	_manger_dans_l_ordre()
+	await _le_lichen()
+	await _la_pulpe()
+	await _les_fruits_dans_le_monde()
+
+
+# ce que l'herbier dirait d'un arbre, d'une plante du sol, de cette forme : un lieu où il ne pousse qu'elle (monde.gd, _poser)
+func _ici_rien_que(forme: String, strate: String, genre: String, caracteres: Array = []) -> Dictionary:
+	var e := {"id": "essai-" + forme, "poids": 1.0, "taille": 1.0, "port": forme, "forme": forme, "genre": genre, "planche": false,
+		"nom": forme, "stade": "feuilles", "defense": [], "caracteres": caracteres, "couleur": null, "fleur": null}
+	return {"flore": {strate: [e]}, "climat": {"froid": 0.0, "humide": 0.6}, "palette": jeu.monde.palette}
+
+
+# une plante de cette forme, posée là, seule (ce qui était à deux pas est ôté) ; un arbre, de ceux qui portent cette année (et
+# laissent tomber des fruits à leur pied), à moins que porte ne soit faux
+func _poser_seule(forme: String, strate: String, genre: String, p: Vector2, caracteres: Array = [], porte := true):
+	var W = jeu.monde
+	for x in W.autour(p, 70.0):
+		W.retirer(x)
+	for b in get_tree().get_nodes_in_group("betes"):
+		if b.position.distance_to(p) < 400.0:
+			_oter(b)
+	var ici := _ici_rien_que(forme, strate, genre, caracteres)
+	for k in 400:
+		var o = W._poser(strate, p, W.palette["feuilles" if strate == "arbre" else "herbe"], 1000 + k * 7919, ici)
+		if o == null:
+			continue
+		if genre != "arbre" or not porte or (o.fruits_plein > 0 and o.tombes_plein > 0):
+			return o
+		W._defaire(o)
+	return null
+
+
+# ce que ses fruits (ou ses fleurs) mettent de traits sur sa couronne (scripts/flore_dessins.gd, fruits_couronne)
+func _traits_de_fruits(o) -> int:
+	var p = load("res://scripts/decor_pinceau.gd").new()
+	load("res://scripts/flore_dessins.gd").fruits_couronne(o, p)
+	return p.pts.size()
+
+
+# elle cueille l'arbre jusqu'au dernier fruit, puis frappe une fois : ce qu'elle en a tiré, ses gestes, son dessin, sa repousse
+func _un_arbre_cueilli(o) -> Dictionary:
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	var fruit := str(o.fruit)
+	j.position = o.position + Vector2(0.0, 2.0)
+	var avant := int(inv.get(fruit, 0))
+	var a_cueillir: int = int(o.fruits) + int(o.tombes)
+	var tombes: int = int(o.tombes)
+	var traits0 := _traits_de_fruits(o)
+	var gestes := []
+	var traits_un := -1
+	var reste0: int = int(o.reste)
+	for k in a_cueillir:
+		jeu.agir()
+		gestes.append(str(j._geste))
+		if k == tombes:
+			traits_un = _traits_de_fruits(o)
+	var pris := int(inv.get(fruit, 0)) - avant
+	var vide: bool = not o.porte_fruits() and _traits_de_fruits(o) == 0 and int(o.reste) == reste0
+	var bois := int(inv["bois"])
+	jeu.agir()
+	var abat: bool = int(inv["bois"]) == bois + 1 and int(o.reste) == reste0 - 1
+	# (il en portera de nouveau : à mi-chemin, des fruits verts, rien à cueillir ; au bout, tout revient)
+	var attend: bool = absf(float(o._repousse_fruits) - jeu.R.REPOUSSE_FRUITS) < 0.01
+	o._process(jeu.R.REPOUSSE_FRUITS * 0.5)
+	var verts: bool = int(o.fruits) == 0 and not o.porte_fruits() and _traits_de_fruits(o) > 0
+	o._process(jeu.R.REPOUSSE_FRUITS * 0.55)
+	var revenus: bool = int(o.fruits) == int(o.fruits_plein) and int(o.tombes) == int(o.tombes_plein) and o.porte_fruits()
+	return {"pris": pris, "attendu": a_cueillir, "gestes": gestes, "tombes": tombes, "dessin": traits0 > 0 and traits_un >= 0 and traits_un < traits0,
+		"vide": vide, "abat": abat, "attend": attend, "verts": verts, "revenus": revenus}
+
+
+# les arbres et leurs fruits : la forêt d'Orvane (ses fruitiers, ses arbres aux fruits charnus) ; le figuier, le palmier, le baobab ;
+# les fruits tombés et les bêtes qui viennent les manger ; les saisons ; la partie gardée
+func _les_fruits() -> void:
+	await jeu._commencer("foret")
+	var W = jeu.monde
+	var j = jeu.joueur
+	var RR = jeu.R
+	var Fl := load("res://scripts/flore.gd")
+	var Objet := load("res://scripts/objet.gd")
+	jeu.climat.forcer("clair", 0.0, 9999.0)
+	_a_l_heure(false)
+	var fruitiers: Array = W.objets.filter(func(x): return x.genre == "arbre" and str(x.fruit) == "pomme")
+	var portent: Array = fruitiers.filter(func(x): return int(x.fruits_plein) > 0)
+	var sorbiers: Array = W.objets.filter(func(x): return x.genre == "arbre" and str(x.fruit) == "baies" and int(x.fruits_plein) > 0)
+	var bornes: bool = portent.all(func(x): return int(x.fruits_plein) >= 3 and int(x.fruits_plein) <= 5 and int(x.tombes_plein) <= RR.TOMBES)
+	var part := float(portent.size()) / maxf(1.0, float(fruitiers.size()))
+	verif(fruitiers.size() >= 10 and part > 0.5 and part < 0.9 and bornes and sorbiers.size() >= 5,
+		"en forêt, %d fruitiers d'après l'herbier, dont %d %% portent leurs pommes cette année (de 3 à 5, et quelques-unes tombées à leur pied) ; %d arbres aux fruits charnus portent des sorbes" % [
+		fruitiers.size(), int(part * 100.0), sorbiers.size()])
+	# chaque arbre : ses fruits se dessinent, se cueillent (à terre d'abord, en se baissant ; puis dans les branches, le bras
+	# tendu), manquent au dessin ; vide, il s'abat ; il en porte de nouveau en deux jours et demi, verts d'abord
+	var arbres := {"pomme": null, "figue": null, "coco": null, "pain_de_singe": null, "baies": null}
+	# (des arbres du lieu, loin de ce qu'elle a posé et de ce qui pousse à leur pied)
+	var libre := func(x) -> bool:
+		return x.position.length() > 300.0 and not jeu.atelier.poses.any(func(y): return is_instance_valid(y) and y.position.distance_to(x.position) < 90.0) \
+			and W.autour(x.position, 8.0).filter(func(y): return y != x).is_empty()
+	for x in portent:
+		if int(x.tombes_plein) > 0 and arbres["pomme"] == null and libre.call(x):
+			arbres["pomme"] = x
+	for x in sorbiers:
+		if int(x.tombes_plein) > 0 and arbres["baies"] == null and libre.call(x):
+			arbres["baies"] = x
+	arbres["figue"] = _poser_seule("figuier", "arbre", "arbre", Vector2(1400.0, 1300.0))
+	arbres["coco"] = _poser_seule("palmier", "arbre", "arbre", Vector2(1550.0, 1300.0))
+	arbres["pain_de_singe"] = _poser_seule("bouteille", "arbre", "arbre", Vector2(1700.0, 1300.0))
+	for sorte in arbres:
+		var o = arbres[sorte]
+		if o == null:
+			verif(false, "un arbre qui porte « %s », avec des fruits tombés à son pied" % sorte)
+			continue
+		for b in get_tree().get_nodes_in_group("betes"):
+			if b.position.distance_to(o.position) < 300.0:
+				_oter(b)
+		var d := _un_arbre_cueilli(o)
+		var g: Array = d["gestes"]
+		var bons_gestes: bool = g.slice(0, int(d["tombes"])).all(func(x): return x == "brindille") and g.slice(int(d["tombes"])).all(func(x): return x == "cueillir")
+		verif(int(d["pris"]) == int(d["attendu"]) and int(d["pris"]) > 0 and bons_gestes and bool(d["dessin"]) and bool(d["vide"]) and bool(d["abat"]) and bool(d["attend"])
+			and bool(d["verts"]) and bool(d["revenus"]),
+			"%s (%s) : %d fruits, %d ramassés à son pied puis cueillis le bras tendu ; chacun manque au dessin ; vide, il s'abat (un bois) ; à mi-chemin des fruits verts, puis il en porte de nouveau" % [
+			str(o.forme), sorte, int(d["pris"]), int(d["tombes"])])
+		if not bool(d["revenus"]) or not bons_gestes:
+			print("    (gestes %s ; %s)" % [str(g), str(d)])
+	# les fruits tombés : une bête qui broute vient les manger, la tête dans l'herbe ; qui s'est postée à côté la tient à portée
+	var arbre = arbres["pomme"]
+	var F: Dictionary = jeu.faune
+	# (une proie qui marche à quatre pattes : celles qu'on apprivoise, qui broutent)
+	var espece: Dictionary = {}
+	for e in F["proies_jour"] + F["proies_nuit"]:
+		var b0 = _bete(e, "proie", Vector2(1900.0, -1900.0), {})
+		var bonne: bool = jeu.elevage.apprivoisable(b0)
+		_oter(b0)
+		if bonne:
+			espece = e
+			break
+	if arbre != null and not espece.is_empty():
+		arbre.tombes = arbre.tombes_plein
+		j.position = arbre.position + Vector2(-700.0, 0.0)
+		# (le sous-bois est serré : elle n'est pas loin, du côté dégagé)
+		for x in jeu.monde.autour(arbre.position + Vector2(60.0, 20.0), 50.0):
+			if x != arbre:
+				jeu.monde.retirer(x)
+		var brouteuse = _bete(espece, "proie", arbre.position + Vector2(75.0, 25.0), {})
+		# (elle se tient loin, immobile : une bête ne vient pas manger sous les yeux de qui marche)
+		j.en_mouvement = false
+		var tentee := false
+		for k in 80:
+			if jeu.tentation(brouteuse) == arbre:
+				tentee = true
+				break
+		brouteuse._tentation_t = 0.0
+		var tete := 0.0
+		var avant: int = int(arbre.tombes)
+		for k in 400:
+			brouteuse._conduire(0.1)
+			tete = maxf(tete, float(brouteuse.mange))
+		var manges: int = avant - int(arbre.tombes)
+		if not (tentee and manges >= 1 and tete > 0.6):
+			print("    (tentée %s, %d mangés sur %d, la tête %.2f ; elle est à %d pixels de l'arbre, %s)" % [str(tentee), manges, avant, tete, int(brouteuse.position.distance_to(arbre.position)), str(brouteuse.etat)])
+		verif(tentee and manges >= 1 and tete > 0.6,
+			"une bête qui broute sent les fruits tombés d'un arbre chargé, vient les manger la tête dans l'herbe (%d mangés en quarante secondes) : une proie qu'on sait où attendre" % manges)
+		_oter(brouteuse)
+	# les saisons : au printemps, il fleurit (des fleurs à la place des fruits, rien à cueillir : « Agir » l'abat) ; l'hiver, rien ;
+	# le stade d'Orvane passe avant la saison ; hors ligne, toujours l'été
+	var garde: String = Objet.saison
+	Objet.saison = "printemps"
+	var fleuri = _poser_seule("fruitier", "arbre", "arbre", Vector2(1400.0, 1550.0), [], false)
+	Objet.saison = "hiver"
+	var nu = _poser_seule("fruitier", "arbre", "arbre", Vector2(1550.0, 1550.0), [], false)
+	Objet.saison = garde
+	j.position = fleuri.position + Vector2(0.0, 2.0)
+	var bois := int(j.inventaire["bois"])
+	jeu.agir()
+	var abattu: bool = int(j.inventaire["bois"]) == bois + 1
+	verif(str(fleuri.maturite) == "fleurs" and int(fleuri.fruits_plein) == 0 and _traits_de_fruits(fleuri) > 0 and abattu and str(nu.maturite) == "" and int(nu.fruits_plein) == 0
+		and _traits_de_fruits(nu) == 0 and Fl.maturite("hiver", "fruits") == "murs" and Fl.maturite("été", "dormance") == "" and Fl.maturite("automne", "feuilles") == "murs"
+		and jeu.saison == "été" and Fl.maturite(jeu.saison, "feuilles") == "murs",
+		"au printemps, le fruitier fleurit (des fleurs dessinées, rien à cueillir : « Agir » l'abat) ; l'hiver, il n'a rien ; un stade « fruits » d'Orvane passe avant la saison ; hors ligne, c'est l'été")
+	# la partie gardée : un arbre entamé, un arbre qui repousse, et ce qu'elle a cueilli dans son sac
+	# (deux arbres du lieu : un arbre posé par l'essai n'est pas dans le plan du lieu, et la partie reprise ne le ressème pas)
+	var entame = null
+	var repousse = null
+	for x in portent:
+		if x == arbres["pomme"] or int(x.fruits_plein) < 3 or int(x.reste) != int(x.plein) or not libre.call(x):
+			continue
+		if entame == null:
+			entame = x
+		elif repousse == null and x.position.distance_to(entame.position) > 10.0:
+			repousse = x
+			break
+	if entame == null or repousse == null:
+		verif(false, "la partie gardée garde les fruits (un arbre entamé, un arbre qui repousse)")
+		return
+	entame.fruits = 1
+	entame.tombes = 0
+	repousse.fruits = 0
+	repousse.tombes = 0
+	repousse._repousse_fruits = 123.0
+	var p_e: Vector2 = entame.position
+	var p_r: Vector2 = repousse.position
+	j.inventaire["pomme"] = 3
+	j.inventaire["figue"] = 2
+	var d: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
+	await jeu._commencer("foret", d)
+	var e2 = null
+	var r2 = null
+	for x in jeu.monde.autour(p_e, 1.0):
+		e2 = x
+	for x in jeu.monde.autour(p_r, 1.0):
+		r2 = x
+	verif(e2 != null and r2 != null and int(e2.fruits) == 1 and int(e2.tombes) == 0 and str(r2.fruit) == "pomme" and int(r2.fruits) == 0 and absf(float(r2._repousse_fruits) - 123.0) < 0.2
+		and int(jeu.joueur.inventaire.get("pomme", 0)) == 3 and int(jeu.joueur.inventaire.get("figue", 0)) == 2,
+		"la partie gardée retient les fruits : un pommier entamé n'en a plus qu'un, un autre, vidé, repousse encore (%d s) ; et les fruits du sac" % int(r2._repousse_fruits if r2 != null else -1))
+
+
+# les grains : la céréale et le riz sauvage, leurs épis puis leur paille ; crus, à peine ; le gruau ; semés, une récolte
+func _les_grains() -> void:
+	var W = jeu.monde
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	var RR = jeu.R
+	var A = jeu.atelier
+	var J = jeu.jardin
+	var cereale = _poser_seule("cereale", "sol", "touffe", Vector2(-1500.0, 1400.0))
+	var riz = _poser_seule("riz", "sol", "touffe", Vector2(-1400.0, 1400.0))
+	if cereale == null or riz == null:
+		verif(false, "une céréale, un riz sauvage")
+		return
+	for k in ["grains", "fibre"]:
+		inv[k] = 0
+	j.position = cereale.position + Vector2(0.0, 2.0)
+	var murs: bool = bool(cereale.epis_murs) and bool(riz.epis_murs)
+	jeu.agir()
+	var epis := int(inv["grains"])
+	jeu.agir()
+	var paille := int(inv["fibre"])
+	var cueillie: bool = cereale.epuise() and float(cereale._repousse) > 0.0 and int(inv["grains"]) == epis
+	j.position = riz.position + Vector2(0.0, 2.0)
+	jeu.agir()
+	verif(murs and epis == RR.GRAINS_PAR_EPI and paille == 1 and cueillie and int(inv["grains"]) == 2 * RR.GRAINS_PAR_EPI,
+		"la céréale mûre : ses épis d'abord (+%d grains), sa paille ensuite (une fibre), puis elle repousse ; le riz sauvage aussi" % epis)
+	# crus : à peine
+	for k in ["baies", "viande", "viande_cuite", "bouillon", "champignons", "amanite", "gruau", "soupe_lichen", "pomme", "figue", "coco", "pain_de_singe", "pulpe", "lichen"]:
+		inv[k] = 0
+	inv["grains"] = 1
+	j.faim = 40.0
+	j.temperature = 50.0
+	jeu.manger()
+	var crus: float = j.faim - 40.0
+	# le gruau : trois grains, une gorgée d'eau, à la popote sur un feu (« Cuire », sans viande)
+	inv["grains"] = RR.GRUAU_GRAINS
+	inv["eau"] = 1
+	var popote := int(A.objets.get("popote", 0))
+	A.objets.erase("popote")
+	inv["bois"] = int(inv["bois"]) + 4
+	inv["pierre"] = int(inv["pierre"]) + 2
+	jeu.fabriquer("feu")
+	var sans_popote: String = A.empeche_cuire("gruau")
+	A.objets["popote"] = 1
+	jeu.cuire()
+	var cuit: bool = int(inv.get("gruau", 0)) == 1 and int(inv["grains"]) == 0 and int(inv["eau"]) == 0
+	j.faim = 40.0
+	j.temperature = 40.0
+	jeu.manger()
+	verif(absf(crus - RR.GRAINS_CRUS) < 0.01 and sans_popote.contains("popote") and cuit and absf(j.faim - 40.0 - RR.GRUAU) < 0.01 and j.temperature > 40.0 + RR.GRUAU_CHAUD - 0.5,
+		"crus, des grains nourrissent à peine (+%d) ; %d grains et une gorgée d'eau, à la popote sur un feu (C) : un gruau, +%d à la faim, et il réchauffe" % [int(crus), RR.GRUAU_GRAINS, int(RR.GRUAU)])
+	if popote <= 0:
+		A.objets.erase("popote")
+	# semés : un carré de grains, qui pousse, mûrit, et rend de quoi manger et semer encore (et sa paille)
+	inv["grains"] = J.GRAINES
+	for k in ["graine_baie", "graine_lin", "graine_simple"]:
+		inv[k] = 0
+	var defaut_seul: String = J.culture_par_defaut()
+	inv["graine_lin"] = 2
+	var defaut_lin: String = J.culture_par_defaut()
+	inv["graine_lin"] = 0
+	var carre = A._creer("carre", Vector2(-1500.0, 1650.0), {"culture": "", "stade": 0.0, "eau": 1.0})
+	var seme: bool = J.semer(carre, "grain")
+	for k in 60:
+		carre.etat["eau"] = 1.0
+		J.maj(10.0)
+	var mur: bool = J.mur(carre)
+	var fibre := int(inv["fibre"])
+	var recolte: bool = J.recolter(carre)
+	var rend := int(inv["grains"])
+	verif(defaut_seul == "grain" and defaut_lin == "lin" and seme and mur and recolte and rend == int(J.CULTURES["grain"]["donne"]["grains"]) + J.RENDUES
+		and int(inv["fibre"]) == fibre + int(J.CULTURES["grain"]["donne"]["fibre"]) and str(carre.etat["culture"]) == "",
+		"semés dans un carré (deux grains ; on ne les sème d'office que faute d'autres graines), ils mûrissent en un jour et demi, la terre humide : +%d grains (de quoi semer encore) et leur paille" % rend)
+	A.poses.erase(carre)
+	carre.queue_free()
+
+
+# « Manger » prend le meilleur d'abord, et ce qui fait mal en dernier ; accablée de chaleur, ce qui rafraîchit d'abord. Chaque
+# chose a son icône, son nom, ce qu'on en dit
+func _manger_dans_l_ordre() -> void:
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	var ordre: Array = jeu.A_MANGER
+	for k in ordre:
+		inv[k] = 1
+	j.temperature = 50.0
+	var mange := []
+	for i in ordre.size():
+		var avant := inv.duplicate()
+		j.faim = 10.0
+		jeu.manger()
+		for k in ordre:
+			if int(inv[k]) < int(avant[k]):
+				mange.append(k)
+	jeu.botanique.poison = 0.0
+	inv["baies"] = 1
+	inv["pulpe"] = 1
+	j.temperature = 76.0
+	jeu.manger()
+	var frais: bool = int(inv["pulpe"]) == 0 and int(inv["baies"]) == 1 and j.temperature <= 76.0 - jeu.R.PULPE_FRAIS + 0.01 and jeu.fraicheur > 0.0
+	inv["baies"] = 0
+	jeu.fraicheur = 0.0
+	j.temperature = 50.0
+	j.sante = 100.0
+	j.peur = 0.0
+	var Icones := load("res://scripts/atelier_icones.gd")
+	var nouveaux := ["pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe", "gruau", "soupe_lichen"]
+	var dits: bool = nouveaux.all(func(k): return Icones.connue(k) and load("res://scripts/interface_atelier.gd").NOMS_COURTS.has(k)) \
+		and ["pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe"].all(func(k): return jeu.CUEILLETTE.has(k))
+	verif(mange == ordre and frais and dits,
+		"« Manger » prend le meilleur d'abord (le bouillon, le gruau, la viande cuite, la soupe de lichen, les fruits, les baies…) et ce qui fait mal en dernier (le lichen cru, la viande crue, l'amanite) ; accablée de chaleur, la pulpe d'abord ; chaque chose a son icône et son nom")
+	if mange != ordre:
+		print("    (mangé dans cet ordre : %s)" % str(mange))
+
+
+# le lichen des rennes : cru, amer ; bouilli, une soupe ; et la banquise se tient, trois jours, de soupe de lichen, d'eau prise
+# sous la glace et d'un feu
+func _le_lichen() -> void:
+	await jeu._commencer("banquise")
+	var W = jeu.monde
+	var T = jeu.terrain
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	var RR = jeu.R
+	var A = jeu.atelier
+	jeu.climat.forcer("clair", 0.0, 9999.0)
+	_a_l_heure(false)
+	var mare: Dictionary = T.le_plus_proche("mare", Vector2.ZERO)
+	if mare.is_empty():
+		verif(false, "la banquise a ses mares gelées")
+		return
+	var camp: Vector2 = Vector2(mare["p"]) + Vector2(0.0, 60.0)
+	_remettre(camp)
+	var tous: Array = W.objets.filter(func(x): return str(x.forme) == "lichen_rennes")
+	# (ceux qu'on cueille sans qu'une chose du pays soit à portée de main : sinon « Agir » prendrait celle-là)
+	var debout := func(q: Vector2) -> bool:
+		return T._autour(q, 130.0).any(func(t): return str(t["genre"]) in T.DEBOUT or str(t["genre"]) == "mare")
+	var libres: Array = tous.filter(func(x): return not debout.call(x.position))
+	libres.sort_custom(func(a, b): return a.position.distance_to(camp) < b.position.distance_to(camp))
+	var cueillir := func(o) -> int:
+		var n := 0
+		j.position = o.position + Vector2(0.0, 2.0)
+		for k in 2:
+			var avant := int(inv.get("lichen", 0))
+			jeu.agir()
+			n += int(inv.get("lichen", 0)) - avant
+		return n
+	for k in ["baies", "viande", "viande_cuite", "bouillon", "champignons", "amanite", "gruau", "soupe_lichen", "pomme", "figue", "coco", "pain_de_singe", "pulpe", "grains"]:
+		inv[k] = 0
+	inv["lichen"] = 0
+	var premier: int = cueillir.call(libres[0]) if not libres.is_empty() else 0
+	var epuise: bool = not libres.is_empty() and libres[0].epuise()
+	_remettre(camp)
+	inv["lichen"] = 1
+	j.faim = 40.0
+	jeu.manger()
+	var cru: float = j.faim - 40.0
+	var peur: float = j.peur
+	verif(tous.size() >= 20 and premier == 2 and epuise and absf(cru - RR.LICHEN_CRU) < 0.01 and peur >= RR.LICHEN_CRU_PEUR - 0.01,
+		"la banquise a son lichen des rennes (%d touffes) : deux poignées chacune ; cru, il nourrit à peine (+%d) et noue le ventre (la peur monte)" % [tous.size(), int(cru)])
+	# trois jours à la banquise : chaque jour, elle cueille le lichen proche du camp (il repousse en un jour), puise sous la glace,
+	# fait ses soupes au feu, et mange quand la faim vient. Elle n'a rien d'autre
+	A.objets["gourde"] = 1
+	A.objets["popote"] = 1
+	var f = jeu.Feu.new()
+	f.jeu = jeu
+	f.position = camp + Vector2(30.0, 0.0)
+	jeu.monde.add_child(f)
+	jeu.feux.append(f)
+	var proches: Array = libres.slice(1, 13)
+	j.faim = 80.0
+	var faim_min := 100.0
+	var soupes := 0
+	var cuites := 0
+	for jour_ in 3:
+		f.bois = RR.FEU_MAX
+		for o in proches:
+			if not o.epuise():
+				cueillir.call(o)
+		while int(inv["lichen"]) >= RR.SOUPE_LICHENS:
+			j.position = Vector2(mare["p"]) + Vector2(0.0, 6.0)
+			jeu.agir()
+			j.position = camp
+			var avant := int(inv.get("soupe_lichen", 0))
+			jeu.cuire()
+			if int(inv.get("soupe_lichen", 0)) <= avant:
+				break
+			cuites += 1
+		# (le jour passe : la faim baisse ; elle mange une soupe quand elle a faim)
+		for k in int(RR.DUREE / 10.0):
+			j.faim = maxf(0.0, j.faim - RR.FAIM * 10.0)
+			if j.faim < 55.0 and int(inv.get("soupe_lichen", 0)) > 0:
+				jeu.manger()
+				soupes += 1
+			faim_min = minf(faim_min, j.faim)
+		# (la nuit, le lichen repousse)
+		for o in proches:
+			o._process(load("res://scripts/objet.gd").REPOUSSE + 1.0)
+	var besoin := ceilf(RR.FAIM * RR.DUREE / RR.SOUPE_LICHEN)
+	var loin: float = proches.back().position.distance_to(camp) if not proches.is_empty() else 0.0
+	verif(proches.size() >= 8 and faim_min > RR.FAIM_MORD and soupes >= 6 and j.temperature >= 40.0,
+		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour) du lichen de %d touffes autour du camp (la plus loin à %d pixels), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
+		cuites, soupes, int(besoin), proches.size(), int(loin), int(faim_min)])
+	f.queue_free()
+	jeu.feux.erase(f)
+
+
+# la pulpe du cactus : elle pique ; mangée, elle rafraîchit (au désert, en plein jour, la chaleur ne tue plus) ; pressée au
+# mortier, elle remplit la gourde
+func _la_pulpe() -> void:
+	await jeu._commencer("desert")
+	var W = jeu.monde
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	var RR = jeu.R
+	var A = jeu.atelier
+	var C = jeu.climat
+	C.forcer("clair", 0.0, 9999.0)
+	_a_l_heure(false)
+	# (loin de ce que le pays a de debout, que « Agir » prendrait d'abord : une carcasse)
+	var debout := func(q: Vector2) -> bool:
+		return jeu.terrain._autour(q, 130.0).any(func(t): return str(t["genre"]) in jeu.terrain.DEBOUT or str(t["genre"]) == "mare")
+	var cactus: Array = W.objets.filter(func(x): return str(x.forme) == "cactus" and not debout.call(x.position))
+	var c = cactus[0] if not cactus.is_empty() else null
+	if c == null:
+		verif(false, "le désert a ses cactus")
+		return
+	inv["pulpe"] = 0
+	_remettre(c.position + Vector2(0.0, 2.0))
+	jeu.agir()
+	var pique: float = 100.0 - j.sante
+	var une := int(inv["pulpe"])
+	A.portes["vetement_chaud"] = true
+	j.sante = 100.0
+	jeu.agir()
+	var gardee: float = 100.0 - j.sante
+	A.portes.erase("vetement_chaud")
+	var tous: int = W.objets.filter(func(x): return str(x.forme) == "cactus").size()
+	verif(tous >= 15 and une == 1 and int(inv["pulpe"]) == 2 and absf(pique - RR.EPINES) < 0.01 and gardee < 0.01 and c.epuise(),
+		"le désert a ses cactus (%d) : d'un bras coupé, sa pulpe ; il pique les mains nues (-%d), la pelisse les garde" % [tous, int(pique)])
+	# au désert, en plein jour : sans rien, le corps passe la chaleur qui tue ; une pulpe mangée, il reste en deçà
+	var ici: Vector2 = c.position + Vector2(-200.0, 120.0)
+	for k in 40:
+		var q := Vector2(-1500.0 + 70.0 * k, 1100.0)
+		if C.abri(q) == 0.0 and W.autour(q, 120.0).filter(func(x): return x.couvert() > 0.0).is_empty():
+			ici = q
+			break
+	_remettre(ici)
+	jeu.fraicheur = 0.0
+	var sans := _tenir_au_climat(40.0)
+	_remettre(ici)
+	inv["pulpe"] = 1
+	jeu.manger()
+	var avec := _tenir_au_climat(40.0)
+	verif(float(sans[0]) > RR.CHAUD and float(avec[0]) < RR.CHAUD and float(avec[0]) < float(sans[0]) - 6.0,
+		"en plein jour au désert, le corps monte à %d (la chaleur tue) ; une pulpe de cactus mangée, il reste à %d : la chaleur pèse moins, trois quarts de minute" % [int(sans[0]), int(avec[0])])
+	# pressée au mortier : de l'eau dans la gourde (deux pulpes, une gorgée) ; l'eau du désert, sans pluie
+	inv["pulpe"] = RR.PULPES_GORGEE
+	inv["eau"] = 0
+	var mortier := int(A.objets.get("mortier", 0))
+	var gourde := int(A.objets.get("gourde", 0))
+	A.objets.erase("mortier")
+	A.objets["gourde"] = 1
+	var sans_mortier: String = A.empeche_presser()
+	A.objets["mortier"] = 1
+	var presse: bool = A.presser()
+	verif(sans_mortier.contains("mortier") and presse and int(inv["eau"]) == 1 and int(inv["pulpe"]) == 0,
+		"pressées au mortier, %d pulpes de cactus remplissent la gourde d'une gorgée : l'eau des recettes, au désert, sans pluie" % RR.PULPES_GORGEE)
+	if mortier <= 0:
+		A.objets.erase("mortier")
+	if gourde <= 0:
+		A.objets.erase("gourde")
+	jeu.fraicheur = 0.0
+
+
+# le monde ouvert : un arbre cueilli le reste, même loin, et il en porte de nouveau pendant qu'on est ailleurs
+func _les_fruits_dans_le_monde() -> void:
+	await jeu._commencer("prairie", {}, true)
+	var W = jeu.monde
+	var j = jeu.joueur
+	var arbre = null
+	for x in W.objets:
+		if x.genre == "arbre" and int(x.fruits_plein) >= 3 and int(x.tombes_plein) == 0 and x.has_meta("rang") and x.position.length() > 300.0:
+			if W.autour(x.position, 6.0).filter(func(y): return y != x and not y.epuise()).is_empty():
+				arbre = x
+				break
+	if arbre == null:
+		verif(false, "le monde ouvert a des arbres qui portent des fruits, autour du réveil")
+		return
+	var p: Vector2 = arbre.position
+	var plein: int = int(arbre.fruits_plein)
+	j.position = p + Vector2(0.0, 2.0)
+	for b in get_tree().get_nodes_in_group("betes"):
+		if b.position.distance_to(p) < 300.0:
+			_oter(b)
+	jeu.agir()
+	var loin := p + Vector2(9000.0, 0.0)
+	j.position = loin
+	W.suivre(loin, true)
+	var parti: bool = W.autour(p, 1.0).is_empty()
+	j.position = p + Vector2(0.0, 2.0)
+	W.suivre(p, true)
+	var a2 = W.autour(p, 1.0)[0] if not W.autour(p, 1.0).is_empty() else null
+	var reste_un: bool = a2 != null and int(a2.fruits) == plein - 1
+	var restaient: int = int(a2.fruits) if a2 != null else -1
+	# (vidé, puis loin plus longtemps que sa repousse : il en porte de nouveau)
+	for k in plein - 1:
+		jeu.agir()
+	var vide: bool = a2 != null and not a2.porte_fruits() and float(a2._repousse_fruits) > 0.0
+	j.position = loin
+	W.suivre(loin, true)
+	jeu.horloge += jeu.R.REPOUSSE_FRUITS + 5.0
+	j.position = p + Vector2(0.0, 2.0)
+	W.suivre(p, true)
+	var a3 = W.autour(p, 1.0)[0] if not W.autour(p, 1.0).is_empty() else null
+	verif(parti and reste_un and vide and a3 != null and int(a3.fruits) == plein and a3.intact(),
+		"le monde ouvert : un arbre entamé l'est toujours, loin puis de retour (%d fruits sur %d) ; vidé, il en porte de nouveau quand on revient deux jours et demi plus tard" % [
+		restaient, plein])
+	j.position = Vector2.ZERO
+	W.suivre(Vector2.ZERO, true)

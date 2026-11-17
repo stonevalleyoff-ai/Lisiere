@@ -2402,6 +2402,8 @@ func _carre(p) -> void:
 		var grain := P.IVOIRE
 		if culture == "lin":
 			grain = P.IVOIRE.lerp(CUIVRE, 0.4)
+		elif culture == "grain":
+			grain = P.BRAISE.lerp(P.IVOIRE, 0.45).darkened(0.05)
 		elif culture == "baie":
 			grain = P.IVOIRE.lerp(BAIE, 0.3)
 		elif culture.contains(":"):
@@ -2476,6 +2478,8 @@ func _carre_vif(p, rang: int) -> void:
 				_plant_lin(p, q, s, k, bal, g, givre)
 			"simple":
 				_plant_simple(p, q, s, k, bal, g, givre)
+			"grain":
+				_plant_grain(p, q, s, k, bal, g, givre)
 			_:
 				# (une herbe de l'herbier, semée : « foret:ombelle » ; son dessin est celui du lieu, en petit : scripts/herbe.gd)
 				if culture.contains(":"):
@@ -2548,6 +2552,51 @@ func _plant_lin(p, q: Vector2, s: float, k: float, bal: float, g: float, givre: 
 			_pastille(p, haut, 1.2 * fleur, 1.05 * fleur, bleu)
 	if givre:
 		_pastille(p, q + Vector2(bal * h0 * 0.5, -h0 * 0.55), 1.6, 0.6, Color(NEIGE, 0.7))
+
+
+# les grains (scripts/jardin.gd) : deux lames fines, puis une touffe qui talle, ses tiges qui montent ; leurs épis, verts, se
+# remplissent, puis dorent et ploient sous leur poids. Mûrs, le rang entier a la couleur de la paille
+func _plant_grain(p, q: Vector2, s: float, k: float, bal: float, g: float, givre: bool) -> void:
+	var mur := smoothstep(2.2, 3.0, s)
+	var vert := _verdure(P.MOUSSE.lerp(CORDE, 0.2).lightened(0.1), givre)
+	var paille := CORDE.lerp(P.IVOIRE, 0.25).lerp(P.BRAISE_COEUR, 0.12)
+	var tige := vert.lerp(paille, mur)
+	var u0 := clampf((s - 0.25) / 0.75, 0.0, 1.0)
+	var u1 := clampf(s - 1.0, 0.0, 1.0)
+	# (les lames, au pied)
+	var nl := 2 if (s < 1.0 or _mobile) else 4
+	for j in nl:
+		var cote := -1.0 if j % 2 == 0 else 1.0
+		var l := (1.6 + 2.6 * u0 + 1.8 * u1) * k
+		var bout := q + Vector2(cote * (1.2 + 0.4 * j) * l * 0.45 + bal * l * 0.6, -l * (0.9 - 0.12 * j))
+		p.tracer(PackedVector2Array([q, q.lerp(bout, 0.5) + Vector2(-cote * 0.4, -0.3), bout]), 0.9, vert.lerp(paille, mur * 0.6).darkened(0.05 * j), true, PackedFloat32Array(), not _mobile)
+	if s < 1.2:
+		return
+	# (les tiges, et leurs épis : un épi qui se remplit, puis qui ploie, doré)
+	var nt := 2 if _mobile else 3
+	var epi := smoothstep(1.6, 2.2, s)
+	var or_ := P.BRAISE_COEUR.lerp(P.IVOIRE, 0.3).lerp(CORDE, 0.3).darkened(0.06)
+	for j in nt:
+		var e := j - (nt - 1) * 0.5
+		var h1 := fposmod(g * 7.3 + j * 0.47, 1.0)
+		var hj := (2.5 + 9.5 * u1 * (0.8 + 0.2 * h1)) * k
+		var pied := q + Vector2(e * 1.1, 0.0)
+		var pen := bal * 1.2 + e * 0.12 + (0.22 * mur) * (1.0 if g > 0.5 else -1.0)
+		var haut := pied + Vector2(pen * hj, -hj + absf(pen) * hj * 0.25)
+		p.tracer(PackedVector2Array([pied, pied + Vector2(pen * hj * 0.3, -hj * 0.55), haut]), 0.95, tige, false, PackedFloat32Array([1.15, 0.9, 0.6]), not _mobile)
+		if epi <= 0.05:
+			continue
+		# (l'épi : trois grains en chevron, qui pendent un peu plus quand il mûrit)
+		var d := Vector2(pen * 0.6 + 0.35 * mur * signf(pen + 0.001), -1.0 + 0.55 * mur).normalized()
+		var c := tige.lerp(or_, mur)
+		for m in 3:
+			var gq := haut + d * (0.9 + 1.25 * m) * epi
+			_pastille(p, gq + d.orthogonal() * 0.55, 0.62 * epi + 0.2, 0.5 * epi + 0.2, c)
+			_pastille(p, gq - d.orthogonal() * 0.55, 0.62 * epi + 0.2, 0.5 * epi + 0.2, c.darkened(0.08))
+		if mur > 0.3 and not _mobile:
+			p.tracer(PackedVector2Array([haut + d * 3.4 * epi, haut + d * 5.6 * epi + d.orthogonal() * 0.6]), 0.4, Color(ENCRE, 0.5))
+	if givre:
+		_pastille(p, q + Vector2(bal * 2.0, -2.2), 1.8, 0.6, Color(NEIGE, 0.7))
 
 
 # les simples : une rosette gris-vert au ras du sol, deux hampes, leurs ombelles plates qui pâlissent en mûrissant

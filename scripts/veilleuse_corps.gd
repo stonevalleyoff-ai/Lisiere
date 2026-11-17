@@ -1605,6 +1605,10 @@ func _objet(p: Vector2) -> void:
 		"baie":
 			for o in [Vector2(-0.9, -1.4), Vector2(1.0, -1.1), Vector2(0.1, -2.6)]:
 				_forme(_ellipse(p + o, 1.05, 1.05, 6), P.SANG.lightened(0.25))
+		"fruit":
+			# (un fruit cueilli dans les branches : rond, sa queue)
+			_forme(_ellipse(p + Vector2(0.0, -1.4), 1.9, 1.8, 10), P.BRAISE_ROUGE.lerp(P.BRAISE, 0.25))
+			ci.draw_line(p + Vector2(0.2, -3.1), p + Vector2(0.7, -4.2), P.ENCRE, 0.7, true)
 		"fibre":
 			for k in 3:
 				var a := -PI * 0.5 + (k - 1) * 0.35

@@ -67,6 +67,15 @@ const GESTES := {
 		[0.44, 1.0, Vector3(12.6, 0.8, 11.5), 2.2, 4.9, 0.1, 1.2],
 		[0.56, 1.0, Vector3(11.4, 3.2, 9.8), 2.1, 4.4, 0.15, 1.0],
 		[1.0, 0.0, Vector3(3.0, 6.0, 17.0), 0.0, 0.0, 0.0, 0.0]]},
+	# (un fruit dans les branches d'un arbre : elle se hisse sur la pointe des pieds, le buste en arrière, le bras tendu vers le
+	# haut ; elle le tient, tire d'un coup sec, et le ramène)
+	"cueillir": {"duree": 0.5, "touche": 0.5, "biais": 0.3, "deux_mains": false, "objet": ["fruit", 0.55, 0.97], "cles": [
+		[0.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0],
+		[0.3, 1.0, Vector3(5.0, 3.0, 40.0), -0.8, -1.8, 0.1, 0.3],
+		[0.48, 1.0, Vector3(6.5, 2.0, 45.5), -1.5, -2.5, 0.12, 0.5],
+		[0.58, 1.0, Vector3(6.0, 2.4, 42.0), -1.1, -2.0, 0.08, 0.2, true],
+		[0.78, 1.0, Vector3(5.0, 4.5, 29.0), -0.3, -0.7, 0.04, 0.0],
+		[1.0, 0.0, Vector3(3.0, 6.0, 17.0), 0.0, 0.0, 0.0, 0.0]]},
 	"touffe": {"duree": 0.36, "touche": 0.6, "biais": 0.25, "deux_mains": false, "objet": ["fibre", 0.45, 0.97], "cles": [
 		[0.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0],
 		[0.3, 1.0, Vector3(9.5, 2.5, 1.5), 4.0, 3.6, 0.1, 0.8],
