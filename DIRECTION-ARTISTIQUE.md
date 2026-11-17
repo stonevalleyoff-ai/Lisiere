@@ -40,7 +40,7 @@ Trois sensations, par ordre d'importance :
 
 | département | fichiers dont il a la charge | ce qu'il livre |
 | --- | --- | --- |
-| Environnement | `scripts/monde.gd`, `scripts/objet.gd`, `shaders/sol*`, `shaders/vegetation*` | le sol peint, l'herbe qui ondule, les arbres, buissons, rochers et touffes redessinés, le vent dans les feuillages, les feuillages qui s'effacent devant la veilleuse, des détails (fougères, champignons, bois mort, fleurs selon le lieu), la lisière du monde |
+| Environnement | `scripts/monde.gd`, `scripts/objet.gd`, `scripts/flore*.gd`, `shaders/sol*`, `shaders/vegetation*` | le sol peint, l'herbe qui ondule, la flore de chaque biome dessinée d'après l'herbier (« La flore »), rochers redessinés, le vent dans les feuillages, les feuillages qui s'effacent devant la veilleuse, des détails (fougères, bois mort, bruyère, flaques selon le lieu), la lisière du monde |
 | Créatures | `scripts/bete.gd`, `scripts/bestiaire*.gd`, `scripts/squelette.gd`, `scripts/vitrine_betes.gd`, `outils/planche_betes.gd`, `shaders/bete_encre.gdshader` | les bêtes dessinées par Lisière d'après le plan de corps de leur lignée (« Le bestiaire »), animées (pattes, pas, respiration, regard, queue), les réactions (sursaut, recul, fuite), la mort (chute, puis l'encre qui s'efface), les échos (fumée d'encre pâle) |
 | La veilleuse | `scripts/joueur.gd` | la veilleuse redessinée et animée : marche, course, attente, respiration, gestes de récolte (couper, casser, cueillir, ramasser), coup de lance, torche, blessure, peur (elle se recroqueville), chute |
 | Lumière et effets | `scripts/feu.gd`, `scripts/yeux.gd`, `scripts/effets.gd`, `shaders/feu*`, `shaders/ecran*` | le feu (flammes, braises, fumée, chaleur), la torche, la couleur du monde à chaque heure, la brume de nuit, les yeux, la caméra (secousse, arrêt d'image), les particules (éclats, poussière, feuilles, braises, lucioles), les effets d'écran (peur, blessure, faim, santé basse, froid, chaud, grain, vignette) |
@@ -85,6 +85,18 @@ outils/godot.sh --path . -- --betes --lieu foret --figees --image /tmp/betes    
 outils/godot.sh --path . -- --betes --lieu foret --heure nuit --image /tmp/betes  # de nuit
 outils/film.sh /tmp/film -- --betes --lieu foret --page 1 --duree 8               # filmées : elles vont, broutent, guettent
 ```
+
+## La flore
+
+Le principe du bestiaire vaut pour les plantes : **Orvane donne la plante, Lisière la dessine.** L'herbier du biome dit ses lignées, leur forme, leur part, leur hauteur, leur stade, leurs défenses ; `scripts/flore.gd` en fait des objets du lieu, `scripts/flore_dessins.gd` les dessine à l'encre. La planche d'Orvane n'est plus qu'un secours, pour un port que Lisière ne connaît pas.
+
+- **Un biome se reconnaît à sa flore.** Pas d'arbre dans l'herbier, pas d'arbre : la banquise est un pays de lichens à plat et de coussins poudrés de neige, le volcan et le désert de cactus en candélabre, d'agaves, de plantes grasses, de buissons d'épines ; le marais a ses palétuviers sur échasses, ses fougères arborescentes, ses bambous, ses joncs, ses mares à nénuphars ; la taïga ses conifères parmi les bouleaux. Sur le sol nu, les plantes vont par petits groupes de la même lignée : c'est par elles que se lit un lieu sans arbres.
+- **La silhouette d'abord**, comme pour une bête : le bouleau à son fût blanc taché d'encre, le palmier à son fût annelé qui se courbe, le baobab à sa bouteille, le figuier à ses racines qui tombent du feuillage, le roncier à ses tiges arquées, l'aromatique à ses épis dressés, l'agave à ses dards, le lichen des rennes à ses boules de corail, l'amanite à son rouge piqué de blanc. Une plante se lit à la taille du jeu (une fleur des prés fait dix pixels, un cactus géant dépasse la veilleuse).
+- **Le dessin** : celui des arbres et des buissons (`objet.gd`) : un cerne d'encre net, plus lourd en bas à droite ; les aplats peints par le shader de végétation selon leur matière (un feuillage en touffes, une écorce en cylindre, un dôme lisse pour un chapeau, une baie, une feuille charnue) ; la lumière en haut à gauche. Les couleurs viennent de la palette, tirées vers la couleur de la plante dans l'herbier (son vert, celui de ses fleurs, ramené vers les encres du carnet).
+- **Ce qui se cueille se voit** : un buisson perd ses baies une à une, une fleur cueillie laisse sa tige coupée puis des boutons verts, un champignon son pied tranché, un cactus entamé un bras en moins, un nénuphar sa fleur ; une fleur qui repousse se redessine par quarts.
+- **Ce que ça coûte** : un objet se dessine une fois (et quand il change), en un seul appel ; une fleur des prés est une colonie de six à neuf corolles dans un seul objet. Les fleurs et les champignons ne sont plus du décor : ils sont dans le plan du lieu, comptés avec le reste.
+
+**Regarder** : `outils/godot.sh --path . -- --vitrine --heure jour --lieu volcan|desert|marais|banquise` ; dans le monde ouvert, `--ouvert --depuis x,y --reste` ; `--cueillette` : elle cueille fleurs et champignons des bois.
 
 ## Le temps qu'il fait
 
