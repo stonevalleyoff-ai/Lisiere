@@ -1,18 +1,28 @@
 extends Control
-# Lisière — la carte du monde, dans le carnet (scripts/interface_carte_monde.gd)
-# Le monde ouvert (MONDE-OUVERT.md, étape 5) : à la pause, une page du carnet montre ce qu'on a découvert. Chaque région où l'on
-# est entrée est peinte du ton de son biome, avec son nom ; celles qui la touchent sont esquissées (on sait qu'il y a quelque
-# chose) ; le reste est du papier. Les crêtes qu'on ne passe pas, les rivières, les feux, les ponts, et où est la veilleuse.
-# Un appui change d'échelle : les environs, ou tout ce qu'on connaît.
+# Lisière — la carte, dans le carnet (scripts/interface_carte_monde.gd)
+# À la pause, une page du carnet montre ce qu'on a parcouru, si l'on a fabriqué sa carte (scripts/reperes.gd).
+# Le monde ouvert (MONDE-OUVERT.md, étape 5) : chaque région où l'on est entrée est peinte du ton de son biome, avec son nom ;
+# celles qui la touchent sont esquissées (on sait qu'il y a quelque chose) ; le reste est du papier. Les crêtes qu'on ne passe
+# pas, les rivières, les feux, les ponts, et où est la veilleuse.
+# Un lieu : les cases où elle est passée, du ton du lieu, ses arbres et ses rochers à l'encre, l'eau en lavis ; le bord du
+# lieu ; les feux, et où est la veilleuse.
+# Et, dans les deux, ce qu'elle y a écrit à la plume : ses repères, leur signe et leur nom ; hors de la vue, au bord, du côté
+# où ils sont ; deux noms ne se couvrent pas (le plus proche d'elle garde le sien). Un appui change d'échelle : les environs,
+# tout ce qu'on connaît, et (le monde ouvert) tout près, où l'on lit ses repères.
 
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/interface_theme.gd")
+const Reperes := preload("res://scripts/reperes.gd")
+const Carte := preload("res://scripts/carte.gd")
+const R := preload("res://scripts/regles.gd")
 
 var jeu
 var loin := false
+var pres := false             # (le monde ouvert) tout près : deux mille pixels de large, comme un lieu
 var _tons := {}
 var _parois := {}             # par région connue : les points de ses parois (le relief), calculés une fois
 var _bouches := {}            # par grotte connue : ses bouches
+var _objets: Array = []       # un lieu : ses arbres et ses rochers, [position, genre, rayon], relus à chaque ouverture
 
 
 func _init() -> void:
@@ -26,6 +36,7 @@ func ouvrir(j) -> void:
 		_parois.clear()
 		_bouches.clear()
 	jeu = j
+	_objets.clear()
 	queue_redraw()
 
 
@@ -102,7 +113,14 @@ func _bouches_de(i: int) -> PackedVector2Array:
 
 func _gui_input(e: InputEvent) -> void:
 	if (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed):
-		loin = not loin
+		# (le monde ouvert : les environs, tout, tout près ; un lieu : les environs, tout)
+		if jeu != null and jeu.get("carte") != null:
+			var avant_loin := loin
+			loin = not loin and not pres
+			pres = avant_loin
+		else:
+			loin = not loin
+			pres = false
 		queue_redraw()
 		accept_event()
 
@@ -115,7 +133,10 @@ func _ton(type: String) -> Color:
 
 
 func _draw() -> void:
-	if jeu == null or jeu.get("carte") == null or jeu.joueur == null:
+	if jeu == null or jeu.joueur == null:
+		return
+	if jeu.get("carte") == null:
+		_draw_lieu()
 		return
 	var C = jeu.carte
 	var connues: Dictionary = jeu.decouvertes
@@ -123,7 +144,9 @@ func _draw() -> void:
 	# l'échelle : les environs (six régions de large), ou tout ce qu'on connaît
 	var centre := ici
 	var k: float = size.x / (float(C.cote) * 6.5)
-	if loin and connues.size() > 1:
+	if pres:
+		k = size.x / 2000.0
+	elif loin and connues.size() > 1:
 		var boite := Rect2(ici, Vector2.ZERO)
 		for i in connues:
 			boite = boite.expand(C.regions[i]["pos"])
@@ -228,22 +251,140 @@ func _draw() -> void:
 			var q: Vector2 = vers.call(f.position)
 			draw_circle(q, 4.2, encre)
 			draw_circle(q, 3.0, P.BRAISE if f.allume() else P.CENDRE)
-	# la tanière de la Noire, quand la veilleuse l'a trouvée (scripts/noire.gd) : une tache d'encre, deux points rouges ; hors
-	# de la carte, elle reste au bord, du côté où elle est
-	var noire = jeu.get("noire")
-	if noire != null and noire.taniere_connue:
-		var q: Vector2 = vers.call(noire.taniere)
-		q = Vector2(clampf(q.x, 12.0, size.x - 12.0), clampf(q.y, 12.0, size.y - 12.0))
-		draw_circle(q, 7.0, Color(P.PAPIER, 0.85))
-		draw_circle(q, 5.6, Color(0.05, 0.04, 0.05))
-		draw_circle(q + Vector2(-2.1, -1.0), 1.25, P.OEIL_NOIRE)
-		draw_circle(q + Vector2(2.1, -1.0), 1.25, P.OEIL_NOIRE)
-	var v: Vector2 = vers.call(ici)
+	# ce qu'elle y a écrit (la tanière de la Noire aussi, si elle l'a écrite : scripts/reperes.gd), puis elle
+	_reperes(vers)
+	_veilleuse(vers.call(ici))
+	_aide()
+
+
+# ce qu'elle a écrit à la plume : un signe, son nom dessous ; hors de la vue, au bord, plus petit, du côté où il est
+func _reperes(vers: Callable) -> void:
+	if jeu.get("reperes") == null:
+		return
+	var police := T.titre_italique()
+	var bord := Rect2(Vector2(12.0, 12.0), size - Vector2(24.0, 24.0))
+	var noms: Array = []
+	var pris: Array = []          # (ce que les noms ne couvrent pas : les signes, puis les noms déjà écrits)
+	# (les plus loin d'abord : le plus proche d'elle se dessine par-dessus, et garde son nom)
+	var rangs: Array = jeu.reperes.par_distance()
+	rangs.reverse()
+	for i in rangs:
+		var r: Dictionary = jeu.reperes.liste[i]
+		var q: Vector2 = vers.call(Reperes.position(r))
+		var dedans := bord.has_point(q)
+		if not dedans:
+			q = Vector2(clampf(q.x, bord.position.x, bord.end.x), clampf(q.y, bord.position.y, bord.end.y))
+		var t := 22.0 if dedans else 14.0
+		draw_circle(q, t * 0.55, Color(P.PAPIER, 0.85 if dedans else 0.6))
+		Reperes.signe(self, str(r["genre"]), q, t, not dedans)
+		if dedans:
+			pris.append(Rect2(q - Vector2(t, t) * 0.45, Vector2(t, t) * 0.9))
+			var nom := str(Reperes.GENRES.get(str(r["genre"]), {}).get("nom", ""))
+			var l := police.get_string_size(nom, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+			noms.push_front([Rect2(q + Vector2(-l * 0.5, t * 0.5 + 1.0), Vector2(l, 14.0)), nom])
+	# leurs noms : du plus proche d'elle au plus loin ; un nom qui en couvrirait un autre, ou un signe, se tait
+	for e in noms:
+		var rr: Rect2 = e[0]
+		var libre := true
+		for autre in pris:
+			if rr.grow(2.0).intersects(autre):
+				libre = false
+				break
+		if not libre:
+			continue
+		pris.append(rr)
+		var o := rr.position + Vector2(0.0, 11.0)
+		draw_string_outline(police, o, str(e[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 4, Color(P.PAPIER, 0.85))
+		draw_string(police, o, str(e[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(P.ENCRE, 0.9))
+
+
+# où est la veilleuse : un rond d'encre, son écharpe, un cercle qui bat
+func _veilleuse(v: Vector2) -> void:
 	draw_circle(v, 6.5, Color(P.PAPIER, 0.9))
-	draw_circle(v, 5.0, encre)
+	draw_circle(v, 5.0, Color(P.ENCRE, 0.85))
 	draw_circle(v, 2.6, P.ECHARPE)
 	draw_arc(v, 10.0 + 2.0 * sin(Time.get_ticks_msec() / 300.0), 0.0, TAU, 24, Color(P.SANG, 0.7), 1.4, true)
-	# ce que dit un appui
-	var aide := "tout ce que tu connais" if not loin else "les environs"
+
+
+# ce que dit un appui
+func _aide() -> void:
+	var ouvert: bool = jeu.get("carte") != null
+	var aide := "tout ce que tu connais" if not loin and not pres else ("tout près" if loin and ouvert else "les environs")
 	var la := T.texte_moyen().get_string_size(aide, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 	draw_string(T.texte_moyen(), Vector2(size.x - la - 6.0, size.y - 6.0), aide, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(P.ENCRE, 0.5))
+
+
+# --- un lieu : ses cases parcourues, ses arbres, ses rochers, son eau, son bord ---
+
+func _draw_lieu() -> void:
+	var vus: Dictionary = jeu.reperes.vus if jeu.get("reperes") != null else {}
+	var ici: Vector2 = jeu.joueur.position
+	var cote := Reperes.CASE
+	# l'échelle : les environs (deux mille pixels de large), ou tout ce qu'elle a parcouru
+	var centre := ici
+	var k: float = size.x / 2000.0
+	if loin and vus.size() > 1:
+		var boite := Rect2(ici, Vector2.ZERO)
+		for c in vus:
+			boite = boite.expand(Vector2(c) * cote).expand((Vector2(c) + Vector2.ONE) * cote)
+		boite = boite.grow(cote)
+		centre = boite.get_center()
+		k = minf(k, minf(size.x / boite.size.x, size.y / boite.size.y))
+	var vers := func(p: Vector2) -> Vector2: return (p - centre) * k + size * 0.5
+	var vue: Rect2 = Rect2(centre - size * 0.5 / k, size / k).grow(cote)
+	var ton := Color(str(Carte.TONS.get(str(jeu.biome), "b9b29a"))).lerp(P.PAPIER, 0.3)
+	# les cases parcourues : le ton du lieu ; l'eau, en lavis bleu
+	for c in vus:
+		var o: Vector2 = Vector2(c) * cote
+		if not vue.has_point(o):
+			continue
+		var r := Rect2(vers.call(o), Vector2(cote, cote) * k).grow(0.6)
+		draw_rect(r, ton)
+		if jeu.get("climat") != null and float(jeu.climat.eau(o + Vector2(cote, cote) * 0.5)) > 0.2:
+			draw_rect(r, Color(0.47, 0.6, 0.7, 0.55))
+	# ses arbres et ses rochers, là où elle est passée
+	if _objets.is_empty() and jeu.get("monde") != null:
+		for o in jeu.monde.objets:
+			if is_instance_valid(o) and str(o.genre) in ["arbre", "sapin", "rocher"]:
+				_objets.append([o.position, str(o.genre), float(o.rayon)])
+	var encre := Color(P.ENCRE, 0.85)
+	for e in _objets:
+		var p: Vector2 = e[0]
+		if not vue.has_point(p) or not vus.has(Reperes.cle(p)):
+			continue
+		var q: Vector2 = vers.call(p)
+		var r: float = clampf(float(e[2]) * k * 0.7, 1.6, 5.0)
+		match str(e[1]):
+			"rocher":
+				draw_circle(q, r, Color("3a2c20", 0.75))
+				draw_circle(q + Vector2(-0.3, -0.3) * r, r * 0.6, Color("9d968a"))
+			"sapin":
+				var pts := PackedVector2Array([q + Vector2(0, -r * 1.6), q + Vector2(r, r * 0.8), q + Vector2(-r, r * 0.8)])
+				draw_colored_polygon(pts, Color("3f5a3a"))
+			_:
+				draw_circle(q, r + 0.8, Color(encre, 0.55))
+				draw_circle(q, r, Color("4c6a3a"))
+	# le bord du lieu, là où elle l'a vu
+	var lim := Rect2(Vector2(-R.DEMI, -R.DEMI), Vector2(R.DEMI, R.DEMI) * 2.0)
+	var coins := [lim.position, Vector2(lim.end.x, lim.position.y), lim.end, Vector2(lim.position.x, lim.end.y)]
+	for i in 4:
+		var a: Vector2 = coins[i]
+		var b: Vector2 = coins[(i + 1) % 4]
+		var pas := int(a.distance_to(b) / cote)
+		for u in pas:
+			var m: Vector2 = a.lerp(b, (u + 0.5) / pas)
+			if vus.has(Reperes.cle(m - (m - lim.get_center()).normalized() * 4.0)):
+				draw_line(vers.call(a.lerp(b, float(u) / pas)), vers.call(a.lerp(b, float(u + 1) / pas)), encre, 2.0, true)
+	# les feux
+	for f in jeu.feux:
+		if is_instance_valid(f):
+			var q: Vector2 = vers.call(f.position)
+			draw_circle(q, 4.2, encre)
+			draw_circle(q, 3.0, P.BRAISE if f.allume() else P.CENDRE)
+	# le nom du lieu
+	var nom := str(jeu.biome_info.get("nom", "")) if typeof(jeu.get("biome_info")) == TYPE_DICTIONARY else ""
+	if nom != "":
+		draw_string(T.titre_italique(), Vector2(8.0, 20.0), nom, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(P.ENCRE, 0.75))
+	_reperes(vers)
+	_veilleuse(vers.call(ici))
+	_aide()

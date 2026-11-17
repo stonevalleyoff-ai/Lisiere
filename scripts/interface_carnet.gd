@@ -370,14 +370,15 @@ class Pause extends Control:
 	var _voile: ColorRect
 	var _sous: Label
 	var _commandes: Commandes
-	# le monde ouvert : la carte de ce qu'on a découvert, à la place des commandes (un bouton passe de l'une aux autres)
+	# la carte de ce qu'on a parcouru et de ce qu'on y a écrit, à la place des commandes (un bouton passe de l'une aux autres) ;
+	# seulement si elle a fabriqué sa carte (scripts/reperes.gd)
 	var carte_monde: CarteMonde
 	var _bascule
 	# le carnet des bêtes : la Noire (scripts/noire.gd) et les bêtes croisées (scripts/pistage.gd) ; une page de plus, dès
 	# qu'il y a quelque chose à y lire
 	var savoirs: Savoirs
 	var _elle
-	var _monde_ouvert := false
+	var _avec_carte := false
 	var _boutons: Array = []
 	var _ips
 	var _titre: Label
@@ -451,9 +452,9 @@ class Pause extends Control:
 	# le carnet des bêtes, à la place de la carte ou des commandes ; le même bouton le referme
 	func _montrer_elle(oui: bool) -> void:
 		savoirs.visible = oui
-		carte_monde.visible = _monde_ouvert and not oui
-		_commandes.visible = not _monde_ouvert and not oui
-		_bascule.visible = _monde_ouvert and not oui
+		carte_monde.visible = _avec_carte and not oui
+		_commandes.visible = not _avec_carte and not oui
+		_bascule.visible = _avec_carte and not oui
 		_bascule.libelle = "Voir les commandes"
 		_bascule._mesurer()
 		_elle.libelle = "Revenir" if oui else "Le carnet des bêtes"
@@ -488,25 +489,27 @@ class Pause extends Control:
 		# (au doigt, la page descend un peu : le bouton de pause est en haut, au milieu)
 		page.position = (s - ps) * 0.5 + Vector2(0, 26.0 if compact else 0.0)
 
-	# (jeu : dans le monde ouvert, la page montre la carte de ce qu'on a découvert)
+	# (jeu : si elle a sa carte, la page montre ce qu'elle a parcouru, et ce qu'elle y a écrit)
 	func ouvrir(jeu = null) -> void:
 		_t = 0.0
 		visible = true
 		var monde_ouvert: bool = jeu != null and jeu.get("carte") != null
-		_monde_ouvert = monde_ouvert
+		var avec_carte: bool = jeu != null and jeu.get("reperes") != null and jeu.reperes.a_une_carte()
+		_avec_carte = avec_carte
 		savoirs.visible = false
 		savoirs.ouvrir(jeu)
 		_elle.visible = jeu != null and ((jeu.get("noire") != null and not jeu.noire.su.is_empty()) or (typeof(jeu.get("vues")) == TYPE_DICTIONARY and not jeu.vues.is_empty()))
 		_elle.libelle = "Le carnet des bêtes"
 		_elle._mesurer()
-		carte_monde.visible = monde_ouvert
-		_commandes.visible = not monde_ouvert
-		_bascule.visible = monde_ouvert
+		carte_monde.visible = avec_carte
+		_commandes.visible = not avec_carte
+		_bascule.visible = avec_carte
 		_bascule.libelle = "Voir les commandes"
 		_bascule._mesurer()
 		_disposer()
-		if monde_ouvert:
+		if avec_carte:
 			carte_monde.ouvrir(jeu)
+		if monde_ouvert:
 			var biomes := {}
 			var terres := 0
 			for k in jeu.carte.regions.size():
@@ -514,8 +517,8 @@ class Pause extends Control:
 					terres += 1
 			for k in jeu.decouvertes:
 				biomes[jeu.carte.regions[k]["type"]] = true
-			_sous.text = "%d région%s découverte%s sur %d, %d biome%s." % [jeu.decouvertes.size(), "s" if jeu.decouvertes.size() > 1 else "", "s" if jeu.decouvertes.size() > 1 else "",
-				terres, biomes.size(), "s" if biomes.size() > 1 else ""]
+			_sous.text = "%d région%s découverte%s sur %d, %d biome%s.%s" % [jeu.decouvertes.size(), "s" if jeu.decouvertes.size() > 1 else "", "s" if jeu.decouvertes.size() > 1 else "",
+				terres, biomes.size(), "s" if biomes.size() > 1 else "", "" if avec_carte else " Sans carte : elle se fait à l'établi."]
 		else:
 			_sous.text = "Touche le bouton du haut pour reprendre." if tactile else "La nuit attend. Échap pour reprendre."
 		if not tactile and _boutons.size() > 0:

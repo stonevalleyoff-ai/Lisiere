@@ -572,6 +572,7 @@ func _lancer() -> void:
 	_l_atelier(F)
 	_le_jardin_et_les_betes(F)
 	_la_botanique(F)
+	await _la_carte()
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -1228,6 +1229,140 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 	C.pluie = garde["pluie"]
 	C.air = garde["air"]
 	C.neige_sol = garde["neige"]
+
+
+# la carte, la plume et l'encre (scripts/reperes.gd) : elles se fabriquent à l'établi ; sans carte, la pause n'en montre pas ;
+# avec, ce qu'elle a parcouru du lieu ; la plume y écrit des repères là où elle se tient (le même tout près est récrit), on les
+# raye, la page de la carte le fait ; la tanière de la Noire s'écrit d'elle-même ; la partie gardée s'en souvient
+func _la_carte() -> void:
+	print("La carte")
+	var j = jeu.joueur
+	var A = jeu.atelier
+	var Rp = jeu.reperes
+	var inv: Dictionary = j.inventaire
+	var garde := {"p": j.position, "inv": inv.duplicate(), "objets": A.objets.duplicate(), "liste": Rp.liste.duplicate(true), "vus": Rp.vus.duplicate(),
+		"connue": jeu.noire.taniere_connue, "taniere": jeu.noire.taniere, "h": jeu.horloge}
+	var ici: Vector2 = j.position
+	var etabli = A._creer("etabli", jeu.monde.repousser(ici + Vector2(30.0, 0.0), 10.0), {})
+	A.objets.erase("carte")
+	A.objets.erase("plume")
+
+	# sans carte : rien à la pause, rien ne s'écrit ; à l'établi, la carte, puis la plume et l'encre
+	jeu.ui.montrer_pause(true)
+	var sans: bool = not jeu.ui._pause.carte_monde.visible and jeu.ui._pause._commandes.visible
+	jeu.ui.montrer_pause(false)
+	var refus: String = Rp.empeche_ecrire()
+	for k in ["peau", "corde", "fibre", "baies", "pierre"]:
+		inv[k] = 0
+	inv["peau"] = 1
+	inv["corde"] = 1
+	var fait_carte: bool = A.fabriquer("carte")
+	var sans_plume: String = Rp.empeche_ecrire()
+	var sans_baies: String = A.empeche("plume")
+	inv["fibre"] = 1
+	inv["baies"] = 2
+	inv["pierre"] = 1
+	var fait_plume: bool = A.fabriquer("plume")
+	var paye: bool = int(inv["peau"]) == 0 and int(inv["corde"]) == 0 and int(inv["fibre"]) == 0 and int(inv["baies"]) == 0 and int(inv["pierre"]) == 0
+	inv["peau"] = 1
+	inv["corde"] = 1
+	var une_seule: String = A.empeche("carte")
+	verif(sans and refus.contains("carte") and fait_carte and sans_plume.contains("plume") and sans_baies.contains("baies") and fait_plume and paye
+		and une_seule.contains("déjà") and A.possede("carte") == 1 and A.possede("plume") == 1,
+		"sans carte, la pause n'en montre pas et rien ne s'écrit ; à l'établi, la carte (une peau, une corde), la plume et l'encre (une fibre, deux baies, une pierre) ; une seule de chaque")
+
+	# ce qu'elle parcourt du lieu s'y dessine ; la pause montre la carte
+	Rp.vus.clear()
+	j.position = ici + Vector2(600.0, 0.0)
+	Rp.voir(j.position)
+	var vu_la: bool = Rp.vus.has(Rp.cle(j.position)) and not Rp.vus.has(Rp.cle(ici + Vector2(-1500.0, 0.0)))
+	Rp.voir(ici)
+	jeu.ui.montrer_pause(true)
+	var avec: bool = jeu.ui._pause.carte_monde.visible and not jeu.ui._pause._commandes.visible
+	# (la carte se dessine, de près puis de loin)
+	await get_tree().process_frame
+	jeu.ui._pause.carte_monde.loin = true
+	jeu.ui._pause.carte_monde.queue_redraw()
+	await get_tree().process_frame
+	jeu.ui._pause.carte_monde.loin = false
+	jeu.ui.montrer_pause(false)
+	verif(vu_la and avec and Rp.vus.size() >= 8, "la carte faite, la pause la montre : ce qu'elle a parcouru du lieu (%d cases), pas le reste" % Rp.vus.size())
+
+	# écrire, là où elle se tient : le même tout près est récrit, pas doublé ; un autre s'ajoute ; on le raye
+	Rp.liste.clear()
+	j.position = etabli.position + Vector2(-40.0, 10.0)
+	var la: String = Rp.ici()
+	var e1: bool = Rp.ecrire("camp")
+	j.position += Vector2(-100.0, 0.0)
+	var e2: bool = Rp.ecrire("camp")
+	var recrit: bool = Rp.liste.size() == 1 and Rp.position(Rp.liste[0]).distance_to(j.position) < 1.0
+	var camp: Vector2 = j.position
+	j.position = camp + Vector2(900.0, 0.0)
+	Rp.ecrire("eau")
+	Rp.ecrire("camp")
+	var trois: bool = Rp.liste.size() == 3
+	var proche: int = Rp.par_distance()[0]
+	var loin_: int = Rp.par_distance()[2]
+	var dit_loin: String = Rp.dire_ou(Rp.liste[loin_])
+	var dit_ici: String = Rp.dire_ou(Rp.liste[proche])
+	var raye: bool = Rp.rayer(Rp.liste.find(Rp.liste.filter(func(r): return str(r["genre"]) == "eau")[0]))
+	verif(la == "camp" and e1 and e2 and recrit and trois and dit_ici == "ici" and dit_loin.contains("pas") and dit_loin.contains("ouest") and raye and Rp.liste.size() == 2
+		and Rp.liste.filter(func(r): return str(r["genre"]) == "eau").is_empty(),
+		"la plume écrit là où elle se tient (près de l'établi : « %s ») ; le même tout près est récrit, pas doublé ; un repère loin d'elle est « %s » ; on le raye" % [la, dit_loin])
+
+	# la page de la carte, depuis le sac : écrire ce qui est là, rayer
+	var sac_la: bool = false
+	jeu.ouvrir_page("sac")
+	var sac = jeu.ui._pages.get("sac")
+	if sac != null:
+		for sec in sac._sections():
+			for tu in sec["tuiles"]:
+				if str(tu["cle"]) == "page:carte":
+					sac_la = true
+	jeu.fermer_page()
+	jeu.ouvrir_page("carte")
+	var pc = jeu.ui._pages.get("carte")
+	var ouverte: bool = pc != null and pc.visible and jeu.page == "carte"
+	var tuiles := 0
+	var ecrite := ""
+	var rayee := ""
+	if pc != null:
+		for sec in pc._sections():
+			tuiles += sec["tuiles"].size()
+		ecrite = pc._faire("ecrire:coffre")
+		var cle_coffre: String = pc._cle_de(Rp.liste[Rp.liste.size() - 1])
+		var fiche: Dictionary = pc._fiche_de(cle_coffre)
+		if str(fiche.get("bouton", "")) == "Rayer":
+			rayee = pc._faire(cle_coffre)
+	jeu.fermer_page()
+	verif(sac_la and ouverte and tuiles == 8 + 2 and ecrite == "Écrit" and rayee == "Rayé" and Rp.liste.size() == 2 and jeu.page == "",
+		"le sac ouvre la page de la carte : huit repères à écrire, ceux qu'elle a écrits ; elle y écrit un coffre, puis le raye")
+
+	# la tanière de la Noire, trouvée, s'écrit d'elle-même ; sans plume, non ; la partie gardée s'en souvient
+	var tan: Vector2 = camp + Vector2(0.0, -1200.0)
+	var ecrite_t: bool = Rp.noter_taniere(tan)
+	A.objets["plume"] = 0
+	var sans_plume_t: bool = not Rp.noter_taniere(tan + Vector2(800.0, 0.0))
+	A.objets["plume"] = 1
+	var photo: Dictionary = JSON.parse_string(JSON.stringify(Rp.photo()))
+	var avant_l: Array = Rp.liste.duplicate(true)
+	var avant_v: int = Rp.vus.size()
+	Rp.vider()
+	Rp.reprendre(photo)
+	var reprise: bool = Rp.liste.size() == avant_l.size() and Rp.vus.size() == avant_v and str(Rp.liste[2]["genre"]) == "taniere" and Rp.position(Rp.liste[2]).distance_to(tan) < 0.2
+	verif(ecrite_t and sans_plume_t and reprise, "la tanière de la Noire, trouvée, s'écrit d'elle-même sur la carte (pas sans la plume) ; la partie gardée retient les repères et ce qu'elle a parcouru")
+
+	# (tout remis comme avant)
+	A.poses.erase(etabli)
+	etabli.queue_free()
+	j.position = garde["p"]
+	for k in inv.keys():
+		inv[k] = garde["inv"].get(k, 0)
+	A.objets = garde["objets"]
+	Rp.liste = garde["liste"]
+	Rp.vus = garde["vus"]
+	jeu.noire.taniere_connue = garde["connue"]
+	jeu.horloge = garde["h"]
 
 
 # la botanique (scripts/botanique.gd) : les herbes, leurs vertus cachées, ce qu'on en apprend, ce qu'on en prépare
@@ -2393,13 +2528,21 @@ func _les_regions() -> void:
 	var aire_ := 0.0
 	for k in co[0].size():
 		aire_ += co[0][k].cross(co[0][(k + 1) % co[0].size()])
+	# (sans carte fabriquée, le carnet n'en montre pas ; la carte faite, tout ce qu'elle a découvert y est)
+	var carte_avant: int = int(jeu.atelier.objets.get("carte", 0))
+	jeu.atelier.objets["carte"] = 0
+	jeu.ui.montrer_pause(true)
+	var sans_carte: bool = not jeu.ui._pause.carte_monde.visible and jeu.ui._pause._commandes.visible and str(jeu.ui._pause._sous.text).contains("établi")
+	jeu.ui.montrer_pause(false)
+	jeu.atelier.objets["carte"] = 1
 	jeu.ui.montrer_pause(true)
 	var page_carte: bool = jeu.ui._pause.carte_monde.visible and not jeu.ui._pause._commandes.visible and str(jeu.ui._pause._sous.text).contains("découverte")
 	jeu.ui.montrer_pause(false)
+	jeu.atelier.objets["carte"] = carte_avant
 	var gardee_d: Dictionary = JSON.parse_string(JSON.stringify(load("res://scripts/partie_gardee.gd").photo(jeu)))
 	verif(jeu.decouvertes.has(foret) and jeu.decouvertes.size() >= 2 and absf(aire_) * 0.5 > 0.3 * C.cote * C.cote and absf(aire_) * 0.5 < 3.0 * C.cote * C.cote
-		and page_carte and gardee_d["decouvertes"].has(str(C.regions[foret]["id"])),
-		"ce qu'on découvre se note (%d régions) et se garde ; à la pause, le carnet en montre la carte (« %s »)" % [jeu.decouvertes.size(), jeu.ui._pause._sous.text])
+		and sans_carte and page_carte and gardee_d["decouvertes"].has(str(C.regions[foret]["id"])),
+		"ce qu'on découvre se note (%d régions) et se garde ; sans carte, le carnet n'en montre pas ; la carte faite, il montre tout (« %s »)" % [jeu.decouvertes.size(), jeu.ui._pause._sous.text])
 	# une rivière traverse sa vallée : son lit arrête ; à gué on passe à pied ; ailleurs, un pont de fortune
 	var riv := -1
 	for k in C.regions.size():
@@ -3454,7 +3597,7 @@ func _l_atelier(F: Dictionary) -> void:
 		if o.is_empty() or str(o.get("nom", "")) == "" or str(o.get("dit", "")) == "" or not familles.has(o.get("famille")) or not (o.get("ou") in ["main", "etabli"]):
 			bon = false
 		for k in o.get("cout", {}):
-			if not A.MATIERES.has(k) or int(o["cout"][k]) <= 0:
+			if not (A.MATIERES.has(k) or k == "baies") or int(o["cout"][k]) <= 0:
 				bon = false
 		if bool(o.get("pose", false)) and not (str(o["famille"]) in ["camp", "jardin", "elevage"]):
 			bon = false

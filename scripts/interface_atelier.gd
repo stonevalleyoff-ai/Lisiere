@@ -25,6 +25,7 @@ const NOURRITURE := ["baies", "viande", "viande_cuite", "bouillon"]
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
 const Botanique := preload("res://scripts/botanique.gd")
+const Reperes := preload("res://scripts/reperes.gd")
 # ce que le jardin et les bêtes donnent, dans l'ordre où le sac le montre
 const DU_JARDIN := ["graine_baie", "graine_lin", "graine_simple", "simples", "lait"]
 const NOMS_DU_JARDIN := {"graine_baie": "Graines de baies", "graine_lin": "Graines de lin", "graine_simple": "Graines de simples",
@@ -120,6 +121,10 @@ class Plume:
 				ci.draw_set_transform_matrix(base)
 				return
 			id = "simples"
+		# (un repère de la carte, « rep:camp » : son signe à l'encre, celui de la carte ; scripts/reperes.gd)
+		if id.begins_with("rep:"):
+			Reperes.signe(ci, id.substr(4), c, s * 0.82, pale, base)
+			return
 		if pale:
 			Icones.esquisse(ci, id, c, s, 0.62, base)
 		else:
@@ -1135,6 +1140,9 @@ class Sac extends Feuille:
 		var B = jeu.botanique
 		if not B.savoir.is_empty() or not B.sac().is_empty():
 			mains.append({"cle": "page:herbier", "id": "herbier", "nom": "L'herbier"})
+		# (la carte : y écrire ce qui est là, y rayer un repère ; scripts/reperes.gd)
+		if atelier.possede("carte") > 0:
+			mains.append({"cle": "page:carte", "id": "plume" if atelier.possede("plume") > 0 else "carte", "nom": "Écrire sur la carte" if atelier.possede("plume") > 0 else "La carte"})
 		out.append({"titre": "De tes mains", "tuiles": mains})
 		# juste là : ce qui se replie, le carré de jardin devant elle, sa bête
 		var la := []
@@ -1225,6 +1233,10 @@ class Sac extends Feuille:
 		var carre = _carre()
 		if cle == "page:herbier":
 			return _carte("herbier", "L'herbier", "%d herbes connues." % jeu.botanique.savoir.size(), "Ce que tu sais des herbes de ce lieu : leurs signes, ce qu'elles peuvent être, ce qu'on en prépare.", "Ouvrir")
+		if cle == "page:carte":
+			var nr: int = jeu.reperes.liste.size()
+			return _carte("plume" if atelier.possede("plume") > 0 else "carte", "La carte", "%d repère%s écrit%s." % [nr, "s" if nr > 1 else "", "s" if nr > 1 else ""] if nr > 0 else "Rien n'y est écrit encore.",
+				"Écris ce qui est là où tu te tiens : ton camp, une tanière, un coffre… Raye ce qui n'y est plus. Elle se lit à la pause.", "Ouvrir")
 		if cle.begins_with("prep:"):
 			var p := cle.trim_prefix("prep:")
 			var op: Dictionary = Botanique.PREPARATIONS[p]
@@ -1296,10 +1308,10 @@ class Sac extends Feuille:
 		if cle == "act:becher":
 			J.becher()
 			refermer()
-		elif cle == "page:herbier":
+		elif cle == "page:herbier" or cle == "page:carte":
 			# (une page se ferme, l'autre s'ouvre)
 			refermer()
-			jeu.ouvrir_page("herbier")
+			jeu.ouvrir_page(cle.trim_prefix("page:"))
 		elif cle.begins_with("prep:"):
 			var p := cle.trim_prefix("prep:")
 			jeu.botanique.utiliser(p)
@@ -1380,6 +1392,9 @@ class Sac extends Feuille:
 			f["bouton"] = "Remplir"
 			f["actif"] = na < Jardin.ARROSAGES and float(jeu.climat.eau(jeu.joueur.position)) >= 0.3
 			f["pourquoi"] = "" if f["actif"] else ("Il est plein." if na >= Jardin.ARROSAGES else "Les pieds dans l'eau, ou « Agir » au récupérateur.")
+		elif id in ["carte", "plume"]:
+			f["bouton"] = "Ouvrir"
+			f["lignes"] = [["note", "À la pause, le carnet montre ta carte." if id == "carte" else "Sur ta carte, tu écris ce qui est là où tu te tiens."]]
 		elif id in ["licol", "selle", "sacoche"]:
 			f["lignes"] = [["note", "Pour une bête à toi : approche-la, et rouvre ton sac." if id != "licol" else "Pose un appât, écarte-toi : la bête qui y mange se laisse passer le licol."]]
 		elif bool(o.get("pose", false)):
@@ -1456,6 +1471,9 @@ class Sac extends Feuille:
 			refermer()
 		elif id == "arrosoir":
 			jeu.jardin.remplir()
+		elif id in ["carte", "plume"]:
+			refermer()
+			jeu.ouvrir_page("carte")
 		elif id == "duvet":
 			# (qu'elle s'endorme ou que le jeu dise pourquoi elle ne peut pas : on le voit dans la partie, page fermée)
 			atelier.dormir(null)
@@ -1592,3 +1610,73 @@ class Herbier extends Feuille:
 			refermer()
 		return ""
 
+
+
+# --- la page de la carte : ce qu'on y écrit, là où l'on se tient ; ce qu'on y raye (scripts/reperes.gd) ---
+
+class PageCarte extends Feuille:
+	func _init() -> void:
+		super("La carte", "Écris ce qui est là, ou raye un repère. Elle se lit à la pause.", "Écris ce qui est là, ou raye un repère.", 6.0)
+
+	func _groupes() -> Array:
+		var outils := []
+		for k in ["carte", "plume"]:
+			outils.append({"id": k, "nom": str(Atelier.OBJETS[k]["nom"]), "n": atelier.possede(k), "sur": 0})
+		return [{"titre": "Tes outils", "cases": outils}]
+
+	# un repère, d'un mot qui ne change pas quand les autres sont rayés
+	static func _cle_de(r: Dictionary) -> String:
+		return "rayer:%s@%d,%d" % [str(r["genre"]), int(round(float(r["x"]))), int(round(float(r["y"])))]
+
+	func _rang(cle: String) -> int:
+		var Rp = jeu.reperes
+		for i in Rp.liste.size():
+			if _cle_de(Rp.liste[i]) == cle:
+				return i
+		return -1
+
+	func _sections() -> Array:
+		var Rp = jeu.reperes
+		var la: String = Rp.ici()
+		var peut: bool = Rp.empeche_ecrire() == ""
+		var ecrire := []
+		for g in Reperes.ORDRE:
+			ecrire.append({"cle": "ecrire:" + g, "id": "rep:" + g, "nom": str(Reperes.GENRES[g]["nom"]), "pale": not peut, "marque": "c'est là" if g == la else ""})
+		var ecrits := []
+		for i in Rp.par_distance():
+			var r: Dictionary = Rp.liste[i]
+			var pas := int(round(Reperes.position(r).distance_to(jeu.joueur.position) / Reperes.PAS))
+			ecrits.append({"cle": _cle_de(r), "id": "rep:" + str(r["genre"]), "nom": str(Reperes.GENRES[str(r["genre"])]["nom"]), "etiquette": "ici" if pas < 3 else "%d pas" % pas})
+		return [{"titre": "Écrire, là où tu te tiens", "tuiles": ecrire},
+			{"titre": "Sur ta carte · %d sur %d" % [Rp.liste.size(), Reperes.MAX], "tuiles": ecrits, "a_la_ligne": true, "vide": "Rien encore. Choisis ce qui est là, et écris-le."}]
+
+	# (d'abord ce qui est là, s'il y a quelque chose)
+	func _par_defaut(cles: Array) -> String:
+		var la: String = jeu.reperes.ici()
+		if la != "" and cles.has("ecrire:" + la):
+			return "ecrire:" + la
+		return super(cles)
+
+	func _fiche_de(cle: String) -> Dictionary:
+		var Rp = jeu.reperes
+		if cle.begins_with("ecrire:"):
+			var g := cle.trim_prefix("ecrire:")
+			var pourquoi: String = Rp.empeche_ecrire()
+			var o: Dictionary = Reperes.GENRES[g]
+			return {"id": "rep:" + g, "pale": false, "nom": str(o["nom"]), "etat": "C'est ce qui est là." if Rp.ici() == g else "Là où tu te tiens.",
+				"dit": str(o["dit"]), "lignes": [["note", "Il s'écrit là où tu te tiens. Le même, déjà écrit tout près, est récrit ici : pas doublé."]],
+				"bouton": "Écrire", "actif": pourquoi == "", "pourquoi": pourquoi}
+		var i := _rang(cle)
+		if i < 0:
+			return {}
+		var r: Dictionary = Rp.liste[i]
+		var o2: Dictionary = Reperes.GENRES[str(r["genre"])]
+		return {"id": "rep:" + str(r["genre"]), "pale": false, "nom": str(o2["nom"]), "etat": Plume.majuscule(str(Rp.dire_ou(r))) + ".",
+			"dit": str(o2["dit"]), "lignes": [["note", "Rayé, il quitte ta carte."]], "bouton": "Rayer", "actif": true, "pourquoi": ""}
+
+	func _faire(cle: String) -> String:
+		var Rp = jeu.reperes
+		if cle.begins_with("ecrire:"):
+			return "Écrit" if Rp.ecrire(cle.trim_prefix("ecrire:")) else ""
+		var i := _rang(cle)
+		return "Rayé" if i >= 0 and Rp.rayer(i) else ""

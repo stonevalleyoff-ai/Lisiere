@@ -5,6 +5,7 @@ extends RefCounted
 # Et celles du jardin et de l'élevage : la houe, l'arrosoir, l'épouvantail, le licol, le piquet, la mangeoire, les sacoches, la
 # selle ; pour la page du sac, le carré, l'appât, les trois sachets de graines (on les distingue à leur lien et à ce qui est
 # peint dessus), les simples, le lait, et « bete » (une tête de bête à licol : tes bêtes).
+# Et la carte (une peau roulée sur sa corde, un chemin et sa croix), la plume et son godet d'encre (scripts/reperes.gd).
 # Et celles de l'herbier : le cahier où une plante est pressée, le mortier, et ce qu'on y prépare — le baume, la tisane, le
 # philtre, la botte âcre, les deux appâts (l'empoisonné : de la viande ; le dormant : des baies, sous la lune).
 # Dans le trait de scripts/interface_icones.gd : une boîte de 100 unités, centrée, mise à la taille voulue ; des aplats de la
@@ -20,7 +21,7 @@ const NOMS := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "fi
 	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "peau", "ferraille", "eau", "bouillon",
 	"houe", "arrosoir", "epouvantail", "licol", "piquet", "mangeoire", "sacoche", "selle",
 	"carre", "appat", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "bete",
-	"herbier", "mortier", "baume", "tisane", "philtre", "botte", "appat_poison", "appat_dormant"]
+	"herbier", "mortier", "baume", "tisane", "philtre", "botte", "appat_poison", "appat_dormant", "carte", "plume"]
 
 const TOILE := Color("aba888")          # (la bâche : une toile écrue, enduite, entre l'ivoire et la mousse)
 const TOILE_CLAIRE := Color("cbc6a4")
@@ -205,6 +206,10 @@ static func _icone(ci, id: String, w: float, m: Color) -> void:
 			_appat_poison(ci, w, m)
 		"appat_dormant":
 			_appat_dormant(ci, w, m)
+		"carte":
+			_carte(ci, w, m)
+		"plume":
+			_plume(ci, w, m)
 
 
 # --- les briques ---
@@ -1311,3 +1316,64 @@ static func _appat_dormant(ci, w: float, m: Color) -> void:
 	ci.draw_polyline(brin, pale.darkened(0.15) * m, w * 0.65, true)
 	_forme(ci, _touffe(Vector2(9, -25), 8.0, 6.0, 0.0, 5), LAIT, w * 0.8, m)
 
+
+
+# --- la carte et la plume (scripts/reperes.gd) ---
+
+# la carte : une peau grattée, ses deux bords roulés, nouée d'une corde ; un chemin en pointillé, un arbre, et la croix rouge
+# de là où l'on veut revenir
+static func _carte(ci, w: float, m: Color) -> void:
+	var tr := Transform2D(-0.1, Vector2(2, 2))
+	var velin := Color("e3d2a8")
+	var feuille := PackedVector2Array([Vector2(-30, -36), Vector2(-9, -39), Vector2(12, -35), Vector2(31, -38), Vector2(31, 34), Vector2(11, 38),
+		Vector2(-10, 34), Vector2(-30, 37)])
+	_volume(ci, tr * feuille, velin, w, m, 5.0, 0.2)
+	# (ses deux bords roulés)
+	_volume(ci, tr * _capsule(Vector2(-33, -37), Vector2(-33, 37), 7.0), velin.darkened(0.14), w, m, 3.0, 0.3)
+	_volume(ci, tr * _capsule(Vector2(34, -39), Vector2(34, 35), 7.0), velin.darkened(0.14), w, m, 3.0, 0.3)
+	# (le chemin, à l'encre, en pointillé)
+	var chemin: PackedVector2Array = tr * _bezier(Vector2(-20, 26), Vector2(-8, -22), Vector2(17, -15), 14)
+	for i in range(0, chemin.size() - 1, 2):
+		ci.draw_line(chemin[i], chemin[i + 1], Color(P.ENCRE, 0.9) * m, w * 0.75, true)
+	# (un arbre au bord du chemin, un trait d'eau)
+	var arbre: Vector2 = tr * Vector2(8, 16)
+	ci.draw_line(arbre + Vector2(0, 2), arbre + Vector2(0, 10), Color(P.ENCRE, 0.8) * m, w * 0.6, true)
+	_forme(ci, _ellipse(arbre, 7.0, 6.0, 0.0, 14), VERT.lightened(0.15), w * 0.6, m)
+	ci.draw_polyline(tr * _bezier(Vector2(-24, -24), Vector2(-14, -30), Vector2(-4, -26), 6), Color(EAU_SOMBRE, 0.9) * m, w * 0.7, true)
+	# (la croix, à l'encre rouge)
+	var x: Vector2 = tr * Vector2(17, -15)
+	ci.draw_line(x + Vector2(-6, -6), x + Vector2(6, 6), ROUILLE * m, w * 1.3, true)
+	ci.draw_line(x + Vector2(-6, 6), x + Vector2(6, -6), ROUILLE * m, w * 1.3, true)
+	# (la corde nouée autour du rouleau gauche, son bout qui pend)
+	_cordon(ci, tr * PackedVector2Array([Vector2(-43, 2), Vector2(-23, 4)]), 3.4, CHANVRE, w * 0.6, m)
+	_cordon(ci, tr * _bezier(Vector2(-42, 4), Vector2(-50, 16), Vector2(-45, 28), 6), 2.8, CHANVRE, w * 0.6, m)
+
+
+# la plume et l'encre : un godet de pierre plein d'encre noire, une plume taillée qui y trempe
+static func _plume(ci, w: float, m: Color) -> void:
+	var encre := Color("1f1b26")
+	_forme(ci, _ellipse(Vector2(-14, 40), 23.0, 5.0, 0.0, 20), PIERRE.darkened(0.3), w, m)
+	var godet := _contour([[Vector2(-38, 12)], [Vector2(-38, 12), Vector2(-37, 36), Vector2(-14, 41)], [Vector2(-14, 41), Vector2(9, 36), Vector2(10, 12)]], 8)
+	_volume(ci, godet, PIERRE, w, m, 6.0, 0.3)
+	_forme(ci, _ellipse(Vector2(-14, 12), 24.0, 7.5, 0.0, 26), PIERRE.lightened(0.14), w, m)
+	_forme(ci, _ellipse(Vector2(-14, 13), 18.0, 4.8, 0.0, 22), encre, w * 0.7, m)
+	ci.draw_circle(Vector2(-21, 12), 1.8, Color(P.PAPIER, 0.55) * m)
+	# (la plume : sa hampe plonge dans l'encre ; ses barbes, plus larges d'un côté)
+	var a := Vector2(-10, 12)
+	var b := Vector2(38, -46)
+	var dir := (b - a).normalized()
+	var n := dir.orthogonal()
+	var pts := PackedVector2Array()
+	for i in 13:
+		var t := float(i) / 12.0
+		pts.append(a.lerp(b, lerpf(0.3, 1.0, t)) + n * sin(PI * pow(t, 0.75)) * 13.0)
+	for i in range(11, 0, -1):
+		var t := float(i) / 12.0
+		pts.append(a.lerp(b, lerpf(0.3, 1.0, t)) - n * sin(PI * pow(t, 0.75)) * 7.0)
+	_volume(ci, pts, LAIT, w, m, 4.0, 0.22)
+	for k in [0.42, 0.56, 0.7, 0.84]:
+		var q: Vector2 = a.lerp(b, k)
+		ci.draw_line(q, q + (n * 0.9 - dir * 0.45).normalized() * 9.0, Color(P.ENCRE, 0.45) * m, w * 0.45, true)
+	ci.draw_line(a.lerp(b, 0.12), b, P.ENCRE * m, w * 0.9, true)
+	# (le bec taillé, noirci d'encre)
+	ci.draw_line(a, a.lerp(b, 0.3), encre * m, w * 1.4, true)

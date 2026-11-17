@@ -173,9 +173,11 @@ la hauteur ne se voit pas, elle se dessine comme sur une carte et se sent dans l
 **Étape 5, faite** (`scripts/interface_carte_monde.gd`, la page de pause de `scripts/interface_carnet.gd`) :
 - chaque région où l'on entre est notée (`jeu.decouvertes`), et gardée avec la partie (par le nom de la région) ;
 - **à la pause**, dans le monde ouvert, le carnet montre la carte à la place des commandes (un bouton passe de l'une aux
-  autres) : les régions découvertes au ton de leur biome, avec leur nom ; celles qui les touchent esquissées d'un « ? »
-  (l'eau en bleu) ; les crêtes d'un trait double ; le lit des rivières ; les feux, les ponts ; où est la veilleuse. Un appui
-  sur la carte change d'échelle : les environs (six régions de large), ou tout ce qu'on connaît ;
+  autres), si la veilleuse a fabriqué sa carte (`scripts/reperes.gd` ; sans elle, les commandes, et le compte des régions) :
+  les régions découvertes au ton de leur biome, avec leur nom ; celles qui les touchent esquissées d'un « ? » (l'eau en
+  bleu) ; les crêtes d'un trait double ; le lit des rivières ; les feux, les ponts ; les repères écrits à la plume ; où est
+  la veilleuse. Un appui sur la carte change d'échelle : les environs (six régions de large), tout ce qu'on connaît, tout
+  près (deux mille pixels, pour lire ses repères) ;
 - le contour d'une région (`Carte.contour`) ondule comme sa frontière dans le jeu ;
 - **reste à faire** : les régions découvertes au tableau des scores (il faut une colonne de plus dans la base de Stone
   Valley).

@@ -42,6 +42,7 @@ const Atelier := preload("res://scripts/atelier.gd")
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
 const Botanique := preload("res://scripts/botanique.gd")
+const Reperes := preload("res://scripts/reperes.gd")
 const Galet := preload("res://scripts/galet.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
@@ -99,6 +100,7 @@ var atelier                   # ce qu'elle fabrique, porte et pose (scripts/atel
 var jardin                      # ce qu'elle sème et récolte (scripts/jardin.gd)
 var elevage                     # les bêtes qu'elle apprivoise (scripts/elevage.gd)
 var botanique                   # les herbes, ce qu'elle en sait, ce qu'elle en prépare (scripts/botanique.gd)
+var reperes                     # la carte : ce qu'elle a parcouru, ce qu'elle y a écrit (scripts/reperes.gd)
 var page := ""                # la page d'atelier ouverte : « etabli », « sac » ("" : aucune) ; la partie attend, comme en pause
 var savoir: Dictionary = {}   # ce qu'elle a appris de chaque lignée, en secondes d'affût (le carnet des bêtes)
 var pont_possible := false    # la veilleuse est au bord d'une rivière, là où un pont peut se poser (regardé trois fois par seconde)
@@ -582,8 +584,11 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		elevage.jeu = self
 		botanique = Botanique.new()
 		botanique.jeu = self
+		reperes = Reperes.new()
+		reperes.jeu = self
 	atelier.commencer()
 	elevage.vider()
+	reperes.vider()
 	botanique.commencer(randi())
 	_herbes_a_redessiner()
 	# (l'œil de l'affût : au-dessus du lieu)
@@ -622,6 +627,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 		atelier.reprendre(gardee.get("atelier", {}))
 		elevage.reprendre(gardee.get("elevage", {}))
 		botanique.reprendre(gardee.get("botanique", {}))
+		reperes.reprendre(gardee.get("reperes", {}))
 		_herbes_a_redessiner()
 		if ouvert:
 			# (un lieu sans bord : le lieu se fait d'un coup là où elle était, pas autour du réveil)
@@ -675,6 +681,7 @@ func _vider() -> void:
 	if atelier != null:
 		atelier.vider()
 		elevage.vider()
+		reperes.vider()
 	if noire != null:
 		noire.corps = null
 	effets.vider()
@@ -868,6 +875,7 @@ func _process(delta: float) -> void:
 	jardin.maj(delta)
 	elevage.maj(delta)
 	botanique.maj(delta)
+	reperes.maj(delta)
 	effets.maj(delta)
 	sons.maj(self, delta)
 	ui.maj_hud(self)
@@ -881,7 +889,7 @@ func ouvrir_page(quelle: String) -> void:
 	if not en_partie or _mort >= 0.0 or page != "" or en_pause:
 		return
 	# (la partie n'attend que si la page s'est ouverte)
-	if not ui._montrer_page(quelle if quelle in ["etabli", "herbier"] else "sac", true):
+	if not ui._montrer_page(quelle if quelle in ["etabli", "herbier", "carte"] else "sac", true):
 		return
 	page = quelle
 	en_pause = true
@@ -893,6 +901,7 @@ func fermer_page() -> void:
 	ui.montrer_etabli(false)
 	ui.montrer_sac(false)
 	ui._montrer_page("herbier", false)
+	ui._montrer_page("carte", false)
 	page = ""
 	en_pause = false
 
