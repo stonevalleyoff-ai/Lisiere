@@ -3,7 +3,9 @@ extends RefCounted
 # Ce que la veilleuse fabrique, porte, pose et dont elle se sert, au-delà du feu, de la torche et de la lance. Tout part d'un
 # établi, qu'elle monte de ses mains ; le reste s'y fabrique (la page de l'établi : scripts/interface_atelier.gd).
 #  - des matières : la corde et la bâche, tirées des fibres ; la peau, que donne la chasse ; la ferraille, qu'on trouve dans
-#    les vestiges d'autres veilleuses ; l'eau, que la pluie laisse dans le récupérateur ;
+#    les vestiges d'autres veilleuses ; l'eau, que la pluie laisse dans le récupérateur ; et le filin, commis de la fibre longue
+#    que donnent l'agave et le papyrus (scripts/flore.gd) : il ne cède pas où la corde casse (le grand filet, la longe de filin,
+#    le pont lié : principal.gd) ;
 #  - un camp, qui se pose dans le lieu et se replie (scripts/campement.gd les dessine) : l'établi, la tente, le hamac, le
 #    récupérateur d'eau, le filet, le cerf-volant ;
 #  - une tenue, qui se porte et se voit sur elle (scripts/veilleuse_corps.gd) : le sac à dos, la pelisse, la cape de pluie ;
@@ -18,9 +20,12 @@ const Campement := preload("res://scripts/campement.gd")
 # les matières, dans l'ordre où on les montre ; celles du début sont dans le sac depuis toujours (regles.gd, NOMS)
 const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet",
 	# (ce que seuls certains pays donnent : le volcan, le marais ; scripts/biomes.gd)
-	"obsidienne", "tourbe"]
+	"obsidienne", "tourbe",
+	# (la fibre longue de l'agave et du papyrus, qui ne pousse qu'au chaud ; le filin qu'on en commet)
+	"fibre_longue", "filin"]
 const NOMS_MATIERES := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "peau": "peau", "ferraille": "ferraille",
-	"corde": "corde", "bache": "bâche", "eau": "eau", "galet": "galets", "obsidienne": "obsidienne", "tourbe": "tourbe"}
+	"corde": "corde", "bache": "bâche", "eau": "eau", "galet": "galets", "obsidienne": "obsidienne", "tourbe": "tourbe",
+	"fibre_longue": "fibres longues", "filin": "filin"}
 # les familles, dans l'ordre de la page de l'établi : [la clé, son titre]
 const FAMILLES := [["matiere", "Les matières"], ["camp", "Le camp"], ["tenue", "La tenue"], ["outil", "Les outils"],
 	["jardin", "Le jardin"], ["elevage", "L'élevage"]]
@@ -34,6 +39,9 @@ const OBJETS := {
 	# (« lot » : ce qu'un ouvrage en donne d'un coup)
 	"galet": {"nom": "Galets", "famille": "matiere", "ou": "etabli", "lot": 4, "cout": {"pierre": 1},
 		"dit": "Une pierre cassée, ses éclats roulés : quatre galets, pour le lance-pierre."},
+	# (la fibre longue de l'agave, du papyrus : commise en trois torons, elle tient ce qu'une corde de fibres ne tient pas)
+	"filin": {"nom": "Filin", "famille": "matiere", "ou": "etabli", "cout": {"fibre_longue": 3},
+		"dit": "Trois torons de fibre longue, commis serré. Il ne cède pas où la corde casse."},
 	"etabli": {"nom": "Établi", "famille": "camp", "ou": "main", "pose": true, "cout": {"bois": 6, "pierre": 2, "fibre": 2},
 		"dit": "Un billot, un plateau, des outils de pierre. Tout le reste s'y fabrique."},
 	"tente": {"nom": "Tente", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"bache": 2, "corde": 2, "bois": 4},
@@ -44,6 +52,8 @@ const OBJETS := {
 		"dit": "Sous la pluie il se remplit. On y remplit sa gourde."},
 	"filet": {"nom": "Filet", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"corde": 3, "pierre": 2},
 		"dit": "Tendu au sol : une petite bête qui passe s'y prend."},
+	"filet_filin": {"nom": "Grand filet", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"filin": 3, "pierre": 4},
+		"dit": "Une large maille de filin, lestée de grosses pierres : une bête jusqu'à 30 kilos s'y prend, et n'en sort pas."},
 	"cerf_volant": {"nom": "Cerf-volant", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"bache": 1, "bois": 2, "corde": 2, "ferraille": 1},
 		"dit": "Par grand vent il recharge les piles. Sous l'orage, il appelle la foudre."},
 	"sac_a_dos": {"nom": "Sac à dos", "famille": "tenue", "ou": "etabli", "porte": true, "cout": {"peau": 2, "corde": 1},
@@ -81,6 +91,9 @@ const OBJETS := {
 	# l'élevage (scripts/elevage.gd)
 	"licol": {"nom": "Licol", "famille": "elevage", "ou": "etabli", "cout": {"corde": 2, "peau": 1},
 		"dit": "Passé au cou d'une bête qui mange dans ta main, il en fait la tienne."},
+	# (scripts/elevage.gd : la longe de filin se passe à une bête qu'on a déjà, depuis le sac ; le noir l'affole toujours)
+	"longe": {"nom": "Longe de filin", "famille": "elevage", "ou": "etabli", "cout": {"filin": 2},
+		"dit": "Une longe qui ne rompt pas. Nouée au piquet ou dans ta main, ta bête affolée par le noir s'y débat, mais elle reste."},
 	"piquet": {"nom": "Piquet d'attache", "famille": "elevage", "ou": "etabli", "pose": true, "cout": {"bois": 2, "corde": 1},
 		"dit": "Une bête qu'on y laisse y reste, et broute autour. Près d'un feu, la nuit : le noir les rend folles."},
 	"mangeoire": {"nom": "Mangeoire", "famille": "elevage", "ou": "etabli", "pose": true, "cout": {"bois": 4, "corde": 1},
@@ -94,9 +107,9 @@ const OBJETS := {
 	"lance_obsidienne": {"nom": "Lance d'obsidienne", "famille": "outil", "ou": "etabli", "cout": {"obsidienne": 2, "bois": 2, "corde": 1},
 		"dit": "Une pointe de verre noir, ligaturée sur une hampe. Elle frappe comme une lance ferrée."},
 }
-const ORDRE := ["corde", "bache", "galet", "etabli", "tente", "hamac", "recuperateur", "filet", "cerf_volant", "sac_a_dos", "vetement_chaud",
-	"vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "carte", "plume", "houe", "arrosoir", "epouvantail", "licol",
-	"piquet", "mangeoire", "sacoche", "selle", "lance_obsidienne"]
+const ORDRE := ["corde", "bache", "galet", "filin", "etabli", "tente", "hamac", "recuperateur", "filet", "filet_filin", "cerf_volant", "sac_a_dos",
+	"vetement_chaud", "vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "carte", "plume", "houe", "arrosoir",
+	"epouvantail", "licol", "longe", "piquet", "mangeoire", "sacoche", "selle", "lance_obsidienne"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
 const TEINTE := Color(0.86, 0.8, 0.66)
 const PORTEE := 54.0              # à quelle distance on se sert d'une chose posée, d'un établi
@@ -109,7 +122,7 @@ const LAMPE := 1.1                # ce que la lampe prend aux piles par seconde 
 const RAYON_LAMPE := 330.0
 const VENT_MIN := 0.3             # le vent qu'il faut au cerf-volant
 const CHARGER := 1.6              # ce qu'il rend aux piles par seconde, par grand vent
-const PRISE_MAX := 8.0            # la plus grosse bête qu'un filet retient (kilos)
+const PRISE_MAX := 8.0            # la plus grosse bête qu'un filet retient (kilos ; le grand filet, de filin : R.FILET_FILIN)
 const SOMMEIL := 6.0              # le temps passe tant de fois plus vite quand elle dort
 const MIJOTE := 16.0              # secondes : la popote reste sur le feu, après qu'elle y a cuit
 const OUVRAGE := 1.5              # secondes : les copeaux volent de l'établi, après qu'elle y a fabriqué
@@ -208,10 +221,15 @@ func fabriquer(id: String) -> bool:
 			portes[id] = true
 	# (son geste, et ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; le bois se scie ; le reste se
 	# martèle, et chaque coup de maillet sonne quand il tombe : coup())
-	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet", "licol", "sacoche", "selle", "arrosoir", "carte"]
+	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet", "licol", "sacoche", "selle", "arrosoir", "carte",
+		"filin", "filet_filin", "longe"]
 	var scie: bool = not cousu and o["cout"].has("bois")
 	jeu.joueur.geste_atelier("coudre" if cousu else ("scier" if scie else "marteler"))
-	if id == "corde" or id == "filet":
+	if id in ["filin", "filet_filin", "longe"]:
+		# (la fibre longue se commet en torons, puis le filin se tend, raide, et grince : on l'entend tenir)
+		jeu.sons.atelier("tresse", 0.0, 0.86)
+		jeu.sons.atelier("filin", -2.0)
+	elif id == "corde" or id == "filet":
 		jeu.sons.atelier("tresse")
 	elif id == "bache":
 		jeu.sons.atelier("toile", -3.0)
@@ -328,7 +346,7 @@ func replier() -> bool:
 		reveiller("")
 	objets[str(s.genre)] = possede(str(s.genre)) + 1
 	poses.erase(s)
-	jeu.sons.atelier("corde" if str(s.genre) in ["hamac", "filet", "etabli"] else "toile", -2.0, 1.0, s.position)
+	jeu.sons.atelier("corde" if str(s.genre) in ["hamac", "filet", "filet_filin", "etabli"] else "toile", -2.0, 1.0, s.position)
 	s.queue_free()
 	jeu.joueur.geste_atelier("monter")
 	return true
@@ -340,6 +358,8 @@ func _son_de_pose(id: String, p: Vector2) -> void:
 	match id:
 		"hamac", "filet":
 			jeu.sons.atelier("corde", 0.0, 1.0, p)
+		"filet_filin":
+			jeu.sons.atelier("filin", 0.0, 1.0, p)
 		"etabli":
 			pass
 		_:
@@ -455,7 +475,7 @@ func agir() -> bool:
 			jeu.jardin.agir(s)
 		"mangeoire":
 			jeu.elevage.garnir(s)
-		"filet":
+		"filet", "filet_filin":
 			_relever(s)
 		"cerf_volant":
 			_brancher(s)
@@ -670,7 +690,7 @@ func maj(delta: float) -> void:
 				if fil == s and vent >= VENT_MIN and charge < 100.0:
 					charge = minf(100.0, charge + CHARGER * vent * delta)
 					s.etat["charge"] = charge / 100.0
-			"filet":
+			"filet", "filet_filin":
 				_guetter(s)
 	if endormie:
 		_dormir(delta, j)
@@ -782,16 +802,22 @@ func _puiser(s) -> void:
 	jeu.ui.message("Tu remplis ta gourde : %d gorgée%s." % [pris, "s" if pris > 1 else ""], TEINTE)
 
 
-# le filet : une petite bête qui passe dessus s'y prend
+# le filet : une petite bête qui passe dessus s'y prend ; le grand filet, de filin, en tient de bien plus lourdes, sur une
+# maille plus large
 func _guetter(s) -> void:
 	if s.etat.has("prise"):
 		return
+	var grand: bool = str(s.genre) == "filet_filin"
+	var plus_lourde: float = R.FILET_FILIN if grand else PRISE_MAX
+	var large := 30.0 if grand else 20.0
 	for b in jeu.get_tree().get_nodes_in_group("betes"):
-		if b.role != "proie" or float(b.masse) > PRISE_MAX or b.position.distance_to(s.position) > 20.0:
+		if b.role != "proie" or float(b.masse) > plus_lourde or b.position.distance_to(s.position) > large:
 			continue
 		s.etat["prise"] = {"id": str(b.id), "nom": str(b.nom), "masse": float(b.masse)}
 		jeu.bete_prise(b)
-		jeu.sons.atelier("filet", 0.0, 1.0, s.position)
+		jeu.sons.atelier("filet", 0.0, 1.0 if not grand else 0.82, s.position)
+		if grand:
+			jeu.sons.atelier("filin", -4.0, 1.0, s.position)
 		if jeu.joueur.position.distance_to(s.position) < 600.0:
 			jeu.ui.message("Quelque chose s'est pris dans ton filet.", TEINTE)
 		return
@@ -805,11 +831,13 @@ func _relever(s) -> void:
 	var prise: Dictionary = s.etat["prise"]
 	s.etat.erase("prise")
 	var viande := clampi(int(round(pow(float(prise["masse"]), 0.4))), 1, 6)
+	# (une grosse bête, prise au grand filet, donne ses peaux comme à la chasse)
+	var peaux := peaux_de(float(prise["masse"])) if str(s.genre) == "filet_filin" else 1
 	ranger("viande", viande)
-	ranger("peau", 1)
+	ranger("peau", peaux)
 	jeu.joueur.geste_atelier("monter")
 	jeu.sons.atelier("filet", -4.0, 0.9)
-	jeu.ui.message("%s : +%d viande, +1 peau." % [str(prise["nom"]), viande], Color(0.85, 0.72, 0.6))
+	jeu.ui.message("%s : +%d viande, +%d peau%s." % [str(prise["nom"]), viande, peaux, "x" if peaux > 1 else ""], Color(0.85, 0.72, 0.6))
 
 
 # le cerf-volant : elle y branche ses piles, ou les reprend
@@ -961,7 +989,9 @@ func commencer() -> void:
 	_dit = {}
 	var inv: Dictionary = jeu.joueur.inventaire
 	for k in ["peau", "ferraille", "corde", "bache", "galet", "eau", "bouillon", "graine_baie", "graine_lin", "graine_simple", "simples", "lait", "arrosages",
-			"fleurs", "champignons", "amanite", "infusion"]:
+			"fleurs", "champignons", "amanite", "infusion",
+			# (l'artisanat des plantes : la fibre longue, le filin, les aromates et leur baume)
+			"fibre_longue", "filin", "aromates", "baume_aromates"]:
 		if not inv.has(k):
 			inv[k] = 0
 	_tenue()

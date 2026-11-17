@@ -1278,7 +1278,7 @@ func peut_fabriquer(quoi: String) -> bool:
 	# (tirer : il faut le lance-pierre, fait à l'établi ; le galet est compté plus bas)
 	if quoi == "tir" and atelier.possede("lance_pierre") <= 0:
 		return false
-	var cout: Dictionary = R.RECETTES[quoi]["cout"]
+	var cout: Dictionary = cout_de(quoi)
 	for k in cout:
 		if int(joueur.inventaire.get(k, 0)) < int(cout[k]):
 			return false
@@ -1289,7 +1289,8 @@ func fabriquer(quoi: String) -> void:
 	if quoi == "tir":
 		tirer()
 		return
-	var rec: Dictionary = R.RECETTES[quoi]
+	var rec: Dictionary = R.RECETTES[quoi].duplicate()
+	rec["cout"] = cout_de(quoi)
 	var berges: Array = []
 	if quoi == "pont":
 		berges = carte.pont_depuis(joueur.position) if carte != null else []
@@ -1302,7 +1303,7 @@ func fabriquer(quoi: String) -> void:
 		for k in rec["cout"]:
 			var m := int(rec["cout"][k]) - int(joueur.inventaire.get(k, 0))
 			if m > 0:
-				manque.append("%d %s" % [m, R.nom(k, m)])
+				manque.append("%d %s" % [m, R.nom(k, m) if R.NOMS.has(k) else str(Atelier.NOMS_MATIERES.get(k, k))])
 		ui.message("%s : il te manque %s." % [rec["nom"], ", ".join(PackedStringArray(manque))], Color(0.75, 0.7, 0.66))
 		return
 	if quoi == "feu" and climat.eau(joueur.position + Vector2(joueur.regard * 34.0, 4.0)) > 0.25:
@@ -1325,19 +1326,36 @@ func fabriquer(quoi: String) -> void:
 			sons.jouer("allume", -6.0, 1.3)
 			ui.message("Une torche : un peu plus d'une minute de lumière.", Color(0.95, 0.75, 0.45))
 		"pont":
-			poser_pont(berges[0], berges[1], R.PONT_DUREE)
+			# (lié de filin, il tient bien plus longtemps : scripts/pont.gd)
+			var lie: bool = rec["cout"].has("filin")
+			poser_pont(berges[0], berges[1], R.PONT_DUREE * (R.PONT_FILIN_DUREE if lie else 1.0), lie)
 			sons.jouer("bois", -3.0, 0.8)
-			ui.message("Un pont de fortune : il ne tiendra pas longtemps. Les bêtes y passent aussi.", Color(0.95, 0.75, 0.45))
+			if lie:
+				sons.atelier("filin", -2.0, 0.9, joueur.position)
+				ui.message("Un pont lié de filin : il tiendra des jours, et la crue ne l'emporte qu'à son plus fort. Les bêtes y passent aussi.", Color(0.95, 0.75, 0.45))
+			else:
+				ui.message("Un pont de fortune : il ne tiendra pas longtemps. Les bêtes y passent aussi.", Color(0.95, 0.75, 0.45))
+
+
+# ce que coûte une recette du HUD ; le pont se lie de filin quand elle en a (il remplace ses fibres : scripts/pont.gd)
+func cout_de(quoi: String) -> Dictionary:
+	var cout: Dictionary = R.RECETTES[quoi]["cout"]
+	if quoi == "pont" and joueur != null and int(joueur.inventaire.get("filin", 0)) >= R.PONT_FILIN:
+		cout = cout.duplicate()
+		cout.erase("fibre")
+		cout["filin"] = R.PONT_FILIN
+	return cout
 
 
 # --- les ponts de fortune (scripts/pont.gd) ---
 
-func poser_pont(a: Vector2, b: Vector2, tenue: float):
+func poser_pont(a: Vector2, b: Vector2, tenue: float, lie: bool = false):
 	var p = Pont.new()
 	p.jeu = self
 	p.a = a
 	p.b = b
 	p.tenue = tenue
+	p.lie = lie
 	# (posé à plat, sous tout ce qui se tient debout)
 	monde._calques[2].add_child(p)
 	ponts.append(p)
@@ -1368,6 +1386,9 @@ func _voir_les_ponts(delta: float) -> void:
 # ce qu'on cueille qui n'est pas une matière : [son nom, au pluriel, ce qu'on en dit la première fois] (scripts/flore.gd ; la
 # cueillette dans regles.gd)
 const CUEILLETTE := {
+	# (l'artisanat des plantes : la fibre longue de l'agave et du papyrus, les aromates ; scripts/atelier.gd, scripts/botanique.gd)
+	"fibre_longue": ["fibre longue", "fibres longues", "Une fibre longue et raide, tirée d'un agave, d'un papyrus. Trois, commises à l'établi, font un filin, qui ne cède pas où la corde casse."],
+	"aromates": ["aromate", "aromates", "Des aromates : des brins gris-vert, gommeux, qui sentent la résine. Pilés au mortier, un baume ; jetés dans un feu, une fumée qui apaise (ton sac)."],
 	"fleurs": ["fleur", "fleurs", "Des fleurs. Trois, avec une gorgée d'eau, à la popote sur un feu : une infusion qui calme la peur (ton sac)."],
 	"champignons": ["cèpe", "cèpes", "Un cèpe, brun et ferme : il se mange (E)."],
 	"amanite": ["amanite", "amanites", "Une amanite, rouge piquée de blanc : elle empoisonne qui la mange. Pilée au mortier avec de la viande, elle fait un appât pour ce qui chasse (ton sac)."],

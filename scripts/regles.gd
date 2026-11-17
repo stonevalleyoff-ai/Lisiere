@@ -139,6 +139,23 @@ const FROID_PAR_PALIER := 0.03   # ce que chaque étage retire à la températur
 const VUE_PAR_PALIER := 0.05     # et de combien la caméra recule
 const AIR_SOUS_TERRE := 0.44     # l'air d'une grotte : frais, constant
 
+# --- l'artisanat des plantes : la fibre longue de l'agave et du papyrus, le filin qu'on en commet ; les aromates, leur baume et
+# leur fumée (scripts/atelier.gd, scripts/elevage.gd, scripts/pont.gd, scripts/botanique.gd) ---
+const PONT_FILIN := 2              # le filin qui lie un pont, à la place de ses trois fibres
+const PONT_FILIN_DUREE := 3.0      # ce qu'un pont lié de filin tient de plus : trois fois (quatre jours et demi)
+const PONT_FILIN_USURE := 0.4      # ce que chaque passage l'use, en parts de ce qu'il use un pont de fibres
+const PONT_FILIN_CRUE := 0.9       # la crue qui l'emporte (un pont de fibres : 0,6 ; scripts/pont.gd)
+const FILET_FILIN := 30.0          # la plus grosse bête que retient le grand filet, en kilos (le filet de corde : 8)
+const LONGE_AFFOLEE := 2.0         # au bout de sa longe de filin, une bête affolée par le noir a faim tant de fois plus vite
+const AROMATES_BAUME := 3          # les aromates d'un baume aromatique (pilés au mortier, liés d'une gorgée d'eau)
+const AROMATES_FEU := 2            # ceux qu'on jette dans un feu
+const ONGUENT := 40.0              # secondes : le baume aromatique soigne tout ce temps
+const ONGUENT_SOIN := 1.5          # la santé qu'il rend par seconde (soixante en tout ; le baume des herbes : 45, d'un coup)
+const ONGUENT_POISON := 3.0        # le poison qu'il chasse par seconde, en plus du temps (celui d'une herbe s'en va en cinq secondes)
+const ENCENS := 90.0               # secondes : la fumée des aromates sur un feu
+const ENCENS_APAISE := 3.0         # la peur qu'elle retire par seconde à qui s'y tient (de quoi tenir sous le regard d'un chasseur)
+const PARFUM := 180.0              # secondes : l'odeur qu'elle garde sur elle, sortie de la fumée (les sangsues n'y mordent pas)
+
 # --- les biomes : ce que chaque pays pèse, et ce qu'il offre (scripts/biomes.gd, scripts/biome_terrain.gd) ---
 # (le climat de chacun, ses temps à lui et ses sorts de sol sont dans scripts/biomes.gd ; ici, ce qu'ils font au corps)
 const TOURMENTE_FROID := 9.0     # ce que la tourmente (la banquise) retire encore au corps, à découvert

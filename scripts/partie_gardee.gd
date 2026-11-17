@@ -102,7 +102,9 @@ static func photo(jeu) -> Dictionary:
 		"climat": jeu.climat.photo(),
 		"decouvertes": jeu.decouvertes.keys().map(func(k): return str(jeu.carte.regions[k]["id"])) if jeu.carte != null else [],
 		"feux": feux,
-		"ponts": jeu.ponts.filter(func(x): return is_instance_valid(x)).map(func(x): return [snappedf(x.a.x, 0.1), snappedf(x.a.y, 0.1), snappedf(x.b.x, 0.1), snappedf(x.b.y, 0.1), snappedf(x.tenue, 0.1)]),
+		# (un pont : ses deux bouts, ce qu'il tient encore, et s'il est lié de filin : 1 ; scripts/pont.gd)
+		"ponts": jeu.ponts.filter(func(x): return is_instance_valid(x)).map(func(x): return [snappedf(x.a.x, 0.1), snappedf(x.a.y, 0.1), snappedf(x.b.x, 0.1), snappedf(x.b.y, 0.1), snappedf(x.tenue, 0.1),
+			1 if bool(x.lie) else 0]),
 		# (un lieu sans bord ne garde que ce qu'on y a changé : le reste se refait de sa graine)
 		"ouvert": jeu.ouvert,
 		"objets": [] if jeu.ouvert else jeu.monde.photo_objets(),
@@ -186,7 +188,7 @@ static func appliquer(jeu, d: Dictionary) -> void:
 				jeu.decouvertes[k] = true
 	for x in d.get("ponts", []):
 		if typeof(x) == TYPE_ARRAY and x.size() >= 5:
-			jeu.poser_pont(Vector2(float(x[0]), float(x[1])), Vector2(float(x[2]), float(x[3])), float(x[4]))
+			jeu.poser_pont(Vector2(float(x[0]), float(x[1])), Vector2(float(x[2]), float(x[3])), float(x[4]), x.size() >= 6 and int(x[5]) == 1)
 	jeu._etait_nuit = jeu.jour_du_ciel() <= 0.0
 
 

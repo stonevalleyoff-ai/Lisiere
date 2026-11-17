@@ -721,10 +721,17 @@ static func _aromatique(o, p, r: RandomNumberGenerator) -> void:
 	var fleur := P.PEUR.lerp(P.CREPUSCULE, 0.45) if o.graine % 2 == 0 else P.BRAISE_COEUR.darkened(0.1)
 	var n := 14
 	var fleuries: int = n * o.reste / maxi(1, o.plein) if o.en_fleurs else 0
+	# (ce qu'on y a cueilli se voit, en fleurs ou non : des brins coupés court, leur coupe claire ; scripts/flore.gd, des aromates)
+	var restent: int = n * o.reste / maxi(1, o.plein)
 	for i in n:
 		var x := lerpf(-rx * 0.85, rx * 0.85, (i + r.randf_range(0.2, 0.8)) / n)
 		var y0 := centre.y + absf(x) / rx * ry * 0.25 - ry * 0.25
 		var bout := Vector2(x * 1.15 + r.randf_range(-1.0, 1.0), y0 - r.randf_range(4.0, 8.0))
+		if i >= restent:
+			bout = Vector2(x, y0).lerp(bout, 0.4)
+			p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 1.0, t.darkened(0.25))
+			p.disque(bout, 0.8, 0.6, P.IVOIRE.lerp(t, 0.3))
+			continue
 		p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 1.0, t.darkened(0.25))
 		if i < fleuries:
 			var d := (bout - Vector2(x, y0)).normalized()

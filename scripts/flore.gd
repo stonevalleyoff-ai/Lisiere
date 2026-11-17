@@ -54,7 +54,12 @@ const DONNE := {
 	"liane": "fibre",
 	"bambou": "bois",
 	"algue": "fibre",
-	"aromatique": "fleurs",
+	# (les feuilles d'un agave, les tiges d'un papyrus : une fibre longue et raide, dont on commet le filin ; scripts/atelier.gd)
+	"agave": "fibre_longue",
+	"papyrus": "fibre_longue",
+	# (un buisson aromatique, en fleurs ou non : ses brins gris-vert, qui sentent la résine — un baume, une fumée ; scripts/botanique.gd)
+	"aromatique": "aromates",
+	# (la bruyère garde ses fleurs : avec celles des prés et des mares, elles font l'infusion)
 	"bruyere": "fleurs",
 	"nenuphar": "fleurs",
 }
