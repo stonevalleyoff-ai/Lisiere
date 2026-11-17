@@ -574,6 +574,7 @@ func _lancer() -> void:
 	_la_botanique(F)
 	await _la_carte()
 	await _la_partie_sur_le_compte()
+	await _les_lots(F)
 
 	print("6. L'aube, la fin")
 	jeu.horloge = jeu.jour * 240.0 + 20.0
@@ -1474,6 +1475,140 @@ func _la_partie_sur_le_compte() -> void:
 	S._ecrire()
 	if pid > 0:
 		OS.kill(pid)
+
+
+# les lots pour Orvane (scripts/lots.gd), contre le faux Supabase d'Orvane (outils/faux-compte.js, orvane_deposer) : ce qui est
+# compté se garde sur l'appareil à chaque sauvegarde, sans faire de lot ; un quart d'heure de jeu plus tard, il se clôt et part ;
+# refusé, il attend sur l'appareil et repart avec le suivant ; connectée, le joueur est son compte (une empreinte) ; une bête
+# apprivoisée est une capture, rendue aux siens une libération
+func _les_lots(F: Dictionary) -> void:
+	print("Les lots pour Orvane")
+	var L = jeu.lots
+	var S = jeu.session
+	var E = jeu.elevage
+	var A = jeu.atelier
+	var garde := {"url": Orvane.supabase_url, "attente": Orvane._en_attente.duplicate(), "ev": Orvane._evenements.duplicate(true),
+		"debut": Orvane._debut, "jeton": S.jeton, "uid": S.uid, "appris": jeu.appris.duplicate(), "licol": A.possede("licol")}
+	var ferme: bool = not L.permis()
+	var pid := OS.create_process("node", [ProjectSettings.globalize_path("res://outils/faux-compte.js"), "8140"])
+	if pid <= 0:
+		print("  (node manque : les lots ne sont pas essayés)")
+		return
+	var service := "http://127.0.0.1:8140"
+	var pret := false
+	for i in 300:
+		if (await S._http(service + "/__lots", null, HTTPClient.METHOD_GET, ""))["ok"]:
+			pret = true
+			break
+		await get_tree().process_frame
+	if not pret:
+		print("  (le faux service ne répond pas : les lots ne sont pas essayés)")
+		OS.kill(pid)
+		return
+	Orvane.supabase_url = service
+	L.vers = service
+	Orvane._en_attente.clear()
+	Orvane._evenements.clear()
+	S.jeton = ""
+	L.nouvelle_partie()
+	# (le monde attend pendant qu'on parle au faux service : la partie en pause, comme quand on la quitte des yeux)
+	var pause0: bool = jeu.en_pause
+	jeu.en_pause = true
+	var etat := "en partie : %s, santé %d, à terre : %s" % [jeu.en_partie, int(jeu.joueur.sante), jeu._mort >= 0.0]
+
+	# ce qui est compté se garde à chaque sauvegarde (toutes les vingt secondes), sans faire de lot
+	Orvane.compter("essai-lot", "prairie", "rencontre", 2.0)
+	jeu._garder(false)
+	var f = JSON.parse_string(FileAccess.get_file_as_string("user://orvane.json"))
+	var dans_le_fichier: bool = typeof(f) == TYPE_DICTIONARY and JSON.stringify(f.get("evenements", [])).contains("essai-lot")
+	var r0: Array = await _lots_recus(service)
+	verif(ferme and L.permis() and dans_le_fichier and Orvane.lots_en_attente() == 0 and Orvane.en_cours() == 1 and r0.is_empty(),
+		"rien ne part d'une partie d'essai (sauf vers un faux Orvane) ; ce qui est compté se garde sur l'appareil à chaque sauvegarde, sans faire de lot (%s)" % etat)
+
+	# un quart d'heure de jeu plus tard : un lot se clôt, et part
+	L._clos_ms -= L.INTERVALLE
+	jeu._garder(false)
+	await _attendre_lots(L)
+	var r1: Array = await _lots_recus(service)
+	var lot1: Dictionary = r1[0]["lot"] if r1.size() == 1 else {}
+	var deux := false
+	for e in lot1.get("evenements", []):
+		deux = deux or (str(e.get("taxon", "")) == "essai-lot" and str(e.get("action", "")) == "rencontre" and float(e.get("n", 0)) == 2.0)
+	verif(r1.size() == 1 and L.recus_partie == 1 and L.clos_partie == 1 and Orvane.lots_en_attente() == 0 and Orvane.en_cours() == 0 and deux
+		and str(lot1.get("monde", "")) == "orvane" and str(lot1.get("source", {}).get("jeu", "")) == "lisiere" and str(r1[0]["compte"]) == str(jeu.compte)
+		and str(lot1.get("periode", {}).get("debut", "")) != "" and str(lot1.get("periode", {}).get("fin", "")).ends_with("Z") and str(r1[0]["cle"]) == Orvane.cle_jeu,
+		"un quart d'heure de jeu plus tard, ce qui est compté se clôt en un lot et part : Orvane le reçoit (« lisiere », monde « orvane », 2 rencontres, sa période)")
+
+	# refusé, un lot attend sur l'appareil ; il repart avec le suivant ; connectée, le joueur est son compte
+	await S._http(service + "/__refuser", {}, HTTPClient.METHOD_POST, "")
+	Orvane.compter("essai-lot", "prairie", "prelevement", 1.0, "", "", "", "piege")
+	var n2: int = L.clore()
+	await _attendre_lots(L)
+	var refuse: bool = n2 == 1 and Orvane.lots_en_attente() == 1 and L.erreur.contains("trop de dépôts") and L.texte().contains("1 lot attend")
+	var rien: int = L.clore()
+	await _attendre_lots(L)
+	await S._http(service + "/__accepter", {}, HTTPClient.METHOD_POST, "")
+	S.jeton = "jeton:ada@exemple.fr"
+	S.uid = "u-ada"
+	Orvane.compter("essai-lot", "prairie", "rencontre", 1.0)
+	L.clore()
+	await _attendre_lots(L)
+	var r2: Array = await _lots_recus(service)
+	var c2: String = str(r2[2]["compte"]) if r2.size() == 3 else ""
+	verif(refuse and rien == 0 and r2.size() == 3 and Orvane.lots_en_attente() == 0 and L.recus_partie == 3 and L.erreur == "" and str(r2[1]["compte"]) == c2
+		and c2.begins_with("sv:") and not c2.contains("ada") and L.texte().contains("reçu 3 lots"),
+		"refusé (« trop de dépôts »), un lot attend sur l'appareil, et repart avec le suivant ; connectée, le joueur est son compte, en empreinte (%s) ; la pause le dit" % c2)
+
+	# une bête apprivoisée : une capture ; rendue aux siens : une libération (et la fin le dit)
+	var espece: Dictionary = {}
+	for e in F["proies_jour"] + F["proies_nuit"]:
+		var b0 = _bete(e, "proie", jeu.joueur.position + Vector2(900.0, 0.0), {})
+		var bonne: bool = E.apprivoisable(b0)
+		_oter(b0)
+		if bonne:
+			espece = e
+			break
+	if espece.is_empty():
+		print("  (aucune proie à quatre pattes dans ce lieu : la capture n'est pas essayée)")
+	else:
+		var b = _bete(espece, "proie", jeu.joueur.position + Vector2(40.0, 0.0), {})
+		A.objets["licol"] = 1
+		var apprivoisee: bool = E.apprivoiser(b)
+		var capture: float = _compte(str(b.id), "capture")
+		var liberee: bool = E.liberer(b)
+		var dit: String = jeu._texte_appris()
+		verif(apprivoisee and capture == 1.0 and liberee and _compte(str(b.id), "liberation") == 1.0 and int(jeu.appris.get("capture", 0)) == int(garde["appris"].get("capture", 0)) + 1
+			and dit.contains("apprivoisée") and dit.contains("aux siens"),
+			"une bête apprivoisée est une capture, pour Orvane ; rendue aux siens, une libération (« %s »)" % dit.trim_prefix(", "))
+		_oter(b)
+
+	# (tout remis comme avant)
+	Orvane.supabase_url = garde["url"]
+	L.vers = ""
+	Orvane._en_attente.clear()
+	Orvane._en_attente.append_array(garde["attente"])
+	Orvane._evenements = garde["ev"]
+	Orvane._debut = garde["debut"]
+	Orvane.garder()
+	S.jeton = garde["jeton"]
+	S.uid = garde["uid"]
+	jeu.appris = garde["appris"]
+	A.objets["licol"] = garde["licol"]
+	L.nouvelle_partie()
+	jeu.en_pause = pause0
+	OS.kill(pid)
+
+
+func _lots_recus(service: String) -> Array:
+	var r: Dictionary = await jeu.session._http(service + "/__lots", null, HTTPClient.METHOD_GET, "")
+	return r["donnees"] if r["ok"] and typeof(r["donnees"]) == TYPE_ARRAY else []
+
+
+func _attendre_lots(L) -> void:
+	for i in 900:
+		if not L.en_cours():
+			return
+		await get_tree().process_frame
 
 
 # la botanique (scripts/botanique.gd) : les herbes, leurs vertus cachées, ce qu'on en apprend, ce qu'on en prépare

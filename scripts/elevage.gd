@@ -219,6 +219,9 @@ func liberer(b) -> bool:
 
 
 func _rendre(b) -> void:
+	# (elle retourne aux siens : une libération, pour Orvane ; principal.gd, bete_rendue)
+	if betes.has(b) and jeu.has_method("bete_rendue"):
+		jeu.bete_rendue(b)
 	betes.erase(b)
 	_noir.erase(b)
 	b.harnais = {}

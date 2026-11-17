@@ -4,7 +4,9 @@ extends Node
 # Le jour, on récolte et l'on chasse les bêtes du lieu ; la nuit, on tient près d'un feu : ses chasseurs viennent, tournent à la
 # lisière de la lumière, mordent dans le noir. La peur monte dans l'obscurité ; au comble, ce qu'on a tué revient, en échos.
 # Chaque bête croisée est comptée (« rencontre »), chaque bête tuée aussi (« prélèvement »), dans le lieu d'Orvane où c'est
-# arrivé : à la fin de la partie, le kit en fait un lot (docs/4), déposé dans le monde d'Orvane (scripts/regles.gd : sa clé, son monde) ; l'essai et la vitrine n'envoient rien.
+# arrivé (et chaque bête apprivoisée, « capture », rendue aux siens, « libération ») : le kit en fait des lots (docs/4), déposés dans le
+# monde d'Orvane pendant la partie, au plus un par quart d'heure, et au retour au titre, à la fin (scripts/lots.gd ; scripts/regles.gd :
+# sa clé, son monde) ; l'essai et la vitrine n'envoient rien.
 # La mémoire d'Orvane (docs/50) : chaque bête se conduit d'après ce que sa population a appris des joueurs (scripts/bete.gd), et la
 # partie raconte ce qu'elle lui apprendra (_raconter) : une bête blessée qui s'en va, un chasseur tenu par un feu ou par la torche,
 # un assaut, une morsure qui tue. Le kit ne garde ces comptes que si le monde lu tient la mémoire.
@@ -44,6 +46,7 @@ const Elevage := preload("res://scripts/elevage.gd")
 const Botanique := preload("res://scripts/botanique.gd")
 const Reperes := preload("res://scripts/reperes.gd")
 const Galet := preload("res://scripts/galet.gd")
+const Lots := preload("res://scripts/lots.gd")
 const SAUVEGARDE := "user://lisiere.json"
 const DUREE_MORT := 2.4          # la veilleuse tombe, puis l'écran de fin
 
@@ -121,6 +124,7 @@ var compte := ""
 var record := 0
 var essai = null
 var session
+var lots                       # ce que la partie renvoie au monde d'Orvane, et quand (scripts/lots.gd)
 # la graine du lieu (il se sème d'après elle) ; le numéro de la partie au tableau des scores ("" : elle n'y est pas)
 var graine := 0
 var partie_id := ""
@@ -175,6 +179,10 @@ func _ready() -> void:
 	# (connectée ou déconnectée à l'écran-titre : la partie du compte se relit ; un autre appareil a continué : on le dit)
 	session.change.connect(_compte_change)
 	session.partie_en_conflit.connect(_partie_en_conflit)
+	# les lots pour Orvane : clos et déposés à des moments naturels, pas seulement à la fin (scripts/lots.gd)
+	lots = Lots.new()
+	lots.jeu = self
+	add_child(lots)
 	ui = Interface.new()
 	add_child(ui)
 	ui.relier_session(session)
@@ -334,6 +342,8 @@ func _titre() -> void:
 		# (les bêtes ne sont pas gardées : celles qu'on a frappées en réchappent, et la partie gardée le sait)
 		_blessees_en_vie()
 		_garder()
+	# (ce qu'Orvane a compté de la partie, ou de celle d'avant le lancement, se clôt en un lot et part, avec ceux qui attendaient)
+	lots.clore()
 	_vider()
 	ui.montrer_chargement("Le monde d'Orvane s'éveille…")
 	await donnees.charger_index()
@@ -546,11 +556,13 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	_vider()
 	var reprise := not gardee.is_empty()
 	if reprise:
-		# (ce qu'Orvane a déjà compté de cette partie, le kit l'a gardé : on ne l'oublie pas)
+		# (ce qu'Orvane avait compté de cette partie est parti au retour au titre, ou attend sur l'appareil : scripts/lots.gd)
 		graine = int(gardee.get("graine", randi()))
 	else:
+		# (une partie nouvelle part de rien : ce qui était compté avant s'est clos à l'écran-titre, sauf une partie qui n'envoie rien)
 		Orvane.oublier()
 		graine = randi()
+	lots.nouvelle_partie()
 	scene = Node2D.new()
 	add_child(scene)
 	obscurite = CanvasModulate.new()
@@ -1503,6 +1515,24 @@ func _raconter(b, action: String, moyen: String = "") -> void:
 		appris[action] = int(appris.get(action, 0)) + 1
 
 
+# une bête apprivoisée (scripts/elevage.gd) quitte les siens : une capture, pour Orvane (BRANCHER-UN-JEU.md : « elle a été
+# apprivoisée ») ; rendue aux siens, ou partie d'elle-même en rompant sa longe, une libération. Toujours comptées : ce ne sont pas
+# des actions de la mémoire, le monde les connaît depuis toujours
+func bete_apprivoisee(b) -> void:
+	_compter_elevage(b, "capture")
+
+
+func bete_rendue(b) -> void:
+	_compter_elevage(b, "liberation")
+
+
+func _compter_elevage(b, action: String) -> void:
+	if b == null or not is_instance_valid(b) or str(b.id) == "":
+		return
+	Orvane.compter(b.id, str(b.get_meta("biome", biome)), action, 1.0, "", str(b.get_meta("parcelle", "")))
+	appris[action] = int(appris.get(action, 0)) + 1
+
+
 # une bête frappée par la veilleuse s'en va en vie (trop loin, à l'aube, à la fin de la partie) : une blessure, une par bête
 func bete_echappee(b) -> void:
 	_raconter(b, "blessure", "melee")
@@ -1766,11 +1796,13 @@ func _fin() -> void:
 		# (des bêtes conduites par une mémoire qui n'est pas celle du monde : ce qu'elles ont fait n'apprendrait rien de vrai)
 		depot = "Une partie à la mémoire forcée (« %s ») : rien n'est envoyé." % donnees.memoire_forcee
 		Orvane.oublier()
-	elif Orvane.cle_jeu != "":
-		Orvane.clore(compte)
-		Orvane.deposer(compte)
-		depot = "Le lot part vers le monde d'Orvane : il y pèsera au cycle de cette nuit." if Orvane.monde == "orvane" else \
-			"Le lot part dans le bac à sable d'Orvane (monde « %s »)." % Orvane.monde
+	elif lots.permis():
+		# (le dernier lot de la partie se clôt et part, avec ceux qui attendaient : scripts/lots.gd)
+		lots.clore()
+		var n: int = lots.clos_partie
+		var en := "en %d lot%s" % [n, "s" if n > 1 else ""]
+		depot = ("Ce que ta partie a compté part vers le monde d'Orvane (%s) : il y pèsera au cycle de cette nuit." % en) if Orvane.monde == "orvane" else \
+			"Ce que ta partie a compté part dans le bac à sable d'Orvane (monde « %s », %s)." % [Orvane.monde, en]
 	else:
 		Orvane.oublier()
 	var noms := []
@@ -1803,7 +1835,8 @@ func _fin() -> void:
 # monde ne tient pas la mémoire, ou s'il n'y a rien à dire
 func _texte_appris() -> String:
 	var mots := {"blessure": ["bête blessée", "bêtes blessées"], "effarouchement": ["tenue à distance", "tenues à distance"],
-		"attaque": ["assaut", "assauts"], "joueur_tombe": ["morsure qui t'a prise", "morsures qui t'ont prise"]}
+		"attaque": ["assaut", "assauts"], "joueur_tombe": ["morsure qui t'a prise", "morsures qui t'ont prise"],
+		"capture": ["bête apprivoisée", "bêtes apprivoisées"], "liberation": ["rendue aux siens", "rendues aux siens"]}
 	var t := ""
 	for k in mots:
 		var n := int(appris.get(k, 0))
@@ -2029,6 +2062,9 @@ func _lire_biome(type: String) -> void:
 # titre). L'essai et la vitrine ne gardent rien
 func _garder(vite: bool = true) -> void:
 	_garde_ms = Time.get_ticks_msec()
+	# (ce qu'Orvane a compté se garde aussi ; un quart d'heure après le dernier lot, il se clôt et part : scripts/lots.gd)
+	if en_partie and _mort < 0.0 and lots != null:
+		lots.au_fil()
 	if essai != null or not en_partie or _mort >= 0.0 or joueur == null or monde == null:
 		return
 	var d := PartieGardee.photo(self)
