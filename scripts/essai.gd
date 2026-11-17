@@ -5646,7 +5646,8 @@ func _les_fruits() -> void:
 	var sorbiers: Array = W.objets.filter(func(x): return x.genre == "arbre" and str(x.fruit) == "baies" and int(x.fruits_plein) > 0)
 	var bornes: bool = portent.all(func(x): return int(x.fruits_plein) >= 3 and int(x.fruits_plein) <= 5 and int(x.tombes_plein) <= RR.TOMBES)
 	var part := float(portent.size()) / maxf(1.0, float(fruitiers.size()))
-	verif(fruitiers.size() >= 10 and part > 0.5 and part < 0.9 and bornes and sorbiers.size() >= 5,
+	# (sept sur dix portent, au tirage de chacun : sur soixante-dix arbres, la part tombe parfois à la moitié)
+	verif(fruitiers.size() >= 10 and part > 0.4 and part < 0.95 and bornes and sorbiers.size() >= 5,
 		"en forêt, %d fruitiers d'après l'herbier, dont %d %% portent leurs pommes cette année (de 3 à 5, et quelques-unes tombées à leur pied) ; %d arbres aux fruits charnus portent des sorbes" % [
 		fruitiers.size(), int(part * 100.0), sorbiers.size()])
 	# chaque arbre : ses fruits se dessinent, se cueillent (à terre d'abord, en se baissant ; puis dans les branches, le bras
