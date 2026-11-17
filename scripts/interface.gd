@@ -287,7 +287,7 @@ func montrer_titre(lieux: Array, infos: String, record: int) -> void:
 		choix = 0
 	_choix.remplir(options, choix)
 	if lieux.is_empty():
-		_etat_titre.text = "Aucun lieu ne se lit pour l'instant."
+		_etat_titre.text = "Le monde ne se lit pas pour l'instant."
 	_apparaitre()
 	_dire_compte()
 

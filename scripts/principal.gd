@@ -374,20 +374,14 @@ func _version_du_jeu() -> String:
 	return str(v) if typeof(v) == TYPE_STRING else ""
 
 
-# les lieux qu'on propose : ceux du monde, et, à l'essai, le monde ouvert (MONDE-OUVERT.md), où l'on s'éveille dans la prairie
-# du centre
+# ce qu'on propose à l'écran-titre : le monde d'Orvane, d'un seul tenant (MONDE-OUVERT.md), où l'on s'éveille dans la prairie
+# du centre. Les lieux d'un seul biome ne se proposent plus (le jeu sait toujours les jouer : l'essai, la vitrine, une partie
+# gardée d'avant). Il faut que la prairie se lise : sinon, rien ne se propose
 func _lieux_du_titre() -> Array:
-	var lieux: Array = donnees.lieux().duplicate()
-	for l in lieux:
+	for l in donnees.lieux():
 		if str(l["id"]) == "prairie":
-			# (juste après la forêt, sur laquelle la liste s'ouvre : une flèche à droite et on y est)
-			var ou := 0
-			for i in lieux.size():
-				if str(lieux[i]["id"]) == "foret":
-					ou = i + 1
-			lieux.insert(ou, {"id": "ouvert:monde", "nom": "Le monde d'Orvane", "lignees": l["lignees"], "detail": "le monde ouvert, à l'essai : tous ses biomes, d'un seul tenant"})
-			break
-	return lieux
+			return [{"id": "ouvert:monde", "nom": "Le monde d'Orvane", "lignees": l["lignees"], "detail": "tous ses biomes, d'un seul tenant"}]
+	return []
 
 
 func _lieu_choisi(id: String) -> void:
