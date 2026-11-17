@@ -4376,13 +4376,28 @@ func _la_flore() -> void:
 	Orvane.ajouter_herbier("banquise", {})
 	W.flore_arrivee("banquise")
 	var sans := _semer_a_part("banquise", Vector2(90000.0, 130000.0))
-	Orvane.ajouter_herbier("banquise", gardee)
-	W.flore_arrivee("banquise")
 	verif(int(sans["genres"].get("sapin", 0)) > 100 and int(sans["genres"].get("arbre", 0)) == 0,
 		"sans herbier, la température décide encore : la banquise a ses sapins (%d)" % int(sans["genres"].get("sapin", 0)))
+	# une partie reprise sur la banquise, loin du réveil : ce qui s'est fait avant que son herbier arrive est refait avec ses plantes
+	var C = jeu.carte
+	var banq := -1
+	for k in C.regions.size():
+		if str(C.regions[k]["type"]) == "banquise" and (banq < 0 or C.regions[k]["pos"].length() < C.regions[banq]["pos"].length()):
+			banq = k
+	var p_b: Vector2 = C.regions[banq]["pos"] - C.tordre(C.regions[banq]["pos"])
+	jo.position = p_b
+	W.suivre(p_b, true)
+	var sur_la_banquise := func(x): return str(C.regions[C.region_en(x.position)]["type"]) == "banquise"
+	var sapins_avant: int = W.autour(p_b, 900.0).filter(func(x): return x.genre == "sapin" and sur_la_banquise.call(x)).size()
+	Orvane.ajouter_herbier("banquise", gardee)
+	W.flore_arrivee("banquise")
+	var autour_b: Array = W.autour(p_b, 900.0).filter(func(x): return sur_la_banquise.call(x))
+	var sapins_apres: int = autour_b.filter(func(x): return x.genre == "sapin").size()
+	var lichens: int = autour_b.filter(func(x): return str(x.forme).begins_with("lichen")).size()
+	verif(sapins_avant > 0 and sapins_apres == 0 and lichens > 0,
+		"reprise sur la banquise avant que son herbier soit lu : %d sapins ; l'herbier arrivé, ses morceaux sont refaits : plus un sapin, %d lichens" % [sapins_avant, lichens])
 
 	# dans le monde ouvert : à la forêt, les fleurs des prés et les champignons des bois sont des objets du lieu, qu'on cueille
-	var C = jeu.carte
 	var foret := -1
 	for k in C.regions.size():
 		if str(C.regions[k]["type"]) == "foret" and (foret < 0 or C.regions[k]["pos"].length() < C.regions[foret]["pos"].length()):
