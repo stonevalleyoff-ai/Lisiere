@@ -1379,11 +1379,11 @@ func _la_partie_sur_le_compte() -> void:
 	var pid := -1
 	var service := OS.get_environment("LISIERE_SERVICE")
 	if service == "":
-		pid = OS.create_process("node", [ProjectSettings.globalize_path("res://outils/faux-compte.js"), "8139"])
+		pid = OS.create_process("node", [ProjectSettings.globalize_path("res://outils/faux-compte.js"), str(_port(0))])
 		if pid <= 0:
 			print("  (node manque : la partie sur le compte n'est pas essayée)")
 			return
-		service = "http://127.0.0.1:8139"
+		service = "http://127.0.0.1:%d" % _port(0)
 	S.url = service
 	var pret := false
 	for i in 300:
@@ -1491,11 +1491,11 @@ func _les_lots(F: Dictionary) -> void:
 	var garde := {"url": Orvane.supabase_url, "attente": Orvane._en_attente.duplicate(), "ev": Orvane._evenements.duplicate(true),
 		"debut": Orvane._debut, "jeton": S.jeton, "uid": S.uid, "appris": jeu.appris.duplicate(), "licol": A.possede("licol")}
 	var ferme: bool = not L.permis()
-	var pid := OS.create_process("node", [ProjectSettings.globalize_path("res://outils/faux-compte.js"), "8140"])
+	var pid := OS.create_process("node", [ProjectSettings.globalize_path("res://outils/faux-compte.js"), str(_port(1))])
 	if pid <= 0:
 		print("  (node manque : les lots ne sont pas essayés)")
 		return
-	var service := "http://127.0.0.1:8140"
+	var service := "http://127.0.0.1:%d" % _port(1)
 	var pret := false
 	for i in 300:
 		if (await S._http(service + "/__lots", null, HTTPClient.METHOD_GET, ""))["ok"]:
@@ -1598,6 +1598,13 @@ func _les_lots(F: Dictionary) -> void:
 	L.nouvelle_partie()
 	jeu.en_pause = pause0
 	OS.kill(pid)
+
+
+# les ports des faux services (outils/faux-compte.js) : 8139 et 8140, ou à partir de LISIERE_PORTS (deux essais en même temps sur
+# une machine : LISIERE_PORTS=8150 pour l'un)
+func _port(i: int) -> int:
+	var base := OS.get_environment("LISIERE_PORTS")
+	return (int(base) if base.is_valid_int() else 8139) + i
 
 
 func _lots_recus(service: String) -> Array:
