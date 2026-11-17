@@ -1,7 +1,8 @@
 // Lisière — le voile de l'écran, avec ce que les herbes font voir (shaders/ecran_voile_herbes.gdshader)
-// Le voile de toujours (shaders/ecran_voile.gdshader : la nuit, la vignette, la morsure, le givre, la fournaise, l'aube, l'écho,
-// la fin, le grain ; et le corps qui faiblit : la faim qui fane le monde par les bords, ses crampes, la santé qui s'en va, au
-// bord rouge qui bat avec un cœur lourd), et dans le même passage, sans lire l'image : le poison (un vert malade qui gagne par les bords, en veines
+// Le voile de toujours (shaders/ecran_voile.gdshader : la nuit, la vignette, la morsure, l'aube, l'écho, la fin, le grain), et le
+// corps qui faiblit, dessiné comme ce qui arrive à une page de carnet : la peur la rature, la faim la jaunit et la pique de
+// rousseurs (ses crampes la froissent), la santé qui s'en va y fait boire de l'encre rouge, le froid y grave un givre de
+// hachures bleues, la chaleur en roussit les bords. Et dans le même passage, sans lire l'image : le poison (un vert malade qui gagne par les bords, en veines
 // qui battent avec le cœur), la torpeur (les paupières : deux pans d'ombre, frangés de cils, qui se ferment), les visions (les
 // couleurs glissent au bord de l'œil), la voyance (le noir s'ouvre, froid et bleu, dans un iris de givre). Les herbes à zéro,
 // l'image est celle du voile de toujours, au même prix. Alpha prémultiplié : il peut assombrir et éclairer.
@@ -42,6 +43,9 @@ uniform vec4 c_peur : source_color = vec4(0.54, 0.44, 0.84, 1.0);
 uniform vec4 c_faim : source_color = vec4(0.6, 0.48, 0.26, 1.0);
 uniform vec4 c_froid : source_color = vec4(0.44, 0.53, 0.72, 1.0);
 uniform vec4 c_givre : source_color = vec4(0.8, 0.89, 0.97, 1.0);
+uniform vec4 encre_bleue : source_color = vec4(0.16, 0.25, 0.48, 1.0);
+uniform vec4 papier : source_color = vec4(0.914, 0.875, 0.784, 1.0);
+uniform vec4 roussi : source_color = vec4(0.62, 0.46, 0.3, 1.0);
 uniform vec4 c_braise : source_color = vec4(0.93, 0.44, 0.15, 1.0);
 uniform vec4 c_aube : source_color = vec4(0.91, 0.73, 0.63, 1.0);
 uniform vec4 c_echo : source_color = vec4(0.75, 0.89, 1.0, 1.0);
@@ -54,6 +58,42 @@ float hache(vec2 p) {
 	return fract((q.x + q.y) * q.z);
 }
 
+// des taches de rousseur (ou des gouttes) : sur une grille, une tache par case, ou pas (densité, de 0 à 1), de taille et de place
+// tirées ; le cœur plus foncé que le bord
+float rousseurs(vec2 p, float densite) {
+	vec2 i = floor(p);
+	if (hache(i * 1.7 + 3.1) > densite) {
+		return 0.0;
+	}
+	vec2 o = vec2(hache(i + 11.3), hache(i + 27.9)) * 0.6 + 0.2;
+	float r = 0.12 + 0.3 * hache(i + 41.7);
+	float d = length(fract(p) - o) / r;
+	return (1.0 - smoothstep(0.55, 1.0, d)) * (0.6 + 0.4 * (1.0 - d));
+}
+
+// une rature : dans une case de 110 pixels, ou pas (densité), un mot barré d'un zigzag d'encre serré, à un angle tiré, d'une
+// longueur et d'une hauteur tirées ; t : le moment du tracé (la main tremble : la rature bouge à peine d'un moment à l'autre)
+float rature(vec2 px, float t, float densite) {
+	vec2 cel = floor(px / 110.0);
+	if (hache(cel * 1.3 + 7.7) > densite) {
+		return 0.0;
+	}
+	vec2 f = px / 110.0 - cel;
+	vec2 o = vec2(hache(cel + 3.3), hache(cel + 9.1)) * 0.3 + 0.35 + (vec2(hache(cel + vec2(t, 1.0)), hache(cel + vec2(t, 2.0))) - 0.5) * 0.012;
+	float a = hache(cel + 21.0) * 3.1416 + (hache(cel + vec2(t, 3.0)) - 0.5) * 0.06;
+	vec2 l = f - o;
+	vec2 r = vec2(cos(a) * l.x + sin(a) * l.y, -sin(a) * l.x + cos(a) * l.y);
+	float longueur = 0.26 + 0.14 * hache(cel + 5.5);
+	float hauteur = 0.05 + 0.05 * hache(cel + 6.6);
+	float frequence = 7.0 + 5.0 * hache(cel + 8.8);
+	float tri = abs(fract(r.x * frequence + hache(cel + 12.1)) * 2.0 - 1.0) * 2.0 - 1.0;
+	float pente = 4.0 * hauteur * frequence;
+	float dist = abs(r.y - tri * hauteur) / sqrt(1.0 + pente * pente);
+	float epais = 0.007 + 0.005 * hache(cel + 4.4);
+	float bout = 1.0 - smoothstep(longueur - 0.04, longueur, abs(r.x));
+	return (1.0 - smoothstep(epais, epais + 0.008, dist)) * bout;
+}
+
 // une couche de plus, par-dessus les autres (couleur, opacité)
 vec4 sur(vec4 dessous, vec3 c, float a) {
 	return vec4(c * a + dessous.rgb * (1.0 - a), a + dessous.a * (1.0 - a));
@@ -62,39 +102,74 @@ vec4 sur(vec4 dessous, vec3 c, float a) {
 void fragment() {
 	vec2 c = UV - 0.5;
 	float re = length(c) * 1.4142;
+	vec2 pp = vec2(c.x * ratio, c.y);
 	vec4 v = vec4(0.0);
 	v = sur(v, vec3(0.42), fin * 0.3 * seul);
 	v = sur(v, c_peur.rgb * 0.3, smoothstep(0.55, 1.0, peur) * 0.14 * seul);
 	v = sur(v, c_froid.rgb * 0.35, froid * 0.22);
 	v = sur(v, c_echo.rgb * 0.5, echo * 0.12 * seul);
 	// (la voyance : la vignette s'écarte, le noir du bord s'allège)
-	float ouvre = mix(0.58, 0.16, peur) - coeur * 0.12 + voyance * 0.22;
+	float ouvre = mix(0.58, 0.3, peur) - coeur * 0.1 + voyance * 0.22;
 	float vi = smoothstep(ouvre, ouvre + 0.9, re);
-	v = sur(v, encre.rgb, clamp(vi * (0.32 + 0.5 * peur + 0.12 * coeur) * (1.0 - 0.45 * voyance), 0.0, 0.92));
+	v = sur(v, encre.rgb, clamp(vi * (0.32 + 0.34 * peur + 0.1 * coeur) * (1.0 - 0.45 * voyance), 0.0, 0.85));
+	float effroi = smoothstep(0.35, 1.0, peur);
+	if (effroi > 0.01) {
+		// la peur : des ratures. Comme un carnet tenu d'une main qui tremble : çà et là, des mots barrés d'un zigzag d'encre serré,
+		// tracé vite, dans tous les sens ; ils gagnent par les bords, plus serrés à mesure que la peur monte, et la main tremble
+		// (redessinés huit fois par seconde, à peine ailleurs) ; à chaque coup du cœur, ils avancent
+		float t8 = floor(TIME * 8.0);
+		float n = texture(bruit, pp * 1.3 + vec2(t8 * 0.013, 0.0)).r;
+		float d = re + (n - 0.5) * 0.6 - mix(1.18, 0.6, effroi) + coeur * 0.05;
+		float zone = smoothstep(-0.05, 0.3, d);
+		float dens = zone * (0.45 + 0.5 * effroi);
+		float r = max(rature(FRAGCOORD.xy, t8, dens), rature(FRAGCOORD.xy + vec2(61.0, 37.0), t8 + 17.0, dens * 0.8));
+		v = sur(v, encre.rgb, clamp(zone * 0.12 * effroi, 0.0, 0.12));
+		// (la nuit, l'encre noire se perdrait dans le noir : la rature y est d'un violet pâle, comme une encre qui luit)
+		vec3 trait = mix(mix(encre.rgb, c_peur.rgb * 0.3, 0.2), c_peur.rgb * 0.62, clamp(nuit * 3.2, 0.0, 1.0) * 0.85);
+		v = sur(v, trait, clamp(r * (0.62 + 0.3 * effroi), 0.0, 0.92));
+	}
 	if (faim > 0.01) {
-		// la faim : le monde se fane, et par les bords un creux d'ocre sombre se resserre, en taches lentes ; il respire comme un
-		// ventre vide (lentement, pour que l'œil le voie bouger) ; une crampe le serre d'un coup et l'assombrit, puis il se relâche.
-		// Sans la passe qui lit l'image, un lavis gris-jaune éteint les couleurs à sa place
-		float n = texture(bruit, UV * vec2(ratio, 1.0) * 0.8 + vec2(TIME * 0.006, 0.0)).r * 0.7 + texture(bruit, UV * vec2(ratio, 1.0) * 2.6).r * 0.3;
-		float respire = 0.5 + 0.5 * sin(TIME * 2.1);
-		float d = re + (n - 0.5) * 0.5 - mix(1.08, 0.5, faim) + (0.05 * respire + 0.26 * crampe) * faim;
-		float bord = smoothstep(0.0, 0.38, d);
-		v = sur(v, vec3(0.42, 0.37, 0.25), faim * 0.28 * seul);
-		v = sur(v, c_faim.rgb * 0.2, faim * 0.07);
-		v = sur(v, mix(encre.rgb, c_faim.rgb, 0.38 + 0.3 * n - 0.12 * seul), clamp(bord * (0.5 + 0.42 * faim + 0.08 * seul), 0.0, 0.92));
-		// (au ras du creux, un liseré d'ocre clair : on voit où il s'arrête)
-		v.rgb += c_faim.rgb * (1.0 - abs(d * 6.0 - 0.6)) * step(0.0, d) * step(d, 0.2) * 0.16 * faim * (1.0 - v.a * 0.5);
-		v = sur(v, encre.rgb * 0.7, clamp(crampe * (0.28 + 0.45 * smoothstep(0.1, 1.0, re)), 0.0, 0.68));
+		// la faim : la page jaunit. Par les bords, le papier se teinte d'un jaune sale qui s'avance en auréoles (un liseré plus
+		// sombre marque où il s'arrête, comme une tache d'eau séchée), et se pique de taches de rousseur, de plus en plus serrées ;
+		// l'encre pâlit (le voile éclaircit les noirs). Une crampe froisse la page : des plis passent, le jaune avance d'un coup
+		float n = texture(bruit, pp * 0.8 + vec2(TIME * 0.004, 0.0)).r * 0.7 + texture(bruit, pp * 2.6).r * 0.3;
+		float d = re + (n - 0.5) * 0.55 - mix(1.12, 0.52, sqrt(faim)) + (0.03 * sin(TIME * 1.4) + 0.24 * crampe) * faim;
+		float jauni = smoothstep(-0.05, 0.35, d);
+		v = sur(v, papier.rgb, faim * (0.1 + 0.16 * seul));
+		v = sur(v, mix(papier.rgb, roussi.rgb, 0.45 + 0.35 * n), clamp(jauni * (0.42 + 0.4 * faim), 0.0, 0.85));
+		float aureole = (1.0 - smoothstep(0.0, 0.035, abs(d + 0.02))) * smoothstep(0.1, 0.4, faim);
+		v = sur(v, roussi.rgb * 0.62, aureole * 0.5);
+		float dens = faim * (0.04 + 0.62 * smoothstep(-0.25, 0.3, d));
+		float pique = max(rousseurs(pp * 34.0, dens), rousseurs(pp * 15.0 + 5.3, dens * 0.55) * 0.9);
+		v = sur(v, roussi.rgb * 0.5, clamp(pique * 0.75, 0.0, 0.75));
+		if (crampe > 0.01) {
+			// (les plis : des arêtes du bruit, une ombre d'un côté, un clair de l'autre)
+			float pl = texture(bruit, pp * 0.55 + vec2(3.7, 1.9)).r;
+			float arete = 1.0 - smoothstep(0.0, 0.012, abs(pl - 0.5));
+			float clair = 1.0 - smoothstep(0.0, 0.02, abs(pl - 0.515));
+			float ou = crampe * smoothstep(0.1, 0.9, re + 0.25 * faim);
+			v = sur(v, encre.rgb * 0.8, arete * ou * 0.6);
+			v.rgb += papier.rgb * clair * ou * 0.12;
+		}
 	}
 	if (agonie > 0.01) {
-		// la santé s'en va : le monde s'éloigne dans le noir, le bord rougit et se resserre à chaque coup du cœur lourd
-		float n = texture(bruit, UV * vec2(ratio, 1.0) * 0.7 + vec2(0.0, TIME * 0.004)).r;
-		float d = re + (n - 0.5) * 0.42 - mix(1.02, 0.46, agonie) + lourd * 0.13 * (0.4 + 0.6 * agonie);
-		float bord = smoothstep(0.0, 0.42, d);
-		v = sur(v, encre.rgb, clamp(agonie * (0.14 + 0.3 * smoothstep(0.25, 1.1, re)), 0.0, 0.48));
-		v = sur(v, vec3(0.42), agonie * 0.14 * seul);
-		v = sur(v, sang.rgb * (0.75 + 0.45 * n + 0.45 * lourd), clamp(bord * (0.5 + 0.4 * agonie + 0.2 * lourd), 0.0, 0.94));
-		v = sur(v, sang.rgb * 0.8, lourd * agonie * 0.14);
+		// la santé s'en va : de l'encre rouge boit le papier depuis les bords. Au bord, l'encre pleine ; devant elle, une frange qui
+		// a bu le long des fibres (plus claire, déchiquetée) ; à son front, l'encre s'amasse en un liseré sombre ; quelques gouttes
+		// tombées plus loin. Elle gonfle à chaque coup du cœur lourd, et le monde, derrière, s'éloigne dans le noir
+		float tour = atan(c.y, c.x * ratio) * 0.63662;
+		float fib = texture(bruit, vec2(tour * 7.0, re * 1.8)).r;
+		float n = texture(bruit, pp * 0.9 + vec2(0.0, TIME * 0.003)).r;
+		float d = re + (n - 0.5) * 0.45 + (fib - 0.5) * 0.16 - mix(1.04, 0.48, agonie) + lourd * 0.1 * (0.4 + 0.6 * agonie);
+		float plein = smoothstep(0.03, 0.08, d);
+		float frange = smoothstep(-0.07, 0.03, d) * (1.0 - plein);
+		v = sur(v, encre.rgb, clamp(agonie * (0.1 + 0.26 * smoothstep(0.25, 1.1, re)), 0.0, 0.4));
+		v = sur(v, vec3(0.42), agonie * 0.12 * seul);
+		v = sur(v, sang.rgb * (1.15 + 0.35 * fib), clamp(frange * (0.38 + 0.25 * fib) * (0.6 + 0.4 * agonie), 0.0, 0.6));
+		v = sur(v, sang.rgb * (0.85 + 0.25 * n + 0.3 * lourd), clamp(plein * (0.78 + 0.18 * agonie), 0.0, 0.96));
+		float amas = (1.0 - smoothstep(0.0, 0.022, abs(d - 0.045))) * agonie;
+		v = sur(v, sang.rgb * 0.45, amas * 0.55);
+		float gouttes = rousseurs(pp * 21.0 + 7.1, agonie * 0.32 * smoothstep(0.2, 0.9, re));
+		v = sur(v, sang.rgb * 0.8, clamp(gouttes * 1.2, 0.0, 0.88));
 	}
 	if (blessure > 0.01) {
 		float n = texture(bruit, UV * vec2(ratio, 1.0) * 0.9).r;
@@ -104,19 +179,33 @@ void fragment() {
 		v = sur(v, sang.rgb * (0.6 + 0.4 * n), clamp(bord * (0.35 + 0.6 * blessure), 0.0, 0.92));
 	}
 	if (givre > 0.01) {
-		// le corps a froid : le givre gagne par les bords, en aiguilles tournées vers le centre (le bruit, étiré le long du rayon)
+		// le corps a froid : le givre est gravé. Par les bords, des hachures fines d'encre bleue (tous les sept pixels, couchées),
+		// cassées comme au burin, qui gagnent vers le centre ; plus près du bord, croisées ; et le papier y bleuit, pâle
 		float tour = atan(c.y, c.x * ratio) * 0.63662;
-		float n = texture(bruit, vec2(tour * 2.0, re * 0.3)).r * 0.65 + texture(bruit, UV * vec2(ratio, 1.0) * 2.3).r * 0.35;
-		float bord = smoothstep(0.0, 0.09, re + (n - 0.5) * 0.55 - mix(1.14, 0.76, givre));
-		v = sur(v, c_givre.rgb * 0.45, givre * 0.1);
-		v = sur(v, c_givre.rgb * (0.62 + 0.38 * n), clamp(bord * (0.22 + 0.5 * givre), 0.0, 0.8));
+		float n = texture(bruit, vec2(tour * 2.0, re * 0.3)).r * 0.65 + texture(bruit, pp * 2.3).r * 0.35;
+		float d = re + (n - 0.5) * 0.55 - mix(1.12, 0.66, givre);
+		float zone = smoothstep(0.0, 0.2, d);
+		float croise = smoothstep(0.12, 0.34, d);
+		vec2 px = FRAGCOORD.xy;
+		float l1 = 1.0 - smoothstep(0.07, 0.17, abs(fract(dot(px, vec2(0.574, 0.819)) / 7.0) - 0.5));
+		float l2 = 1.0 - smoothstep(0.07, 0.17, abs(fract(dot(px, vec2(-0.866, 0.5)) / 7.0) - 0.5));
+		float casse = smoothstep(0.38, 0.58, texture(bruit, px * 0.011).r + zone * 0.25);
+		float trait = max(l1 * zone, l2 * croise) * casse;
+		v = sur(v, mix(papier.rgb, c_givre.rgb, 0.6), clamp(zone * (0.16 + 0.22 * givre), 0.0, 0.38));
+		v = sur(v, encre_bleue.rgb, clamp(trait * (0.5 + 0.35 * givre), 0.0, 0.85));
 	}
 	if (fournaise > 0.01) {
-		// la chaleur accable, ou elle brûle : les bords rougeoient et montent comme une flamme
-		float n = texture(bruit, UV * vec2(ratio, 1.0) * 1.1 + vec2(0.0, TIME * 0.4)).r;
-		float bord = smoothstep(0.0, 0.26, re + (n - 0.5) * 0.5 - mix(1.12, 0.72, fournaise));
-		v = sur(v, c_braise.rgb * 0.8, fournaise * 0.1);
-		v = sur(v, c_braise.rgb * (0.5 + 0.5 * n), clamp(bord * (0.28 + 0.5 * fournaise), 0.0, 0.78));
+		// la chaleur accable, ou elle brûle : les bords de la page roussissent, comme approchés d'une flamme. Le papier brunit en
+		// s'approchant du bord ; au bord, il est charbonné ; entre les deux, une ligne de braise qui vacille
+		float n = texture(bruit, pp * 1.1 + vec2(0.0, TIME * 0.02)).r * 0.7 + texture(bruit, pp * 3.2).r * 0.3;
+		float d = re + (n - 0.5) * 0.5 - mix(1.1, 0.68, fournaise);
+		float brunit = smoothstep(-0.14, 0.1, d);
+		float charbon = smoothstep(0.1, 0.15, d);
+		float front = 1.0 - smoothstep(0.0, 0.025, abs(d - 0.105));
+		float vacille = 0.6 + 0.4 * sin(TIME * 7.0 + n * 23.0);
+		v = sur(v, mix(roussi.rgb, vec3(0.42, 0.22, 0.08), 0.5 + 0.5 * brunit), clamp(brunit * (0.4 + 0.35 * fournaise), 0.0, 0.72));
+		v = sur(v, vec3(0.08, 0.055, 0.045), clamp(charbon * 0.92, 0.0, 0.92));
+		v.rgb += c_braise.rgb * front * vacille * (0.35 + 0.45 * fournaise);
 	}
 	if (poison > 0.01) {
 		// le poison : le vert malade gagne par les bords, en veines qui rampent vers le centre (le bruit, étiré le long du rayon,

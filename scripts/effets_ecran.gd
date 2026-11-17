@@ -51,6 +51,7 @@ func preparer(qualite: String) -> void:
 		m.set_shader_parameter("sang", P.SANG)
 		m.set_shader_parameter("c_peur", P.PEUR)
 		m.set_shader_parameter("c_faim", P.FAIM)
+		m.set_shader_parameter("papier", P.PAPIER)
 		m.set_shader_parameter("c_froid", P.LUNE)
 		m.set_shader_parameter("c_aube", P.AUBE)
 		m.set_shader_parameter("c_echo", P.ECHO)

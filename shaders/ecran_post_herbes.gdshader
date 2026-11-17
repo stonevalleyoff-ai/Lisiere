@@ -2,8 +2,8 @@
 // La passe de toujours (shaders/ecran_post.gdshader : elle lit l'image du lieu, sur un ordinateur seulement, et en retire la
 // couleur), et dans le même passage : le poison (l'image tangue, se dédouble à chaque battement, verdit et s'éteint), la
 // torpeur (le flou), les visions (le bord de l'image nage, ses couleurs glissent), la voyance (les noirs se lèvent, froids) ; et
-// le corps qui faiblit : la faim (les couleurs se fanent, une crampe brouille la vue), la santé qui s'en va (le monde pâlit), le
-// froid (il bleuit), la chaleur (l'air tremble).
+// le corps qui faiblit : la faim (l'encre pâlit sur un papier qui jaunit, une crampe brouille la vue), la santé qui s'en va (le
+// monde pâlit), le froid (il bleuit), la chaleur (l'air tremble).
 // Jamais plus de quatre lectures de l'image, quel que soit le mélange ; les herbes à zéro, c'est la passe de toujours.
 shader_type canvas_item;
 
@@ -65,9 +65,10 @@ void fragment() {
 	float sat = clamp(1.0 - 0.6 * smoothstep(0.3, 1.0, peur) - 0.4 * echo - 0.88 * fin - 0.5 * poison - 0.3 * flou
 		- 0.6 * faim - 0.75 * agonie - 0.25 * givre, 0.0, 1.0);
 	col = mix(vec3(lum), col, sat);
-	// la faim : ce qui reste de couleur tire sur la paille, terne ; la santé qui s'en va : le monde pâlit, puis s'assombrit à chaque
-	// coup du cœur ; le froid : il bleuit ; la chaleur : elle éblouit un peu
-	col = mix(col, col * vec3(1.1, 0.97, 0.66) + vec3(0.02, 0.015, 0.0), faim * 0.65);
+	// la faim : l'encre pâlit sur un papier qui jaunit (les noirs se lèvent, tout tire vers le jaune de la page) ; la santé qui s'en
+	// va : le monde pâlit, puis s'assombrit à chaque coup du cœur ; le froid : il bleuit ; la chaleur : elle éblouit un peu
+	vec3 jauni = vec3(0.9, 0.82, 0.62);
+	col = mix(col, mix(jauni * 0.4, jauni, lum), faim * 0.42);
 	col = mix(col, mix(col, vec3(lum * 1.08), 0.35), agonie * 0.5) * (1.0 - 0.12 * lourd * agonie);
 	col = mix(col, col * vec3(0.86, 0.96, 1.16), givre * 0.45);
 	col = mix(col, col * vec3(1.12, 1.02, 0.86) + vec3(0.03, 0.015, 0.0), smoothstep(0.25, 0.8, fournaise) * 0.5);
