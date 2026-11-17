@@ -1,6 +1,6 @@
 extends Node2D
 # Lisière — ce qui pousse et ce qui gît (scripts/objet.gd)
-# Un arbre (du bois, puis une souche), un rocher (des pierres), un buisson (des baies, qui repoussent), une touffe (des fibres,
+# Un arbre (ses fruits s'il en porte, puis du bois, puis une souche), un rocher (des pierres), un buisson (des baies, qui repoussent), une touffe (des fibres,
 # qui repoussent), une brindille (un bois, ramassé d'un geste), une fleur (des fleurs), une plante d'eau, un champignon des bois
 # (un cèpe qu'on mange, une amanite qui tue). Ce qui vient de l'herbier d'Orvane porte sa forme (scripts/flore.gd) : son dessin
 # est alors dans scripts/flore_dessins.gd, sa conduite reste celle de son genre. Chacun dessiné une fois, d'après sa graine, comme sur une planche

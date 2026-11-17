@@ -8,7 +8,8 @@ extends RefCounted
 #  - sa strate (les arbres, les buissons, le sol, l'eau, les champignons d'une grotte) : le lieu sème chaque strate à la densité
 #    que donnent ses axes (le couvert fait les arbres, l'humidité les buissons…), et chaque place d'une strate revient à l'une de
 #    ses plantes, tirée selon sa part. Une strate que l'herbier n'a pas reste vide : pas d'arbre sur la banquise ;
-#  - ce qu'on en tire quand on la cueille.
+#  - ce qu'on en tire quand on la cueille ; un arbre, ses fruits (FRUITS : la cueillette nourricière, mûre selon la saison et
+#    le stade, maturite), une graminée ses grains, le lichen des rennes une soupe, le cactus sa pulpe.
 # Une forme qu'on ne connaît pas encore se dessine comme les autres de son port (un arbre, un buisson, une herbe…) ; seule une
 # plante d'un port inconnu prend la planche d'Orvane, en secours.
 # Lisière a aussi ses plantes à elle, qu'Orvane ne publie pas : les fleurs des prés (« fleur » sans forme) et les champignons des
