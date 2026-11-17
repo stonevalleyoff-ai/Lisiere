@@ -40,12 +40,13 @@ static func _bord(s: Dictionary, k: float, n: int = 28) -> PackedVector2Array:
 
 # --- à plat ---
 
-static func a_plat(p, s: Dictionary) -> void:
+# (mobile : un téléphone ; le dessin y garde moins de traits)
+static func a_plat(p, s: Dictionary, mobile: bool = false) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = int(s["graine"])
 	match str(s["genre"]):
 		"dune":
-			_dune(p, s, r)
+			_dune(p, s, r, mobile)
 		"scories":
 			_scories(p, s, r)
 		"fondriere":
@@ -393,7 +394,7 @@ static func _rayons(s: Dictionary, k: float) -> PackedFloat32Array:
 
 
 # une dune : du sable clair qui recouvre la terre craquelée, ses rides couchées par le vent, sa crête et son versant à l'ombre
-static func _dune(p, s: Dictionary, r: RandomNumberGenerator) -> void:
+static func _dune(p, s: Dictionary, r: RandomNumberGenerator, mobile: bool) -> void:
 	var c: Vector2 = s["p"]
 	var sable := P.IVOIRE.lerp(P.FAIM, 0.28).lightened(0.06)
 	tache(p, c, _rayons(s, 0.86), _rayons(s, 1.0), sable, 0.62)
@@ -403,7 +404,7 @@ static func _dune(p, s: Dictionary, r: RandomNumberGenerator) -> void:
 	var long := Vector2.from_angle(a + PI * 0.5)
 	var travers := Vector2.from_angle(a)
 	var rr: float = s["taille"]
-	var n := int(rr / 16.0)
+	var n := int(rr / (26.0 if mobile else 18.0))
 	for i in n:
 		var u := (float(i) / (n - 1) - 0.5) * 1.5
 		var demi := sqrt(maxf(0.0, 1.0 - u * u)) * 0.6
@@ -415,24 +416,22 @@ static func _dune(p, s: Dictionary, r: RandomNumberGenerator) -> void:
 			var v := (float(j) / 6.0 - 0.5) * 2.0 * demi
 			ligne.append(milieu + (long * v * rr + travers * sin(v * 5.0 + i) * 5.0) * Vector2(1.0, 0.62))
 		p.tracer(ligne, 1.3, Color(P.TERRE, 0.38))
+		if mobile:
+			continue
 		var claire := PackedVector2Array()
 		for q in ligne:
 			claire.append(q + Vector2(-1.2, -1.8))
 		p.tracer(claire, 1.0, Color(P.PAPIER, 0.55))
-	# la crête : un trait d'encre courbe ; derrière, le versant à l'ombre
+	# la crête : un trait d'encre courbe ; sous le vent, le versant à l'ombre, un lavis qui s'efface
 	var crete := PackedVector2Array()
-	var cote := PackedVector2Array()
+	var abri := PackedVector2Array()
 	for j in 9:
 		var v := (float(j) / 8.0 - 0.5) * 1.1
-		var q := c + (long * v * rr * 0.8 + travers * (rr * 0.12 - absf(v) * rr * 0.18)) * Vector2(1.0, 0.62)
+		var q := c + (long * v * rr * 0.8 + travers * (rr * 0.1 - v * v * rr * 0.3)) * Vector2(1.0, 0.62)
 		crete.append(q)
-		cote.append(q + travers * rr * 0.16 * (1.0 - absf(v) * 1.4) * Vector2(1.0, 0.62))
-	var ombre := crete.duplicate()
-	var retour := cote.duplicate()
-	retour.reverse()
-	ombre.append_array(retour)
-	p.aplat(ombre, Color(P.TERRE.lerp(sable, 0.55), 0.55))
-	p.tracer(crete, 1.3, Color(P.ENCRE, 0.55))
+		abri.append(q + travers * rr * 0.09 * Vector2(1.0, 0.62))
+	p.tracer(abri, rr * 0.16, Color(P.TERRE.lerp(sable, 0.5), 0.3), true)
+	p.tracer(crete, 1.2, Color(P.ENCRE, 0.45))
 
 
 # des scories : une roche noire, bulleuse, semée de cailloux de lave ; la cendre qui s'y dépose

@@ -15,9 +15,10 @@ extends Node
 #  - ce qu'on ramasse (« Agir ») : l'obsidienne (le volcan : une lance, à l'établi), la tourbe (le marais : un feu qui dure),
 #    le bois flotté (la banquise, surtout sur le rivage : le seul bois ; la mer en rapporte), la carcasse ensablée (le désert :
 #    de la ferraille). Elles se tiennent debout dans le lieu, triées avec le reste ; elles maigrissent à mesure qu'on y prend.
-# Ce qui est à plat se dessine sur un calque au-dessus du sol (sous la lueur des feux et tout ce qui se tient debout), refait
-# seulement quand des cases viennent ou s'en vont (scripts/biome_dessins.gd) ; la lave luit sur un calque additif que la nuit
-# n'assombrit pas, et qui ne fait que battre ; les feux follets passent au-dessus de tout, la nuit seulement.
+# Ce qui est à plat se dessine au-dessus du sol (sous la lueur des feux et tout ce qui se tient debout), case par case : une
+# case se dessine une fois, quand elle se fait, et s'en va avec elle (scripts/biome_dessins.gd) ; le sol même (dunes, scories)
+# sur un calque à lui, dessous. La lave luit sur un calque additif que la nuit n'assombrit pas, et qui ne fait que battre ; les
+# feux follets passent au-dessus de tout, la nuit seulement.
 
 const R := preload("res://scripts/regles.gd")
 const P := preload("res://scripts/palette.gd")
@@ -42,7 +43,9 @@ var enlise := 0.0              # de 0 à 1 : ce qu'elle s'est enfoncée dans une
 var _cases := {}               # Vector2i → [les choses de la case]
 var _vases := {}               # Vector2i → [les fondrières qui touchent la case] (climat.eau les lit souvent : une case, une liste)
 var _pris := {}                # id → [ce qui reste, l'heure de la partie où on y a pris]
-var _sol: Node2D
+var _fonds: Node2D            # le sol même (dunes, scories) : un calque par case
+var _sol: Node2D              # ce qui est à plat par-dessus (fondrières, failles, évents, mares) : un calque par case
+var _calques := {}            # Vector2i → les calques de la case
 var _lave: Node2D
 var _air: Node2D
 var _sale := false
@@ -64,9 +67,9 @@ func _init() -> void:
 func poser(scene: Node2D) -> void:
 	_mobile = str(jeu.qualite) == "mobile"
 	scene.add_child(self)
-	_sol = Calque.new()
-	_sol.terrain = self
-	_sol.quoi = "sol"
+	_fonds = Node2D.new()
+	_fonds.name = "PaysFonds"
+	_sol = Node2D.new()
 	_sol.name = "PaysSol"
 	_lave = Calque.new()
 	_lave.terrain = self
@@ -76,13 +79,15 @@ func poser(scene: Node2D) -> void:
 	_air.terrain = self
 	_air.quoi = "air"
 	_air.material = T.materiau(true, false)
+	scene.add_child(_fonds)
 	scene.add_child(_sol)
 	scene.add_child(_lave)
 	# (au-dessus du sol, du temps qu'il fait au sol et des parois ; sous la lueur des feux, la brume, ce qui se tient debout)
 	var lueurs: Node = scene.get_node_or_null("EffetsSol")
 	var i: int = lueurs.get_index() if lueurs != null else jeu.monde.get_index()
-	scene.move_child(_sol, i)
-	scene.move_child(_lave, i + 1)
+	scene.move_child(_fonds, i)
+	scene.move_child(_sol, i + 1)
+	scene.move_child(_lave, i + 2)
 	scene.add_child(_air)
 	var inv: Dictionary = jeu.joueur.inventaire
 	for k in ["obsidienne", "tourbe"]:
@@ -154,8 +159,20 @@ func _faire(k: Vector2i) -> void:
 				n += 1
 				liste.append(s)
 				_inscrire(s)
-				if A_PLAT.has(genre):
+				if genre == "faille":
 					_sale = true
+	# (ce qui est à plat se dessine une fois, pour toute la case : le sol même, puis le reste)
+	var calques: Array = []
+	for fond in [true, false]:
+		if liste.any(func(x): return A_PLAT.has(str(x["genre"])) and FONDS.has(str(x["genre"])) == fond):
+			var c := Calque.new()
+			c.terrain = self
+			c.quoi = "fonds" if fond else "sol"
+			c.case = k
+			(_fonds if fond else _sol).add_child(c)
+			calques.append(c)
+	if not calques.is_empty():
+		_calques[k] = calques
 
 
 func _taille(genre: String, r: RandomNumberGenerator) -> float:
@@ -276,11 +293,14 @@ func _defaire(k: Vector2i) -> void:
 		var n = s.get("noeud")
 		if n != null and is_instance_valid(n):
 			n.queue_free()
-		if A_PLAT.has(str(s["genre"])):
+		if str(s["genre"]) == "faille":
 			_sale = true
 		_follets.erase(s["id"])
 		_crachait.erase(s["id"])
 	_cases.erase(k)
+	for c in _calques.get(k, []):
+		c.queue_free()
+	_calques.erase(k)
 	# (les fondrières de cette case quittent les cases qu'elles touchaient)
 	for v in _vases.keys():
 		_vases[v] = _vases[v].filter(func(x): return Vector2i((Vector2(x["p"]) / CASE).floor()) != k)
@@ -449,7 +469,6 @@ func maj(delta: float) -> void:
 	_entendre(delta, p)
 	if _sale:
 		_sale = false
-		_sol.queue_redraw()
 		_lave.queue_redraw()
 	# (la lave bat lentement ; les feux follets ne se montrent que la nuit)
 	var nuit := 1.0 - float(jeu.lumiere_du_jour())
@@ -674,20 +693,22 @@ func reprendre(d: Dictionary) -> void:
 
 func _dessiner(ci: CanvasItem, quoi: String) -> void:
 	match quoi:
-		"sol", "lave":
+		"fonds", "sol":
+			# (une case : ce qu'elle a à plat, de son calque)
 			var p := Pinceau.new()
 			p.commencer(ci.get_canvas_item())
-			# (le sol même d'abord, sous tout le reste)
-			for passe in 2:
-				for k in _cases:
-					for s in _cases[k]:
-						var genre: String = s["genre"]
-						if not A_PLAT.has(genre) or FONDS.has(genre) != (passe == 0):
-							continue
-						if quoi == "sol":
-							Dessins.a_plat(p, s)
-						elif genre == "faille":
-							Dessins.lave(p, s)
+			for s in _cases.get(ci.case, []):
+				var genre: String = s["genre"]
+				if A_PLAT.has(genre) and FONDS.has(genre) == (quoi == "fonds"):
+					Dessins.a_plat(p, s, _mobile)
+			p.finir()
+		"lave":
+			var p := Pinceau.new()
+			p.commencer(ci.get_canvas_item())
+			for k in _cases:
+				for s in _cases[k]:
+					if str(s["genre"]) == "faille":
+						Dessins.lave(p, s)
 			p.finir()
 		"air":
 			var halo := T.lueur()
@@ -709,6 +730,7 @@ func _dessiner(ci: CanvasItem, quoi: String) -> void:
 class Calque extends Node2D:
 	var terrain
 	var quoi := ""
+	var case := Vector2i.ZERO
 
 	func _draw() -> void:
 		if terrain != null:

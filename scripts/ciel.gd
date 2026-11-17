@@ -163,7 +163,7 @@ func _process(delta: float) -> void:
 		m.set_shader_parameter("temps", _t)
 		m.set_shader_parameter("pluie", pluie)
 		# (la tourmente : des flocons plus serrés, que le vent chasse presque à l'horizontale ; la cendre tombe comme une neige grise)
-		m.set_shader_parameter("neige", maxf(neige * 0.7 + 0.3 * tourmente, cendre * 0.55))
+		m.set_shader_parameter("neige", maxf(neige * 0.7 + 0.3 * tourmente, cendre * 0.85))
 		m.set_shader_parameter("pente", _pente)
 		m.set_shader_parameter("souffle", vd.x * vent * 170.0 * (0.7 + 0.6 * rafale) * (1.0 + 1.6 * tourmente))
 		m.set_shader_parameter("eclat", minf(1.0, eclat * 1.5))
