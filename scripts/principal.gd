@@ -139,6 +139,7 @@ var _tir_vise := {}           # ce qu'elle vise, le temps d'armer : la bête, le
 var _grogne := 0.0
 var _etait_nuit := false
 var _deja: Dictionary = {}
+var _ronge_dit := false        # (la faim ronge sa santé, et c'est dit ; elle le redira quand elle y reviendra)
 # le compteur d'images par seconde : affiché ou non (gardé dans la sauvegarde), et son étiquette
 var ips := false
 var _ips_label: Label
@@ -654,6 +655,7 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	appris.clear()
 	savoir.clear()
 	_deja.clear()
+	_ronge_dit = false
 	_directeur = 0.5
 	_vague = 0.0
 	_etait_nuit = false
@@ -1417,6 +1419,14 @@ func _corps(delta: float) -> void:
 		# (la faim tue : elle prend sur la santé dès que l'estomac se vide, de plus en plus)
 		_mal("faim", R.FAMINE * (1.0 - joueur.faim / R.FAIM_MORD) * delta)
 		_conseil("faim", true, "Tu as faim : elle te ronge. Mange (E) : des baies, de la viande cuite.")
+		# (et chaque fois qu'elle y revient : l'écran le montre aussi, scripts/effets.gd, _le_corps)
+		if not _ronge_dit:
+			_ronge_dit = true
+			if _deja.has("faim_redite"):
+				ui.message("La faim te ronge. Mange (E).", Color(0.95, 0.75, 0.45))
+			_deja["faim_redite"] = true
+	elif joueur.faim > R.FAIM_MORD + 10.0:
+		_ronge_dit = false
 	var dp := -R.PEUR_JOUR
 	if nuit > 0.5:
 		dp = R.PEUR_NOIR if lumiere < 0.35 else -R.PEUR_LUMIERE

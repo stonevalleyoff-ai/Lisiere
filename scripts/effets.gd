@@ -61,6 +61,15 @@ var _arret := 0.0
 var _lent := 1.0
 # l'écran
 var _peur := 0.0
+# le corps qui faiblit : la faim (et ses crampes, sous R.FAIM_MORD), la santé qui s'en va (et son cœur lourd), le froid qui fait
+# frissonner, la chaleur qui fait trembler l'air
+var _faim := 0.0
+var _ronge := 0.0
+var _crampe := 0.0
+var _crampe_dans := 0.0
+var _agonie := 0.0
+var _lourd := 0.0
+var _coup := 0.0
 var _coeur := 0.0
 var _battu := 9.0
 var _prochain := 0.0
@@ -97,6 +106,13 @@ func nouvelle_partie(s: Node2D, c: Camera2D, o: CanvasModulate) -> void:
 	_trauma = 0.0
 	_zoom = 1.0
 	_peur = 0.0
+	_faim = 0.0
+	_ronge = 0.0
+	_crampe = 0.0
+	_crampe_dans = 0.0
+	_agonie = 0.0
+	_lourd = 0.0
+	_coup = 0.0
 	_blessure = 0.0
 	_choc = 0.0
 	_froid = 0.0
@@ -151,6 +167,7 @@ func maj(delta: float) -> void:
 	_aube = maxf(0.0, _aube - delta * 0.3)
 	_echo = maxf(0.0, _echo - delta * 0.9)
 	_battre(delta, j.peur)
+	_le_corps(delta, j)
 	# la fin : le monde ralentit et se décolore, puis s'assombrit avant l'écran de fin
 	var fin := 0.0
 	var noir := 0.0
@@ -178,15 +195,20 @@ func maj(delta: float) -> void:
 	# chaud, et tout de suite quand elle brûle
 	var t_corps: float = j.temperature
 	_givre = lerpf(_givre, clampf((R.FROID + 9.0 - t_corps) / 18.0, 0.0, 1.0), clampf(delta * 1.5, 0.0, 1.0))
-	_fournaise = lerpf(_fournaise, 1.0 if j.en_feu > 0.0 else clampf((t_corps - R.CHAUD + 6.0) / 22.0, 0.0, 0.8), clampf(delta * (6.0 if j.en_feu > 0.0 else 1.5), 0.0, 1.0))
+	_fournaise = lerpf(_fournaise, 1.0 if j.en_feu > 0.0 else clampf((t_corps - R.CHAUD + 6.0) / 22.0, 0.0, 0.92), clampf(delta * (6.0 if j.en_feu > 0.0 else 1.5), 0.0, 1.0))
 	e["givre"] = _givre if _givre > 0.01 else 0.0
 	e["fournaise"] = _fournaise if _fournaise > 0.01 else 0.0
+	e["faim"] = _faim if _faim > 0.01 else 0.0
+	e["crampe"] = _crampe * _crampe * (0.45 + 0.55 * _ronge)
+	e["agonie"] = _agonie if _agonie > 0.01 else 0.0
+	e["lourd"] = _coup * _agonie
 	e["grain"] = (0.035 + 0.02 * nuit) * (1.0 if _ecran.haute else 0.6)
 	e.merge(h)
 	if _ecran.haute:
 		e["aberration"] = smoothstep(0.82, 1.0, _peur) * 0.8 + _choc
 		# (la passe qui lit l'écran ne s'allume que pour retirer la couleur, ou dédoubler l'image)
-		_ecran.lire(_peur > 0.3 or _echo > 0.01 or fin > 0.0 or e["aberration"] > 0.01 or herbes.lit())
+		_ecran.lire(_peur > 0.3 or _echo > 0.01 or fin > 0.0 or e["aberration"] > 0.01 or herbes.lit() or _faim > 0.2 or _agonie > 0.05
+			or _fournaise > 0.25 or _givre > 0.3)
 	_ecran.regler(e)
 
 
@@ -361,13 +383,26 @@ func _camera(delta: float, nuit: float, fin: float) -> void:
 	if herbes != null:
 		camera.offset += herbes.derive
 		camera.rotation += herbes.tangage
+	# le corps : elle grelotte (le froid), la faim la fait tanguer et chaque crampe la plie, le cœur lourd cogne
+	var grelotte := smoothstep(0.35, 1.0, _givre)
+	if grelotte > 0.0:
+		var g := _horloge * 31.0
+		camera.offset += Vector2(_bruit.get_noise_2d(g, 91.0), _bruit.get_noise_2d(57.0, g)) * 3.2 * grelotte
+	var crampe := _crampe * _crampe * (0.45 + 0.55 * _ronge)
+	if _ronge > 0.0 or crampe > 0.0:
+		camera.rotation += sin(_horloge * 1.1) * 0.014 * _ronge + sin(_horloge * 0.47 + 1.3) * 0.007 * _ronge
+		camera.offset += Vector2(sin(_horloge * 0.61) * 5.0 * _ronge, 7.0 * crampe)
+	if _agonie > 0.0:
+		camera.rotation += sin(_horloge * 0.5) * 0.007 * _agonie
 	# la nuit, elle se rapproche un peu (le monde se resserre autour du feu) ; la peur la fait reculer ; la fin, s'approcher
 	var cible := 1.0 + 0.045 * nuit - 0.035 * smoothstep(0.6, 1.0, _peur) + 0.14 * fin
 	# (sur les hauteurs, elle recule : on voit plus loin, d'un palier à l'autre)
 	if jeu != null:
 		cible -= R.VUE_PAR_PALIER * float(jeu.altitude)
 	_zoom = lerpf(_zoom, cible, clampf(delta * 0.8, 0.0, 1.0))
-	camera.zoom = Vector2(R.ZOOM, R.ZOOM) * _zoom * recul
+	# (chaque coup du cœur lourd, chaque crampe serre l'image un instant)
+	var serre := 1.0 + 0.018 * _coup * _agonie + 0.025 * crampe
+	camera.zoom = Vector2(R.ZOOM, R.ZOOM) * _zoom * recul * serre
 
 
 func _vue() -> Vector2:
@@ -577,6 +612,29 @@ func fin() -> void:
 func battement() -> void:
 	_battu = 0.0
 	_dehors = 1.5
+
+
+# le corps qui faiblit. La faim se voit dès que la jauge passe sous 30 (le monde se fane par les bords), bien avant qu'elle ne
+# prenne sur la santé ; sous R.FAIM_MORD, où elle la ronge, viennent les crampes : de plus en plus serrées à mesure que l'estomac
+# se vide. La santé qui s'en va se voit sous 40 : le bord rougit, le monde pâlit, et un cœur lourd bat de plus en plus vite.
+func _le_corps(delta: float, j) -> void:
+	var k := clampf(delta * 1.2, 0.0, 1.0)
+	_faim = lerpf(_faim, clampf((30.0 - float(j.faim)) / 30.0, 0.0, 1.0), k)
+	_ronge = lerpf(_ronge, clampf((R.FAIM_MORD - float(j.faim)) / R.FAIM_MORD, 0.0, 1.0), k)
+	_crampe = maxf(0.0, _crampe - delta * 1.15)
+	_crampe_dans -= delta
+	if _ronge > 0.05 and _crampe_dans <= 0.0:
+		_crampe_dans = lerpf(5.5, 2.4, _ronge) + randf() * 1.2
+		_crampe = 1.0
+	_agonie = lerpf(_agonie, clampf((40.0 - float(j.sante)) / 40.0, 0.0, 1.0), clampf(delta * 2.0, 0.0, 1.0))
+	if _agonie > 0.02:
+		# (deux coups lourds, « boum-boum », de 1,4 seconde à 0,75 à mesure que la santé tombe)
+		var periode := lerpf(1.4, 0.75, _agonie)
+		_lourd = fmod(_lourd + delta, periode)
+		_coup = exp(-_lourd * 9.0) + (0.7 * exp(-(_lourd - 0.2) * 9.0) if _lourd > 0.2 else 0.0)
+	else:
+		_lourd = 0.0
+		_coup = 0.0
 
 
 func _battre(delta: float, peur: float) -> void:

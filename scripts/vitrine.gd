@@ -49,7 +49,8 @@ var temps := ""
 var image := ""
 var moments: Array = []
 var _but := Vector2.ZERO
-var _regles := {}              # (l'atelier : --boue, --crue, --neige-sol, --force, --vent, --corps (sa température), pour voir un état précis)
+var _regles := {}              # (l'atelier : --boue, --crue, --neige-sol, --force, --vent, --corps (sa température), pour voir un état précis ;
+								# le corps qui faiblit, tenu : --sante 15, --faim 5, --peur 90 : scripts/effets.gd, _le_corps)
 # (l'atelier « feu » : --feu brasier|restes|pluie, --nu (sans l'interface), --appels (les appels de dessin, à la fin))
 var feu := ""
 var nu := false
@@ -89,7 +90,7 @@ func _ready() -> void:
 				temps = "incendie"
 			"--image":
 				image = a[i + 1]
-			"--boue", "--crue", "--neige-sol", "--force", "--vent", "--corps":
+			"--boue", "--crue", "--neige-sol", "--force", "--vent", "--corps", "--sante", "--faim", "--peur":
 				_regles[a[i]] = float(a[i + 1])
 			"--a":
 				for x in a[i + 1].split(","):
@@ -621,6 +622,9 @@ func _process(delta: float) -> void:
 	_t += delta
 	var j = jeu.joueur
 	j.sante = maxf(j.sante, 60.0)
+	for k in ["--sante", "--faim", "--peur"]:
+		if _regles.has(k):
+			j.set(k.trim_prefix("--"), float(_regles[k]))
 	var u := _t / duree
 	if nu and jeu.ui != null and jeu.ui.visible:
 		jeu.ui.visible = false

@@ -565,6 +565,7 @@ func _lancer() -> void:
 	jeu.joueur.temperature = 50.0
 
 	_la_durete()
+	_le_corps_a_l_ecran()
 	_la_noire(F)
 	_le_pistage(F)
 	_les_empreintes(F)
@@ -3108,6 +3109,80 @@ func _les_pattes() -> void:
 	bete.queue_free()
 
 
+
+
+# ce que l'écran montre du corps qui faiblit (scripts/effets.gd, _le_corps ; shaders/ecran_voile_herbes.gdshader) : rien quand elle
+# va bien ; la faim dès 30, bien avant qu'elle ne prenne sur la santé ; sous R.FAIM_MORD, ses crampes, et la caméra qui tangue ;
+# la santé qui s'en va, au bord rouge, au cœur lourd qui serre l'image ; le froid qui fait grelotter, la chaleur. Les effets
+# tournent ici image par image (0,05 s), le corps tenu à cet état ; et quand la faim revient ronger la santé, c'est redit
+func _le_corps_a_l_ecran() -> void:
+	print("Le corps à l'écran")
+	var j = jeu.joueur
+	var garde := {"faim": j.faim, "sante": j.sante, "temp": j.temperature, "peur": j.peur, "feu": j.en_feu}
+	j.en_feu = 0.0
+	var bien: Dictionary = _tenir_le_corps(100.0, 100.0, 50.0, 8.0)
+	var faim_20: Dictionary = _tenir_le_corps(20.0, 100.0, 50.0, 5.0)
+	var faim_3: Dictionary = _tenir_le_corps(3.0, 100.0, 50.0, 10.0)
+	var blessee: Dictionary = _tenir_le_corps(100.0, 15.0, 50.0, 5.0)
+	var gelee: Dictionary = _tenir_le_corps(100.0, 100.0, 12.0, 5.0)
+	var brulante: Dictionary = _tenir_le_corps(100.0, 100.0, 92.0, 5.0)
+	verif(bien["faim"] < 0.03 and bien["agonie"] < 0.03 and bien["crampe"] < 0.01 and bien["givre"] < 0.03 and bien["fournaise"] < 0.03 and bien["tangue"] < 0.002,
+		"elle va bien : l'écran ne montre rien du corps, la caméra ne bouge pas")
+	verif(faim_20["faim"] > 0.25 and faim_20["crampe"] < 0.01 and faim_3["faim"] > 0.8 and faim_3["crampe"] > 0.3 and faim_3["tangue"] > 0.008 and faim_3["serre"] > 1.004 and faim_20["tangue"] < 0.002,
+		"la faim se voit dès 30, avant qu'elle ne ronge la santé (à 20 : %.2f, sans crampe) ; à 3, le monde se fane (%.2f), les crampes serrent l'image et la caméra tangue (%.3f rad)" % [
+			faim_20["faim"], faim_3["faim"], faim_3["tangue"]])
+	verif(blessee["agonie"] > 0.55 and blessee["lourd"] > 0.4 and blessee["serre"] > 1.006 and bien["serre"] < 1.0005,
+		"la santé qui s'en va (à 15) : le bord rougit (%.2f), un cœur lourd bat et serre l'image à chaque coup" % blessee["agonie"])
+	verif(gelee["givre"] > 0.5 and gelee["grelotte"] > 1.0 and brulante["fournaise"] > 0.6 and bien["grelotte"] < 0.2,
+		"le froid : le givre gagne l'écran (%.2f) et la caméra grelotte (%.1f pixels) ; la chaleur : la fournaise (%.2f)" % [gelee["givre"], gelee["grelotte"], brulante["fournaise"]])
+	# la faim revient ronger la santé : c'est redit (la première fois, c'est le conseil)
+	j.faim = 5.0
+	jeu._corps(0.05)
+	j.faim = 60.0
+	jeu._corps(0.05)
+	j.faim = 5.0
+	jeu._corps(0.05)
+	var redit := false
+	for m in jeu.ui._messages:
+		redit = redit or (is_instance_valid(m[0]) and str(m[0].text).contains("La faim te ronge"))
+	verif(redit, "quand la faim revient ronger la santé, c'est redit : « La faim te ronge. Mange (E). »")
+	j.faim = garde["faim"]
+	j.sante = garde["sante"]
+	j.temperature = garde["temp"]
+	j.peur = garde["peur"]
+	j.en_feu = garde["feu"]
+	_tenir_le_corps(j.faim, j.sante, j.temperature, 4.0)
+
+
+func _tenir_le_corps(faim: float, sante: float, temp: float, secondes: float) -> Dictionary:
+	var j = jeu.joueur
+	var Fx = jeu.effets
+	var V: ShaderMaterial = Fx._ecran.voile
+	var vu := {"faim": 0.0, "crampe": 0.0, "agonie": 0.0, "lourd": 0.0, "givre": 0.0, "fournaise": 0.0, "tangue": 0.0, "grelotte": 0.0, "serre": 1.0}
+	var zmin := 99.0
+	var zmax := 0.0
+	var n := int(secondes / 0.05)
+	for i in n:
+		j.faim = faim
+		j.sante = sante
+		j.temperature = temp
+		j.peur = 0.0
+		Fx._trauma = 0.0
+		Fx.maj(0.05)
+		# (on lit la seconde moitié : l'état est installé ; les crampes, qui vont et viennent, y passent au moins une fois)
+		if i < n / 2:
+			continue
+		for k in ["faim", "crampe", "agonie", "lourd", "givre", "fournaise"]:
+			vu[k] = maxf(float(vu[k]), float(V.get_shader_parameter(k)))
+		if Fx.camera != null:
+			vu["tangue"] = maxf(float(vu["tangue"]), absf(Fx.camera.rotation))
+			vu["grelotte"] = maxf(float(vu["grelotte"]), Fx.camera.offset.length())
+			# (ce que le cœur ou la crampe serre, au-delà du cadrage de l'heure : la caméra rapportée à son zoom du moment)
+			var serre: float = Fx.camera.zoom.x / (jeu.R.ZOOM * Fx._zoom * Fx.recul)
+			zmin = minf(zmin, serre)
+			zmax = maxf(zmax, serre)
+	vu["serre"] = zmax
+	return vu
 
 
 # ce qui tue (scripts/regles.gd) : la faim, la peur, le froid, la chaleur prennent sur la santé avant leur comble ; une morsure
