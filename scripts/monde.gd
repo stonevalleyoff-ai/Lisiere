@@ -221,6 +221,8 @@ func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 			_mat_herbe = _outils["mat"]
 		if carte != null:
 			lieu_de(lieu)
+			# (les parts du biome du réveil se règlent pendant qu'on charge, pas dans le premier morceau)
+			_table(lieu)
 		suivre(Vector2.ZERO, true)
 		return
 	_semer_tout(r, gardes)
@@ -412,6 +414,9 @@ func flore_arrivee(type: String) -> void:
 	_densites.erase(type)
 	if _lieux.has(type):
 		_lieux[type]["flore"] = _flore_de(type, str(_lieux[type]["arbre"]))
+		# (ses parts se règlent maintenant, une fois, avant que ses morceaux soient refaits)
+		if carte != null and not _lieux[type]["flore"].is_empty():
+			_table(type)
 		for k in _morceaux.keys():
 			if _morceaux[k].get("types", {}).has(type):
 				_oublier(k)

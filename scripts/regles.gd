@@ -333,7 +333,7 @@ const MILIEU_ECART := 30.0            # deux groupes du sol ne sont jamais plus 
 const MILIEU_ECART_SEC := 100.0       # … et dans un lieu sec : les racines se partagent l'eau
 const MILIEU_LIBRE := 55.0            # une plante du sol « à l'écart » : aucune autre à moins de tant (la place d'un cactus)
 const MILIEU_SOUS_BOIS := 0.3         # les groupes offerts au pied des arbres, par arbre (aux fougères, aux mousses)
-const MILIEU_AU_ROCHER := 0.6         # ceux offerts autour des rochers, par rocher (aux lichens, aux coussins)
+const MILIEU_AU_ROCHER := 0.8         # la part des rochers qui ont leur couronne de places, de trois à six (aux lichens, aux coussins)
 const MILIEU_FOURRES := 0.7           # les fourrés (de deux à quatre places), pour un buisson voulu
 const MILIEU_LIANES := 0.12           # les places de liane au pied des arbres, par arbre, dans un lieu humide
 # l'eau
@@ -350,7 +350,8 @@ const MILIEU_FEU := 110.0            # près de ce qui brûle : à moins de tant
 # le réglage des parts (milieu.gd, regler)
 const MILIEU_TOURS := 40              # les tours du réglage
 const MILIEU_POIDS_MAX := 8.0         # un poids ne monte pas plus haut que tant de fois la part : une plante sans milieu ici ne va pas se poser n'importe où
-const MILIEU_ECHANTILLON := 2100.0    # (le monde ouvert) le côté du carré où le plan d'un biome est essayé, pour régler ses parts
+const MILIEU_ECHANTILLON_MIN := 12   # une strate dont l'échantillon a moins de groupes que cela garde les proportions de ses parts (un seul facteur règle combien)
+const MILIEU_ECHANTILLON := 3150.0    # (le monde ouvert) un biome règle ses parts sur autant de quarts de morceau qu'en a un carré de ce côté (9 × 9), épars
 # la météo d'Orvane (production, secheresse, eaux, e) : ce qu'elle fait aux densités (milieu.gd, densites)
 const MILIEU_SECHERESSE_SOL := 0.5        # une sécheresse entière ôte cette part des plantes du sol…
 const MILIEU_SECHERESSE_BUISSONS := 0.3   # … et celle-ci des buissons

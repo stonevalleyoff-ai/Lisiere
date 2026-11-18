@@ -285,6 +285,12 @@ static func regler(flore: Dictionary, ech: Dictionary, cibles: Dictionary) -> Di
 			poids.append(parts[i] / maxf(0.0001, somme))
 		# (de proche en proche : chaque poids monte ou descend jusqu'à ce que la plante ait sa part ; il ne monte pas sans fin,
 		# pour qu'une plante sans milieu dans ce lieu n'aille pas se poser n'importe où)
+		# (une strate dont l'échantillon n'a que quelques groupes — les buissons d'un désert — ne dit pas assez où chacune trouve
+		# sa place : ses poids gardent les proportions de leurs parts, et un seul facteur, commun, règle combien il en vient)
+		var groupes := 0
+		for so in sortes:
+			groupes += int(so[2])
+		var mince := eclaircie and groupes < R.MILIEU_ECHANTILLON_MIN
 		if not sortes.is_empty() and total > 0.0:
 			var eu := PackedFloat32Array()
 			eu.resize(n)
@@ -301,6 +307,15 @@ static func regler(flore: Dictionary, ech: Dictionary, cibles: Dictionary) -> Di
 					var tg := int(sortes[j][1])
 					for i in n:
 						eu[i] += combien * poids[i] * g[i] * float(mini(tailles[i], tg))
+				if mince:
+					var tout_eu := 0.0
+					for i in n:
+						tout_eu += eu[i]
+					if tout_eu > 0.0:
+						var k := pow(total / tout_eu, 0.7)
+						for i in n:
+							poids[i] = clampf(poids[i] * k, 0.00001, R.MILIEU_POIDS_MAX * parts[i] / maxf(0.0001, somme))
+					continue
 				for i in n:
 					var veut := total * parts[i] / maxf(0.0001, somme)
 					if eu[i] > 0.0:
@@ -362,8 +377,10 @@ static func cellule(strate: String, p: Vector2, k: int, milieu: int, graine: int
 
 # --- la météo d'Orvane : ce qu'elle fait aux densités (1 : rien) ---
 
-# { sol, buisson, eau, fleurs, champignons } d'après la météo du biome ce cycle (production, secheresse, eaux, e : l'humidité)
-static func densites(meteo: Dictionary) -> Dictionary:
+# { sol, buisson, eau, fleurs, champignons } d'après la météo du biome ce cycle (production, secheresse, eaux, e : l'humidité).
+# sensible : { sol, buisson } ce que la sécheresse prend à cette strate, au prix d'une strate d'herbes (sol) ou de buissons
+# ordinaires (buisson) : 1 ; un tapis de lichens, des plantes grasses : bien moins (sensible_au_sec)
+static func densites(meteo: Dictionary, sensible: Dictionary = {}) -> Dictionary:
 	if meteo.is_empty():
 		return {"sol": 1.0, "buisson": 1.0, "eau": 1.0, "fleurs": 1.0, "champignons": 1.0}
 	var vigueur := clampf(float(meteo.get("production", 1.0)), 0.6, 1.3)
@@ -371,18 +388,44 @@ static func densites(meteo: Dictionary) -> Dictionary:
 	var eaux := clampf(float(meteo.get("eaux", 0.0)), 0.0, 1.0)
 	var humide := clampf(float(meteo.get("e", 0.0)), -1.0, 1.0)
 	return {
-		"sol": clampf(vigueur * (1.0 - R.MILIEU_SECHERESSE_SOL * seche), 0.5, 1.3),
-		"buisson": clampf(vigueur * (1.0 - R.MILIEU_SECHERESSE_BUISSONS * seche) * (1.0 + 0.15 * humide), 0.6, 1.3),
+		"sol": clampf(vigueur * (1.0 - R.MILIEU_SECHERESSE_SOL * seche * float(sensible.get("sol", 1.0))), 0.5, 1.3),
+		"buisson": clampf(vigueur * (1.0 - R.MILIEU_SECHERESSE_BUISSONS * seche * float(sensible.get("buisson", 1.0))) * (1.0 + 0.15 * humide), 0.6, 1.3),
 		"eau": clampf(R.MILIEU_EAUX_FOND + R.MILIEU_EAUX * eaux - 0.3 * seche, 0.6, R.MILIEU_MARES_RESERVE),
 		"fleurs": clampf(vigueur * (1.0 - 0.6 * seche), 0.5, R.MILIEU_CUEILLETTE_RESERVE),
 		"champignons": clampf(1.0 + 0.5 * humide + 0.3 * eaux - 0.4 * seche, 0.5, R.MILIEU_CUEILLETTE_RESERVE),
 	}
 
 
+# ce que la sécheresse prend à chaque port, d'après Orvane (moteur/succession.js, sinistres.secheresse : l'herbe et le roseau
+# 0,3, l'algue 0,2, le buisson 0,15, l'arbre et le lichen 0,1 ; la plante grasse, rien), et ce que ses caractères y changent
+# (moteur/diversite.js : des racines profondes, trois fois moins ; un bulbe, moitié moins ; qui pousse vite, un cinquième de plus)
+const SECHERESSE := {"herbe": 0.3, "roseau": 0.3, "champignon": 0.3, "algue": 0.2, "buisson": 0.15, "arbre": 0.1, "lichen": 0.1, "succulente": 0.0}
+const SECHERESSE_CARACTERES := {"racines_profondes": 0.3, "bulbe": 0.5, "rapide": 1.2}
+
+
+# { sol, buisson } : ce que la sécheresse prend à chacune de ces strates de la flore d'un lieu (la moyenne de ses plantes, selon
+# leurs parts), au prix d'une strate d'herbes (sol) ou de buissons (buisson) ordinaires
+static func sensible_au_sec(flore: Dictionary) -> Dictionary:
+	var out := {}
+	for strate in ["sol", "buisson"]:
+		var tout := 0.0
+		var pris := 0.0
+		for pl in flore.get(strate, []):
+			var x := float(SECHERESSE.get(str(pl.get("port", "herbe")), 0.3))
+			var car = pl.get("caracteres", [])
+			if typeof(car) == TYPE_ARRAY:
+				for c in car:
+					x *= float(SECHERESSE_CARACTERES.get(c, 1.0))
+			tout += float(pl["poids"])
+			pris += float(pl["poids"]) * x
+		out[strate] = pris / tout / float(SECHERESSE["herbe" if strate == "sol" else "buisson"]) if tout > 0.0 else 1.0
+	return out
+
+
 # combien de plantes on veut sur une surface, par strate (les buissons, le sol, l'eau ; les arbres tiennent toutes leurs places)
 static func cibles(mesures: Array, s: Dictionary, aire: float, meteo: Dictionary, ech: Dictionary, flore: Dictionary) -> Dictionary:
 	var ka := aire / (4.0 * R.DEMI * R.DEMI)
-	var d := densites(meteo)
+	var d := densites(meteo, sensible_au_sec(flore))
 	var couvert := float(mesures[0])
 	var sol := sol_voulu(couvert) * ka * float(d["sol"])
 	# (les places d'arbres et de buissons d'un lieu sans arbres ni buissons : autant de plantes du sol en plus)
@@ -813,10 +856,22 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		if q.length() < 170.0 or not rect.has_point(q):
 			continue
 		_groupe(ctx, r, suite, plan, rect, "buisson", "feuilles", type, q, SOUS | PIED | EN_PLUS | _sol(ctx, q), 1, 0.0)
-	# 5. les plantes du sol, par groupes : le fond du lieu (plus espacé où il fait sec : les racines se partagent l'eau) ; puis
-	# ce qui est offert en plus à qui l'aime — le pied des arbres, le tour des rochers, la ceinture des mares, les berges
+	# 5. les plantes du sol, par groupes : le tour des rochers, le fond du lieu (plus espacé où il fait sec : les racines se
+	# partagent l'eau) ; puis ce qui est offert en plus à qui l'aime — le pied des arbres, la ceinture des mares, les berges
 	var ecart := lerpf(R.MILIEU_ECART, R.MILIEU_ECART_SEC, sec)
 	var centres := {}
+	# (le tour des rochers d'abord : la pierre a ses lichens, ses coussins, avant que le fond ne prenne la place autour)
+	for roc in liste_rochers:
+		var chance := r.randf()
+		var combien := r.randi_range(3, R.MILIEU_GROUPE)
+		var tour := r.randf() * TAU
+		var autour: Array = []
+		for j in combien:
+			autour.append(roc + Vector2.from_angle(tour + j * r.randf_range(0.7, 1.3)) * r.randf_range(19.0, 31.0) * Vector2(1.0, 0.6))
+		if chance > R.MILIEU_AU_ROCHER or autour[0].length() < 170.0 or not rect.has_point(autour[0]) or _dans_l_eau(ctx, autour[0], 4.0) or _noye(ctx, roc) or _vers(centres, roc, ecart * 0.7) < INF:
+			continue
+		_ranger(centres, roc)
+		_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], _milieu_du_sol(ctx, autour[0], arbres, rochers, mares) | PIERRE | EN_PLUS, combien, 0.0, autour)
 	n = Decor._nombre(r, sol_voulu(couvert) * R.MILIEU_TOUFFES * ka)
 	essais = n * 8
 	while n > 0 and essais > 0:
@@ -836,18 +891,6 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		if q.length() < 170.0 or not rect.has_point(q) or _vers_mare(mares, q) < 6.0 or _dans_l_eau(ctx, q, 4.0) or _noye(ctx, q, 0.012):
 			continue
 		_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, q, (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~(LISIERE | DECOUVERT)) | SOUS | PIED | EN_PLUS, combien, 16.0)
-	n = Decor._nombre(r, float(liste_rochers.size()) * R.MILIEU_AU_ROCHER)
-	for i in n:
-		var roc: Vector2 = liste_rochers[r.randi() % liste_rochers.size()]
-		var combien := r.randi_range(2, 5)
-		var tour := r.randf() * TAU
-		var autour: Array = []
-		for j in combien:
-			autour.append(roc + Vector2.from_angle(tour + j * r.randf_range(0.7, 1.3)) * r.randf_range(19.0, 31.0) * Vector2(1.0, 0.6))
-		if autour[0].length() < 170.0 or not rect.has_point(autour[0]) or _dans_l_eau(ctx, autour[0], 4.0) or _noye(ctx, roc) or _vers(centres, roc, ecart * 0.7) < INF:
-			continue
-		_ranger(centres, roc)
-		_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], _milieu_du_sol(ctx, autour[0], arbres, rochers, mares) | PIERRE | EN_PLUS, combien, 0.0, autour)
 	for m in mares:
 		# (la ceinture d'une mare : un ou deux arcs de six places, serrées contre son bord)
 		var c: Vector2 = m[0]
