@@ -87,8 +87,8 @@ const FORMES := {
 	"caillou": {PIERRE: 10.0, NU: 2.0, "ailleurs": 0.1, "groupe": 3},                         # la plante-caillou, parmi les cailloux
 	"roseau": {RIVE: 12.0, BOUE: 2.5, CREUX: 2.0, "ailleurs": 0.02, "groupe": 6},             # la roselière : la ceinture des eaux
 	"jonc": {RIVE: 5.0, BOUE: 5.0, CREUX: 3.0, "ailleurs": 0.03, "groupe": 3},                # la boue, le bord, les fonds mouillés
-	"riz": {RIVE: 14.0, BOUE: 1.5, "ailleurs": 0.01, "groupe": 4},                            # les pieds dans l'eau
-	"papyrus": {RIVE: 14.0, BOUE: 2.0, "ailleurs": 0.01, "groupe": 3},
+	"riz": {RIVE: 14.0, "ailleurs": 0.01, "groupe": 4},                                       # les pieds dans l'eau, et nulle part ailleurs
+	"papyrus": {RIVE: 14.0, "ailleurs": 0.01, "groupe": 3},                                   # la touffe au bord de l'eau
 	"bambou": {LISIERE: 3.0, BOUE: 2.5, CREUX: 2.0, RIVE: 1.5, SOUS: 1.2, "ailleurs": 0.25, "groupe": 4},   # le fourré de bambous, au frais
 	"fleur": {DECOUVERT: 1.5, HERBE: 2.5, SOUS: 0.3, "groupe": 3},                            # des taches dans l'herbe
 	"bulbe": {LISIERE: 2.5, SOUS: 1.3, HERBE: 1.5, "groupe": 3},                              # des touffes, à l'ourlet du bois

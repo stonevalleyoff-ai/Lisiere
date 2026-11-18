@@ -19,6 +19,8 @@ const Objet := preload("res://scripts/objet.gd")
 const Decor := preload("res://scripts/decor.gd")
 const Flore := preload("res://scripts/flore.gd")
 const Milieu := preload("res://scripts/milieu.gd")
+const Pays := preload("res://scripts/biome_terrain.gd")
+const Biomes := preload("res://scripts/biomes.gd")
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const SolCuit := preload("res://scripts/decor_sol.gd")
 const SHADER_SOL := preload("res://shaders/sol_peint.gdshader")
@@ -88,6 +90,8 @@ var _calques: Array = []             # ce qui est posé à plat, l'herbe et les 
 var plan_version := PLAN
 var _relief: FastNoiseLite           # le relief du lieu : le même bruit que celui du temps qu'il fait (scripts/climat.gd, preparer)
 var _crue := 0.0                     # l'eau qui reste dans ses creux (scripts/climat.gd, crue_fond)
+var _pays_calcul                     # ce qui sait lister les choses d'un pays (ses fondrières, ses fumerolles…) sans les poser
+var _pays_cases := {}                # case du pays → ce qu'elle porte (scripts/biome_terrain.gd, _lister)
 var _echantillons := {}
 var _tables := {}
 var _densites := {}
@@ -222,7 +226,9 @@ func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 	_semer_tout(r, gardes)
 	# le décor, l'herbe, les ombres, la lisière : une fois les objets posés (le décor se glisse autour d'eux)
 	if _racine != null:
+		Decor.rive = func(q: Vector2) -> float: return rive_en(q, "")
 		_mat_herbe = Decor.semer(self, _calques, _terrain, _parts, palette, graine, _mobile)
+		Decor.rive = Callable()
 		for k in _ombres:
 			_case_ombre(k)
 		Decor.lisiere(self, palette, graine, _mobile)
@@ -232,7 +238,7 @@ func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 # sont réglés sur ce plan même. Une partie reprise retrouve ses objets tels qu'on les avait laissés, à leur place.
 func _semer_tout(r: RandomNumberGenerator, gardes: Array = []) -> void:
 	var rect := Rect2(-R.DEMI, -R.DEMI, 2.0 * R.DEMI, 2.0 * R.DEMI)
-	var ctx := _contexte("")
+	var ctx := _contexte("", rect)
 	var plan: Array = []
 	Milieu.prevoir(ctx, r, rect, plan)
 	# au réveil, de quoi faire un premier feu à portée
@@ -738,7 +744,7 @@ func _plan_m(k: Vector2i) -> Array:
 	var rc := RandomNumberGenerator.new()
 	rc.seed = hash(Vector3i(_graine + 911, k.x, k.y))
 	if carte == null:
-		var ctx := _contexte("")
+		var ctx := _contexte("", rect)
 		Milieu.prevoir(ctx, r, rect, plan)
 		Milieu.cueillette(ctx, rc, rect, cueillette, _arbres_du_plan(plan, rect))
 	else:
@@ -780,13 +786,97 @@ func _plan_m(k: Vector2i) -> Array:
 # ce qui sert au plan d'un biome (scripts/milieu.gd, prevoir) : son terrain, les parts de son sol, ses mesures, le bruit des
 # bosquets ; « » : le lieu lui-même (un lieu fermé, un lieu sans bord d'un seul biome). rect : le rectangle qu'on va prévoir
 # (le monde ouvert : ce que la carte et le pays y mettent d'eau, de feu)
-func _contexte(type: String, _rect: Rect2 = Rect2()) -> Dictionary:
+func _contexte(type: String, rect: Rect2 = Rect2()) -> Dictionary:
+	var ctx: Dictionary
 	if type == "" or carte == null:
-		return {"t": _terrain, "s": _parts, "mesures": _mesures, "bosquets": _bosquets, "arbre": _arbre, "type": type, "graine": _graine, "herbes": HERBES,
+		ctx = {"t": _terrain, "s": _parts, "mesures": _mesures, "bosquets": _bosquets, "arbre": _arbre, "type": type, "graine": _graine, "herbes": HERBES,
 			"borne": 0.0 if ouvert else R.DEMI, "relief": _relief, "crue": _crue}
-	var L := lieu_de(type)
-	return {"t": _terrain, "s": L["parts"], "mesures": L["mesures"], "bosquets": _bosquets, "arbre": str(L["arbre"]), "type": type, "graine": _graine, "herbes": HERBES, "borne": 0.0,
-		"relief": _relief, "crue": float(L["crue"])}
+	else:
+		var L := lieu_de(type)
+		ctx = {"t": _terrain, "s": L["parts"], "mesures": L["mesures"], "bosquets": _bosquets, "arbre": str(L["arbre"]), "type": type, "graine": _graine, "herbes": HERBES,
+			"borne": 0.0, "relief": _relief, "crue": float(L["crue"])}
+	if rect.size.x > 0.0:
+		_pays(ctx, rect, lieu if (type == "" or carte == null) else type)
+	return ctx
+
+
+# ce que le pays met dans un rectangle (scripts/biome_terrain.gd : la banquise, le volcan, le marais, le désert), pour le plan :
+# « eaux » (une fondrière, une mare gelée : rien n'y pousse, et une fondrière a sa rive : [où, son rayon, vrai si elle a une
+# rive]), « feux » (une fumerolle, une faille, des scories : [où, jusqu'où ça brûle]), « dunes » ([où, son rayon]). Les cases
+# du pays se listent ici comme le pays les posera (la même graine, la même place), sans rien poser
+func _pays(ctx: Dictionary, rect: Rect2, type: String) -> void:
+	if jeu == null or jeu.get("graine") == null or Biomes.de(type).is_empty():
+		return
+	if _pays_calcul == null:
+		_pays_calcul = Pays.new()
+		_pays_calcul.jeu = jeu
+	if _pays_cases.size() > 600:
+		_pays_cases.clear()
+	var large := rect.grow(140.0)
+	var a := Vector2i((large.position / Pays.CASE).floor())
+	var b := Vector2i((large.end / Pays.CASE).floor())
+	var eaux: Array = []
+	var feux: Array = []
+	var dunes: Array = []
+	for x in range(a.x, b.x + 1):
+		for y in range(a.y, b.y + 1):
+			var k := Vector2i(x, y)
+			if not _pays_cases.has(k):
+				_pays_cases[k] = _pays_calcul._lister(k)
+			for e in _pays_cases[k]:
+				var p: Vector2 = e["p"]
+				var taille := float(e["taille"])
+				if not large.grow(taille).has_point(p):
+					continue
+				match str(e["genre"]):
+					"fondriere":
+						eaux.append([p, taille, true])
+					"mare":
+						eaux.append([p, taille, false])
+					"fumerolle":
+						feux.append([p, R.MILIEU_FEU])
+						eaux.append([p, 26.0, false])
+					"faille":
+						for q in e["trait"]:
+							feux.append([q, R.MILIEU_FEU])
+							eaux.append([q, float(e["large"]) + 8.0, false])
+					"scories":
+						feux.append([p, taille])
+					"dune":
+						dunes.append([p, taille * 0.7])
+	ctx["eaux"] = eaux
+	ctx["feux"] = feux
+	ctx["dunes"] = dunes
+
+
+# (pour le décor : ses roseaux) p est-il au bord de l'eau ? De 0 (non) à 1 : la rive de l'eau qui reste dans les creux d'un
+# lieu détrempé, le tour d'une mare (une plante d'eau), d'une fondrière
+func rive_en(p: Vector2, type: String) -> float:
+	var x := 0.0
+	var crue := _crue if (type == "" or carte == null) else float(lieu_de(type)["crue"])
+	if crue > 0.01 and _relief != null:
+		var h := Milieu.relief_en({"relief": _relief}, p)
+		x = clampf(1.0 - absf(h - lerpf(0.26, 0.5, crue) - 0.008) / 0.04, 0.0, 1.0)
+	if x < 1.0:
+		for o in autour(p, 66.0):
+			if o.genre == "aquatique":
+				var d: float = ((p - o.position) * Vector2(1.0, 1.0 / R.MILIEU_OVALE)).length() - float(o._rx)
+				if d > 2.0 and d < 26.0:
+					return 1.0
+		var k := Vector2i((p / Pays.CASE).floor())
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				for e in _pays_cases.get(k + Vector2i(dx, dy), []):
+					if str(e["genre"]) == "fondriere":
+						var d2: float = ((p - e["p"]) * Vector2(1.0, 1.0 / 0.82)).length() - float(e["taille"])
+						if d2 > -4.0 and d2 < 24.0:
+							return 1.0
+	return x
+
+
+func _notification(quoi: int) -> void:
+	if quoi == NOTIFICATION_PREDELETE and _pays_calcul != null and is_instance_valid(_pays_calcul):
+		_pays_calcul.free()
 
 
 # l'échantillon du plan d'un biome : combien de places de chaque milieu (scripts/milieu.gd, echantillon). Un lieu fermé : son
@@ -1083,10 +1173,15 @@ func _fabriquer_(k: Vector2i) -> void:
 					L["outils"] = Decor.outils(L["parts"], L["palette"], _graine)
 				# (dans une vallée de rivière, rien dans le lit ; dans un pays de relief, rien sur une paroi, sur un col)
 				Decor.exclure = Callable(carte, "nu") if reg["riviere"] or carte.force(quart.get_center()) > 0.0 or carte.creux(quart.get_center()) > 0.3 else Callable()
+				var type_q := str(reg["type"])
+				Decor.rive = (func(q: Vector2) -> float: return rive_en(q, type_q)) if plan_version >= PLAN else Callable()
 				noeuds.append_array(Decor.semer_dans(self, _calques, _terrain, L["parts"], L["palette"], hash(Vector3i(_graine + 7 + qx * 2 + qy, k.x, k.y)), _mobile, quart, L["outils"], liste))
 		Decor.exclure = Callable()
+		Decor.rive = Callable()
 	elif _racine != null and not _outils.is_empty():
+		Decor.rive = (func(q: Vector2) -> float: return rive_en(q, "")) if plan_version >= PLAN else Callable()
 		noeuds = Decor.semer_dans(self, _calques, _terrain, _parts, palette, hash(Vector3i(_graine + 7, k.x, k.y)), _mobile, rect, _outils, liste)
+		Decor.rive = Callable()
 	_morceaux[k] = {"objets": liste, "noeuds": noeuds, "types": types}
 
 

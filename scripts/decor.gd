@@ -318,11 +318,15 @@ static func semer_dans(monde, calques: Array, t: Dictionary, s: Dictionary, pal:
 		_instance(cases, rect, "fougere", q, r.randf_range(0.8, 1.25), Color.WHITE.darkened(r.randf_range(0.0, 0.2)), r)
 	# les roseaux, dans la boue (les fleurs, elles, se cueillent : scripts/monde.gd)
 	var n_ro := _nombre(r, 1400.0 * float(s["boue"]) * k * ka)
-	for i in n_ro * 3:
+	for i in n_ro * (6 if rive.is_valid() else 3):
 		if n_ro <= 0:
 			break
 		var q := _dans(r, rect)
 		if (float(sol_ici(t, s, q)["boue"]) < 0.5 and r.randf() > 0.2) or q.length() < 200.0:
+			continue
+		# (ils tiennent au bord de l'eau — la rive de l'eau des creux, le tour d'une mare, d'une fondrière : scripts/monde.gd,
+		# rive_en ; loin d'elle, un sur dix)
+		if rive.is_valid() and r.randf() > 0.1 + 0.9 * float(rive.call(q)):
 			continue
 		for j in r.randi_range(1, 3):
 			_instance(cases, rect, "roseaux", q + Vector2(r.randf_range(-10, 10), r.randf_range(-6, 6)), r.randf_range(0.8, 1.2), Color.WHITE.darkened(r.randf_range(0.0, 0.15)), r)
@@ -357,6 +361,8 @@ static func semer_dans(monde, calques: Array, t: Dictionary, s: Dictionary, pal:
 
 # (là où rien ne se pose : le lit d'une rivière ; scripts/monde.gd le dit avant de semer une vallée)
 static var exclure := Callable()
+# (où est le bord de l'eau, de 0 à 1 : les roseaux du décor s'y tiennent ; scripts/monde.gd le dit avant de semer)
+static var rive := Callable()
 
 static func _instance(cases: Dictionary, rect: Rect2, genre: String, q: Vector2, echelle: float, teinte: Color, r: RandomNumberGenerator, petale := 0.0) -> void:
 	if not rect.grow(10.0).has_point(q) or (exclure.is_valid() and exclure.call(q)):

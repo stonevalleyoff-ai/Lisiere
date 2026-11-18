@@ -605,6 +605,22 @@ func _lancer() -> void:
 	var i_rec := args.find("--recul")
 	if not jeu.ouvert and i_rec >= 0 and i_rec + 1 < args.size():
 		jeu.effets.recul = float(args[i_rec + 1])
+	# (--depuis x,y dans un lieu fermé : elle s'y tient, pour regarder un endroit du lieu ; --vers roseau : près de la première
+	# plante de cette forme)
+	var i_dep := args.find("--depuis")
+	var i_vers := args.find("--vers")
+	if not jeu.ouvert and i_dep >= 0 and i_dep + 1 < args.size():
+		var xy2 := args[i_dep + 1].split(",")
+		jeu.joueur.position = Vector2(float(xy2[0]), float(xy2[1]))
+		jeu.camera.reset_smoothing()
+		_plan = [[0.0, 1.0, "attendre"]]
+	elif not jeu.ouvert and i_vers >= 0 and i_vers + 1 < args.size() and not args[i_vers + 1].contains(","):
+		var quelles: Array = jeu.monde.objets.filter(func(o): return str(o.forme) == args[i_vers + 1] and str(o.plante) != "")
+		if not quelles.is_empty():
+			jeu.joueur.position = quelles[quelles.size() / 2].position + Vector2(0.0, 60.0)
+			jeu.camera.reset_smoothing()
+			_plan = [[0.0, 1.0, "attendre"]]
+			print("vitrine : près d'un « %s », en %s (%d dans le lieu)" % [args[i_vers + 1], str(jeu.joueur.position), quelles.size()])
 	if args.has("--recense"):
 		var ou_r: String = str(jeu.monde.carte.type_en(jeu.joueur.position)) if jeu.monde.carte != null else str(jeu.biome)
 		load("res://scripts/recensement.gd").dire(jeu.monde, ou_r, Rect2(), "(monde ouvert, autour de %d,%d)" % [int(jeu.joueur.position.x), int(jeu.joueur.position.y)] if jeu.ouvert else "(lieu fermé)")

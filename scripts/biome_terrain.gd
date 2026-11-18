@@ -127,9 +127,10 @@ func _rivage(p: Vector2) -> bool:
 	return bool(C.regions[int(pr[1])]["eau"]) and float(pr[3]) - float(pr[2]) < 1800.0
 
 
-func _faire(k: Vector2i) -> void:
+# ce qu'une case porte, tiré de la graine et de sa place (toujours pareil) : la liste seule, sans rien poser dans le lieu. Le
+# monde la lit aussi pour savoir où sont l'eau et le feu d'un pays, avant d'y semer ses plantes (scripts/monde.gd, _pays)
+func _lister(k: Vector2i) -> Array:
 	var liste: Array = []
-	_cases[k] = liste
 	var coin := Vector2(k) * CASE
 	# (les pays qui touchent la case : son milieu, ses coins)
 	var ids: Array = []
@@ -138,7 +139,7 @@ func _faire(k: Vector2i) -> void:
 		if t != "" and not ids.has(t) and not Biomes.de(t).is_empty():
 			ids.append(t)
 	if ids.is_empty():
-		return
+		return liste
 	var r := RandomNumberGenerator.new()
 	r.seed = hash("%d|%d|%d" % [int(jeu.graine), k.x, k.y])
 	var n := 0
@@ -158,9 +159,18 @@ func _faire(k: Vector2i) -> void:
 				s["id"] = "%d,%d,%d" % [k.x, k.y, n]
 				n += 1
 				liste.append(s)
-				_inscrire(s)
-				if genre == "faille":
-					_sale = true
+	return liste
+
+
+func _faire(k: Vector2i) -> void:
+	var liste := _lister(k)
+	_cases[k] = liste
+	if liste.is_empty():
+		return
+	for s in liste:
+		_inscrire(s)
+		if str(s["genre"]) == "faille":
+			_sale = true
 	# (ce qui est à plat se dessine une fois, pour toute la case : le sol même, puis le reste)
 	var calques: Array = []
 	for fond in [true, false]:

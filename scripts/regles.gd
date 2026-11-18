@@ -345,6 +345,7 @@ const MILIEU_RIVE_ARBRES := 60.0      # … pour un arbre (le palétuvier, ce qu
 const MILIEU_ARBRES_DE_RIVE := 0.7    # la part des mares qui ont un arbre sur leur bord (la place du palétuvier, de ce qui a des échasses)
 const MILIEU_BERGE := 70.0            # sur une berge : à moins de tant de l'eau d'une rivière, d'un lac
 const MILIEU_BERGES := 0.8            # la part des points de berge trouvés qui portent un groupe de rive
+const MILIEU_FEU := 110.0            # près de ce qui brûle : à moins de tant d'une fumerolle, d'une faille (et sur les scories)
 # le réglage des parts (milieu.gd, regler)
 const MILIEU_TOURS := 40              # les tours du réglage
 const MILIEU_POIDS_MAX := 8.0         # un poids ne monte pas plus haut que tant de fois la part : une plante sans milieu ici ne va pas se poser n'importe où
