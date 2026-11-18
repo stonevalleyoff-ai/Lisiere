@@ -99,6 +99,9 @@ func _lancer() -> void:
 				await _la_noire_reunie()
 			"repartition":
 				await _la_repartition()
+			"dessin":
+				await jeu._commencer("foret")
+				_le_dessin_de_la_flore()
 			_:
 				await _la_cueillette_nourriciere()
 				await _les_retouches()
@@ -6218,6 +6221,32 @@ func _le_dessin_de_la_flore() -> void:
 		int(arbre.rayon), int(geant.rayon), int(arbre.couvert()), int(geant.couvert())])
 	for x in [geant, arbre, fruitier]:
 		W._defaire(x)
+	# la couronne d'un grand arbre (un géant, un émergent de 500 m : sa taille à son plus grand, 1,5) cache la veilleuse loin de
+	# son pied : le monde cherche à effacer celles-là (monde.gd, couronnes_pres, d'après la plus grande zone de ce qui est posé ;
+	# il cherchait à 120 pixels du pied)
+	var loin := 0.0
+	var au_dela := 0
+	var vus := 0
+	var manques := 0
+	for f_g in [["geant", 500.0], ["emergent", 500.0], ["palmier", 100.0], ["bouteille", 100.0], ["figuier", 100.0], ["arbre", 100.0]]:
+		for k_g in 3:
+			var o_g = _plante_de(str(f_g[0]), float(f_g[1]), 4340 + k_g * 17, ["vent", "naine"] if k_g == 2 else [])
+			var p_g: Vector2 = o_g.position
+			for x in range(-170, 171, 5):
+				for y in range(-330, 0, 5):
+					var q := p_g + Vector2(x, y)
+					if not o_g.cache(q):
+						continue
+					vus += 1
+					loin = maxf(loin, q.distance_to(p_g))
+					if q.distance_to(p_g) > 120.0:
+						au_dela += 1
+					if not W.couronnes_pres(q).has(o_g):
+						manques += 1
+			W._defaire(o_g)
+	verif(vus > 500 and loin > 150.0 and au_dela > 50 and manques == 0,
+		"la couronne d'un grand arbre cache la veilleuse jusqu'à %d pixels de son pied (%d places sur %d au-delà des 120 où on la cherchait) : de chacune, le monde la trouve pour l'effacer (%d manquées ; zone cherchée %s)" % [
+		int(loin), au_dela, vus, manques, str(W._zone_cache)])
 
 
 func _la_flore() -> void:

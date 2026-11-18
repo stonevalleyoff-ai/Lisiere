@@ -644,11 +644,42 @@ func cache(p: Vector2) -> bool:
 	if couronne == null or _chute >= 0.0 or p.y >= position.y - 2.0:
 		return false
 	var corps := Rect2(p.x - 9.0, p.y - 40.0, 18.0, 40.0)
-	if corps.intersects(Rect2(couronne_rect.position + position, couronne_rect.size).grow(-5.0)):
+	var feuillage := _feuillage_qui_cache()
+	if corps.intersects(Rect2(feuillage.position + position, feuillage.size)):
 		return true
-	# (un fût assez large pour la cacher à lui seul — un géant, un baobab : il s'efface aussi, avec sa couronne)
+	var fut := _fut_qui_cache()
+	return fut.has_area() and corps.intersects(Rect2(fut.position + position, fut.size))
+
+
+# ce qui la cache, autour du pied : le feuillage, un peu rentré ; et un fût assez large pour la cacher à lui seul — un géant, un
+# baobab : il s'efface aussi, avec sa couronne (Rect2() : aucun)
+func _feuillage_qui_cache() -> Rect2:
+	return couronne_rect.grow(-5.0)
+
+
+func _fut_qui_cache() -> Rect2:
 	var w := _demi_largeur(-24.0)
-	return w >= 7.5 and _espece == "arbre" and corps.intersects(Rect2(position.x + _axe(-24.0) - w + 2.0, position.y + _cc.y, w * 2.0 - 4.0, -_cc.y - 9.0))
+	if w < 7.5 or _espece != "arbre":
+		return Rect2()
+	return Rect2(_axe(-24.0) - w + 2.0, _cc.y, w * 2.0 - 4.0, -_cc.y - 9.0)
+
+
+# où la veilleuse peut se tenir, par rapport au pied, pour que ce feuillage la cache (cache : son corps, 18 pixels sur 40
+# au-dessus de ses pieds, touche le feuillage ou le fût ; elle est derrière le pied) — de quoi la chercher : scripts/monde.gd
+# efface les couronnes qui la cachent, et ne les cherche que là (Rect2() : rien ne la cache)
+func zone_cache() -> Rect2:
+	if couronne == null:
+		return Rect2()
+	var z := Rect2()
+	for r in [_feuillage_qui_cache(), _fut_qui_cache()]:
+		if not r.has_area():
+			continue
+		var ici := Rect2(r.position.x - 9.0, r.position.y, r.size.x + 18.0, r.size.y + 40.0)
+		z = ici if not z.has_area() else z.merge(ici)
+	if not z.has_area() or z.position.y >= -2.0:
+		return Rect2()
+	z.size.y = minf(z.end.y, -2.0) - z.position.y
+	return z
 
 
 func _ombre_changee() -> void:

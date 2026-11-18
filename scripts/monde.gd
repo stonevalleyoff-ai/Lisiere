@@ -68,6 +68,7 @@ var _parts := {}
 var _mobile := false
 var _ombres := {}              # case → [le nœud qui dessine ses ombres, ses objets]
 var _effaces := {}             # les objets dont la couronne s'efface, ou revient
+var _zone_cache := Rect2()     # où, autour du pied d'un arbre posé, la veilleuse peut être cachée par lui : la plus grande (objet.gd, zone_cache)
 var _temps := 0.0
 var _mat_sol: ShaderMaterial
 var _mat_herbe: ShaderMaterial
@@ -579,6 +580,11 @@ func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Diction
 	o.position = p
 	add_child(o)
 	objets.append(o)
+	if o.couronne != null:
+		# (là où elle peut le cacher : les couronnes qui la cachent ne se cherchent que là, à chaque image)
+		var z: Rect2 = o.zone_cache()
+		if z.has_area():
+			_zone_cache = z if not _zone_cache.has_area() else _zone_cache.merge(z)
 	var k := _cle(p)
 	if not _grille.has(k):
 		_grille[k] = []
@@ -669,6 +675,24 @@ func autour(p: Vector2, rayon: float) -> Array:
 		for y in range(a.y, b.y + 1):
 			for o in _grille.get(Vector2i(x, y), []):
 				if is_instance_valid(o) and p.distance_to(o.position) <= rayon:
+					out.append(o)
+	return out
+
+
+# les arbres dont la couronne peut cacher la veilleuse debout en p : ceux dont le pied est là où la plus grande zone de ce qui
+# est posé le permet (_zone_cache : au sud d'elle, jusqu'à la hauteur du plus grand — un géant, un émergent, plus haut que les
+# autres d'après sa hauteur d'Orvane). Un rectangle, pas un cercle : moins de cases qu'un rayon qui irait aussi loin
+func couronnes_pres(p: Vector2) -> Array:
+	var out := []
+	if not _zone_cache.has_area():
+		return out
+	var ou := Rect2(p - _zone_cache.end, _zone_cache.size).grow(1.0)
+	var a := _cle(ou.position)
+	var b := _cle(ou.end)
+	for x in range(a.x, b.x + 1):
+		for y in range(a.y, b.y + 1):
+			for o in _grille.get(Vector2i(x, y), []):
+				if is_instance_valid(o) and o.couronne != null and ou.has_point(o.position):
 					out.append(o)
 	return out
 
@@ -1434,8 +1458,8 @@ func _process(delta: float) -> void:
 	for L in _lieux.values():
 		if not L["outils"].is_empty():
 			L["outils"]["mat"].set_shader_parameter("veilleuse", p)
-	for o in autour(p, 120.0):
-		if o.couronne != null and not _effaces.has(o) and o.cache(p):
+	for o in couronnes_pres(p):
+		if not _effaces.has(o) and o.cache(p):
 			_effaces[o] = true
 	for o in _effaces.keys():
 		if not is_instance_valid(o) or o.couronne == null:
