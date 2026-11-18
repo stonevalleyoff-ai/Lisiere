@@ -7212,11 +7212,13 @@ func _les_fruits() -> void:
 				_oter(b)
 		var d := _un_arbre_cueilli(o)
 		var g: Array = d["gestes"]
-		var bons_gestes: bool = g.slice(0, int(d["tombes"])).all(func(x): return x == "brindille") and g.slice(int(d["tombes"])).all(func(x): return x == "cueillir")
+		# (dans ses branches : le bras tendu ; trop haut pour sa main, elle secoue le fût)
+		var en_haut := "secouer" if o.fruits_hors_de_portee() else "cueillir"
+		var bons_gestes: bool = g.slice(0, int(d["tombes"])).all(func(x): return x == "brindille") and g.slice(int(d["tombes"])).all(func(x): return x == en_haut)
 		verif(int(d["pris"]) == int(d["attendu"]) and int(d["pris"]) > 0 and bons_gestes and bool(d["dessin"]) and bool(d["vide"]) and bool(d["abat"]) and bool(d["attend"])
 			and bool(d["verts"]) and bool(d["revenus"]),
-			"%s (%s) : %d fruits, %d ramassés à son pied puis cueillis le bras tendu ; chacun manque au dessin ; vide, il s'abat (un bois) ; à mi-chemin des fruits verts, puis il en porte de nouveau" % [
-			str(o.forme), sorte, int(d["pris"]), int(d["tombes"])])
+			"%s (%s) : %d fruits, %d ramassés à son pied puis %s ; chacun manque au dessin ; vide, il s'abat (un bois) ; à mi-chemin des fruits verts, puis il en porte de nouveau" % [
+			str(o.forme), sorte, int(d["pris"]), int(d["tombes"]), "cueillis le bras tendu" if en_haut == "cueillir" else "tombés du fût secoué (trop haut pour son bras)"])
 		if not bool(d["revenus"]) or not bons_gestes:
 			print("    (gestes %s ; %s)" % [str(g), str(d)])
 	# les fruits tombés : une bête qui broute vient les manger, la tête dans l'herbe ; qui s'est postée à côté la tient à portée

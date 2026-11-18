@@ -1205,11 +1205,16 @@ func _ranger_cueilli(k: String, n: int, ou: Vector2) -> void:
 
 
 # un fruit, sur un arbre qui en porte (scripts/objet.gd, cueillir_fruit) : à son pied, elle se baisse et le ramasse ; dans ses
-# branches, elle tend le bras, la couronne frémit et lâche quelques feuilles
+# branches, elle tend le bras, la couronne frémit et lâche quelques feuilles ; trop haut pour son bras (un géant, un palmier,
+# un baobab : scripts/objet.gd, fruits_hors_de_portee), elle secoue le fût, la couronne s'ébranle et le fruit lui tombe dans
+# les mains
 func _cueillir_fruit(o) -> void:
 	var a_terre: bool = int(o.tombes) > 0
-	joueur.geste("brindille" if a_terre else "cueillir", o.position + (Vector2.ZERO if a_terre else Vector2(0.0, -30.0)))
+	var hors: bool = not a_terre and o.fruits_hors_de_portee()
+	joueur.geste("brindille" if a_terre else ("secouer" if hors else "cueillir"), o.position + (Vector2.ZERO if a_terre else Vector2(0.0, -20.0 if hors else -30.0)))
 	var g: Dictionary = o.cueillir_fruit()
+	if hors:
+		o._secoue = 0.42
 	var haut: Vector2 = o.position + (Vector2(0.0, 6.0) if a_terre else Vector2(o._cc.x, o._cc.y + o._ry * 0.7))
 	_viser({"son": "herbe", "db": -7.0 if a_terre else -4.0, "p": haut, "genre": "cueillette" if a_terre else "buisson"})
 	for k in g:

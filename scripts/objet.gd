@@ -382,6 +382,18 @@ func porte_fruits() -> bool:
 	return (fruits > 0 or tombes > 0) and (genre == "arbre") and _chute < 0.0 and brule <= 0.0 and not calcine
 
 
+# ses fruits sont-ils hors de portée de sa main ? Le bras tendu, sur la pointe des pieds, la veilleuse atteint 46 pixels
+# (scripts/joueur.gd, « cueillir ») ; les fruits du bas d'une couronne plus haute (un géant, un palmier, un baobab), elle les
+# fait tomber en secouant le fût (« secouer »)
+const BRAS_TENDU := 46.0
+
+func fruits_hors_de_portee() -> bool:
+	if genre != "arbre" or couronne == null:
+		return false
+	var bas: float = _cc.y + (6.0 if fruit == "coco" else _ry * 0.72)
+	return -bas > BRAS_TENDU
+
+
 # un fruit : ramassé à son pied d'abord, sinon cueilli dans ses branches (qui frémissent). Ce qu'il donne ({} : rien)
 func cueillir_fruit() -> Dictionary:
 	if not porte_fruits():

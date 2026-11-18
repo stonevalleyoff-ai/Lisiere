@@ -53,9 +53,9 @@ extends Node
 #   pousse, mur ; gel ; regard, alerte ; foin ; attache) ; --compagne licol,selle,sacoche,grande,reste,monte : une bête à elle
 #   la cueillette (scripts/flore.gd) : --cueillette : elle va de fleur en champignon des bois, et les cueille (avec --ouvert
 #   --depuis x,y : dans le biome de son choix) ; --fruits : elle va d'arbre en arbre, ramasse les fruits tombés et cueille
-#   ceux des branches (et les épis mûrs, le lichen des rennes, la pulpe des cactus) ; --planche arbres|sol : une planche de la cueillette nourricière, posée dans une clairière à côté
+#   ceux des branches (et les épis mûrs, le lichen des rennes, la pulpe des cactus) ; --planche arbres|sol|geste|secouer : une planche de la cueillette nourricière, posée dans une clairière à côté
 #   d'elle, de près (les arbres et leurs fruits, à chaque état ; les épis, le lichen, le cactus, les grains au jardin ; « geste » :
-#   elle cueille un pommier, de tout près) ; --gros : la caméra va de l'une à l'autre, de tout près
+#   elle cueille un pommier, de tout près ; « secouer » : un palmier, trop haut pour son bras, elle en secoue le fût) ; --gros : la caméra va de l'une à l'autre, de tout près
 #   la flore de l'herbier (scripts/flore_dessins.gd) : --planche flore --lieu marais : toutes les plantes de l'herbier du biome,
 #   côte à côte, chacune à sa taille (celle que lui donne le monde d'après sa hauteur d'Orvane), la veilleuse à gauche pour
 #   l'échelle, la planche d'Orvane de chacune à sa droite, son nom, sa forme, sa hauteur et ses caractères dessous ; le cadre
@@ -1265,16 +1265,18 @@ func _planche_cueillette(quoi: String) -> void:
 		Objet.saison = garde
 		_planche.append(o)
 		return o
-	if quoi == "geste":
-		# (un pommier chargé, et elle qui cueille, de tout près : le geste, le bras tendu ; l'arbre ne se vide pas)
-		var o = poser.call("arbre", "fruitier", Vector2(0.0, 60.0), _graine_qui_porte(12))
+	if quoi == "geste" or quoi == "secouer":
+		# (un pommier chargé, et elle qui cueille, de tout près : le geste, le bras tendu ; l'arbre ne se vide pas. « secouer » :
+		# un palmier, ses cocos hors de portée de sa main : elle secoue le fût)
+		var haut := quoi == "secouer"
+		var o = poser.call("arbre", "palmier" if haut else "fruitier", Vector2(0.0, 60.0), _graine_qui_porte(31 if haut else 12))
 		o.tombes = 0
 		o.fruits_plein = 9
 		o.fruits = 9
 		j.position = o.position + Vector2(-16.0, 9.0)
 		_plan = [[0.0, 0.05, "attendre"], [0.05, 1.0, "fruits"]]
-		jeu.effets.recul = 3.0
-		jeu.camera.position = Vector2(14.0, -34.0)
+		jeu.effets.recul = 1.9 if haut else 3.0
+		jeu.camera.position = Vector2(14.0, -60.0 if haut else -34.0)
 	elif quoi == "arbres":
 		# (la rangée du fond, chargée : le pommier, le figuier, le palmier, le baobab, chacun avec ses fruits tombés à son pied)
 		var fond := [["fruitier", 12], ["figuier", 28], ["palmier", 31], ["bouteille", 46]]
