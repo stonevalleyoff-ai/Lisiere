@@ -974,7 +974,10 @@ func _notification(quoi: int) -> void:
 
 
 # l'échantillon du plan d'un biome : combien de places de chaque milieu (scripts/milieu.gd, echantillon). Un lieu fermé : son
-# plan même (_semer_tout) ; le monde ouvert : le plan d'un carré à part, toujours le même, tiré de la graine
+# plan même (_semer_tout) ; le monde ouvert : le plan de quarts de morceau à part, toujours les mêmes, tirés de la graine. Ils
+# sont épars (à ÉPARS côtés l'un de l'autre) : un carré d'un seul tenant n'a que quelques bosquets, quelques creux, et les
+# buissons, qui vont près des bosquets, y auraient deux ou trois fois trop de places, ou trop peu — leurs poids aussi
+const EPARS := 7.0
 func _echantillon(type: String) -> Dictionary:
 	if _echantillons.has(type):
 		return _echantillons[type]
@@ -986,13 +989,10 @@ func _echantillon(type: String) -> Dictionary:
 	var n := int(R.MILIEU_ECHANTILLON / cote)
 	var plan: Array = []
 	var coin := Vector2(40000.0, 40000.0)
-	_pays_factice(ctx, r, Rect2(coin, Vector2(n, n) * cote), lieu if type == "" else type)
-	var tout := {"eaux": ctx.get("eaux", []), "feux": ctx.get("feux", []), "dunes": ctx.get("dunes", [])}
 	for x in n:
 		for y in n:
-			var ici := Rect2(coin + Vector2(x, y) * cote, Vector2(cote, cote))
-			for quoi in tout:
-				ctx[quoi] = tout[quoi].filter(func(e): return ici.grow(140.0 + float(e[1])).has_point(e[0]))
+			var ici := Rect2(coin + Vector2(x, y) * cote * EPARS + Vector2(r.randf(), r.randf()) * cote * (EPARS - 1.0), Vector2(cote, cote))
+			_pays_factice(ctx, r, ici.grow(140.0), lieu if type == "" else type)
 			Milieu.prevoir(ctx, r, ici, plan)
 	var ech := Milieu.echantillon(plan)
 	ech["aire"] = n * n * cote * cote

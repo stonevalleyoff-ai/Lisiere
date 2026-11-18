@@ -331,6 +331,7 @@ const MILIEU_TOUFFES := 0.62          # les groupes de places du fond, pour une 
 const MILIEU_GROUPE := 6              # les places d'un groupe, au plus (une colonie, une touffe, un arc de ceinture)
 const MILIEU_ECART := 30.0            # deux groupes du sol ne sont jamais plus près…
 const MILIEU_ECART_SEC := 100.0       # … et dans un lieu sec : les racines se partagent l'eau
+const MILIEU_LIBRE := 55.0            # une plante du sol « à l'écart » : aucune autre à moins de tant (la place d'un cactus)
 const MILIEU_SOUS_BOIS := 0.3         # les groupes offerts au pied des arbres, par arbre (aux fougères, aux mousses)
 const MILIEU_AU_ROCHER := 0.6         # ceux offerts autour des rochers, par rocher (aux lichens, aux coussins)
 const MILIEU_FOURRES := 0.7           # les fourrés (de deux à quatre places), pour un buisson voulu

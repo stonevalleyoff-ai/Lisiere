@@ -37,12 +37,13 @@ const ISOLE := 8192        # (un arbre) seul, loin des bosquets
 const TRONE := 16384       # (un arbre) la place d'un géant : au cœur, rien autour
 const EN_PLUS := 32768     # une place offerte en plus (une ceinture, un pied d'arbre, un rocher) : sans herbier, elle reste vide
 const CREUX := 65536       # dans un creux du terrain : là où l'eau vient d'abord quand elle monte (scripts/climat.gd, relief)
+const LIBRE := 131072      # (le sol) aucune autre plante à moins de R.MILIEU_LIBRE pixels : la place de qui boit toute l'eau autour
 const MILIEUX := 1048575   # (le masque des milieux ; au-dessus : le rang dans le groupe, 4 bits, puis sa taille, 4 bits)
 const RANG := 20
 const TAILLE := 24
 const NOMS := {SOUS: "sous le couvert", LISIERE: "en lisière", DECOUVERT: "à découvert", PIED: "au pied d'un arbre", RIVE: "au bord de l'eau",
 	BOUE: "dans la boue", HERBE: "dans l'herbe", NU: "sur le sol nu", PIERRE: "contre un rocher", SEC: "au plus sec", FEU: "près de ce qui brûle",
-	NEIGE: "sous la neige", COEUR: "au cœur", ISOLE: "isolé", TRONE: "à la place d'un géant", CREUX: "dans un creux"}
+	NEIGE: "sous la neige", COEUR: "au cœur", ISOLE: "isolé", TRONE: "à la place d'un géant", CREUX: "dans un creux", LIBRE: "à l'écart des autres"}
 
 # --- les règles : ce que chaque forme d'Orvane aime (plus de 1) ou évite (moins de 1), milieu par milieu (une entrée par
 # ligne). « ailleurs » : ce qui lui reste hors des milieux qu'elle aime (0 : jamais) ; « groupe » : la taille de ses colonies
@@ -83,7 +84,7 @@ const FORMES := {
 	"lichen_rennes": {NU: 2.5, DECOUVERT: 1.5, SOUS: 0.5, "ailleurs": 0.4, "groupe": 4},      # en tapis, à découvert
 	"succulente": {NU: 3.0, PIERRE: 2.0, SEC: 1.5, CREUX: 0.5, SOUS: 0.05, BOUE: 0.02},       # seule, entre les pierres
 	"agave": {NU: 3.0, SEC: 2.0, CREUX: 0.5, SOUS: 0.05, BOUE: 0.02, "groupe": 2},            # la rosette et son rejet
-	"cactus": {NU: 3.0, SEC: 2.5, CREUX: 0.4, SOUS: 0.03, BOUE: 0.01},                        # seul : ses racines prennent toute l'eau
+	"cactus": {NU: 3.0, SEC: 2.5, LIBRE: 5.0, CREUX: 0.4, SOUS: 0.03, BOUE: 0.01},            # seul : ses racines prennent toute l'eau autour
 	"caillou": {PIERRE: 10.0, NU: 2.0, "ailleurs": 0.1, "groupe": 3},                         # la plante-caillou, parmi les cailloux
 	"roseau": {RIVE: 12.0, BOUE: 2.5, "ailleurs": 0.02, "groupe": 6},                         # la roselière : la ceinture des eaux, la boue
 	"jonc": {RIVE: 5.0, BOUE: 5.0, CREUX: 3.0, "ailleurs": 0.03, "groupe": 3},                # la boue, le bord, les fonds mouillés
@@ -655,6 +656,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 	var terrain := not t.is_empty()
 	var ov: float = R.MILIEU_OVALE
 	var suite := [r.randi() % 10007]
+	var debut := plan.size()
 	# 1. l'eau. Dans un lieu détrempé (un marais), de l'eau reste au creux du terrain : une part des plantes d'eau y va, deux
 	# par deux — au large, où elle est profonde ; près du bord. Les autres font des mares : deux à cinq plantes d'eau qui se
 	# touchent, celle du milieu au plus profond ; dans la boue de préférence
@@ -877,9 +879,49 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 				autour.append(q + pente.orthogonal() * (j / 2 + 1) * (11.0 if j % 2 == 0 else -11.0) + pente * r.randf_range(-4.0, 8.0))
 			_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS, R.MILIEU_GROUPE, 0.0, autour)
 	_rives(ctx, r, suite, rect, plan, arbres, rochers, mares)
+	_libres(plan, debut)
 	# 6. le bois mort (sous les bosquets), les herbes de l'herbier de Lisière (scripts/botanique.gd)
 	_semis(r, plan, rect, "brindille", 160.0 * ka, "", bosquets, 0.6, type)
 	_semis(r, plan, rect, "herbe", float(ctx.get("herbes", 110)) * ka, "", null, 1.0, type)
+
+
+# les places du sol qu'aucune autre plante ne serre — rien, hors de son propre groupe, à moins de R.MILIEU_LIBRE pixels de sa
+# première place : la place de qui prend toute l'eau autour de lui (un cactus). Tout le groupe porte ce milieu (le même tirage,
+# la même plante). Seules comptent les places de ce rectangle (à partir de « debut ») : un plan ne voit pas le rectangle voisin,
+# et au bord une place peut se croire libre
+static func _libres(plan: Array, debut: int) -> void:
+	var g := {}
+	var tetes: Array = []
+	var tete := -1
+	for i in range(debut, plan.size()):
+		var e: Array = plan[i]
+		if e.size() < 6 or int(e[5]) < 0 or not (str(e[0]) in ["sol", "buisson", "arbre", "sapin"]):
+			continue
+		if rang(int(e[5])) == 0:
+			tete = i
+			if str(e[0]) == "sol":
+				tetes.append(i)
+		_ranger(g, e[1], tete)
+	var loin: float = R.MILIEU_LIBRE
+	for i in tetes:
+		var p: Vector2 = plan[i][1]
+		var a := Vector2i(((p - Vector2(loin, loin)) / 96.0).floor())
+		var b := Vector2i(((p + Vector2(loin, loin)) / 96.0).floor())
+		var libre := true
+		for x in range(a.x, b.x + 1):
+			for y in range(a.y, b.y + 1):
+				for q in g.get(Vector2i(x, y), []):
+					if int(q[1]) != i and p.distance_squared_to(q[0]) < loin * loin:
+						libre = false
+						break
+				if not libre:
+					break
+			if not libre:
+				break
+		if libre:
+			for j in maxi(1, taille(int(plan[i][5]))):
+				if i + j < plan.size() and str(plan[i + j][0]) == "sol":
+					plan[i + j][5] = int(plan[i + j][5]) | LIBRE
 
 
 # les rives que la carte et le pays donnent (le monde ouvert : la berge d'une rivière, la rive d'un lac ; un pays : le bord
