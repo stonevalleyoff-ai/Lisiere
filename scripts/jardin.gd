@@ -234,7 +234,7 @@ func recolter(s) -> bool:
 func retourner(s) -> bool:
 	if not Faim.est_epave(s):
 		return false
-	for k in ["saccage", "cote", "mordu"]:
+	for k in ["saccage", "cote", "mordu", "nuit"]:
 		s.etat.erase(k)
 	s.redessiner(true)
 	jeu.joueur.geste_atelier("becher")

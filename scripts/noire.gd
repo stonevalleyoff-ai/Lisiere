@@ -358,9 +358,8 @@ func maj(delta: float) -> void:
 		corps = null
 	if corps != null:
 		ou = corps.position
-	# (la faim : le jour baisse, et elle part déjà)
-	if not nuit and etat == "dort":
-		faim.crepuscule()
+	# (la faim : le jour baisse, et elle part déjà ; scripts/noire_faim.gd)
+	faim.veiller(nuit)
 	# (le jour est là et elle est encore dehors : elle rentre ; l'aube le lui dit d'ordinaire, ceci le garantit)
 	if not nuit and _colere <= 0.0 and jeu.jour_du_ciel() > 0.5 and etat != "dort" and etat != "rentre" and not faim.soir:
 		_changer("rentre")

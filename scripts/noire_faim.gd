@@ -61,6 +61,7 @@ var _sur_place := false           # elle y est : le temps du flair court
 var _hors := {}                   # ce qu'elle n'a pas pu atteindre, cette nuit (une rivière, une paroi en travers)
 var _cadence := 0.0
 var _coups := 0
+var _a_retracer := false          # une partie reprise : ses empreintes sont à remettre autour des épaves de la dernière nuit
 
 
 # --- ce que noire.gd appelle ---
@@ -98,8 +99,17 @@ func avant_la_nuit() -> float:
 	return soir_h - t if t < soir_h else INF
 
 
-# le jour baisse (noire.gd, maj : de jour, tant qu'elle dort) : à l'acte de la faim, elle n'attend pas la nuit. Elle appelle et
-# quitte sa tanière assez tôt pour être à la lisière quand la nuit commence
+# à chaque image (noire.gd, maj) : le jour qui baisse, et, une partie reprise, ses empreintes à remettre
+func veiller(nuit: bool) -> void:
+	if _a_retracer:
+		_a_retracer = false
+		_retracer(nuit)
+	if not nuit and N.etat == "dort":
+		crepuscule()
+
+
+# le jour baisse (de jour, tant qu'elle dort) : à l'acte de la faim, elle n'attend pas la nuit. Elle appelle et quitte sa
+# tanière assez tôt pour être à la lisière quand la nuit commence
 func crepuscule() -> void:
 	if soir or bool(N.partie) or N.etat != "dort" or float(N._colere) > 0.0:
 		return
@@ -472,6 +482,8 @@ func mettre_en_pieces(s, cote: float = 1.0, dire: bool = true) -> void:
 			s.etat["broute"] = 0.0
 	s.etat["saccage"] = 1.0
 	s.etat["cote"] = 1.0 if cote >= 0.0 else -1.0
+	# (de quelle nuit : pour remettre ses empreintes autour, si la partie est reprise avant le soir)
+	s.etat["nuit"] = int(jeu.nuits)
 	if s.has_method("redessiner"):
 		s.redessiner(true)
 	_empreintes_autour(s.position, cote)
@@ -556,6 +568,17 @@ func _empreintes_autour(p: Vector2, cote: float) -> void:
 		jeu.traces.poser(ou, PI if cote > 0.0 else 0.0, u * 0.052, 420.0, 2, "la-noire", 0.95)
 
 
+# une partie reprise : les empreintes ne se gardent pas (scripts/traces.gd), mais celles de la dernière nuit tiennent jusqu'au
+# soir. On les remet autour de ce qu'elle a mis en pièces cette nuit (reprise de nuit), ou la nuit d'avant (reprise de jour)
+func _retracer(nuit: bool) -> void:
+	if jeu.atelier == null:
+		return
+	var derniere: int = int(jeu.nuits) if nuit else int(jeu.nuits) - 1
+	for s in jeu.atelier.poses:
+		if est_epave(s) and int(s.etat.get("nuit", -9)) == derniere:
+			_empreintes_autour(s.position, float(s.etat.get("cote", 1.0)))
+
+
 # --- les épaves (scripts/atelier.gd les répare et les replie ; scripts/campement_epave.gd les dessine) ---
 
 # cette chose posée est-elle en pièces ?
@@ -598,3 +621,4 @@ func reprendre(d) -> void:
 	prises = int(d.get("prises", 0))
 	betes = int(d.get("betes", 0))
 	soir = bool(d.get("soir", false))
+	_a_retracer = true

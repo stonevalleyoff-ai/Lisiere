@@ -403,7 +403,7 @@ func reparer(s) -> bool:
 	var inv: Dictionary = jeu.joueur.inventaire
 	for k in cout:
 		inv[k] = int(inv.get(k, 0)) - int(cout[k])
-	for k in ["saccage", "cote", "mangee", "mordu"]:
+	for k in ["saccage", "cote", "mangee", "mordu", "nuit"]:
 		s.etat.erase(k)
 	s.redessiner(true)
 	# (elle recoud la toile, renoue les cordes ; le bois se replante au maillet : coup(), « monter »)

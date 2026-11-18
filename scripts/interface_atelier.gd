@@ -1171,11 +1171,18 @@ class Sac extends Feuille:
 		# juste là : ce qui se replie, le carré de jardin devant elle, sa bête
 		var la := []
 		var s = _juste_la()
-		if s != null:
+		if s != null and Atelier.Faim.est_epave(s):
+			# (ce que la Noire a mis en pièces : on le répare sur place, ou l'on replie ce qui s'en sauve ; scripts/noire_faim.gd)
+			la.append({"cle": "reparer", "id": str(s.genre), "nom": "Réparer", "marque": "en pièces", "pale": atelier.empeche_reparer(s) != ""})
+			la.append({"cle": "pose", "id": str(s.genre), "nom": _nom(str(s.genre)), "marque": "épave"})
+		elif s != null:
 			la.append({"cle": "pose", "id": str(s.genre), "nom": _nom(str(s.genre)), "marque": "à replier"})
 		var carre = _carre()
 		if carre != null:
-			if str(carre.etat.get("culture", "")) == "":
+			if Atelier.Faim.est_epave(carre):
+				# (piétiné par la Noire : sa terre se retourne de nouveau, avant qu'on y sème)
+				la.append({"cle": "retourner", "id": "carre", "nom": "Retourner la terre", "marque": "piétiné"})
+			elif str(carre.etat.get("culture", "")) == "":
 				for c in Jardin.ORDRE:
 					var g := str(Jardin.CULTURES[c]["graine"])
 					la.append({"cle": "semer:" + c, "id": g, "nom": "Semer : %s" % str(Jardin.CULTURES[c]["nom"]).to_lower(), "pale": J.graines(c) < Jardin.GRAINES, "n": J.graines(c)})
@@ -1328,6 +1335,8 @@ class Sac extends Feuille:
 				[["jauge", "Terre", float(carre.etat.get("eau", 0.0)), "humide" if float(carre.etat.get("eau", 0.0)) > 0.15 else "sèche"]])
 		if cle == "combler" and carre != null:
 			return _carte("carre", "Le carré", J.dire(carre), "Comblé, la terre reprend sa place. Ce qui y pousse est perdu.", "Combler")
+		if cle == "retourner" and carre != null:
+			return _carte("carre", "Le carré", "Piétiné : ses sillons sont écrasés, ce qui y poussait est perdu.", "La Noire y est passée. La terre se retourne de nouveau, de tes mains ; ensuite, on y sème.", "Retourner")
 		if cle == "use:simples":
 			return _carte("simples", "Simples", "Tu en as %d." % int(inv.get("simples", 0)), "Des herbes qu'on mâche : la santé revient (%d), la peur s'apaise." % int(Jardin.SIMPLES_SANTE), "Se panser")
 		if cle == "use:lait":
@@ -1436,6 +1445,8 @@ class Sac extends Feuille:
 				atelier.poses.erase(carre)
 				carre.queue_free()
 			refermer()
+		elif cle == "retourner":
+			J.retourner(carre)
 		elif cle == "use:simples":
 			J.panser()
 		elif cle == "use:lait":
@@ -1484,6 +1495,8 @@ class Sac extends Feuille:
 			return _fiche_a_fabriquer("etabli")
 		if cle == "pose":
 			return _fiche_posee()
+		if cle == "reparer":
+			return _fiche_epave()
 		if not cle.begins_with("obj:"):
 			return _fiche_du_jardin(cle)
 		var id := cle.trim_prefix("obj:")
@@ -1567,6 +1580,15 @@ class Sac extends Feuille:
 			return {}
 		var id := str(s.genre)
 		var o: Dictionary = Atelier.OBJETS[id]
+		if Atelier.Faim.est_epave(s):
+			# (une épave : elle ne revient pas dans le sac ; on en sauve la moitié des matières)
+			var sauve: Dictionary = atelier.restes(id)
+			var l_ep := [["note", "La Noire l'a mis en pièces. Replié, il ne revient pas dans ton sac : tu en sauves la moitié des matières." if id != "tente" and id != "mangeoire"
+				else "La Noire l'a mise en pièces. Repliée, elle ne revient pas dans ton sac : tu en sauves la moitié des matières."]]
+			for k in sauve:
+				l_ep.append(["note", "+%d %s" % [int(sauve[k]), str(Atelier.NOMS_MATIERES.get(k, k))]])
+			return {"id": id, "pale": false, "nom": str(o["nom"]), "etat": "En pièces, juste là.", "dit": "Ce qui est posé dans la lumière d'un feu vif, elle n'y touche pas.",
+				"lignes": l_ep, "bouton": "Replier l'épave", "actif": true, "pourquoi": ""}
 		var lignes := [["note", "Replié, il revient dans ton sac." if id != "tente" else "Repliée, elle revient dans ton sac."]]
 		# (ce qu'on perdrait à replier maintenant)
 		if id == "recuperateur" and float(s.etat.get("eau", 0.0)) >= 1.0:
@@ -1578,11 +1600,32 @@ class Sac extends Feuille:
 		return {"id": id, "pale": false, "nom": str(o["nom"]), "etat": "Posé juste là, à portée de main." if id != "tente" else "Posée juste là, à portée de main.",
 			"dit": str(o["dit"]), "lignes": lignes, "bouton": "Replier", "actif": true, "pourquoi": ""}
 
+	# ce que la Noire a mis en pièces, juste là : on le répare sur place, pour la moitié de son prix
+	func _fiche_epave() -> Dictionary:
+		var s = _juste_la()
+		if s == null or not Atelier.Faim.est_epave(s):
+			return {}
+		var id := str(s.genre)
+		var o: Dictionary = Atelier.OBJETS[id]
+		var cout: Dictionary = atelier.cout_reparation(id)
+		var lignes := []
+		for k in cout:
+			lignes.append(["cout", k, Plume.majuscule(str(Atelier.NOMS_MATIERES.get(k, k))), atelier.possede(k), int(cout[k])])
+		var pourquoi: String = atelier.empeche_reparer(s)
+		return {"id": id, "pale": false, "nom": str(o["nom"]), "etat": "En pièces, juste là.", "dit": "Réparée sur place, elle sert de nouveau : la moitié de ce qu'elle a coûté. (« Agir », près d'elle, la répare aussi.)" if id in ["tente", "mangeoire"]
+			else "Réparé sur place, il sert de nouveau : la moitié de ce qu'il a coûté. (« Agir », près de lui, le répare aussi.)", "entete": ["Il te faut", "tu as / il faut"],
+			"lignes": lignes, "bouton": "Réparer", "actif": pourquoi == "", "pourquoi": pourquoi}
+
 	func _faire(cle: String) -> String:
 		if cle == "fab:etabli":
 			return "Fait" if atelier.fabriquer("etabli") else ""
 		if cle == "pose":
 			atelier.replier()
+			return ""
+		if cle == "reparer":
+			var epave = _juste_la()
+			if epave != null:
+				atelier.reparer(epave)
 			return ""
 		if not cle.begins_with("obj:"):
 			_faire_au_jardin(cle)
