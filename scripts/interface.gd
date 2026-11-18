@@ -40,6 +40,7 @@ var _portail_b: Bouton            # le retour au portail StoneValley
 var _ligne_compte: HBoxContainer
 var _reprise: Bouton       # « Reprendre · Forêt, jour 3 » : la partie gardée (scripts/partie_gardee.gd)
 var _confirmer := 0          # (une partie gardée : « Entrer dans la nuit » la remplace au second appui)
+var plus_recente := false    # (une partie gardée par une version plus récente du jeu, qu'il ne reprend pas : de même)
 var _session
 var _scene
 var _colonne: VBoxContainer
@@ -246,6 +247,7 @@ func ouvrir_porte(mode: String = "") -> void:
 # la partie gardée : le bouton « Reprendre » la dit, et passe devant « Entrer dans la nuit »
 func montrer_reprise(d: Dictionary) -> void:
 	_confirmer = 0
+	plus_recente = false
 	_reprise.visible = not d.is_empty()
 	if _reprise.visible:
 		_reprise.libelle = "Reprendre · " + PartieGardee.resume(d)
@@ -342,7 +344,7 @@ func _apparaitre() -> void:
 func _lancer() -> void:
 	if _depart or _lieux.is_empty() or _choix.index < 0 or _choix.index >= _lieux.size():
 		return
-	if _reprise.visible and Time.get_ticks_msec() > _confirmer:
+	if (_reprise.visible or plus_recente) and Time.get_ticks_msec() > _confirmer:
 		_confirmer = Time.get_ticks_msec() + 6000
 		_etat_titre.text = "La partie en cours sera perdue. Touche encore « Entrer dans la nuit » pour en commencer une autre." if tactile else \
 			"La partie en cours sera perdue. Encore une fois « Entrer dans la nuit » pour en commencer une autre."

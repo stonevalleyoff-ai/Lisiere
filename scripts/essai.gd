@@ -5848,6 +5848,8 @@ func _semer_a_part(type: String, coin: Vector2, garder: bool = false) -> Diction
 # — les roseaux au bord de l'eau, les fougères sous le couvert, les géants à l'écart, les lichens contre la pierre, les cactus
 # espacés — et garde sa part. Tout est compté sur de grands nombres (un lieu entier, puis quatre fois sa surface par biome),
 # avec de la marge : rien ne tient à un tirage. Puis les parties gardées : celle d'avant garde son plan ---
+var _version_du_lieu_ferme := 0
+
 func _la_repartition() -> void:
 	print("La répartition")
 	var Mi = load("res://scripts/milieu.gd")
@@ -6016,6 +6018,7 @@ func _la_repartition() -> void:
 	met.merge(met_avant)
 	W._tables.erase("")
 	W._densites.erase("")
+	_version_du_lieu_ferme = W.version_gardee()
 	verif(poids_sec != poids_avant and avec_id.size() >= 300 and memes_sec == avec_id.size() and revenues_s.size() == sans_id.size() and gardent == revenues_s.size() and de_rive >= 10 and de_rive_ailleurs <= 1,
 		"reprise une année sèche (les parts du lieu en changent), la partie gardée revient pareille : %d plantes sur %d elles-mêmes, dans leur milieu ; gardées sans leur plante (un herbier qui a changé de cycle), %d sur %d gardent leur milieu, et le riz, le papyrus restent au bord de l'eau (%d sur %d ailleurs)" % [
 		memes_sec, avec_id.size(), gardent, revenues_s.size(), de_rive_ailleurs, de_rive])
@@ -6139,10 +6142,25 @@ func _la_repartition() -> void:
 	W._fabriquer(k)
 	var souches_1: Array = W._morceaux[k]["objets"].filter(func(o): return is_instance_valid(o) and o.genre == "souche")
 	var garde_1: Dictionary = W.photo_ouvert()
+	var v_1: int = W.version_gardee()
 	verif(int(neuve.get("plan", 0)) == W.PLAN and W.plan_version == 1 and plan_1.size() > 10 and plan_1.all(func(e): return e.size() == 5)
 		and souches_1.size() == 1 and souches_1[0].position.distance_to(place_c) < 0.2 and int(garde_1.get("plan", 0)) == 1,
 		"une partie neuve dit son plan (%d) ; une partie gardée d'avant ne le dit pas : elle garde le premier (%d places sans milieu dans ce morceau), l'arbre qu'elle avait abattu est encore une souche, à sa place, et elle se garde de nouveau avec ce plan" % [
 		int(neuve.get("plan", 0)), plan_1.size()])
+	# une version plus ancienne du jeu (sur un autre appareil, par le compte) ne reprend que les parties de sa version : elle
+	# reporterait les rangs d'un plan qu'elle ne connaît pas sur le sien, et réécrirait la partie au premier plan. Une partie gardée
+	# dit la version de ce qu'elle garde (le plan de son monde ; un lieu fermé dont les plantes gardent leur milieu : 3) ; une
+	# partie au premier plan reste lisible par l'ancien jeu (1). Ce jeu reprend les siennes et les plus anciennes, refuse les plus
+	# récentes, et le dit
+	var PG := load("res://scripts/partie_gardee.gd")
+	W.plan_version = W.PLAN
+	var v_neuve: int = W.version_gardee()
+	var ancien_refuse := func(v: int) -> bool: return v != 1
+	verif(v_neuve == W.PLAN and v_neuve <= PG.VERSION and ancien_refuse.call(v_neuve) and v_1 == 1 and not ancien_refuse.call(v_1) and int(_version_du_lieu_ferme) == 3
+		and PG.valide({"v": 1, "biome": "prairie"}) and PG.valide({"v": PG.VERSION, "biome": "prairie"}) and not PG.valide({"v": PG.VERSION + 1, "biome": "prairie"})
+		and PG.plus_recente({"v": PG.VERSION + 1, "biome": "prairie"}) and not PG.plus_recente({"v": 1, "biome": "prairie"}),
+		"une partie gardée dit la version de ce qu'elle garde : au plan %d, la version %d, qu'un jeu plus ancien (version 1) refuse ; au premier plan, 1, qu'il lit encore ; un lieu fermé dont les plantes gardent leur milieu, %d. Ce jeu (version %d) reprend les siennes et les plus anciennes, et refuse les plus récentes" % [
+		W.PLAN, v_neuve, int(_version_du_lieu_ferme), PG.VERSION])
 	# (on rend au monde le plan d'aujourd'hui)
 	W._oublier(k)
 	W.reprendre_ouvert({"changes": {}, "ajouts": {}, "plan": W.PLAN})

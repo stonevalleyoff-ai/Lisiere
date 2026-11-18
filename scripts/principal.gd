@@ -535,6 +535,11 @@ func _reprise_du_compte() -> void:
 	_rev_compte = -1
 	var ici := PartieGardee.lire() if essai == null else {}
 	ui.montrer_reprise(ici)
+	# (sur l'appareil, une partie d'une version plus récente du jeu : on le dit, et une partie nouvelle ne la remplace qu'au second
+	# appui)
+	if essai == null and ici.is_empty() and PartieGardee.plus_recente(PartieGardee.lire_brut()):
+		ui.plus_recente = true
+		ui.dire_titre("Ta partie en cours vient d'une version plus récente du jeu : mets-le à jour pour la reprendre.")
 	if essai != null or session == null or not session.connecte():
 		return
 	await session.renvoyer_oubli()
@@ -547,6 +552,12 @@ func _reprise_du_compte() -> void:
 		_reprise_compte = p["donnees"]
 		ui.montrer_reprise(_reprise_compte)
 		ui.dire_titre("Ta partie te suit : la plus récente est sur ton compte.")
+	elif typeof(p) == TYPE_DICTIONARY and PartieGardee.plus_recente(p.get("donnees")):
+		# (la partie du compte vient d'une version plus récente du jeu : celui-ci ne la reprend pas, et ne l'écrase pas — celle de
+		# l'appareil, reprise, n'y part pas sans conflit ; une partie nouvelle la remplacerait, au second appui)
+		_rev_compte = -1
+		ui.plus_recente = true
+		ui.dire_titre("Ta partie en cours vient d'une version plus récente du jeu : mets-le à jour pour la reprendre.")
 
 
 # sur un téléphone, les sons se fabriquent avant la partie (sons.gd, mobile) : pendant qu'on joue, ils figeraient l'image

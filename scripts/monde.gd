@@ -1488,6 +1488,18 @@ func _oublier(k: Vector2i) -> void:
 	_morceaux.erase(k)
 
 
+# la version de ce qu'une partie gardée garde de ce lieu (scripts/partie_gardee.gd, VERSION, « v ») : le monde ouvert, celle de
+# son plan — une version du jeu qui ne connaît pas ce plan refuse la partie (elle reporterait ses rangs sur le sien) ; un lieu
+# fermé, 3 si ses plantes gardent leur milieu et leur id, 1 sinon (une partie d'avant : l'ancien jeu la lit encore)
+func version_gardee() -> int:
+	if ouvert:
+		return plan_version
+	for o in objets:
+		if is_instance_valid(o) and o.has_meta("milieu"):
+			return 3
+	return 1
+
+
 # une partie gardée : ce qu'on a changé et ce qui est tombé, par morceau (le reste se refait de la graine)
 func photo_ouvert() -> Dictionary:
 	for k in _morceaux:

@@ -13,19 +13,38 @@ extends RefCounted
 
 const Feu := preload("res://scripts/feu.gd")
 const FICHIER := "user://partie.json"
-const VERSION := 1
+# la version de ce qu'une partie garde de son lieu (« v » ; scripts/monde.gd, version_gardee) : 1, ce que gardait la première
+# version du jeu (le monde ouvert à son premier plan ; un lieu fermé dont les plantes ne gardent pas leur milieu) ; 2, le
+# monde ouvert au plan du milieu ; 3, à son troisième plan, ou un lieu fermé dont chaque plante garde son milieu et son id. Un
+# jeu reprend les parties jusqu'à sa version, et refuse les plus récentes : il y reporterait des rangs qui, dans son plan,
+# désignent d'autres places (et la réécrirait sans ce qu'il ne connaît pas). Une partie que l'ancien jeu sait lire reste à 1
+const VERSION := 3
 
 
 static func lire() -> Dictionary:
-	if not FileAccess.file_exists(FICHIER):
-		return {}
-	var d = JSON.parse_string(FileAccess.get_file_as_string(FICHIER))
+	var d = lire_brut()
 	return d if valide(d) else {}
 
 
-# une partie gardée que ce jeu sait reprendre
+# ce qui est écrit sur l'appareil, que ce jeu sache le reprendre ou non ({} : rien)
+static func lire_brut() -> Dictionary:
+	if not FileAccess.file_exists(FICHIER):
+		return {}
+	var d = JSON.parse_string(FileAccess.get_file_as_string(FICHIER))
+	return d if typeof(d) == TYPE_DICTIONARY else {}
+
+
+# une partie gardée que ce jeu sait reprendre : de sa version, ou d'une plus ancienne
 static func valide(d) -> bool:
-	return typeof(d) == TYPE_DICTIONARY and int(d.get("v", 0)) == VERSION and str(d.get("biome", "")) != ""
+	if typeof(d) != TYPE_DICTIONARY:
+		return false
+	var v := int(d.get("v", 0))
+	return v >= 1 and v <= VERSION and str(d.get("biome", "")) != ""
+
+
+# une partie gardée par une version plus récente du jeu : celui-ci ne la reprend pas, et ne doit pas la remplacer sans le dire
+static func plus_recente(d) -> bool:
+	return typeof(d) == TYPE_DICTIONARY and int(d.get("v", 0)) > VERSION and str(d.get("biome", "")) != ""
 
 
 # celle du compte se reprend-elle plutôt que celle de l'appareil ? Oui si elle est plus récente, ou s'il n'y en a pas ici
@@ -76,7 +95,7 @@ static func photo(jeu) -> Dictionary:
 	for t in jeu.tuees:
 		tuees.append(str(t["id"]))
 	return {
-		"v": VERSION,
+		"v": jeu.monde.version_gardee() if jeu.monde != null else VERSION,
 		"quand": int(Time.get_unix_time_from_system()),
 		"biome": jeu.biome,
 		"nom": "Le monde d'Orvane" if jeu.ouvert else str(jeu.biome_info.get("nom", jeu.biome)),
