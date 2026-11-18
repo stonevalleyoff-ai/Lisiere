@@ -12,6 +12,7 @@ extends RefCounted
 
 const R := preload("res://scripts/regles.gd")
 const Campement := preload("res://scripts/campement.gd")
+const Faim := preload("res://scripts/noire_faim.gd")
 
 # ce qui se cultive : son nom, sa graine, ce que rend un carré mûr, les jours qu'il lui faut (la terre humide)
 # (les grains : ce qu'on cueille aux épis d'une céréale, d'un riz sauvage, est aussi ce qu'on sème ; un carré mûr en rend, avec
@@ -131,6 +132,9 @@ func culture_par_defaut() -> String:
 func semer(s, culture: String) -> bool:
 	if s == null or info(culture).is_empty() or str(s.etat.get("culture", "")) != "":
 		return false
+	if Faim.est_epave(s):
+		jeu.ui.message("La terre est piétinée : retourne-la d'abord (« Agir »).", GRIS)
+		return false
 	if est_une_herbe(culture) and str(jeu.botanique.empeche_semer(culture)) != "":
 		jeu.ui.message(str(jeu.botanique.empeche_semer(culture)), GRIS)
 		return false
@@ -226,8 +230,22 @@ func recolter(s) -> bool:
 	return true
 
 
+# un carré que la Noire a piétiné (scripts/noire_faim.gd) : elle en retourne la terre, de ses mains ; il se sème de nouveau
+func retourner(s) -> bool:
+	if not Faim.est_epave(s):
+		return false
+	for k in ["saccage", "cote", "mordu"]:
+		s.etat.erase(k)
+	s.redessiner(true)
+	jeu.joueur.geste_atelier("becher")
+	jeu.ui.message("Tu retournes la terre piétinée. Le carré se sème de nouveau.", TEINTE)
+	return true
+
+
 # « Agir », devant un carré : ce qu'il y a de mieux à y faire
 func agir(s) -> void:
+	if retourner(s):
+		return
 	var culture := str(s.etat.get("culture", ""))
 	if culture == "":
 		var c := culture_par_defaut()
@@ -297,7 +315,7 @@ func cueilli(genre: String) -> void:
 # un épouvantail garde-t-il ce point ?
 func garde(p: Vector2) -> bool:
 	for s in _atelier().poses:
-		if is_instance_valid(s) and str(s.genre) == "epouvantail" and s.position.distance_to(p) < GARDE:
+		if is_instance_valid(s) and str(s.genre) == "epouvantail" and s.position.distance_to(p) < GARDE and not Faim.est_epave(s):
 			return true
 	return false
 
@@ -362,9 +380,13 @@ func maj(delta: float) -> void:
 					if avant < 3.0 and apres >= 3.0 and jeu.joueur.position.distance_to(s.position) < 900.0:
 						jeu.ui.message("%s : c'est mûr." % str(info(culture)["nom"]), TEINTE)
 			"epouvantail":
+				# (en pièces : scripts/noire_faim.gd ; il ne regarde ni ne tremble plus)
+				if Faim.est_epave(s):
+					continue
 				# (la nuit, il regarde d'où vient la Noire ; plus elle est près, plus il tremble)
 				var alerte := 0.0
-				if nuit and N != null and int(N.acte) >= 2:
+				# (à son cinquième acte, elle vient dès le crépuscule : il la regarde venir avant la nuit)
+				if N != null and int(N.acte) >= 2 and (nuit or bool(N.faim.soir)):
 					var ou: Vector2 = N.corps.position if N.presente() and N.corps != null and is_instance_valid(N.corps) else Vector2(N.taniere)
 					s.etat["regard"] = (ou - s.position).angle()
 					if N.presente():

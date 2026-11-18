@@ -8,7 +8,10 @@ extends RefCounted
 #  3. le siège : elle tourne autour du camp, s'arrête, regarde, suit le feu à mesure qu'il baisse, et la veilleuse quand elle
 #     en fait le tour ; elle feinte (elle se jette vers la lumière et s'arrête à son bord) ; une bûche jetée la fait sursauter.
 #     Hors de la lumière d'un feu, la torche ne la tient qu'un moment ; puis elle s'aplatit, gronde (le présage), et charge ;
-#  4. la chasse : comme le siège, mais elle part plus tôt de sa tanière et la torche la tient moitié moins.
+#  4. la chasse : comme le siège, mais elle part plus tôt de sa tanière et la torche la tient moitié moins ;
+#  5. la faim (scripts/noire_faim.gd) : elle rôde dès le crépuscule (son appel quand le jour baisse, elle à la lisière quand la
+#     nuit commence) ; tenue par le feu, elle saccage ce qui est posé hors de sa lumière, une chose à la fois, et prend
+#     elle-même les bêtes attachées dans le noir. Ce qui est dans la lumière d'un feu vif est gardé.
 # Ce qui la rend juste : elle s'annonce toujours (l'appel quand elle part, le silence quand elle approche, le présage avant la
 # charge), un feu vif la tient toujours, et l'on peut lui échapper : elle dort le jour dans sa tanière, d'où elle part chaque
 # nuit ; plus on dort loin, plus elle arrive tard. À l'aube elle y retourne, et sa piste y mène (scripts/traces.gd) : on peut la
@@ -18,6 +21,7 @@ extends RefCounted
 # « noire »), qui fait ce qu'on lui dit ; tant qu'elle est loin de la veilleuse, elle n'a pas de corps : seulement une place.
 
 const R := preload("res://scripts/regles.gd")
+const Faim := preload("res://scripts/noire_faim.gd")
 
 # ce qu'elle est : une bête faite à la main, que le bestiaire de Lisière dessine à part (scripts/bestiaire.gd lit « noire »,
 # scripts/noire_corps.gd la dessine : haute sur pattes, maigre sous un poil de traits d'encre, la tête basse, la gueule
@@ -57,6 +61,18 @@ const SAVOIRS := [
 		"Elle dort là, le jour. Ne t'approche pas davantage."],
 	["distance", "Plus on dort loin de sa tanière, plus elle arrive tard dans la nuit.",
 		"Tu as dormi loin d'elle : elle est arrivée tard."],
+	# (l'acte 5, la faim : scripts/noire_faim.gd)
+	["crepuscule", "Elle n'attend plus la nuit noire. Elle appelle quand le jour baisse ; quand la nuit commence, elle est à la lisière.",
+		"Il fait encore jour, et elle appelle. Elle n'attend plus la nuit."],
+	["faim", "Elle a faim. Tenue par le feu, elle s'en prend à ce qui est posé hors de sa lumière : elle le flaire, gronde un moment, puis le met en pièces. Une bûche jetée le lui fait lâcher.",
+		"Ce qui est posé hors de la lumière du feu, elle va le mettre en pièces. Une bûche la ferait lâcher."],
+	["garde", "Ce qui est posé dans la lumière d'un feu vif, elle n'y touche pas. Quand le feu baisse, sa lumière se retire, et ce qu'elle gardait ne l'est plus.",
+		"Elle regarde ton camp, et n'y va pas : la lumière du feu le garde. Tant qu'il est vif."],
+	["longe", "Une bête attachée dans le noir est à elle : le filin même cède sous sa gueule. Dans la lumière d'un feu, elle n'y touche pas.",
+		"Le filin a cédé sous sa gueule. Dans le noir, rien ne tient une bête contre elle."],
+	# (deux : regles.gd, NOIRE_SACCAGES)
+	["assez", "Elle ne met pas tout en pièces : deux choses dans une nuit, pas davantage. Ensuite, elle ne fait plus que tourner.",
+		"Elle revient tourner autour du feu. Elle ne touchera plus à rien cette nuit."],
 ]
 
 var jeu
@@ -65,7 +81,7 @@ var taniere := Vector2.ZERO
 var taniere_connue := false      # la veilleuse l'a trouvée (si elle a de quoi, elle l'écrit sur sa carte : scripts/reperes.gd)
 var ou := Vector2.ZERO           # où elle est : là où est son corps, ou sa place tant qu'elle n'en a pas
 var corps = null                 # sa bête (scripts/bete.gd), quand elle est assez près pour en avoir une
-var etat := "dort"               # dort, vient, guette, tourne, feinte, sursaut, recule, charge, rentre
+var etat := "dort"               # dort, vient, guette, tourne, feinte, sursaut, recule, charge, rentre ; la faim : flaire, saccage, devore
 var su := {}                     # ce que la veilleuse a appris d'elle (les clés de SAVOIRS)
 var vue := false                 # la veilleuse l'a vue dans la lumière (son portrait, dans le carnet)
 var silence := 0.0               # de 0 à 1 : ce qu'elle fait taire autour de la veilleuse (scripts/sons.gd)
@@ -100,6 +116,13 @@ var _r := RandomNumberGenerator.new()
 # elle quitte le lieu pour de bon)
 var cicatrices := 0              # de 0 à 3 : ce qu'elle garde des nuits où on l'a prise et blessée
 var partie := false              # elle a quitté le lieu : elle ne reviendra plus
+# (l'acte 5 : ce qu'elle saccage, les bêtes qu'elle prend, son départ au crépuscule ; scripts/noire_faim.gd)
+var faim
+
+
+func _init() -> void:
+	faim = Faim.new()
+	faim.lier(self)
 
 
 # --- ce que le jeu appelle ---
@@ -118,6 +141,7 @@ func commencer() -> void:
 	_colere = 0.0
 	cicatrices = 0
 	partie = false
+	faim.commencer()
 	_r.seed = int(jeu.graine) ^ 0x5eed
 	_choisir_taniere(jeu.joueur.position)
 	ou = taniere
@@ -135,6 +159,11 @@ static func premiere_nuit(acte_: int) -> int:
 
 # la nuit tombe : l'acte de cette nuit, et quand elle partira
 func tombee() -> void:
+	# (la faim : partie au crépuscule, elle est déjà en chemin, ou à la lisière ; la nuit qui tombe ne la renvoie pas)
+	if faim.soir:
+		_nuit_t = 0.0
+		return
+	faim.tombee()
 	acte = acte_de(int(jeu.nuits))
 	_nuit_t = 0.0
 	_duree_nuit = R.DUREE * float(jeu.part_nuit)
@@ -161,6 +190,7 @@ func tombee() -> void:
 
 # l'aube : elle rentre, et sa piste mène à sa tanière. Si la veilleuse est trop loin, elle en prend une autre, plus près.
 func aube() -> void:
+	faim.aube()
 	if acte == 0:
 		return
 	var j = jeu.joueur
@@ -202,11 +232,14 @@ func frappee(n: float) -> void:
 			_changer("charge")
 		else:
 			_reculer(460.0, 3.5)
+	elif faim.derangee():
+		# (un galet, un coup, pendant qu'elle flairait une chose du camp : elle la lâche)
+		_reculer(460.0, 3.5)
 
 
 # une bûche jetée dans le feu, sa gerbe d'étincelles (bete.gd, gerbe) : elle sursaute, et s'écarte d'un pas
 func gerbe() -> void:
-	if etat == "guette" or etat == "tourne" or etat == "feinte":
+	if etat == "guette" or etat == "tourne" or etat == "feinte" or faim.derangee():
 		_changer("sursaut")
 
 
@@ -264,7 +297,7 @@ func savoirs() -> Array:
 # (la vitrine, l'essai) la nuit de cet acte, et elle déjà en chemin, à cette distance de la veilleuse
 func mettre_en_scene(acte_: int, distance: float = 900.0, angle: float = PI) -> void:
 	tombee()
-	acte = clampi(acte_, 1, 4)
+	acte = clampi(acte_, 1, R.NOIRE_DEPART.size() - 1)
 	_depart = 0.0
 	_appel = true
 	ou = jeu.joueur.position + Vector2.from_angle(angle) * distance
@@ -279,6 +312,7 @@ func photo() -> Dictionary:
 		"vue": vue, "retiree": _retiree, "prise": snappedf(_prise, 0.1), "torche": snappedf(_torche, 0.1), "nuit": snappedf(_nuit_t, 0.1),
 		"appel": _appel, "piste": [snappedf(_piste_de.x, 0.1), snappedf(_piste_de.y, 0.1)] if _a_piste else [],
 		"cicatrices": cicatrices, "partie": partie,
+		"faim": faim.photo(),
 	}
 
 
@@ -301,7 +335,8 @@ func reprendre(d: Dictionary) -> void:
 	cicatrices = clampi(int(d.get("cicatrices", 0)), 0, 3)
 	partie = bool(d.get("partie", false))
 	_duree_nuit = R.DUREE * float(jeu.part_nuit)
-	_depart = float(R.NOIRE_DEPART[clampi(acte, 0, 4)]) * _duree_nuit
+	_depart = float(R.NOIRE_DEPART[clampi(acte, 0, R.NOIRE_DEPART.size() - 1)]) * _duree_nuit
+	faim.reprendre(d.get("faim", {}))
 	ou = taniere
 	etat = "dort"
 	var p: Array = d.get("piste", [])
@@ -323,8 +358,11 @@ func maj(delta: float) -> void:
 		corps = null
 	if corps != null:
 		ou = corps.position
+	# (la faim : le jour baisse, et elle part déjà)
+	if not nuit and etat == "dort":
+		faim.crepuscule()
 	# (le jour est là et elle est encore dehors : elle rentre ; l'aube le lui dit d'ordinaire, ceci le garantit)
-	if not nuit and _colere <= 0.0 and jeu.jour_du_ciel() > 0.5 and etat != "dort" and etat != "rentre":
+	if not nuit and _colere <= 0.0 and jeu.jour_du_ciel() > 0.5 and etat != "dort" and etat != "rentre" and not faim.soir:
 		_changer("rentre")
 	match etat:
 		"dort":
@@ -343,11 +381,14 @@ func maj(delta: float) -> void:
 			_charger(delta, j)
 		"rentre":
 			_rentrer(j)
+		"flaire", "saccage", "devore":
+			faim.maj(delta, j)
 	_entourage(delta, j)
 	_lire_le_sol(delta, j)
 
 
 func _changer(e: String) -> void:
+	faim.change(e)
 	etat = e
 	_t = 0.0
 	_presage = 0.0
@@ -472,6 +513,9 @@ func _assieger(delta: float, j) -> void:
 		_siege += delta
 		if acte >= 3 and _siege > 6.0:
 			_apprendre("feu")
+		# (la faim : tenue par le feu, elle se tourne vers ce qui est posé hors de sa lumière ; noire_faim.gd)
+		if faim.tenter(delta, feu):
+			return
 		# la feinte : de temps en temps elle se jette vers la lumière, et s'arrête à son bord
 		_feinte -= delta
 		if _feinte <= 0.0 and absf(ici.length() - tenue) < 60.0:
