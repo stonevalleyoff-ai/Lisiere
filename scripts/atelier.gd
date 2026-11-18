@@ -16,6 +16,7 @@ extends RefCounted
 
 const R := preload("res://scripts/regles.gd")
 const Campement := preload("res://scripts/campement.gd")
+const Faim := preload("res://scripts/noire_faim.gd")
 
 # les matières, dans l'ordre où on les montre ; celles du début sont dans le sac depuis toujours (regles.gd, NOMS)
 const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet",
@@ -352,6 +353,9 @@ func replier() -> bool:
 		s.queue_free()
 		jeu.joueur.geste_atelier("fouiller")
 		return true
+	# (la faim de la Noire : une épave ne revient pas dans le sac ; elle en sauve la moitié des matières)
+	if Faim.est_epave(s):
+		return _replier_epave(s)
 	if fil == s:
 		fil = null
 	if lit == s:
@@ -361,6 +365,82 @@ func replier() -> bool:
 	jeu.sons.atelier("corde" if str(s.genre) in ["hamac", "filet", "filet_filin", "etabli"] else "toile", -2.0, 1.0, s.position)
 	s.queue_free()
 	jeu.joueur.geste_atelier("monter")
+	return true
+
+
+# --- les épaves : ce que la Noire a mis en pièces, à son cinquième acte (scripts/noire_faim.gd ; scripts/campement_epave.gd
+# les dessine). Une épave vaut la moitié de la chose (regles.gd, NOIRE_EPAVE) : on la répare sur place pour l'autre moitié de
+# chaque matière (« Agir »), ou on la replie pour ce qui s'en sauve ---
+
+# ce que coûte de réparer cette chose, ce qu'on en sauve en la repliant (la matière → combien)
+func cout_reparation(id: String) -> Dictionary:
+	return Faim.cout_reparation(OBJETS[id]["cout"])
+
+
+func restes(id: String) -> Dictionary:
+	return Faim.restes(OBJETS[id]["cout"])
+
+
+# un prix, dit : « 1 bâche, 1 corde, 2 bois »
+func dire_cout(cout: Dictionary) -> String:
+	var dits := PackedStringArray()
+	for k in cout:
+		dits.append("%d %s" % [int(cout[k]), str(NOMS_MATIERES.get(k, k))])
+	return ", ".join(dits)
+
+
+# ce qui lui manque pour réparer cette épave ("" : rien)
+func empeche_reparer(s) -> String:
+	var manque_ := {}
+	var cout := cout_reparation(str(s.genre))
+	for k in cout:
+		if int(cout[k]) > possede(k):
+			manque_[k] = int(cout[k]) - possede(k)
+	return "" if manque_.is_empty() else "Il te manque %s." % dire_cout(manque_)
+
+
+# elle répare sur place ce que la Noire a mis en pièces : les matières partent, la chose est debout, comme neuve (vide : son
+# eau, sa prise, son foin sont perdus) ; faux si elle n'a pas de quoi (et le jeu dit ce qu'il faut)
+func reparer(s) -> bool:
+	if not Faim.est_epave(s) or not OBJETS.has(str(s.genre)):
+		return false
+	var id := str(s.genre)
+	var nom := str(Faim.CHOSES[id][0])
+	var cout := cout_reparation(id)
+	var pourquoi := empeche_reparer(s)
+	if pourquoi != "":
+		jeu.ui.message("Pour réparer %s : %s. %s Repliée, l'épave rend %s." % [nom, dire_cout(cout), pourquoi, dire_cout(restes(id)) if not restes(id).is_empty() else "peu de chose"],
+			Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	for k in cout:
+		inv[k] = int(inv.get(k, 0)) - int(cout[k])
+	for k in ["saccage", "cote", "mangee", "mordu", "nuit"]:
+		s.etat.erase(k)
+	s.redessiner(true)
+	# (elle recoud la toile, renoue les cordes ; le bois se replante au maillet : coup(), « monter »)
+	jeu.joueur.geste_atelier("monter")
+	jeu.sons.atelier("couture" if cout.has("bache") or cout.has("corde") or cout.has("filin") else "corde", -1.0, 1.0, s.position)
+	jeu.ui.message("Tu répares %s : %s." % [nom, dire_cout(cout)], TEINTE)
+	return true
+
+
+# elle replie une épave : ce qui s'en sauve entre dans son sac, le reste est perdu
+func _replier_epave(s) -> bool:
+	var id := str(s.genre)
+	var sauve := restes(id)
+	var pris := {}
+	for k in sauve:
+		var n := ranger(k, int(sauve[k]))
+		if n > 0:
+			pris[k] = n
+	if fil == s:
+		fil = null
+	poses.erase(s)
+	jeu.sons.atelier("toile", -4.0, 0.9, s.position)
+	s.queue_free()
+	jeu.joueur.geste_atelier("fouiller")
+	jeu.ui.message("Tu replies ce qui reste de %s : %s." % [str(Faim.CHOSES[id][0]), dire_cout(pris) if not pris.is_empty() else "rien qui vaille"], TEINTE)
 	return true
 
 
@@ -429,7 +509,7 @@ func pluie_k() -> float:
 # l'abri d'une tente, à cet endroit (de 0 à 1)
 func abri(p: Vector2) -> float:
 	for s in poses:
-		if is_instance_valid(s) and str(s.genre) == "tente" and s.position.distance_to(p) < 40.0:
+		if is_instance_valid(s) and str(s.genre) == "tente" and s.position.distance_to(p) < 40.0 and not Faim.est_epave(s):
 			return 1.0
 	return 0.0
 
@@ -472,6 +552,10 @@ func agir() -> bool:
 	var s = _la_plus_proche(PORTEE)
 	if s == null:
 		return false
+	# (une épave : elle ne sert plus à rien ; « Agir » la répare, si elle a de quoi. Un carré piétiné : le jardin le retourne)
+	if Faim.est_epave(s) and str(s.genre) != "carre":
+		reparer(s)
+		return true
 	match str(s.genre):
 		"etabli":
 			jeu.ouvrir_page("etabli")
@@ -782,7 +866,8 @@ func maj(delta: float) -> void:
 	var pluie: float = float(C.pluie) if C != null else 0.0
 	var vent: float = vent_force if vent_force >= 0.0 else float(jeu.vent())
 	for s in poses:
-		if not is_instance_valid(s):
+		# (une épave ne fait plus rien : elle ne se remplit pas, rien ne s'y prend)
+		if not is_instance_valid(s) or Faim.est_epave(s):
 			continue
 		match str(s.genre):
 			"etabli":
@@ -1134,6 +1219,7 @@ func reprendre(d: Dictionary) -> void:
 			continue
 		var etat: Dictionary = x[3] if typeof(x[3]) == TYPE_DICTIONARY else {}
 		etat.erase("occupe")
+		etat.erase("mordu")
 		var s = _creer(str(x[0]), Vector2(float(x[1]), float(x[2])), etat)
 		if x.size() > 4 and bool(x[4]):
 			fil = s

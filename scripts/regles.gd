@@ -184,14 +184,44 @@ const NOIRE_TANIERE_MAX := 4600.0   # et au plus
 const NOIRE_SUIT := 5600.0       # sa tanière plus loin que cela de la veilleuse, à l'aube : elle en change, pour suivre
 const NOIRE_ENDURE := 70.0       # ce qu'elle encaisse dans une nuit avant de se retirer jusqu'à la suivante
 # l'acte de chaque nuit (la première, la deuxième…) : les deux premières nuits, rien ; puis les signes (un appel, au loin) ;
-# deux nuits où elle vient regarder ; deux où elle tourne et feinte ; ensuite, elle charge. Après la dernière : le dernier acte
-const NOIRE_ACTES := [0, 0, 1, 2, 2, 3, 3, 4]
-const NOIRE_DEPART := [1.0, 0.45, 0.3, 0.18, 0.06]   # par acte : la part de la nuit passée quand elle quitte sa tanière
-const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0]     # par acte : le temps que la torche la tient, avant qu'elle passe
+# deux nuits où elle vient regarder ; deux où elle tourne et feinte ; deux où elle charge ; à la dixième, la faim. Après la
+# dernière : le dernier acte
+const NOIRE_ACTES := [0, 0, 1, 2, 2, 3, 3, 4, 4, 5]
+# par acte : la part de la nuit passée quand elle quitte sa tanière (négative : avant la nuit, au crépuscule ; voir la faim)
+const NOIRE_DEPART := [1.0, 0.45, 0.3, 0.18, 0.06, -0.3]
+const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0, 4.0]   # par acte : le temps que la torche la tient, avant qu'elle passe
 const NOIRE_PRESAGE := 1.4       # elle s'aplatit et gronde ce temps-là, avant de charger
 const NOIRE_PEUR := 5.0          # la peur gagnée par seconde sous son regard
 const NOIRE_REVEIL := 120.0      # le jour, à cette distance de sa tanière, on la réveille
 # --- la Noire, acte 5 : la faim (elle rôde dès le crépuscule, saccage le camp, prend les bêtes attachées) ---
+# (scripts/noire_faim.gd. Pour juger : une nuit dure de 79 secondes, l'été, à 120, l'hiver ; un feu neuf éclaire à 198 pixels et
+# garde ce qui est à moins de 168 de lui (les 85 centièmes de son rayon), un feu comble à 360 et 306 ; il perd 1,8 pixel de
+# rayon par seconde, une bûche lui en rend 45)
+const NOIRE_FAIM := 5              # l'acte où la faim commence (elle vaut pour tout acte à partir de celui-là)
+# le crépuscule : NOIRE_DEPART vaut -0,3 à cet acte. Elle quitte sa tanière trois dixièmes de nuit AVANT la nuit (24 secondes
+# l'été, 29 au printemps, 36 l'hiver), et son appel s'entend quand le jour baisse. De sa tanière (3 200 à 4 600 pixels) il
+# lui faut 15 à 25 secondes sans corps (NOIRE_VOYAGE), puis 7 de marche jusqu'à la lisière du feu : 22 à 32 en tout. Elle y
+# est donc quand la nuit commence, à quelques secondes près ; l'hiver, où les nuits sont longues, on la voit arriver dans le
+# jour qui tombe. Qui a dormi plus loin d'elle la voit toujours arriver plus tard
+# la torche : 4 secondes (NOIRE_TORCHE), puis le présage (1,4) et la course (elle part de 215 pixels et reprend 50 pixels par
+# seconde à la veilleuse : quatre secondes encore) : moins de dix secondes hors de la lumière, 1 500 pixels à la course. De
+# quoi passer d'un feu à l'autre ; plus de quoi aller défendre sa tente la torche à la main
+const NOIRE_FAIM_ATTENTE := 12.0   # secondes qu'un feu la tient avant qu'elle se tourne vers le camp (et après une bûche qui l'en a chassée)
+const NOIRE_FAIM_REPIT := 26.0     # secondes entre deux choses mises en pièces
+# (12 d'attente, une dizaine pour venir, flairer et déchirer, 26 de répit, une dizaine encore : la seconde chose tombe une
+# soixantaine de secondes après son arrivée (61 à l'essai). Deux tiennent dans la plus courte nuit, 79 secondes ; une troisième,
+# vers 97, n'y tiendrait pas)
+const NOIRE_SACCAGES := 2          # ce qu'elle met en pièces par nuit, au plus : une erreur ne coûte pas tout le camp
+const NOIRE_FAIM_PORTEE := 900.0   # jusqu'où elle va chercher, depuis le feu qui la tient : là où s'entend encore un son du lieu
+const NOIRE_FLAIRE := 4.0          # secondes : elle flaire et gronde, le museau sur la chose, avant d'y mettre la dent (l'annonce)
+# (quatre secondes : de quoi jeter une bûche, si l'on est au feu ; la veilleuse en court 660 pixels)
+const NOIRE_SACCAGE := 2.6         # secondes : elle la secoue et la met en pièces
+const NOIRE_FAIM_BETE := 4.0       # une bête attachée dans le noir : tenue ce temps-là par un feu, elle va à elle (avant toute chose)
+const NOIRE_DEVORE := 6.0          # secondes : elle mange la bête qu'elle a prise, la tête basse (le temps de ramener les autres au feu)
+# une épave vaut la moitié de la chose : la réparer sur place coûte l'autre moitié de chaque matière (arrondie au-dessus : une
+# bâche déchirée est une bâche à refaire), la replier rend la moitié (arrondie en dessous). Une tente (2 bâches, 2 cordes,
+# 4 bois) : 1 bâche, 1 corde et 2 bois pour la réparer ; autant, repliée
+const NOIRE_EPAVE := 0.5
 # --- la Noire, la fin : le collet de filin, l'appât, les cicatrices, son départ ---
 # (scripts/noire_collet.gd. Le grand collet se fabrique à l'établi — scripts/atelier.gd, OBJETS, « collet » : 4 filins, soit
 # 12 fibres longues, 4 bois pour ses pieux, 4 pierres de lest. Sans sac à dos on porte 20 fibres longues : un collet par

@@ -122,7 +122,8 @@ var _tourne := false             # à la torche : il cherche le dos de la veille
 var _dos_n := -1                 # … et la place qu'il y prend (scripts/affut.gd, AU_DOS ; -1 : aucune)
 const LISERE := 2.6              # la Noire : la force du liseré que le feu accroche sur son échine (le shader de son encre)
 # la Noire : ce que scripts/noire.gd lui fait faire
-var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »
+var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »,
+									# « fouille » (la faim, scripts/noire_faim.gd : immobile, de profil, tournée vers ordre_but)
 var ordre_but := Vector2.ZERO
 var ordre_allure := 0.3
 var aplatie := 0.0               # de 0 à 1 : elle s'aplatit, avant de charger
@@ -131,6 +132,11 @@ var yeux_clos := 0.0             # de 0 à 1 : ses yeux se ferment (elle dort, e
 var de_face := 0.0               # de 0 à 1 : elle regarde la veilleuse en face, et l'on voit ses deux yeux (scripts/yeux.gd)
 var _claque := -1.0              # son coup de gueule, de 0 à 1 (-1 : rien) : le corps se jette en avant, la tête claque
 var _tic := 0.0                  # un mouvement de tête brusque, qui retombe
+# (la faim, scripts/noire_faim.gd : ce qu'elle fait d'une chose posée, d'une bête attachée)
+var fouille := 0.0               # de 0 à 1 : la tête basse, le museau sur ce qu'elle flaire, ce qu'elle mange
+var secoue := 0.0                # de 0 à 1 : elle secoue ce qu'elle tient dans sa gueule
+var _fouille := 0.0              # … l'un et l'autre, sans à-coups
+var _secoue := 0.0
 # (son dessin, scripts/noire_corps.gd : ce que sa planche a de plus que les autres)
 var _machoire: Sprite2D          # sa mâchoire, derrière sa tête : montrée seulement quand sa gueule s'ouvre
 var _gueule := 0.0               # de combien sa gueule est ouverte (radians)
@@ -1666,6 +1672,10 @@ func _noire(delta: float) -> void:
 			if absf(j.position.x - position.x) > 8.0:
 				regard = signf(j.position.x - position.x)
 			face = 1.0
+		"fouille":
+			# (la faim : elle ne regarde plus la veilleuse, mais ce qu'elle a sous le museau ; on la voit de profil)
+			if absf(ordre_but.x - position.x) > 8.0:
+				regard = signf(ordre_but.x - position.x)
 		"va", "charge", "efface":
 			_aller(ordre_but, vitesse * ordre_allure, delta)
 			if tenue_a != Vector2.INF:
@@ -2107,6 +2117,15 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			else:
 				x += H * 0.26 * sin(PI * _claque)
 				tang += 0.07 * sin(PI * _claque)
+		# la faim : le museau sur une chose, les épaules s'abaissent, la croupe reste haute ; quand elle la secoue, tout
+		# l'avant-main suit sa tête, d'un côté, de l'autre, et elle tire en arrière
+		_fouille = lerpf(_fouille, fouille, 1.0 - exp(-delta * 3.2))
+		_secoue = lerpf(_secoue, secoue, 1.0 - exp(-delta * 9.0))
+		var branle := sin(_anim * 19.0) * (0.55 + 0.45 * sin(_anim * 5.3 + 1.0))
+		tang += 0.085 * _fouille + 0.022 * branle * _secoue
+		y += H * 0.03 * _fouille
+		x += H * (0.035 * branle - 0.07 * (0.5 + 0.5 * sin(_anim * 4.1))) * _secoue
+		sx *= 1.0 + 0.014 * branle * _secoue
 		# elle guette : ramassée, les épaules plus basses que la croupe
 		_guet = lerpf(_guet, 1.0 if ordre == "guette" else 0.0, 1.0 - exp(-delta * 2.5))
 		y += H * 0.07 * _guet * (1.0 - aplatie)
@@ -2137,6 +2156,9 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			ouvre = 0.44 * smoothstep(0.0, 0.2, _claque) * (1.0 - smoothstep(0.46, 0.6, _claque))
 		elif ordre == "charge":
 			ouvre = 0.2 + 0.05 * sin(_anim * 9.0)
+		elif _secoue > 0.05:
+			# (ce qu'elle tient, elle le tient à pleines dents : la gueule entrouverte, qui se referme à chaque coup)
+			ouvre = (0.17 + 0.06 * sin(_anim * 19.0)) * _secoue
 		_gueule = lerpf(_gueule, ouvre, 1.0 - exp(-delta * 28.0))
 	# le chasseur posté dans le noir (poste) : tapi. Les épaules plus basses que la croupe, ramassé sur ses pattes ; il ne bouge
 	# plus que de son souffle. (On ne le voit ainsi que lorsqu'une lumière le touche : la lampe, un éclair, l'aube, la voyance.)
@@ -2264,6 +2286,13 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			# (avant de charger : la tête au ras du sol, qui tremble ; quand elle mord : elle claque)
 			rot += 0.2 * aplatie + 0.014 * sin(_anim * 43.0) * aplatie
 			d += Vector2(0.1, 0.2) * H * aplatie
+			if _fouille > 0.01:
+				# (la faim : elle quitte la veilleuse des yeux. La tête plonge au bout du cou, le museau sur la chose ;
+				# elle la flaire, à petits coups ; elle la secoue, la tête d'un côté puis de l'autre, et l'arrache)
+				var flair := 0.035 * sin(_anim * 10.5) * (0.5 + 0.5 * sin(_anim * 1.9)) * (1.0 - _secoue)
+				var branle_t := sin(_anim * 19.0) * (0.55 + 0.45 * sin(_anim * 5.3 + 1.0))
+				rot = lerpf(rot, 0.5 + flair + 0.2 * branle_t * _secoue - 0.14 * _secoue, _fouille)
+				d = d.lerp(Vector2(0.03 + 0.04 * branle_t * _secoue, 0.2 - 0.05 * _secoue) * H, _fouille)
 			if _claque >= 0.0:
 				rot += 0.5 * sin(TAU * _claque) * (1.0 - _claque)
 				d += Vector2(0.12, 0.0) * H * sin(PI * _claque)

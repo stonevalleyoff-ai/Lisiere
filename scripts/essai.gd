@@ -723,10 +723,615 @@ func _les_retouches() -> void:
 	verif(rien and pomme, "au doigt, le bouton « Manger » s'allume pour une pomme, comme pour la viande")
 
 
-# la Noire, acte 5 : la faim (scripts/noire.gd) — elle rôde dès le crépuscule, saccage le camp quand le feu baisse, prend les
-# bêtes attachées. (À écrire : l'équipe « la faim ».)
+# la Noire, acte 5 : la faim (scripts/noire_faim.gd) — elle rôde dès le crépuscule, saccage ce qui est posé hors de la lumière
+# d'un feu vif (une chose à la fois, deux par nuit), prend elle-même les bêtes attachées dans le noir ; ce qu'elle a saccagé
+# reste en épave, qu'on répare ou qu'on replie. Jouée sans attendre, comme les autres actes : son scénario, son corps, les
+# bêtes à l'attache, l'épouvantail. Le camp est posé dans une clairière qu'on dégage : rien n'y dépend du tirage du lieu.
+
+# tant de secondes de la nuit du camp (noire.maj, son corps, l'élevage, le jardin), « voir » appelé à chaque pas ; avec_le_jour :
+# l'horloge avance, et la nuit qui tombe le lui dit (ce que fait principal.gd)
+func _faim_joue(secondes: float, voir: Callable = Callable(), avec_le_jour: bool = false) -> void:
+	for i in int(round(secondes / 0.05)):
+		_faim_pas(avec_le_jour)
+		if voir.is_valid():
+			voir.call(i * 0.05)
+
+
+# un vingtième de seconde de cette nuit-là
+func _faim_pas(avec_le_jour: bool = false) -> void:
+	var N = jeu.noire
+	var dt := 0.05
+	if avec_le_jour:
+		var etait: bool = jeu.jour_du_ciel() <= 0.0
+		jeu.horloge += dt
+		if jeu.jour_du_ciel() <= 0.0 and not etait:
+			N.tombee()
+	N.maj(dt)
+	if N.corps != null and is_instance_valid(N.corps):
+		N.corps._conduire(dt)
+		N.corps._animer(dt)
+	jeu.elevage.maj(dt)
+	jeu.jardin.maj(dt)
+	for b in jeu.elevage.betes:
+		if is_instance_valid(b):
+			b._conduire(dt)
+
+
+# la nuit se joue jusqu'à ce que « quand » soit vrai : les secondes passées (-1 : ce n'est pas arrivé en « au_plus » secondes)
+func _faim_jusqu_a(quand: Callable, au_plus: float = 60.0) -> float:
+	for i in int(round(au_plus / 0.05)):
+		if quand.call():
+			return i * 0.05
+		_faim_pas()
+	return -1.0
+
+
+# la Noire est sur la chose qu'elle a choisie, et la flaire depuis une seconde
+func _faim_au_flair() -> bool:
+	var N = jeu.noire
+	return _faim_jusqu_a(func(): return N.etat == "hume" and N.faim._sur_place and N._t > 1.0, 50.0) >= 0.0
+
+
+# un feu de camp, là, avec tant de bois (l'horloge du jeu ne tourne pas pendant qu'on joue la Noire : il ne baisse pas)
+func _faim_feu(p: Vector2, bois: float):
+	var feu = jeu.Feu.new()
+	feu.jeu = jeu
+	feu.position = p
+	feu.bois = bois
+	jeu.monde.add_child(feu)
+	jeu.feux.append(feu)
+	return feu
+
+
+# la nuit de la faim, la Noire déjà en chemin (à 900 pixels, du côté gauche) ; ce qu'elle a mordu, ses comptes : remis à neuf
+func _faim_nuit(acte: int = -1) -> void:
+	var N = jeu.noire
+	var RR = jeu.R
+	N._disparaitre()
+	N.etat = "dort"
+	N.faim.soir = false
+	jeu.nuits = N.premiere_nuit(RR.NOIRE_FAIM if acte < 0 else acte)
+	N.mettre_en_scene(RR.NOIRE_FAIM if acte < 0 else acte, 900.0, PI)
+	N._feinte = 999.0
+
+
 func _la_faim_de_la_noire() -> void:
 	print("13. La Noire : la faim")
+	await jeu._commencer("foret")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var j = jeu.joueur
+	var N = jeu.noire
+	var F = N.faim
+	var A = jeu.atelier
+	var E = jeu.elevage
+	var J = jeu.jardin
+	var W = jeu.monde
+	var RR = jeu.R
+	var T = jeu.traces
+	var inv: Dictionary = j.inventaire
+	var Camp = load("res://scripts/campement.gd")
+	var Epave = load("res://scripts/campement_epave.gd")
+	jeu.climat.forcer("clair", 0.0, 9999.0)
+	# (une clairière : ni arbre, ni buisson, ni vestige à 900 pixels ; ni bête, ni feu)
+	var ici := Vector2(-300.0, 250.0)
+	for o in W.autour(ici, 900.0):
+		if float(o.rayon) > 0.0 or str(o.genre) == "buisson":
+			W.retirer(o)
+	for x in A.poses.duplicate():
+		if is_instance_valid(x) and x.position.distance_to(ici) < 1100.0:
+			A.poses.erase(x)
+			x.queue_free()
+	_a_l_heure(true)
+	_remettre(ici)
+	j.torche = 0.0
+	var D: float = RR.DUREE
+	var duree_nuit: float = D * jeu.part_nuit
+	var soir_h: float = floorf(jeu.horloge / D) * D + D * (1.0 - jeu.part_nuit)
+	var nuit_h: float = jeu.horloge
+	var journal_avant = jeu.sons.journal
+	jeu.sons.journal = []
+	var dits := func() -> String:
+		return " | ".join(PackedStringArray(jeu.ui._messages.map(func(m): return str(m[0].text))))
+
+	# --- les nombres : la dixième nuit, et celles d'après ---
+	var actes: Array = RR.NOIRE_ACTES
+	verif(N.acte_de(N.premiere_nuit(RR.NOIRE_FAIM)) == RR.NOIRE_FAIM and N.premiere_nuit(RR.NOIRE_FAIM) == 9 and N.acte_de(8) == 4 and N.acte_de(99) >= RR.NOIRE_FAIM
+		and RR.NOIRE_DEPART.size() == RR.NOIRE_TORCHE.size() and RR.NOIRE_DEPART.size() > int(actes.max()) and float(RR.NOIRE_DEPART[RR.NOIRE_FAIM]) < 0.0
+		and float(RR.NOIRE_TORCHE[RR.NOIRE_FAIM]) < float(RR.NOIRE_TORCHE[4]) and float(RR.NOIRE_TORCHE[RR.NOIRE_FAIM]) > RR.NOIRE_PRESAGE,
+		"acte 5, la faim : à la %de nuit, et pour toutes celles d'après ; elle part avant la nuit (%.1f nuit), la torche ne la tient plus que %d secondes" % [
+		N.premiere_nuit(RR.NOIRE_FAIM) + 1, float(RR.NOIRE_DEPART[RR.NOIRE_FAIM]), int(RR.NOIRE_TORCHE[RR.NOIRE_FAIM])])
+
+	# --- le crépuscule : son appel quand le jour baisse, elle à la lisière quand la nuit commence ---
+	var feu = _faim_feu(ici + Vector2(30.0, 0.0), 60.0)
+	var r: float = feu.rayon()
+	var epouvantail = A._creer("epouvantail", feu.position + Vector2(40.0, 90.0), {})
+	# (ce que fait un soir : [quand elle appelle, quand elle est à la lisière] en secondes depuis la nuit ; NAN : pas de la nuit)
+	var un_soir := func(nuits: int, distance: float, jusqu_a: float) -> Dictionary:
+		N._disparaitre()
+		N.etat = "dort"
+		N.faim.soir = false
+		N.acte = N.acte_de(maxi(nuits - 1, 0))
+		N.taniere = ici + Vector2(-distance, 0.0)
+		N.ou = N.taniere
+		jeu.nuits = nuits
+		jeu.horloge = soir_h - 70.0
+		jeu.sons.journal = []
+		var m := {"appel": NAN, "lisiere": NAN, "corps_de_jour": false, "regard_de_jour": false, "tombee_la_renvoie": false, "appels": 0, "avant": 0}
+		var avant_etat := ["dort"]
+		_faim_joue(70.0 + jusqu_a, func(_t):
+			var t: float = jeu.horloge - soir_h
+			if is_nan(m["appel"]) and N._appel and N.etat != "dort":
+				m["appel"] = t
+			if is_nan(m["lisiere"]) and N.etat == "guette":
+				m["lisiere"] = t
+			if t < 0.0 and N.corps != null:
+				m["corps_de_jour"] = true
+			if t < 0.0 and N.etat != "dort" and epouvantail.etat.has("regard"):
+				m["regard_de_jour"] = true
+			# (la nuit qui tombe ne la renvoie pas dans sa tanière)
+			if t >= 0.0 and t < 0.1 and avant_etat[0] != "dort" and N.etat == "dort":
+				m["tombee_la_renvoie"] = true
+			avant_etat[0] = N.etat, true)
+		m["appels"] = jeu.sons.journal.filter(func(x): return str(x[1]) == "appel").size()
+		return m
+	N.su.erase("crepuscule")
+	var pres_s: Dictionary = un_soir.call(N.premiere_nuit(RR.NOIRE_FAIM), RR.NOIRE_TANIERE_MIN, 30.0)
+	var su_crepuscule: bool = N.su.has("crepuscule")
+	var acte_soir: int = N.acte
+	var loin_s: Dictionary = un_soir.call(N.premiere_nuit(RR.NOIRE_FAIM), RR.NOIRE_TANIERE_MAX, 30.0)
+	var chasse_s: Dictionary = un_soir.call(N.premiere_nuit(4), RR.NOIRE_TANIERE_MIN, 12.0)
+	var attendu: float = float(RR.NOIRE_DEPART[RR.NOIRE_FAIM]) * duree_nuit
+	verif(absf(pres_s["appel"] - attendu) < 0.2 and pres_s["appel"] < -RR.TRANSITION and pres_s["appels"] == 1 and su_crepuscule and acte_soir == RR.NOIRE_FAIM
+		and not pres_s["tombee_la_renvoie"] and not loin_s["tombee_la_renvoie"],
+		"elle n'attend plus la nuit : son appel s'entend %d secondes avant, quand le jour baisse (une fois) ; la veilleuse le retient ; la nuit qui tombe ne la renvoie pas" % int(-pres_s["appel"]))
+	verif(absf(pres_s["lisiere"]) < 12.0 and absf(loin_s["lisiere"]) < 12.0 and loin_s["lisiere"] > pres_s["lisiere"] + 5.0 and pres_s["corps_de_jour"] and pres_s["regard_de_jour"],
+		"elle est à la lisière du feu quand la nuit commence : %.1f s d'une tanière à %d pixels, %.1f s à %d (qui dort plus loin la voit arriver plus tard) ; l'épouvantail la regarde venir dans le jour qui tombe" % [
+		pres_s["lisiere"], int(RR.NOIRE_TANIERE_MIN), loin_s["lisiere"], int(RR.NOIRE_TANIERE_MAX)])
+	verif(is_nan(chasse_s["appel"]) or chasse_s["appel"] > 0.0, "avant la faim, rien ne change : à l'acte 4, elle attend la nuit pour partir%s" % (
+		"" if is_nan(chasse_s["appel"]) else " (%.1f s après la tombée)" % chasse_s["appel"]))
+	jeu.horloge = nuit_h
+	A.poses.erase(epouvantail)
+	epouvantail.queue_free()
+
+	# --- le saccage : ce qui est posé hors de la lumière d'un feu vif, une chose à la fois, deux par nuit ---
+	# (le feu : 198 pixels de rayon, il garde à 168. Dans sa lumière : la tente. Dehors : le filet et sa prise, l'épouvantail, le
+	# récupérateur et son eau)
+	var tente = A._creer("tente", feu.position + Vector2(60.0, -110.0), {})
+	var filet = A._creer("filet", feu.position + Vector2(-300.0, -40.0), {"prise": {"id": "", "nom": "une bête", "masse": 2.0}})
+	epouvantail = A._creer("epouvantail", feu.position + Vector2(330.0, 60.0), {})
+	var citerne = A._creer("recuperateur", feu.position + Vector2(-60.0, 420.0), {"eau": 3.0})
+	j.position = feu.position + Vector2(-30.0, 0.0)
+	N.su.erase("faim")
+	N.su.erase("assez")
+	jeu.sons.journal = []
+	T.vider()
+	_faim_nuit()
+	var s := {"lisiere": -1.0, "part": -1.0, "sur": -1.0, "mord": -1.0, "fini": -1.0, "premiere": null, "seconde": null, "part2": -1.0, "fini1": -1.0,
+		"pres_feu": INF, "tete_guet": 0.0, "tete_flair": -9.0, "secoue": 0.0, "gueule": 0.0, "ecart": 0.0, "mordu": 0.0, "alerte": 0.0, "profil": 1.0, "dit_flair": "",
+		"dit_fait": "", "grogne_flair": 0}
+	_faim_joue(110.0, func(t):
+		if N.corps == null:
+			return
+		var c = N.corps
+		s["pres_feu"] = minf(s["pres_feu"], c.position.distance_to(feu.position) / r)
+		if s["lisiere"] < 0.0 and N.etat == "guette":
+			s["lisiere"] = t
+		# (sa tête au guet, avant qu'elle ne quitte le cercle pour la première fois : ensuite elle guette d'ailleurs, autrement)
+		if N.etat == "guette" and s["part"] < 0.0:
+			s["tete_guet"] = c._tete_rot
+		if N.etat == "hume" and s["part"] < 0.0:
+			s["part"] = t
+			s["premiere"] = F.cible
+			jeu.sons.journal = []
+		if N.etat == "hume" and F._sur_place and F.cible == s["premiere"]:
+			if s["sur"] < 0.0:
+				s["sur"] = t
+				s["dit_flair"] = dits.call()
+			s["tete_flair"] = maxf(s["tete_flair"], c._tete_rot)
+			s["ecart"] = absf(c.position.x - F.cible.position.x)
+			s["profil"] = minf(s["profil"], 1.0 - c.de_face) if t > s["sur"] + 2.0 else s["profil"]
+		if N.etat == "saccage" and F.cible == s["premiere"]:
+			if s["mord"] < 0.0:
+				s["mord"] = t
+				s["grogne_flair"] = jeu.sons.journal.filter(func(x): return str(x[1]) == "grogne").size()
+			s["secoue"] = maxf(s["secoue"], c._secoue)
+			s["gueule"] = maxf(s["gueule"], c._gueule)
+			s["mordu"] = maxf(s["mordu"], float(F.cible.etat.get("mordu", 0.0)))
+		if s["mord"] >= 0.0 and s["fini1"] < 0.0 and F.prises == 1:
+			s["fini1"] = t
+			s["dit_fait"] = dits.call()
+		if s["fini1"] >= 0.0 and N.etat == "hume" and s["part2"] < 0.0:
+			s["part2"] = t
+			s["seconde"] = F.cible
+		if s["fini"] < 0.0 and F.prises == 2:
+			s["fini"] = t)
+	var entendus: Array = jeu.sons.journal.map(func(x): return str(x[1]).rstrip("0123456789"))
+	verif(s["premiere"] == filet and s["part"] - s["lisiere"] >= RR.NOIRE_FAIM_ATTENTE - 0.6 and s["part"] - s["lisiere"] < RR.NOIRE_FAIM_ATTENTE + 4.0
+		and F.est_epave(filet) and not filet.etat.has("prise") and bool(filet.etat.get("mangee", false)) and N.su.has("faim"),
+		"tenue par le feu %d secondes, elle quitte le cercle et s'en prend à ce qui est posé dans le noir : le filet et sa prise d'abord (la viande), qu'elle mange ; la veilleuse le retient" % int(s["part"] - s["lisiere"]))
+	verif(absf(s["mord"] - s["sur"] - RR.NOIRE_FLAIRE) < 0.3 and s["grogne_flair"] >= 2 and str(s["dit_flair"]).contains("Elle flaire ton filet")
+		and absf(s["fini1"] - s["mord"] - RR.NOIRE_SACCAGE) < 0.3 and str(s["dit_fait"]).contains("Ton filet est en pièces") and str(s["dit_fait"]).contains("mangé"),
+		"elle s'annonce : sur la chose, elle la flaire et gronde %.1f s (%d grondements, « Elle flaire ton filet ») avant d'y mettre la dent ; %.1f s plus tard, il est en pièces, et le jeu le dit" % [
+		s["mord"] - s["sur"], s["grogne_flair"], s["fini1"] - s["mord"]])
+	verif(s["tete_flair"] > s["tete_guet"] + 0.15 and s["tete_flair"] > 0.4 and s["profil"] > 0.9 and s["secoue"] > 0.9 and s["gueule"] > 0.1 and s["mordu"] > 0.8
+		and absf(s["ecart"] - RR.NOIRE_LARGEUR * F.MUSEAU) < 30.0,
+		"son geste : la tête basse sur la chose (%.2f radian plus bas qu'au guet), de profil, à une longueur de cou (%d pixels) ; puis elle la secoue, la gueule entrouverte, et la chose tressaute" % [
+		s["tete_flair"] - s["tete_guet"], int(s["ecart"])])
+	verif(entendus.has("cede") and entendus.has("pierre") and T.pres(filet.position, 260.0, 2),
+		"on l'entend (la corde qui cède, une pierre de lest qui roule), et la terre garde ses pattes autour de l'épave")
+	# (la seconde : la plus proche d'elle à ce moment-là, l'épouvantail ou le récupérateur ; l'autre reste)
+	var seconde = s["seconde"]
+	var autre = citerne if seconde == epouvantail else epouvantail
+	verif((seconde == epouvantail or seconde == citerne) and s["part2"] - s["fini1"] >= RR.NOIRE_FAIM_REPIT - 0.6 and s["part2"] - s["fini1"] < RR.NOIRE_FAIM_REPIT + 4.0
+		and F.est_epave(seconde) and entendus.has("brise") and entendus.has("dechire"),
+		"une chose à la fois : %d secondes de répit, puis %s ; on entend son bois casser, sa toile se déchirer" % [int(s["part2"] - s["fini1"]), F.CHOSES[str(seconde.genre)][0]])
+	verif(F.prises == RR.NOIRE_SACCAGES and s["fini"] > 0.0 and s["fini"] - s["lisiere"] < 79.0 and not F.est_epave(autre) and N.su.has("assez") and (N.etat == "guette" or N.etat == "tourne"),
+		"%d choses par nuit, pas davantage (la seconde %d secondes après son arrivée : cela tient dans la plus courte nuit) : %s, dans le noir aussi, est intact ; elle ne fait plus que tourner" % [
+		RR.NOIRE_SACCAGES, int(s["fini"] - s["lisiere"]), F.CHOSES[str(autre.genre)][0]])
+	verif(not F.est_epave(tente) and s["pres_feu"] >= 0.97 and j.sante == 100.0,
+		"ce qui reste juste : la tente, dans la lumière du feu, est intacte ; la Noire n'y est jamais entrée (au plus près, %.2f rayon) ; la veilleuse n'a rien" % s["pres_feu"])
+
+	# (au jour : ce qu'elle a laissé)
+	N.aube()
+	var dit_aube: String = dits.call()
+	verif(dit_aube.contains("Le jour se lève sur ce qu'elle a laissé : 2 choses en pièces") and F.prises == 0 and not F.soir and N.etat == "rentre"
+		and T.pres(seconde.position, 260.0, 2),
+		"à l'aube, elle rentre, et le jour montre ce qu'elle a laissé (le jeu le dit) : les épaves, ses empreintes autour")
+
+	# --- l'épouvantail tremble à son approche ; en pièces, il ne garde plus rien ---
+	for x in [tente, filet, epouvantail, citerne]:
+		A.poses.erase(x)
+		x.queue_free()
+	epouvantail = A._creer("epouvantail", feu.position + Vector2(0.0, -230.0), {})
+	var gardait: bool = J.garde(epouvantail.position + Vector2(60.0, 0.0))
+	_faim_nuit()
+	var ep := {"avant": 0.0, "sur": 0.0, "regard": false}
+	var fait_ep: float = _faim_jusqu_a(func():
+		if N.corps != null and N.etat == "hume":
+			var al: float = float(epouvantail.etat.get("alerte", 0.0))
+			if F._sur_place:
+				ep["sur"] = maxf(ep["sur"], al)
+			else:
+				ep["avant"] = maxf(ep["avant"], al)
+			ep["regard"] = ep["regard"] or absf(angle_difference(float(epouvantail.etat.get("regard", 9.0)), (N.corps.position - epouvantail.position).angle())) < 0.2
+		return F.est_epave(epouvantail), 60.0)
+	verif(gardait and fait_ep > 0.0 and ep["avant"] > 0.7 and ep["sur"] > 0.99 and ep["regard"] and not J.garde(epouvantail.position + Vector2(60.0, 0.0))
+		and float(epouvantail.etat.get("alerte", 1.0)) == 0.0 and not epouvantail.etat.has("regard"),
+		"l'épouvantail la regarde venir et tremble déjà à son approche (%.2f), de tout son bois quand elle le flaire (%.2f) ; en pièces, il ne tremble plus, ne regarde plus, ne garde plus le jardin" % [ep["avant"], ep["sur"]])
+	A.poses.erase(epouvantail)
+	epouvantail.queue_free()
+
+	# --- ce qui la fait lâcher : une bûche, un galet, la lumière qui revient ; et la veilleuse qui sort ---
+	# (une seule chose dans le noir, assez près du feu pour que sa gerbe d'étincelles porte)
+	var hamac = A._creer("hamac", feu.position + Vector2(0.0, -230.0), {})
+	_faim_nuit()
+	var au_flair: bool = _faim_au_flair()
+	N.corps.gerbe(feu)
+	var lache: bool = N.etat == "sursaut" and F.cible == null and not hamac.etat.has("mordu")
+	var dit_lache: String = dits.call()
+	var repart: float = _faim_jusqu_a(func(): return N.etat == "hume", 40.0)
+	# (un galet, pendant qu'elle flaire de nouveau)
+	var au_flair2: bool = _faim_au_flair()
+	N.corps.blesser(RR.DEGATS_TIR * RR.TIR_NOIRE, j.position)
+	var lache2: bool = N.etat == "recule" and F.cible == null
+	# (la lumière qui revient : le feu nourri jusqu'au comble garde de nouveau le hamac)
+	var au_flair3: bool = _faim_au_flair()
+	feu.bois = RR.FEU_MAX
+	_faim_joue(0.2)
+	var lache3: bool = F.cible == null and N.etat != "saccage" and F.gardee(hamac.position)
+	var dit_lumiere: String = dits.call()
+	_faim_joue(40.0)
+	verif(au_flair and lache and dit_lache.contains("Elle lâche ton hamac") and repart >= RR.NOIRE_FAIM_ATTENTE - 2.5 and au_flair2 and lache2,
+		"une bûche jetée dans le feu pendant qu'elle flaire : elle sursaute et lâche (« Elle lâche ton hamac »), et n'y revient que %d secondes plus tard ; un galet la fait lâcher aussi" % int(repart))
+	verif(au_flair3 and lache3 and dit_lumiere.contains("La lumière a repris ton hamac") and not F.est_epave(hamac) and F.prises == 0,
+		"le feu nourri, sa lumière reprend le hamac : elle s'en écarte, et n'y touche plus de la nuit")
+	# (le feu baisse : sa lumière se retire, ce qu'elle gardait ne l'est plus)
+	N.su.erase("garde")
+	feu.bois = 110.0
+	_faim_nuit()
+	_faim_joue(RR.NOIRE_FAIM_ATTENTE + 30.0)
+	var gardee_n: bool = not F.est_epave(hamac) and F.prises == 0 and N.su.has("garde")
+	feu.bois = 40.0
+	var tombe: float = _faim_jusqu_a(func(): return F.est_epave(hamac), 60.0)
+	verif(gardee_n and tombe > 0.0 and F.prises == 1,
+		"tant que le feu est vif, elle regarde le camp et n'y va pas (la veilleuse le retient) ; quand il baisse, sa lumière se retire : le hamac qu'elle gardait est mis en pièces")
+	# (la veilleuse sort de la lumière pendant qu'elle flaire : elle vaut mieux qu'une toile)
+	A.poses.erase(hamac)
+	hamac.queue_free()
+	feu.bois = 60.0
+	var mangeoire = A._creer("mangeoire", feu.position + Vector2(0.0, -230.0), {"foin": 8})
+	_faim_nuit()
+	var au_flair4: bool = _faim_au_flair()
+	j.position = feu.position + Vector2(0.0, 420.0)
+	var d4 := {"presage": -1.0, "charge": -1.0}
+	_faim_joue(RR.NOIRE_TORCHE[RR.NOIRE_FAIM] + RR.NOIRE_PRESAGE + 1.0, func(t):
+		if d4["presage"] < 0.0 and N.corps != null and N.corps.aplatie > 0.5:
+			d4["presage"] = t
+		if d4["charge"] < 0.0 and N.etat == "charge":
+			d4["charge"] = t)
+	verif(au_flair4 and d4["presage"] >= 0.0 and d4["presage"] < 0.5 and absf(d4["charge"] - d4["presage"] - RR.NOIRE_PRESAGE) < 0.3 and not F.est_epave(mangeoire)
+		and int(mangeoire.etat.get("foin", 0)) == 8,
+		"la veilleuse sort de la lumière pendant qu'elle flaire la mangeoire : elle la laisse et se tourne vers elle (le présage, puis la charge %.1f s après) ; la mangeoire est intacte" % (d4["charge"] - d4["presage"]))
+	j.position = feu.position + Vector2(-30.0, 0.0)
+	j.sante = 100.0
+	j.peur = 0.0
+	_faim_joue(6.0)
+
+	# --- jamais un collet (l'autre moitié de la suite de la Noire le pose : ici, seulement ce que la faim en sait) ---
+	var collet = A._creer("collet", feu.position + Vector2(-260.0, 200.0), {})
+	F.mettre_en_pieces(collet, 1.0, false)
+	verif(not F.CHOSES.has("collet") and not F.saccageable(collet) and not F.est_epave(collet) and not F.saccageable(null) and F.saccageable(mangeoire),
+		"elle ne saccage jamais un collet : il n'est pas de ce qu'elle met en pièces, et rien ne peut en faire une épave")
+	A.poses.erase(collet)
+	collet.queue_free()
+
+	# --- les épaves : elles restent là, ne servent plus à rien ; on les répare sur place, ou on les replie ---
+	A.poses.erase(mangeoire)
+	mangeoire.queue_free()
+	N._disparaitre()
+	N.etat = "dort"
+	N.silence = 0.0
+	var p_ep: Vector2 = ici + Vector2(500.0, -300.0)
+	var choses := {}
+	var k_ep := 0
+	for g in F.CHOSES:
+		var etat0 := {}
+		match g:
+			"recuperateur":
+				etat0 = {"eau": 4.0}
+			"filet", "filet_filin":
+				etat0 = {"prise": {"id": "", "nom": "une bête", "masse": 2.0}}
+			"mangeoire":
+				etat0 = {"foin": 9}
+			"carre":
+				etat0 = {"culture": "baie", "stade": 2.4, "eau": 0.6}
+		choses[g] = A._creer(g, p_ep + Vector2(140.0 * (k_ep % 4), 120.0 * (k_ep / 4)), etat0)
+		k_ep += 1
+	# (son dessin : celui de la chose, puis celui de l'épave ; chaque épave a le sien)
+	var points := func(x, quoi: String) -> int:
+		var pin = Camp.pinceau()
+		pin.commencer(x.get_canvas_item())
+		if Epave.est(x):
+			Epave.peindre(x, pin, quoi)
+		var n_pts: int = pin.pts.size()
+		pin.vider()
+		return n_pts
+	var sans_dessin := []
+	var avant_ep: bool = true
+	for g in choses:
+		avant_ep = avant_ep and points.call(choses[g], "fond") == 0 and not Epave.est(choses[g])
+		F.mettre_en_pieces(choses[g], 1.0 if k_ep % 2 == 0 else -1.0, false)
+		k_ep += 1
+		if points.call(choses[g], "fond") < 120:
+			sans_dessin.append(g)
+	var perdus: bool = float(choses["recuperateur"].etat.get("eau", 0.0)) == 0.0 and not choses["filet"].etat.has("prise") and int(choses["mangeoire"].etat.get("foin", 0)) == 0 \
+		and str(choses["carre"].etat.get("culture", "")) == ""
+	verif(avant_ep and sans_dessin.is_empty() and perdus and choses.values().all(func(x): return F.est_epave(x) and Epave.est(x) and Epave.remue(x) == (float(x._vent) > 0.03 and str(x.genre) in ["tente", "recuperateur", "epouvantail", "hamac"])),
+		"ce qu'elle a saccagé reste là, en épave : les %d choses ont chacune leur dessin d'épave%s ; ce qu'elles tenaient est perdu (l'eau, la prise, le foin, ce qui poussait)" % [
+		choses.size(), "" if sans_dessin.is_empty() else " (sauf : %s)" % ", ".join(PackedStringArray(sans_dessin))])
+	# (elles ne servent plus : ni abri, ni sommeil, ni eau, ni prise, ni garde)
+	var t_ep = choses["tente"]
+	j.position = t_ep.position + Vector2(-40.0, 14.0)
+	for k in ["bache", "corde", "bois", "fibre", "pierre", "filin"]:
+		inv[k] = 0
+	var agi: bool = A.agir()
+	var dit_manque: String = dits.call()
+	var sans_abri: bool = A.abri(t_ep.position) == 0.0 and not A.endormie and F.est_epave(t_ep)
+	jeu.climat.pluie = 1.0
+	var proie_f = _bete(jeu.faune["proies_jour"][0], "proie", choses["filet"].position + Vector2(4.0, 2.0), {})
+	proie_f.masse = 2.0
+	A.maj(5.0)
+	jeu.climat.pluie = 0.0
+	var inertes: bool = float(choses["recuperateur"].etat.get("eau", 0.0)) == 0.0 and not choses["filet"].etat.has("prise") and proie_f.is_in_group("betes") \
+		and not J.garde(choses["epouvantail"].position)
+	_oter(proie_f)
+	verif(agi and sans_abri and inertes and dit_manque.contains("Pour réparer ta tente") and dit_manque.contains("Il te manque"),
+		"une épave ne sert plus : la tente n'abrite pas et l'on n'y dort pas, le récupérateur ne se remplit pas sous la pluie, rien ne se prend au filet, l'épouvantail ne garde rien ; « Agir » dit ce qu'il faut pour la réparer")
+	# (réparer : la moitié de chaque matière, arrondie au-dessus ; replier : la moitié, arrondie en dessous)
+	var justes := true
+	var pire := ""
+	for g in F.CHOSES:
+		if g == "carre":
+			continue
+		var cout: Dictionary = A.OBJETS[g]["cout"]
+		var rep: Dictionary = A.cout_reparation(g)
+		var res: Dictionary = A.restes(g)
+		var somme := 0
+		var somme_rep := 0
+		for m in cout:
+			somme += int(cout[m])
+			somme_rep += int(rep.get(m, 0))
+			if int(rep.get(m, 0)) + int(res.get(m, 0)) != int(cout[m]) or int(rep.get(m, 0)) < int(res.get(m, 0)):
+				justes = false
+				pire = g
+		if somme_rep >= somme or somme_rep * 2 < somme:
+			justes = false
+			pire = g
+	var cout_t: Dictionary = A.cout_reparation("tente")
+	for m in cout_t:
+		inv[m] = int(cout_t[m]) + 1
+	var repare: bool = A.agir()
+	var paye: bool = cout_t.keys().all(func(m): return int(inv[m]) == 1)
+	var debout: bool = not F.est_epave(t_ep) and A.abri(t_ep.position) == 1.0 and not t_ep.etat.has("cote") and points.call(t_ep, "fond") == 0
+	var dit_repare: String = dits.call()
+	A.agir()
+	var dort_dedans: bool = A.endormie and A.lit == t_ep
+	A.reveiller("")
+	verif(justes and repare and paye and debout and dort_dedans and dit_repare.contains("Tu répares ta tente") and cout_t == {"bache": 1, "corde": 1, "bois": 2},
+		"« Agir » la répare sur place pour la moitié de son prix (la tente : %s ; chaque matière arrondie au-dessus, toujours moins que la chose neuve%s) : elle est debout, on y dort de nouveau" % [
+		A.dire_cout(cout_t), "" if pire == "" else " — sauf %s" % pire])
+	var e_ep = choses["epouvantail"]
+	j.position = e_ep.position + Vector2(-20.0, 10.0)
+	for k in ["bache", "corde", "bois", "fibre", "pierre", "filin"]:
+		inv[k] = 0
+	var avait: int = A.possede("epouvantail")
+	var replie: bool = A.replier()
+	var dit_replie: String = dits.call()
+	verif(replie and not A.poses.has(e_ep) and A.possede("epouvantail") == avait and int(inv["bois"]) == 1 and int(inv["fibre"]) == 2 and int(inv["bache"]) == 0
+		and dit_replie.contains("Tu replies ce qui reste de ton épouvantail"),
+		"repliée, une épave ne revient pas dans le sac : on en sauve la moitié des matières, arrondie en dessous (l'épouvantail : 1 bois et 2 fibres sur 3 bois, 4 fibres et 1 bâche)")
+	# (le carré piétiné : on le retourne, puis on le sème de nouveau)
+	var c_ep = choses["carre"]
+	j.position = c_ep.position + Vector2(-30.0, 10.0)
+	inv["graine_baie"] = 4
+	var seme_trop_tot: bool = J.semer(c_ep, "baie")
+	J.agir(c_ep)
+	var retourne: bool = not F.est_epave(c_ep)
+	J.agir(c_ep)
+	verif(not seme_trop_tot and retourne and str(c_ep.etat.get("culture", "")) == "baie" and int(inv["graine_baie"]) == 2,
+		"un carré piétiné ne se sème pas ; « Agir » en retourne la terre, sans rien coûter, puis il se sème de nouveau")
+
+	# --- les bêtes attachées : dans le noir, elle vient les prendre elle-même, même à la longe de filin ---
+	for g in choses:
+		if is_instance_valid(choses[g]) and A.poses.has(choses[g]):
+			A.poses.erase(choses[g])
+			choses[g].queue_free()
+	var e_bete: Dictionary = {}
+	for e in jeu.faune["proies_jour"] + jeu.faune["proies_nuit"]:
+		var b0 = _bete(e, "proie", ici + Vector2(0.0, 900.0), {})
+		var bonne: bool = E.apprivoisable(b0)
+		_oter(b0)
+		if bonne:
+			e_bete = e
+			break
+	if e_bete.is_empty():
+		verif(false, "la forêt a une proie à quatre pattes à apprivoiser")
+	else:
+		# (leurs traits fixés : la bête moyenne de sa population, qui s'est faite au feu ; nourrie, à sa longe de filin)
+		var attacher := func(piquet):
+			var b = _bete(e_bete, "proie", piquet.position + Vector2(18.0, 10.0), {"neophobie": 0.05})
+			A.objets["licol"] = 1
+			E.apprivoiser(b)
+			b.suit_la = false
+			b.maison = piquet.position + Vector2(18.0, 10.0)
+			b.faim = 95.0
+			b.harnais["longe"] = true
+			return b
+		j.position = feu.position + Vector2(-30.0, 0.0)
+		var piquet_noir = A._creer("piquet", feu.position + Vector2(-40.0, -290.0), {})
+		var piquet_feu = A._creer("piquet", feu.position + Vector2(70.0, 60.0), {})
+		var tente_noire = A._creer("tente", feu.position + Vector2(-330.0, 120.0), {})
+		var au_noir = attacher.call(piquet_noir)
+		var au_feu = attacher.call(piquet_feu)
+		j.position = feu.position + Vector2(-30.0, 0.0)
+		# (avant la faim, à l'acte 4 : la règle d'avant. Elle ne vient pas ; la bête laissée dans le noir crie, et il n'en reste rien)
+		_faim_nuit(4)
+		var vient4: bool = F.vient_prendre(au_noir)
+		var temoin = attacher.call(piquet_noir)
+		var t4 := {"prise": -1.0, "flaire": false}
+		_faim_joue(30.0, func(t):
+			t4["flaire"] = t4["flaire"] or N.etat == "hume"
+			if t4["prise"] < 0.0 and not E.betes.has(temoin):
+				t4["prise"] = t)
+		var avant_la_faim: bool = not vient4 and not t4["flaire"] and t4["prise"] > 0.0 and not piquet_noir.etat.has("rompue") and E.betes.has(au_feu)
+		# (la faim : elle va sur elle, gronde, et le filin cède sous sa gueule ; elle la mange là)
+		if not E.betes.has(au_noir):
+			au_noir = attacher.call(piquet_noir)
+		N.su.erase("longe")
+		jeu.sons.journal = []
+		_faim_nuit()
+		var b5 := {"lisiere": -1.0, "part": -1.0, "sur": -1.0, "prise": -1.0, "fini": -1.0, "cible": null, "debat": false, "tete": 0.0, "dit": "", "dit_sur": "", "pres_feu": INF}
+		_faim_joue(60.0, func(t):
+			if N.corps == null:
+				return
+			b5["pres_feu"] = minf(b5["pres_feu"], N.corps.position.distance_to(feu.position) / r)
+			if b5["lisiere"] < 0.0 and N.etat == "guette":
+				b5["lisiere"] = t
+			if b5["part"] < 0.0 and N.etat == "hume":
+				b5["part"] = t
+				b5["cible"] = F.cible
+			if N.etat == "hume" and F._sur_place:
+				if b5["sur"] < 0.0:
+					b5["sur"] = t
+					b5["dit_sur"] = dits.call()
+				if is_instance_valid(au_noir):
+					b5["debat"] = b5["debat"] or str(au_noir.etat) == "fuit"
+			if b5["prise"] < 0.0 and N.etat == "devore":
+				b5["prise"] = t
+				b5["dit"] = dits.call()
+			if N.etat == "devore":
+				b5["tete"] = maxf(b5["tete"], N.corps._tete_rot)
+			if b5["prise"] >= 0.0 and b5["fini"] < 0.0 and N.etat != "devore":
+				b5["fini"] = t)
+		var entendus_b: Array = jeu.sons.journal.map(func(x): return str(x[1]).rstrip("0123456789"))
+		verif(avant_la_faim, "avant la faim (acte 4), rien ne change : elle ne vient pas elle-même, la bête laissée dans le noir crie une fois (%.1f s), et il n'en reste rien" % t4["prise"])
+		verif(b5["cible"] == au_noir and b5["part"] - b5["lisiere"] >= RR.NOIRE_FAIM_BETE - 0.6 and b5["part"] - b5["lisiere"] < RR.NOIRE_FAIM_ATTENTE - 2.0
+			and absf(b5["prise"] - b5["sur"] - RR.NOIRE_FLAIRE) < 0.3 and b5["debat"] and str(b5["dit_sur"]).contains("dans le noir. Elle gronde"),
+			"la faim : la bête attachée dans le noir passe avant la tente (au bout de %d secondes) ; elle va sur elle et gronde %.1f s, la bête se débat au bout de sa longe" % [
+			int(b5["part"] - b5["lisiere"]), b5["prise"] - b5["sur"]])
+		verif(not E.betes.has(au_noir) and (not is_instance_valid(au_noir) or au_noir.is_queued_for_deletion()) and float(piquet_noir.etat.get("rompue", 0.0)) == 2.0
+			and str(b5["dit"]).contains("Le filin casse net sous sa gueule") and N.su.has("longe") and entendus_b.has("cede") and entendus_b.has("cri")
+			and absf(b5["fini"] - b5["prise"] - RR.NOIRE_DEVORE) < 0.3 and b5["tete"] > 0.3 and F.betes == 1,
+			"même le filin cède sous sa gueule : elle prend la bête (un cri), la mange sur place %d secondes, la tête basse ; au piquet, il reste un bout de longe rompue ; la veilleuse le retient" % int(b5["fini"] - b5["prise"]))
+		verif(E.betes.has(au_feu) and is_instance_valid(au_feu) and float(au_feu.pv) > 0.0 and not piquet_feu.etat.has("rompue") and b5["pres_feu"] >= 0.97 and j.sante == 100.0,
+			"dans la lumière du feu, l'autre bête est à l'abri : elle y est toujours, à son piquet")
+		# (une bête de nouveau liée au piquet : le bout de longe n'y est plus)
+		var revenue = attacher.call(piquet_noir)
+		feu.bois = 150.0
+		E.maj(0.1)
+		var renoue: bool = not piquet_noir.etat.has("rompue") and bool(piquet_noir.etat.get("attache", false))
+		feu.bois = 60.0
+		# --- la partie gardée : les épaves, le bout de longe, les comptes de la nuit ---
+		piquet_noir.etat["rompue"] = 2.0
+		F.mettre_en_pieces(tente_noire, -1.0, false)
+		F.prises = 1
+		F.soir = true
+		var photo_a: Dictionary = JSON.parse_string(JSON.stringify(A.photo()))
+		var photo_n: Dictionary = JSON.parse_string(JSON.stringify(N.photo()))
+		var A2 = jeu.Atelier.new()
+		A2.jeu = jeu
+		A2.reprendre(photo_a)
+		var N2 = jeu.Noire.new()
+		N2.jeu = jeu
+		N2.commencer()
+		N2.reprendre(photo_n)
+		var tentes2: Array = A2.poses.filter(func(x): return str(x.genre) == "tente")
+		var piquets2: Array = A2.poses.filter(func(x): return str(x.genre) == "piquet" and float(x.etat.get("rompue", 0.0)) == 2.0)
+		# (ses empreintes ne se gardent pas : la partie reprise les remet autour des épaves de cette nuit)
+		T.vider()
+		N2.faim.veiller(true)
+		var retracees: bool = T.pres(tente_noire.position, 260.0, 2)
+		verif(renoue and tentes2.size() == 1 and F.est_epave(tentes2[0]) and float(tentes2[0].etat.get("cote", 0.0)) == -1.0 and piquets2.size() == 1
+			and N2.acte == N.acte and N2.faim.prises == 1 and N2.faim.betes == F.betes and N2.faim.soir and retracees,
+			"la partie gardée s'en souvient : la tente en épave (et de quel côté elle tirait), le bout de longe au piquet, ce qu'elle a déjà pris cette nuit ; reprise, ses empreintes sont de nouveau autour de l'épave")
+		for x in A2.poses:
+			x.queue_free()
+		F.soir = false
+		for b in [au_feu, revenue]:
+			if is_instance_valid(b):
+				E.betes.erase(b)
+				_oter(b)
+
+	# --- le carnet, les sons ---
+	var cles: Array = N.SAVOIRS.map(func(x): return str(x[0]))
+	var de_la_faim := ["crepuscule", "faim", "garde", "longe", "assez"]
+	for k in de_la_faim:
+		N.su[k] = true
+	var SA = load("res://scripts/sons_atelier.gd")
+	var rs := RandomNumberGenerator.new()
+	rs.seed = 11
+	var durees := {}
+	for nom in ["dechire0", "dechire1", "brise0", "brise1", "cede"]:
+		var a: Array = SA.fabriquer(nom, rs)
+		durees[nom] = float(a[0].size()) / float(a[1]) if a.size() == 2 else 0.0
+	verif(de_la_faim.all(func(k): return cles.has(k)) and N.savoirs().size() == N.su.size() and N.SAVOIRS.size() >= 10 + de_la_faim.size()
+		and durees.values().all(func(d): return d > 0.5 and d < 1.2) and SA.NOMS.has("dechire0") and SA.NOMS.has("brise1") and SA.NOMS.has("cede"),
+		"le carnet garde ce qu'on apprend d'elle à cet acte (le crépuscule, la faim, ce que la lumière garde, la longe, « assez » : %d choses en tout) ; ses sons sont faits à la main (la toile qui se déchire, %.2f s ; le bois qui casse, %.2f s ; la corde qui cède, %.2f s)" % [
+		N.SAVOIRS.size(), durees["dechire0"], durees["brise0"], durees["cede"]])
+
+	# (tout remis)
+	jeu.sons.journal = journal_avant
+	T.vider()
+	N.commencer()
+	for x in A.poses.duplicate():
+		if is_instance_valid(x):
+			x.queue_free()
+	A.commencer()
+	jeu.feux.erase(feu)
+	feu.queue_free()
+	j.sante = 100.0
+	j.peur = 0.0
 
 
 # la Noire, la fin : le collet de filin, l'appât, les cicatrices, son départ (scripts/noire_collet.gd, scripts/atelier.gd).
@@ -3981,7 +4586,7 @@ func _la_noire(F: Dictionary) -> void:
 			calmes += 1
 		N.aube()
 	var appels_tot: int = jeu.sons.journal.filter(func(x): return str(x[1]) == "appel").size()
-	verif(calmes == N.premiere_nuit(1) and calmes >= 2 and not venue_tot and appels_tot == 0 and N.su.is_empty() and N.acte_de(99) == 4,
+	verif(calmes == N.premiere_nuit(1) and calmes >= 2 and not venue_tot and appels_tot == 0 and N.su.is_empty() and N.acte_de(99) == int(RR.NOIRE_ACTES.max()) and N.acte_de(99) >= 4,
 		"les %d premières nuits, la Noire ne vient pas et n'appelle pas ; les actes se suivent ensuite, de nuit en nuit, jusqu'au dernier" % calmes)
 	# acte 1 : les signes
 	jeu.nuits = N.premiere_nuit(1)

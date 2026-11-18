@@ -442,7 +442,8 @@ func maj(delta: float) -> void:
 		return
 	_t += delta
 	var nuit: bool = jeu.jour_du_ciel() <= 0.0
-	var noire: bool = jeu.noire != null and jeu.noire.presente()
+	# (prise au collet, ou occupée de son appât, elle ne prend pas une bête : scripts/noire.gd, au_collet)
+	var noire: bool = jeu.noire != null and jeu.noire.presente() and not jeu.noire.au_collet()
 	for s in _atelier().poses:
 		if is_instance_valid(s) and str(s.genre) == "piquet":
 			s.etat["attache"] = false
@@ -451,6 +452,8 @@ func maj(delta: float) -> void:
 		var piquet = null if bool(b.suit_la) else _piquet_pres(b.maison, 60.0)
 		if piquet != null:
 			piquet.etat["attache"] = true
+			# (une bête y est de nouveau liée : le bout de longe rompue qu'y avait laissé la Noire n'y est plus)
+			piquet.etat.erase("rompue")
 			# (à l'anneau du piquet : scripts/campement.gd)
 			b.longe = piquet.position + Campement.ANNEAU
 		elif bool(b.suit_la) and not bool(b.montee) and b.position.distance_to(j.position) < 220.0:
@@ -478,8 +481,11 @@ func maj(delta: float) -> void:
 		var dans_le_noir: bool = nuit and float(jeu.eclairage(b.position)) < 0.25
 		_noir[b] = (float(_noir.get(b, 0.0)) + delta) if dans_le_noir else maxf(0.0, float(_noir.get(b, 0.0)) - delta * 2.0)
 		if noire and dans_le_noir and not bool(b.montee) and float(_noir[b]) > 4.0:
-			_prendre(b)
-			continue
+			# (la faim, scripts/noire_faim.gd : à son cinquième acte, la bête attachée à sa portée, elle vient la prendre
+			# elle-même ; on la voit venir, on a le temps de ramener la bête au feu)
+			if not jeu.noire.faim.vient_prendre(b):
+				_prendre(b)
+				continue
 		if float(_noir[b]) > NOIR and not bool(b.montee):
 			if tient:
 				_affoler(b, delta)
@@ -491,7 +497,10 @@ func maj(delta: float) -> void:
 			_affolee.erase(b)
 		if dans_le_noir and float(_noir[b]) > NOIR * 0.5 and not _dit.has("noir"):
 			_dit["noir"] = true
-			jeu.ui.message(("%s tremble dans le noir. Sa longe de filin la tiendra ; ramène-la quand même près d'un feu." if tient
+			# (qui a vu le filin céder sous la gueule de la Noire ne s'y fie plus : scripts/noire_faim.gd)
+			var sait: bool = jeu.noire != null and jeu.noire.su.has("longe")
+			jeu.ui.message((("%s tremble dans le noir. Sa longe de filin la tiendra, mais pas contre la Noire : ramène-la près d'un feu." if sait
+				else "%s tremble dans le noir. Sa longe de filin la tiendra ; ramène-la quand même près d'un feu.") if tient
 				else "%s tremble dans le noir. Ramène-la près d'un feu.") % str(b.nom), ROUGE)
 	# en selle : elle va où va la veilleuse ; ce qui l'affole la jette à terre
 	if monture != null:
@@ -539,6 +548,23 @@ func _perdre(b, dit: String) -> void:
 	_rendre(b)
 	b.effrayer(jeu.joueur.position if jeu.joueur.position.distance_to(ou) > 4.0 else ou + Vector2(1.0, 0.0), 6.0)
 	jeu.ui.message(dit, ROUGE)
+
+
+# la faim de la Noire (scripts/noire_faim.gd) : elle est venue la prendre elle-même, à son piquet ou au bout de la main ; sa
+# longe a cédé sous sa gueule, le filin comme le chanvre
+func prise_par_la_noire(b, filin: bool) -> void:
+	var nom := str(b.nom)
+	if monture == b:
+		descendre(true)
+	betes.erase(b)
+	_noir.erase(b)
+	_affolee.erase(b)
+	jeu.sons.jouer("mord", -1.0, 0.62)
+	jeu.sons.jouer("cri", -4.0, 0.8)
+	b.remove_from_group("betes")
+	b.queue_free()
+	jeu.joueur.peur = minf(100.0, float(jeu.joueur.peur) + 25.0)
+	jeu.ui.message(("Le filin casse net sous sa gueule. %s crie, une fois." if filin else "Sa longe casse. %s crie, une fois.") % nom, ROUGE)
 
 
 # la Noire la prend : il n'en reste rien

@@ -23,6 +23,10 @@ extends Node2D
 #     appat        : « reste » (de 1 à 0 : ce qu'il reste de baies)
 #     coffre       : « ouvert » (vrai : on l'a forcé, il est vide) ; « leve » (de 0 à 1 : l'ouverture, que l'atelier met à 0
 #                    en l'ouvrant et que le coffre fait avancer lui-même ; sans elle, un coffre ouvert l'est tout à fait)
+#     et, pour ce que la Noire a mis en pièces à son cinquième acte (scripts/noire_faim.gd) : « saccage » (la chose est une
+#     épave : scripts/campement_epave.gd la dessine à sa place), « cote » (de quel côté elle tirait), « mordu » (de 0 à 1 :
+#     elle la secoue dans sa gueule, à cet instant) ; le piquet : « rompue » (1 : un bout de longe de chanvre pend à son
+#     anneau ; 2 : de filin — ce qu'elle a laissé de la bête qui y était liée)
 # Son pied est à l'origine (0, 0) : le lieu trie ce qui s'y tient par hauteur (monde.gd).
 # Le dessin : à l'encre, dans la peinture des arbres et des rochers (scripts/decor_pinceau.gd, la matière qui ne bouge pas de
 # scripts/objet.gd). Chaque chose a un fond, dessiné une fois (et de nouveau quand son état change : la neige, l'eau, un pan
@@ -46,6 +50,7 @@ const Herbe := preload("res://scripts/herbe.gd")
 const T := preload("res://scripts/effets_textures.gd")
 # (le grand collet de la Noire, sa couche vide : leur dessin est à part)
 const ColletDessin := preload("res://scripts/collet_dessin.gd")
+const Epave := preload("res://scripts/campement_epave.gd")
 
 const PROF := 0.5                   # la vue de trois quarts : ce qui vient vers nous d'un pixel descend d'un demi
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
@@ -276,7 +281,8 @@ func _process(delta: float) -> void:
 # ce qui a changé se redessine : le fond s'il n'est plus le même, ce qui remue, ce qui brille
 func redessiner(tout: bool = false) -> void:
 	var cle := _cle_du_fond()
-	var change := cle != _cle or tout
+	# (ce que la Noire secoue dans sa gueule tressaute tout entier, image par image)
+	var change := cle != _cle or tout or Epave.mordue(self)
 	if change:
 		_cle = cle
 		queue_redraw()
@@ -300,9 +306,17 @@ func _draw() -> void:
 func _peindre(ci: CanvasItem, quoi: String) -> void:
 	var p = pinceau()
 	p.commencer(ci.get_canvas_item())
-	# (un calque posé ailleurs qu'au pied, pour le tri : son dessin, lui, reste au pied)
+	# (un calque posé ailleurs qu'au pied, pour le tri : son dessin, lui, reste au pied ; et ce que la Noire secoue tressaute)
+	var pose: Transform2D = Epave.secousse(self)
 	if ci != self and ci.position != Vector2.ZERO:
-		RenderingServer.canvas_item_add_set_transform(ci.get_canvas_item(), Transform2D(0.0, -ci.position))
+		pose = Transform2D(0.0, -ci.position) * pose
+	if pose != Transform2D.IDENTITY:
+		RenderingServer.canvas_item_add_set_transform(ci.get_canvas_item(), pose)
+	# (ce qu'elle a mis en pièces : une épave, dessinée à la place de la chose ; scripts/campement_epave.gd)
+	if Epave.est(self):
+		Epave.peindre(self, p, quoi)
+		p.finir()
+		return
 	match quoi:
 		"fond":
 			match genre:
@@ -450,13 +464,15 @@ func _a_l_ecran() -> bool:
 	if vp == null:
 		return false
 	var vue: Rect2 = get_canvas_transform().affine_inverse() * vp.get_visible_rect()
-	return vue.intersects(Rect2(global_position + _boite.position, _boite.size))
+	# (une épave s'étale : ses lambeaux, son empreinte débordent de la chose)
+	var boite := _boite.grow(30.0) if Epave.est(self) else _boite
+	return vue.intersects(Rect2(global_position + boite.position, boite.size))
 
 
 # le temps jusqu'au prochain regard : ce qui vole, se débat ou éclate se suit image par image ; ce qui remue doucement,
 # quinze fois par seconde (dix sur un téléphone)
 func _cadence() -> float:
-	if not _copeaux.is_empty() or _foudre_t >= 0.0:
+	if not _copeaux.is_empty() or _foudre_t >= 0.0 or Epave.mordue(self):
 		return 0.0
 	# (le couvercle qui se lève, sa poussière : une seconde et demie, image par image)
 	if genre == "coffre" and _coffre_bouge():
@@ -479,6 +495,10 @@ func _cadence() -> float:
 
 # ce qui remue se redessine-t-il ? (rien ne bouge : rien ne se redessine)
 func _remue() -> bool:
+	if Epave.mordue(self):
+		return true
+	if Epave.est(self):
+		return Epave.remue(self)
 	match genre:
 		"etabli":
 			return not _copeaux.is_empty()
@@ -514,6 +534,10 @@ func _brille() -> bool:
 # ce dont le fond dépend : il ne se redessine que si cette clé change (et, avec lui, ce qui remue)
 func _cle_du_fond() -> String:
 	var k := "%d-%d" % [int(_neige * 6.0 + 0.5), int(_mouille * 3.0 + 0.5)]
+	if Epave.est(self):
+		return k + "-epave-%d" % int(float(etat.get("cote", 1.0)))
+	if Epave.mordue(self):
+		k += "-mordu"
 	match genre:
 		"etabli":
 			k += "-%d" % _copeaux_sol
@@ -534,7 +558,7 @@ func _cle_du_fond() -> String:
 			k += "-%d-%s-%s-%d" % [int(clampf(float(etat.get("eau", 0.0)), 0.0, 1.0) * 5.0 + 0.5), bool(etat.get("gel", false)), str(etat.get("culture", "")),
 				int(clampf(float(etat.get("stade", 0.0)), 0.0, 3.0) * 16.0)]
 		"piquet":
-			k += "-%s" % bool(etat.get("attache", false))
+			k += "-%s-%d" % [bool(etat.get("attache", false)), int(float(etat.get("rompue", 0.0)))]
 		"mangeoire":
 			k += "-%d" % int(clampf(float(etat.get("foin", 0)), 0.0, 12.0))
 		"appat":
@@ -2863,6 +2887,21 @@ func _pieu(p) -> void:
 		_corde(p, anneau, 0.9)
 		p.disque(noeud, 1.7, 1.5, ENCRE)
 		p.disque(noeud, 1.1, 0.95, CORDE.darkened(0.1))
+	elif float(etat.get("rompue", 0.0)) > 0.0:
+		# (ce que la Noire a laissé de la bête qui y était liée : un bout de sa longe, rompu, qui pend de l'anneau, ses
+		# brins défaits ; la terre labourée, une tache sombre)
+		var filin := float(etat.get("rompue", 0.0)) >= 2.0
+		var brin := (FILIN if filin else CORDE).darkened(0.1 + 0.15 * mouille)
+		var bout := PackedVector2Array([haut + Vector2(2.2, 0.4), Vector2(5.4, -6.0), Vector2(7.6, -1.0), Vector2(11.5, 1.6)])
+		p.tracer(bout, 2.3 if filin else 1.8, ENCRE, false)
+		p.tracer(bout, 1.4 if filin else 0.9, brin, false)
+		for i in 4:
+			var a := -0.4 + 0.42 * i
+			p.tracer(PackedVector2Array([bout[3], bout[3] + Vector2.from_angle(a) * (2.4 + 0.5 * (i % 2))]), 0.7, brin.lightened(0.12))
+		p.eventail(Vector2(12.0, 3.0), 9.0, 3.2, Color(P.SANG.darkened(0.45), 0.55), Color(P.SANG.darkened(0.45), 0.0), 12)
+		for i in 3:
+			var q := Vector2(6.0 + 5.0 * i, 3.6 + 0.6 * (i % 2))
+			p.tracer(PackedVector2Array([q, q + Vector2(5.0, 1.2)]), 1.1, Color(P.ENCRE, 0.5))
 	else:
 		var boucle: PackedVector2Array = Transform2D(0.5, Vector2(5.0, -4.2)) * Pinceau.ellipse(Vector2.ZERO, 2.5, 5.2, 12)
 		boucle.append(boucle[0])
