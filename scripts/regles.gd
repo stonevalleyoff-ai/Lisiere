@@ -193,6 +193,29 @@ const NOIRE_PEUR := 5.0          # la peur gagnée par seconde sous son regard
 const NOIRE_REVEIL := 120.0      # le jour, à cette distance de sa tanière, on la réveille
 # --- la Noire, acte 5 : la faim (elle rôde dès le crépuscule, saccage le camp, prend les bêtes attachées) ---
 # --- la Noire, la fin : le collet de filin, l'appât, les cicatrices, son départ ---
+# (scripts/noire_collet.gd. Le grand collet se fabrique à l'établi — scripts/atelier.gd, OBJETS, « collet » : 4 filins, soit
+# 12 fibres longues, 4 bois pour ses pieux, 4 pierres de lest. Sans sac à dos on porte 20 fibres longues : un collet par
+# voyage au chaud ; avec, 40 : trois, sans un de trop. Rompu, il rend ses pieux et ses pierres, pas son filin.)
+# Réglé par le calcul, pas encore joué. Ce qui compte : la lance porte à PORTEE_COUP + 0,3 × NOIRE_LARGEUR = 145 pixels du
+# milieu de son corps ; tenue, sa gueule porte à NOIRE_COLLET_MORD, et son corps ne va pas plus loin que NOIRE_COLLET_LONGE
+# du pieu. Entre 175 et 235 pixels du pieu, la veilleuse la touche au bout de son filin sans qu'elle l'atteigne : une bande
+# de 60 pixels (près de trois fois sa largeur, un tiers de seconde de marche), que le filin tendu montre.
+const NOIRE_COLLET_FLAIR := 600.0      # jusqu'où elle sent un collet amorcé, de là où elle passe (sa tanière, son chemin, sa ronde autour du camp)
+const NOIRE_COLLET_FLAIRE := 2.4       # secondes : elle flaire un collet qui sent la main, le nez dessus, avant de renâcler
+const NOIRE_COLLET_PLUIE := 30.0       # secondes d'averse qui lavent d'un collet l'odeur d'une main
+const NOIRE_COLLET_TENUE := 15.0       # secondes : le nœud la tient ce temps-là (six ou sept élans : ci-dessous)
+const NOIRE_COLLET_LONGE := 90.0       # jusqu'où va son corps, du pieu, au bout du filin
+const NOIRE_COLLET_MORD := 85.0        # tenue par la patte, sa gueule porte moins loin (libre : 100)
+const NOIRE_COLLET_ELAN := 0.5         # avant chaque élan elle se ramasse ce temps-là : on la voit venir
+# (un élan : 0,5 s ramassée, une demi-seconde à une seconde de course, puis l'à-coup ; 2,2 à 2,7 s en tout)
+const NOIRE_COLLET_SONNEE := 1.2       # l'à-coup au bout du filin la jette de côté : elle ne mord pas ce temps-là
+# (CADENCE : 0,42 s entre deux coups ; dans cette seconde-là, trois coups de lance tiennent — à 0, 0,42 et 0,84 s —, deux à coup sûr)
+const NOIRE_COLLET_BLESSE := 60.0      # ce qu'elle doit prendre, tenue, pour en garder une cicatrice : trois coups de lance (78 ; deux : 52),
+# huit coups de poing (64 : trois élans sans une faute). Un galet n'y compte presque pas (2,6). Une morsure prend 38 : on en
+# réchappe deux fois, pas trois ; qui reste dans la bande n'en prend aucune
+const NOIRE_CICATRICES := 3            # à la troisième, elle quitte le lieu pour de bon (une par nuit au plus)
+const NOIRE_CICATRICE_FREIN := 0.09    # ce que chaque cicatrice retire à sa charge : 215, puis 196, puis 176 (la veilleuse court à 165)
+const NOIRE_DEPART_PAGE := 7.0         # secondes après l'aube du départ : le temps de voir sa piste, puis la page « Elle est partie. »
 # --- la cueillette : les fleurs, les champignons des bois, les épines (scripts/flore.gd, principal.gd : agir, manger) ---
 const CHAMPIGNON := 9.0           # ce qu'un cèpe rend à la faim (cru : moins qu'une poignée de baies)
 const REPOUSSE_FLEURS := 300.0    # secondes avant qu'une fleur cueillie refleurisse

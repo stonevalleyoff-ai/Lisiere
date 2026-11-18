@@ -364,7 +364,7 @@ func maj(delta: float) -> void:
 			"epouvantail":
 				# (la nuit, il regarde d'où vient la Noire ; plus elle est près, plus il tremble)
 				var alerte := 0.0
-				if nuit and N != null and int(N.acte) >= 2:
+				if nuit and N != null and int(N.acte) >= 2 and not bool(N.partie):
 					var ou: Vector2 = N.corps.position if N.presente() and N.corps != null and is_instance_valid(N.corps) else Vector2(N.taniere)
 					s.etat["regard"] = (ou - s.position).angle()
 					if N.presente():

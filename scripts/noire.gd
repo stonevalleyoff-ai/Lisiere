@@ -18,6 +18,7 @@ extends RefCounted
 # « noire »), qui fait ce qu'on lui dit ; tant qu'elle est loin de la veilleuse, elle n'a pas de corps : seulement une place.
 
 const R := preload("res://scripts/regles.gd")
+const Collet := preload("res://scripts/noire_collet.gd")
 
 # ce qu'elle est : une bête faite à la main, que le bestiaire de Lisière dessine à part (scripts/bestiaire.gd lit « noire »,
 # scripts/noire_corps.gd la dessine : haute sur pattes, maigre sous un poil de traits d'encre, la tête basse, la gueule
@@ -57,6 +58,15 @@ const SAVOIRS := [
 		"Elle dort là, le jour. Ne t'approche pas davantage."],
 	["distance", "Plus on dort loin de sa tanière, plus elle arrive tard dans la nuit.",
 		"Tu as dormi loin d'elle : elle est arrivée tard."],
+	# (la fin : le collet de filin, l'appât, les cicatrices, son départ ; scripts/noire_collet.gd)
+	["odeur", "Un collet posé à mains nues sent la main : elle le flaire, renâcle et s'en détourne. L'odeur des aromates, gardée sur soi, couvre la sienne.",
+		"Elle a flairé le collet, renâclé, et s'en est détournée : il sent ta main. La fumée des aromates couvre ton odeur."],
+	["collet", "Un grand collet de filin, amorcé de viande crue, hors de la lumière : elle y met la patte. Il ne la tient qu'un moment.",
+		"Le nœud s'est serré : elle est prise. Le filin ne la tiendra pas longtemps : frappe, au bout de sa portée."],
+	["cicatrice", "Tenue au collet, les coups comptent : assez de coups, et elle en garde une cicatrice. Chacune la ralentit.",
+		"Elle s'arrache, et s'en va dans le noir. Celle-là, elle la gardera : une balafre sans poil."],
+	["depart", "À la troisième cicatrice, elle a quitté le lieu. Sa piste en sort, et ne revient pas.",
+		"Sa piste part du collet et sort du lieu. Elle ne revient pas vers sa tanière."],
 ]
 
 var jeu
@@ -100,6 +110,8 @@ var _r := RandomNumberGenerator.new()
 # elle quitte le lieu pour de bon)
 var cicatrices := 0              # de 0 à 3 : ce qu'elle garde des nuits où on l'a prise et blessée
 var partie := false              # elle a quitté le lieu : elle ne reviendra plus
+var collet: Collet = null        # le collet de filin, et tout ce qui s'ensuit (scripts/noire_collet.gd)
+static var _lignees := {}        # sa lignée, par nombre de cicatrices (son dessin les porte : scripts/noire_cicatrices.gd)
 
 
 # --- ce que le jeu appelle ---
@@ -118,6 +130,11 @@ func commencer() -> void:
 	_colere = 0.0
 	cicatrices = 0
 	partie = false
+	if collet == null:
+		collet = Collet.new()
+		collet.jeu = jeu
+		collet.noire = self
+	collet.commencer()
 	_r.seed = int(jeu.graine) ^ 0x5eed
 	_choisir_taniere(jeu.joueur.position)
 	ou = taniere
@@ -135,6 +152,9 @@ static func premiere_nuit(acte_: int) -> int:
 
 # la nuit tombe : l'acte de cette nuit, et quand elle partira
 func tombee() -> void:
+	# (partie pour de bon : la nuit se passe sans elle ; scripts/noire_collet.gd)
+	if collet.tombee():
+		return
 	acte = acte_de(int(jeu.nuits))
 	_nuit_t = 0.0
 	_duree_nuit = R.DUREE * float(jeu.part_nuit)
@@ -161,6 +181,9 @@ func tombee() -> void:
 
 # l'aube : elle rentre, et sa piste mène à sa tanière. Si la veilleuse est trop loin, elle en prend une autre, plus près.
 func aube() -> void:
+	# (partie pour de bon : sa dernière piste, sa couche vide, puis plus rien ; scripts/noire_collet.gd)
+	if collet.aube():
+		return
 	if acte == 0:
 		return
 	var j = jeu.joueur
@@ -185,6 +208,9 @@ func aube() -> void:
 func frappee(n: float) -> void:
 	_prise += n
 	_mefiante = true
+	# (tenue au collet : c'est là que les coups comptent ; scripts/noire_collet.gd)
+	if collet.frappee(n):
+		return
 	if etat == "dort":
 		_reveiller()
 		return
@@ -212,6 +238,7 @@ func gerbe() -> void:
 
 # elle vient de mordre (principal.gd, mordre) : elle se reprend un instant, le temps de courir vers un feu
 func a_mordu() -> void:
+	collet.mordue()
 	if etat != "charge":
 		return
 	if _colere > 0.0:
@@ -238,6 +265,23 @@ func pas(b, ou: Vector2) -> void:
 # elle est là, ou elle arrive : le directeur ne fait venir personne d'autre (principal.gd)
 func presente() -> bool:
 	return silence > 0.4
+
+
+# un collet amorcé l'attire, là, maintenant : il passe avant tout le reste (scripts/noire_collet.gd)
+func appat_l_attire() -> bool:
+	return collet != null and collet.attire()
+
+
+# sa lignée, telle que son dessin la veut : avec ce nombre de cicatrices (scripts/noire_corps.gd les lit dans son plan)
+static func lignee_a(n: int) -> Dictionary:
+	n = clampi(n, 0, R.NOIRE_CICATRICES)
+	if n == 0:
+		return LIGNEE
+	if not _lignees.has(n):
+		var l: Dictionary = LIGNEE.duplicate(true)
+		l["plan"]["cicatrices"] = n
+		_lignees[n] = l
+	return _lignees[n]
 
 
 # la peur qu'elle fait, par seconde (principal.gd, _corps)
@@ -278,7 +322,7 @@ func photo() -> Dictionary:
 		"acte": acte, "tx": snappedf(taniere.x, 0.1), "ty": snappedf(taniere.y, 0.1), "connue": taniere_connue, "su": su.keys(),
 		"vue": vue, "retiree": _retiree, "prise": snappedf(_prise, 0.1), "torche": snappedf(_torche, 0.1), "nuit": snappedf(_nuit_t, 0.1),
 		"appel": _appel, "piste": [snappedf(_piste_de.x, 0.1), snappedf(_piste_de.y, 0.1)] if _a_piste else [],
-		"cicatrices": cicatrices, "partie": partie,
+		"cicatrices": cicatrices, "partie": partie, "collet": collet.photo(),
 	}
 
 
@@ -298,8 +342,9 @@ func reprendre(d: Dictionary) -> void:
 	_torche = float(d.get("torche", 0.0))
 	_nuit_t = float(d.get("nuit", 0.0))
 	_appel = bool(d.get("appel", false))
-	cicatrices = clampi(int(d.get("cicatrices", 0)), 0, 3)
+	cicatrices = clampi(int(d.get("cicatrices", 0)), 0, R.NOIRE_CICATRICES)
 	partie = bool(d.get("partie", false))
+	collet.reprendre(d.get("collet", {}))
 	_duree_nuit = R.DUREE * float(jeu.part_nuit)
 	_depart = float(R.NOIRE_DEPART[clampi(acte, 0, 4)]) * _duree_nuit
 	ou = taniere
@@ -323,6 +368,11 @@ func maj(delta: float) -> void:
 		corps = null
 	if corps != null:
 		ou = corps.position
+	# (la fin : un collet amorcé passe avant tout le reste ; tenue, blessée, partie, c'est lui qui la mène ; scripts/noire_collet.gd)
+	if collet.maj(delta, j):
+		_entourage(delta, j)
+		_lire_le_sol(delta, j)
+		return
 	# (le jour est là et elle est encore dehors : elle rentre ; l'aube le lui dit d'ordinaire, ceci le garantit)
 	if not nuit and _colere <= 0.0 and jeu.jour_du_ciel() > 0.5 and etat != "dort" and etat != "rentre":
 		_changer("rentre")
@@ -727,7 +777,7 @@ func _coincee(delta: float) -> bool:
 
 
 func _apparaitre(p: Vector2) -> void:
-	corps = jeu._creer({"lignee": LIGNEE, "id": "la-noire", "masse": 900.0, "largeur": R.NOIRE_LARGEUR}, "noire", p)
+	corps = jeu._creer({"lignee": lignee_a(cicatrices), "id": "la-noire", "masse": 900.0, "largeur": R.NOIRE_LARGEUR}, "noire", p)
 	corps.nom = NOM
 	corps.vue = true          # (elle n'est pas une rencontre d'Orvane : rien n'est compté)
 	ou = p

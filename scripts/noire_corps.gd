@@ -14,6 +14,8 @@ extends RefCounted
 
 const Planche := preload("res://scripts/bestiaire_planche.gd")
 const Pal := preload("res://scripts/palette.gd")
+# (ce qu'elle garde du collet : scripts/noire_cicatrices.gd, appelé calque par calque)
+const Cicatrices := preload("res://scripts/noire_cicatrices.gd")
 
 # le tronc, dans le sens des aiguilles depuis la racine de la queue : la croupe (la pointe de la hanche), le rein creux, le
 # garrot (le plus haut), la pointe de l'épaule, le bréchet (le plus bas), le ventre qui remonte, l'aine
@@ -253,6 +255,7 @@ static func _tronc(p: Planche, u: float) -> void:
 	p.aplat(d, T["dos"], 0.96)
 	# ce que la lumière accroche : quelques poils clairs, couchés le long de l'échine (le liseré du feu, la nuit)
 	p.aplat(_frange(p, sil, I_CROUPE * PAS - 2, 8 * PAS, 8.5, 2.4, 0.15, 0.022 * u, 0.05 * u, 0.008 * u, 0.012 * u), T["lumiere"], 0.55)
+	Cicatrices.flanc(p, u)
 
 
 # --- ce qui passe devant le haut des pattes proches : l'omoplate, la cuisse ---
@@ -279,6 +282,7 @@ static func _dessus(p: Planche, u: float) -> void:
 			p.aplat(_meche(Vector2(0.124, -0.585) * u, 1.33, 0.15 * u, 0.007 * u, 0.06), T["lumiere"], 0.4)
 			p.aplat(_frange(p, sil, 7 * PAS + 2, 9 * PAS, 6.0, 2.0, 0.2, 0.02 * u, 0.04 * u, 0.008 * u, 0.01 * u), T["lumiere"], 0.55)
 			p.aplat(_frange(p, sil, 4 * PAS, 8 * PAS - 2, 6.0, 0.6, 0.7, 0.02 * u, 0.045 * u, 0.015 * u) + _frange(p, sil, 7 * PAS + 3, 9 * PAS + 4, 4.0, 2.0, -0.2, 0.016 * u, 0.036 * u, 0.014 * u), T["dos"], 0.95)
+			Cicatrices.epaule(p, u)
 		else:
 			# (la pointe de la hanche, et le poil de la fesse)
 			p.tracer("M%s Q%s %s" % [Planche.pt(Vector2(-0.224, -0.432) * u), Planche.pt(Vector2(-0.19, -0.458) * u), Planche.pt(Vector2(-0.15, -0.43) * u)], 0.006 * u, T["lumiere"], 0.36)
@@ -354,6 +358,9 @@ static func _os(p: Planche, u: float, s: int, lg: float, w0: float, w1: float, l
 	if not loin:
 		# (un clair le long du devant : le tendon, l'os sous la peau)
 		out += "<path d=\"%s\" fill=\"%s\" opacity=\"0.4\"/>" % [_meche(Vector2(r0 * 0.5, -r0 * 0.32), 0.0, lg - r1, maxf(1.0, minf(w0, w1) * 0.2), -0.02), Planche.coul(T["accent"])]
+		if devant and s == 2:
+			# (l'anneau pelé que le nœud du collet lui a laissé au canon)
+			out += Cicatrices.anneau(p, lg, w0, w1)
 	return out
 
 
@@ -437,6 +444,7 @@ static func _tete(p: Planche, u: float) -> void:
 	p.aplat(_frange(p, sil, 0, 2 * 4, 4.0, 1.4, -0.2, 0.012 * u, 0.03 * u, 0.01 * u, 1.5) + _frange(p, sil, 12 * 4, 14 * 4 + 2, 4.5, 0.8, 0.6, 0.012 * u, 0.028 * u, 0.01 * u, 1.5), T["dos"], 0.95)
 	# (le dessus de la tête, le chanfrein : ce que le feu accroche)
 	p.aplat(_frange(p, sil, 1, 6 * 4, 8.0, 3.0, 0.1, 0.02 * u, 0.045 * u, 0.006 * u, 0.008 * u), T["lumiere"], 0.5)
+	Cicatrices.face(p, func(q: Vector2) -> Vector2: return _hp(o, hs, INCL, q), hs)
 	# la tête, gueule fermée : ce que la bête porte presque toujours
 	p.calque("tete")
 	p.verser("_cou", "tete")
@@ -557,6 +565,7 @@ static func _roulee(p: Planche, u: float) -> void:
 		d += Planche.ferme(Planche.ellipse(sil[i] + Vector2(t.y, -t.x) * 0.002 * u, 0.012 * u, 0.0065 * u, 6, t.angle()), 1.0)
 	p.aplat(d, T["dos"], 0.96)
 	p.aplat(_frange(p, sil, 2 * PAS - 2, 7 * PAS, 8.5, 2.4, 0.15, 0.022 * u, 0.05 * u, 0.008 * u, 0.012 * u), T["lumiere"], 0.55)
+	Cicatrices.roulee(p, u)
 	# (le pied de derrière, qui dépasse)
 	var pied2: Array = _pied(p, 0.036 * u, false)
 	p.svg("<g transform=\"translate(%s %s)\">%s</g>" % [Planche.n(-0.07 * u), Planche.n(0.004 * u), pied2[0]])

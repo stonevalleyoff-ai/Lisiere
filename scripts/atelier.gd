@@ -54,6 +54,9 @@ const OBJETS := {
 		"dit": "Tendu au sol : une petite bête qui passe s'y prend."},
 	"filet_filin": {"nom": "Grand filet", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"filin": 3, "pierre": 4},
 		"dit": "Une large maille de filin, lestée de grosses pierres : une bête jusqu'à 30 kilos s'y prend, et n'en sort pas."},
+	# (la fin de la Noire : scripts/noire_collet.gd. Il se pose de jour, s'amorce de viande crue, et ne sert qu'une fois)
+	"collet": {"nom": "Grand collet", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"filin": 4, "bois": 4, "pierre": 4},
+		"dit": "Un nœud coulant de filin, large comme un buste, couché en rond entre ses pieux. Amorcé de viande crue, il n'est fait que pour une bête."},
 	"cerf_volant": {"nom": "Cerf-volant", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"bache": 1, "bois": 2, "corde": 2, "ferraille": 1},
 		"dit": "Par grand vent il recharge les piles. Sous l'orage, il appelle la foudre."},
 	"sac_a_dos": {"nom": "Sac à dos", "famille": "tenue", "ou": "etabli", "porte": true, "cout": {"peau": 2, "corde": 1},
@@ -107,7 +110,7 @@ const OBJETS := {
 	"lance_obsidienne": {"nom": "Lance d'obsidienne", "famille": "outil", "ou": "etabli", "cout": {"obsidienne": 2, "bois": 2, "corde": 1},
 		"dit": "Une pointe de verre noir, ligaturée sur une hampe. Elle frappe comme une lance ferrée."},
 }
-const ORDRE := ["corde", "bache", "galet", "filin", "etabli", "tente", "hamac", "recuperateur", "filet", "filet_filin", "cerf_volant", "sac_a_dos",
+const ORDRE := ["corde", "bache", "galet", "filin", "etabli", "tente", "hamac", "recuperateur", "filet", "filet_filin", "collet", "cerf_volant", "sac_a_dos",
 	"vetement_chaud", "vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "carte", "plume", "houe", "arrosoir",
 	"epouvantail", "licol", "longe", "piquet", "mangeoire", "sacoche", "selle", "lance_obsidienne"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
@@ -222,10 +225,10 @@ func fabriquer(id: String) -> bool:
 	# (son geste, et ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; le bois se scie ; le reste se
 	# martèle, et chaque coup de maillet sonne quand il tombe : coup())
 	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet", "licol", "sacoche", "selle", "arrosoir", "carte",
-		"filin", "filet_filin", "longe"]
+		"filin", "filet_filin", "longe", "collet"]
 	var scie: bool = not cousu and o["cout"].has("bois")
 	jeu.joueur.geste_atelier("coudre" if cousu else ("scier" if scie else "marteler"))
-	if id in ["filin", "filet_filin", "longe"]:
+	if id in ["filin", "filet_filin", "longe", "collet"]:
 		# (la fibre longue se commet en torons, puis le filin se tend, raide, et grince : on l'entend tenir)
 		jeu.sons.atelier("tresse", 0.0, 0.86)
 		jeu.sons.atelier("filin", -2.0)
@@ -289,6 +292,9 @@ func empeche_poser(id: String) -> String:
 		return "Le sol est sous l'eau : rien ne s'y pose."
 	if id == "hamac" and not _un_arbre(p, 90.0):
 		return "Un hamac se tend près d'un arbre."
+	# (le grand collet : de jour seulement ; scripts/noire_collet.gd)
+	if id == "collet" and jeu.noire != null and jeu.noire.collet.empeche_poser() != "":
+		return jeu.noire.collet.empeche_poser()
 	# (ni sur un buisson, ni sur un feu)
 	var r := Campement.rayon(id)
 	for o in jeu.monde.autour(p, r + 14.0):
@@ -323,7 +329,10 @@ func poser(id: String) -> bool:
 	for o in jeu.monde.autour(p, maxf(14.0, Campement.rayon(id)) + 4.0):
 		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe", "fleur", "cepe", "amanite", "aquatique"]:
 			jeu.monde.retirer(o)
-	_creer(id, p, {})
+	var posee = _creer(id, p, {})
+	# (le grand collet : il garde l'odeur de la main qui le pose, sauf si elle sent les aromates ; scripts/noire_collet.gd)
+	if id == "collet" and jeu.noire != null:
+		jeu.noire.collet.pose(posee)
 	j.geste_atelier("monter")
 	_son_de_pose(id, p)
 	return true
@@ -332,8 +341,11 @@ func poser(id: String) -> bool:
 # elle replie la chose posée la plus proche, et la reprend dans son sac
 func replier() -> bool:
 	var s = _la_plus_proche(PORTEE)
-	if s == null or str(s.genre) in ["vestige", "appat", "coffre"]:
+	if s == null or str(s.genre) in ["vestige", "appat", "coffre", "couche"]:
 		return false
+	# (le grand collet : entier, il revient dans le sac avec sa viande ; rompu, il ne rend que ses pieux et ses pierres)
+	if str(s.genre) == "collet" and jeu.noire != null:
+		return jeu.noire.collet.replier(s)
 	if str(s.genre) == "carre":
 		# (un carré se comble : la terre reprend sa place, ce qui y poussait est perdu)
 		poses.erase(s)
@@ -358,7 +370,7 @@ func _son_de_pose(id: String, p: Vector2) -> void:
 	match id:
 		"hamac", "filet":
 			jeu.sons.atelier("corde", 0.0, 1.0, p)
-		"filet_filin":
+		"filet_filin", "collet":
 			jeu.sons.atelier("filin", 0.0, 1.0, p)
 		"etabli":
 			pass
@@ -483,6 +495,11 @@ func agir() -> bool:
 			_fouiller(s)
 		"coffre":
 			_ouvrir(s)
+		# (le grand collet : de la viande crue l'amorce ; la couche vide de la Noire, partie : scripts/noire_collet.gd)
+		"collet", "couche":
+			if jeu.noire == null:
+				return false
+			jeu.noire.collet.agir(s)
 		_:
 			return false
 	return true

@@ -81,6 +81,7 @@ var _t_hud := 9.0
 # les pages
 var _pause
 var _fin
+var _page_depart                 # la page « Elle est partie. » (scripts/interface_depart.gd), faite quand il la faut
 static var _fond_note: StyleBoxTexture = null
 
 
@@ -111,6 +112,7 @@ func _montrer(c) -> void:
 	_titre.visible = c == _titre
 	_hud.visible = c == _hud
 	_fin.visible = c == _fin
+	cacher_depart()
 	_chargement.visible = false
 	if c != _hud:
 		_vider_hud()
@@ -712,6 +714,35 @@ func montrer_fin(titre: String, resume: String, lot: String) -> void:
 # la fin : ce que dit le tableau des scores (le rang, ou pourquoi la partie n'y va pas)
 func fin_tableau(t: String) -> void:
 	_fin.dire_tableau(t)
+
+
+# la Noire est partie pour de bon : sa page (scripts/interface_depart.gd), par-dessus la partie qui attend. Ce n'est pas une
+# fin : « Rester veiller » referme la page (principal.gd, fermer_page), « Revenir au titre » garde la partie
+func montrer_depart(d: Dictionary) -> void:
+	var jeu = get_parent()
+	if _page_depart == null:
+		_page_depart = load("res://scripts/interface_depart.gd").new()
+		_page_depart.theme = T.theme()
+		_page_depart.visible = false
+		_page_depart.rester.connect(func():
+			if get_parent() != null and get_parent().has_method("fermer_page"):
+				get_parent().fermer_page())
+		_page_depart.quitter.connect(func():
+			var j = get_parent()
+			if j != null and j.get("noire") != null:
+				j.noire.collet.page_lue()
+			cacher_depart()
+			vers_titre.emit())
+		add_child(_page_depart)
+		if tactile:
+			_page_depart.mettre_compact(true)
+	_page_depart.remplir(d, jeu)
+	_page_depart.visible = true
+
+
+func cacher_depart() -> void:
+	if _page_depart != null:
+		_page_depart.visible = false
 
 
 func _unhandled_input(e: InputEvent) -> void:

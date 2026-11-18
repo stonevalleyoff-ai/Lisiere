@@ -44,6 +44,8 @@ const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const Objet := preload("res://scripts/objet.gd")
 const Herbe := preload("res://scripts/herbe.gd")
 const T := preload("res://scripts/effets_textures.gd")
+# (le grand collet de la Noire, sa couche vide : leur dessin est à part)
+const ColletDessin := preload("res://scripts/collet_dessin.gd")
 
 const PROF := 0.5                   # la vue de trois quarts : ce qui vient vers nous d'un pixel descend d'un demi
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
@@ -89,6 +91,8 @@ const BOITES := {
 	"cerf_volant": Rect2(-60.0, -900.0, 260.0, 930.0), "vestige": Rect2(-50.0, -52.0, 100.0, 76.0), "coffre": Rect2(-24.0, -34.0, 48.0, 46.0),
 	"carre": Rect2(-30.0, -32.0, 60.0, 52.0), "epouvantail": Rect2(-28.0, -54.0, 60.0, 62.0), "piquet": Rect2(-16.0, -20.0, 32.0, 30.0),
 	"mangeoire": Rect2(-24.0, -30.0, 48.0, 42.0), "appat": Rect2(-12.0, -8.0, 24.0, 16.0),
+	# (le collet : tenue, son filin va jusqu'à la patte de la Noire)
+	"collet": Rect2(-200.0, -150.0, 400.0, 300.0), "couche": Rect2(-92.0, -44.0, 184.0, 84.0),
 }
 
 static var _pinceau
@@ -205,6 +209,10 @@ static func hauteur(g: String) -> float:
 			return 23.0
 		"appat":
 			return 4.0
+		"collet":
+			return 22.0
+		"couche":
+			return 5.0
 	return 10.0
 
 
@@ -228,7 +236,7 @@ func _ready() -> void:
 	add_child(_vif)
 	if genre == "hamac":
 		_chercher_arbre()
-	if genre == "carre" or genre == "appat":
+	if genre == "carre" or genre == "appat" or genre == "collet" or genre == "couche":
 		_poser_a_plat()
 	_sec = _soif()
 	_tete = _regard_voulu()
@@ -326,6 +334,8 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_mangeoire(p)
 				"appat":
 					_appat(p)
+				"collet", "couche":
+					ColletDessin.sol(self, p)
 		"vif":
 			match genre:
 				"etabli":
@@ -351,6 +361,8 @@ func _peindre(ci: CanvasItem, quoi: String) -> void:
 					_epouvantail_vif(p)
 				"mangeoire":
 					_mangeoire_vif(p)
+				"collet":
+					ColletDessin.debout(self, p)
 		"eclat":
 			if genre == "cerf_volant":
 				_cerf_volant_eclat(p)
@@ -451,6 +463,9 @@ func _cadence() -> float:
 		return (1.0 / 30.0) if _mobile else 0.0
 	if genre in ["filet", "filet_filin"] and _pris and _sursaut() > 0.0:
 		return (1.0 / 20.0) if _mobile else 0.0
+	# (le collet qui tient la Noire : son filin, ses pieux, image par image)
+	if genre == "collet" and ColletDessin.remue(self):
+		return (1.0 / 20.0) if _mobile else 0.0
 	if genre == "cerf_volant" and _monte > 0.02:
 		return (1.0 / 20.0) if _mobile else (1.0 / 30.0)
 	# (des tiges sous la dent d'une bête, un épouvantail qui tremble : image par image, ou presque)
@@ -487,6 +502,8 @@ func _remue() -> bool:
 			return _vent > 0.03 or float(etat.get("alerte", 0.0)) > 0.0 or absf(angle_difference(_tete, _regard_voulu())) > 0.002
 		"mangeoire":
 			return _vent > 0.05 and float(etat.get("foin", 0)) > 0.0
+		"collet":
+			return ColletDessin.remue(self)
 	return false
 
 
@@ -522,6 +539,8 @@ func _cle_du_fond() -> String:
 			k += "-%d" % int(clampf(float(etat.get("foin", 0)), 0.0, 12.0))
 		"appat":
 			k += "-%d-%s" % [_appat_baies(), str(etat.get("sorte", ""))]
+		"collet", "couche":
+			k += ColletDessin.cle(self)
 	return k
 
 
@@ -2275,9 +2294,12 @@ func _poser_a_plat() -> void:
 	_sol.hote = self
 	_sol.quoi = "fond"
 	_sol.material = Objet.fixe
-	_sol.position = Vector2(0.0, -15.0 if genre == "carre" else -5.0)
+	_sol.position = Vector2(0.0, float({"carre": -15.0, "collet": -24.0, "couche": -36.0}.get(genre, -5.0)))
 	add_child(_sol)
 	move_child(_sol, 0)
+	if genre == "collet":
+		# (ses pieux, debout, se trient par leur pied)
+		_vif.position = Vector2(0.0, ColletDessin.PIEU.y + 3.0)
 	if genre != "carre":
 		return
 	_vif.position = Vector2(0.0, float(CARRE_RANGS[0]))

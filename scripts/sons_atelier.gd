@@ -20,11 +20,15 @@ const TAUX := {
 	"marteau": VIF, "scie": VIF, "couture": VIF, "tresse": VIF, "toile": VIF, "piquet": VIF, "corde": SOURD, "fouille": VIF,
 	"gourde": LENT, "gorgee": LENT, "bouillon": SOURD, "clic": VIF, "fil": SOURD, "etincelle": VIF, "filet": VIF, "sangle": VIF,
 	"filin": SOURD, "aromates": VIF, "inspire": LENT,
+	# (la fin de la Noire, le collet de filin : faits dans scripts/sons_collet.gd)
+	"collet_claque": VIF, "collet_coup": SOURD, "collet_arrache": VIF, "noire_cri": SOURD, "noire_flaire": LENT, "noire_renacle": SOURD,
+	"dernier_appel": SOURD,
 }
 # tous les noms, avec leurs variantes (ce qui revient souvent en a plusieurs : on ne reconnaît pas deux fois la même étincelle)
 const NOMS := ["marteau0", "marteau1", "marteau2", "scie0", "scie1", "couture", "tresse", "toile", "piquet", "corde", "fouille",
 	"gourde", "gorgee", "bouillon0", "bouillon1", "clic", "fil0", "fil1", "etincelle0", "etincelle1", "etincelle2", "filet0", "filet1",
-	"sangle", "filin", "aromates", "inspire"]
+	"sangle", "filin", "aromates", "inspire",
+	"collet_claque", "collet_coup0", "collet_coup1", "collet_arrache", "noire_cri", "noire_flaire", "noire_renacle", "dernier_appel"]
 # les deux couches continues, en tuiles qui se chevauchent comme celles de sons_recettes.gd : [longueur, fondu] (en secondes)
 const TUILES := {"bouillon": [3.6, 0.9], "fil": [4.0, 1.2]}
 # le niveau conseillé de chaque son (en dB : tout son volume, pas un appoint), celui où il pèse à l'oreille ce qu'il faut à
@@ -33,8 +37,10 @@ const TUILES := {"bouillon": [3.6, 0.9], "fil": [4.0, 1.2]}
 # fait tout contre soi n'en a pas
 const NIVEAUX := {"marteau": -7.0, "scie": -16.0, "couture": -12.0, "tresse": -16.0, "toile": -9.0, "piquet": -8.0, "corde": -16.0,
 	"fouille": -12.0, "gourde": -17.0, "gorgee": -15.0, "clic": -10.0, "etincelle": -11.0, "filet": -13.0, "sangle": -17.0,
-	"bouillon": -15.0, "fil": -14.0, "filin": -13.0, "aromates": -12.0, "inspire": -19.0}
-const MOUILLE := {"marteau": 0.3, "scie": 0.15, "toile": 0.3, "piquet": 0.35, "corde": 0.1, "fouille": 0.2, "filet": 0.25, "filin": 0.15, "aromates": 0.1}
+	"bouillon": -15.0, "fil": -14.0, "filin": -13.0, "aromates": -12.0, "inspire": -19.0,
+	"collet_claque": -6.0, "collet_coup": -8.0, "collet_arrache": -6.0, "noire_cri": -3.0, "noire_flaire": -15.0, "noire_renacle": -9.0, "dernier_appel": -4.0}
+const MOUILLE := {"marteau": 0.3, "scie": 0.15, "toile": 0.3, "piquet": 0.35, "corde": 0.1, "fouille": 0.2, "filet": 0.25, "filin": 0.15, "aromates": 0.1,
+	"collet_claque": 0.35, "collet_coup": 0.3, "collet_arrache": 0.35, "noire_renacle": 0.25}
 # un choc part juste après le fondu d'entrée (O.bords, 1,5 ms), qui sinon lui mange son attaque
 const T0 := 0.002
 # chaque son est réglé par son énergie (c'est elle qui pèse à l'oreille : d'un tirage à l'autre il sonne aussi fort), sans
@@ -85,6 +91,10 @@ static func fabriquer(nom: String, r: RandomNumberGenerator) -> Array:
 			return [_aromates(r), TAUX[base]]
 		"inspire":
 			return [_inspire(r), TAUX[base]]
+		# (le collet de la Noire : ses sons sont faits à part, avec les briques d'ici ; scripts/sons_collet.gd, qui hérite de
+		# ce fichier, est donc lu au moment de s'en servir)
+		"collet_claque", "collet_coup", "collet_arrache", "noire_cri", "noire_flaire", "noire_renacle", "dernier_appel":
+			return [load("res://scripts/sons_collet.gd").fabriquer_collet(base, k, r), TAUX[base]]
 	return []
 
 

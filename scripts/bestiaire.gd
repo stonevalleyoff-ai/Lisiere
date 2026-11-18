@@ -77,7 +77,7 @@ static func planche(lignee: Dictionary, largeur: float) -> Planche:
 
 # ce que la bête anime (scripts/bete.gd), gardé par lignée et par taille
 static func lire(lignee: Dictionary, largeur: float) -> Dictionary:
-	var k := "%s|%d" % [str(lignee.get("id", "")), int(round(largeur * 4.0))]
+	var k := _cle(lignee, largeur)
 	if not _cache.has(k):
 		var p := planche(lignee, largeur)
 		_cache[k] = p.finir() if p != null else {}
@@ -86,11 +86,21 @@ static func lire(lignee: Dictionary, largeur: float) -> Dictionary:
 
 # la bête entière, au repos : { tex, image, pos, taille, rect } ({} : pas de dessin de Lisière)
 static func portrait(lignee: Dictionary, largeur: float) -> Dictionary:
-	var k := "%s|%d" % [str(lignee.get("id", "")), int(round(largeur * 4.0))]
+	var k := _cle(lignee, largeur)
 	if not _portraits.has(k):
 		var p := planche(lignee, largeur)
 		_portraits[k] = p.portrait() if p != null else {}
 	return _portraits[k]
+
+
+# ce sous quoi son dessin est gardé : sa lignée, sa taille ; et, pour la Noire, ses cicatrices (elle se redessine avec elles :
+# scripts/noire_cicatrices.gd ; son poil, lui, reste le même : il est semé par son nom)
+static func _cle(lignee: Dictionary, largeur: float) -> String:
+	var k := "%s|%d" % [str(lignee.get("id", "")), int(round(largeur * 4.0))]
+	var plan = lignee.get("plan", {})
+	if typeof(plan) == TYPE_DICTIONARY and int(plan.get("cicatrices", 0)) > 0:
+		k += "|c%d" % int(plan["cicatrices"])
+	return k
 
 
 # les traits du phénotype le plus répandu de la lignée (« pattes-longues », « crocs-allonges »…), s'il en a

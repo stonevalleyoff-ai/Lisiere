@@ -569,11 +569,19 @@ class Savoirs extends ScrollContainer:
 			rien = false
 			var tex = null
 			if noire.vue:
-				tex = Bestiaire.portrait(LaNoire.LIGNEE, 300.0).get("tex")
+				# (son portrait porte ses cicatrices : scripts/noire_cicatrices.gd)
+				tex = Bestiaire.portrait(LaNoire.lignee_a(int(noire.cicatrices)), 300.0).get("tex")
 			var sus: Array = noire.savoirs()
 			var reste: int = LaNoire.SAVOIRS.size() - sus.size()
-			_liste.add_child(_carte("La Noire", tex, sus, "Il reste %d chose%s à apprendre d'elle." % [reste, "s" if reste > 1 else ""] if reste > 0 else "",
-				true, "Tu ne l'as pas encore vue dans la lumière."))
+			var pied := "Il reste %d chose%s à apprendre d'elle." % [reste, "s" if reste > 1 else ""] if reste > 0 else ""
+			# (ce qu'elle garde du collet ; et, partie, sa dernière page : scripts/noire_collet.gd)
+			var titre := "La Noire"
+			if bool(noire.partie):
+				titre = "La Noire, partie"
+				pied = str(noire.collet.derniere_page())
+			elif int(noire.cicatrices) > 0:
+				titre = "La Noire, %s" % ("une cicatrice" if int(noire.cicatrices) == 1 else "%d cicatrices" % int(noire.cicatrices))
+			_liste.add_child(_carte(titre, tex, sus, pied, true, "Tu ne l'as pas encore vue dans la lumière."))
 		var vues = jeu.get("vues")
 		if typeof(vues) == TYPE_DICTIONARY:
 			for id in vues:

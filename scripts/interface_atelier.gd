@@ -1575,6 +1575,9 @@ class Sac extends Feuille:
 			lignes.append(["note", "Une bête s'y est prise : relève-le d'abord."])
 		elif id == "cerf_volant" and atelier.fil == s:
 			lignes.append(["note", "Tes piles reviennent avec lui."])
+		elif id == "collet" and jeu.noire != null:
+			# (amorcé ou non, rompu ; et, quand elle le sait, s'il sent sa main : scripts/noire_collet.gd)
+			lignes = [["note", str(jeu.noire.collet.note_du_sac(s))]]
 		return {"id": id, "pale": false, "nom": str(o["nom"]), "etat": "Posé juste là, à portée de main." if id != "tente" else "Posée juste là, à portée de main.",
 			"dit": str(o["dit"]), "lignes": lignes, "bouton": "Replier", "actif": true, "pourquoi": ""}
 
