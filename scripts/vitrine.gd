@@ -62,7 +62,7 @@ extends Node
 #   se règle tout seul. --strate arbre,buisson,sol,eau,champignon : ces strates seulement (de plus près) ; --formes cactus,agave :
 #   ces formes seulement ; --fois 3 : trois individus de chacune (trois graines) ; --etat entame,cueilli,neige,feu,roussi,
 #   calcine,souche,printemps,automne,hiver,sans-fruits : toutes dans cet état ; --sans-orvane : sans les planches d'Orvane ;
-#   --sur-le-sol : sur le vrai sol du lieu (sinon, un fond uni à sa couleur) ;
+#   --sur-le-sol : sur le vrai sol du lieu (sinon, un fond uni à sa couleur) ; --derriere : la veilleuse derrière le plus haut des arbres ;
 #   --toutes : toutes les formes que Lisière sait dessiner (même celles que l'herbier du lieu n'a pas), une de chaque
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
@@ -1474,6 +1474,15 @@ func _planche_flore() -> void:
 		fond.color = terre.lerp(W.palette.get("herbe", terre), 0.25).lerp(Color(0.5, 0.46, 0.36), 0.35)
 		W._racine.add_child(fond)
 		W._racine.move_child(fond, W._calques[3].get_index())
+	if ar.has("--derriere"):
+		# (la veilleuse passe derrière le plus haut des arbres de la planche : sa couronne et son fût s'effacent, elle reste
+		# lisible au travers)
+		var grand = null
+		for o in _planche:
+			if str(o.genre) == "arbre" and (grand == null or float(o.hauteur) > float(grand.hauteur)):
+				grand = o
+		if grand != null:
+			j.position = grand.position + Vector2(3.0, -18.0)
 	# (le cadre : toute la planche tient dans l'image)
 	jeu.effets.recul = meilleur
 	jeu.camera.position = centre + cadre.get_center() - j.position
