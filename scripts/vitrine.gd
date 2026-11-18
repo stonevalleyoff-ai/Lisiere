@@ -65,6 +65,10 @@ extends Node
 #   --sur-le-sol : sur le vrai sol du lieu (sinon, un fond uni à sa couleur) ; --derriere : la veilleuse derrière le plus haut des arbres ;
 #   --toutes : toutes les formes que Lisière sait dessiner (même celles que l'herbier du lieu n'a pas), une de chaque
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
+#   --graine 7   le hasard part de ce nombre : le même lieu d'une fois à l'autre
+#   --recense   le recensement de la flore (scripts/recensement.gd) : chaque plante de l'herbier, combien on en a posé, sa part
+#   à côté de celle d'Orvane, sa distance à l'eau, son couvert ; puis on s'en va (le lieu fermé en entier ; avec --ouvert
+#   --depuis x,y : les morceaux faits autour d'elle) ; --recul vaut aussi pour un lieu fermé (une vue large)
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
 const R := preload("res://scripts/regles.gd")
@@ -141,6 +145,10 @@ func _ready() -> void:
 func _lancer() -> void:
 	jeu.donnees.hors_ligne_force = true
 	await jeu.donnees.charger_index()
+	# (--graine 7 : le hasard part de là, et le lieu est le même d'une fois à l'autre — pour comparer deux recensements)
+	var i_gr := OS.get_cmdline_user_args().find("--graine")
+	if i_gr >= 0 and i_gr + 1 < OS.get_cmdline_user_args().size():
+		seed(int(OS.get_cmdline_user_args()[i_gr + 1]))
 	await jeu._commencer(lieu, {}, OS.get_cmdline_user_args().has("--ouvert"))
 	var soir: float = R.DUREE * (1.0 - jeu.part_nuit)
 	match heure:
@@ -601,6 +609,43 @@ func _lancer() -> void:
 			print("vitrine : près de ", args[i_pres + 1], " en ", ou)
 		else:
 			print("vitrine : pas de ", args[i_pres + 1], " autour")
+	# (--recul dans un lieu fermé aussi : une vue large, pour lire une rive, une lisière ; --recense : le recensement, et on s'en va)
+	var i_rec := args.find("--recul")
+	if not jeu.ouvert and i_rec >= 0 and i_rec + 1 < args.size():
+		jeu.effets.recul = float(args[i_rec + 1])
+	# (--depuis x,y dans un lieu fermé : elle s'y tient, pour regarder un endroit du lieu ; --vers roseau : près de la première
+	# plante de cette forme)
+	var i_dep := args.find("--depuis")
+	var i_vers := args.find("--vers")
+	if not jeu.ouvert and i_dep >= 0 and i_dep + 1 < args.size():
+		var xy2 := args[i_dep + 1].split(",")
+		jeu.joueur.position = Vector2(float(xy2[0]), float(xy2[1]))
+		jeu.camera.reset_smoothing()
+		_plan = [[0.0, 1.0, "attendre"]]
+	elif not jeu.ouvert and i_vers >= 0 and i_vers + 1 < args.size() and not args[i_vers + 1].contains(","):
+		var quelles: Array = jeu.monde.objets.filter(func(o): return str(o.forme) == args[i_vers + 1] and str(o.plante) != "")
+		if not quelles.is_empty():
+			jeu.joueur.position = quelles[quelles.size() / 2].position + Vector2(0.0, 60.0)
+			jeu.camera.reset_smoothing()
+			_plan = [[0.0, 1.0, "attendre"]]
+			print("vitrine : près d'un « %s », en %s (%d dans le lieu)" % [args[i_vers + 1], str(jeu.joueur.position), quelles.size()])
+	if args.has("--recense"):
+		var ou_r: String = str(jeu.monde.carte.type_en(jeu.joueur.position)) if jeu.monde.carte != null else str(jeu.biome)
+		# (le monde ouvert : l'herbier du biome où elle est se lit en approchant ; on l'attend, et ses morceaux refaits)
+		var attente := 0
+		while jeu.ouvert and jeu.monde.carte != null and jeu.monde.lieu_de(ou_r)["flore"].is_empty() and attente < 80:
+			attente += 1
+			await get_tree().create_timer(0.1).timeout
+		if jeu.ouvert:
+			jeu.monde.suivre(jeu.joueur.position, true)
+		if OS.has_environment("LISIERE_BRUT"):
+			# (pour compter un lieu semé par l'ancien plan : chaque pied compte pour un)
+			load("res://scripts/recensement.gd").dire(jeu.monde, ou_r, Rect2(), "(compté pied à pied)", false)
+			get_tree().quit()
+			return
+		load("res://scripts/recensement.gd").dire(jeu.monde, ou_r, Rect2(), "(monde ouvert, autour de %d,%d)" % [int(jeu.joueur.position.x), int(jeu.joueur.position.y)] if jeu.ouvert else "(lieu fermé)")
+		get_tree().quit()
+		return
 	_pret = true
 
 
