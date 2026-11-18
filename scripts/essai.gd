@@ -2457,6 +2457,12 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		var sellee: bool = E.harnacher(bete, "selle")
 		jeu.agir()
 		var en_selle: bool = E.monture == bete and bete.montee and j.monture == bete
+		# (le même bout de chemin, à cheval puis à pied, et rien dessus où buter : seule la selle y change l'allure — un tronc, un
+		# rocher que le tirage du lieu met devant elle ne la retient pas plus d'une fois que de l'autre)
+		var depart: Vector2 = j.position
+		for o_c in jeu.monde.autour(depart + Vector2(160.0, 0.0), 200.0):
+			if float(o_c.rayon) > 0.0:
+				jeu.monde.retirer(o_c)
 		var x0: float = j.position.x
 		j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
 		E.maj(0.5)
@@ -2464,6 +2470,7 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		var dessous: bool = bete.position.distance_to(j.position) < 1.0
 		jeu.agir()
 		var a_pied: bool = E.monture == null and not bete.montee and j.monture == null
+		j.position = depart
 		x0 = j.position.x
 		j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
 		var a_pied_dx: float = j.position.x - x0
