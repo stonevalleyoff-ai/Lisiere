@@ -86,6 +86,8 @@ var _calques: Array = []             # ce qui est posé à plat, l'herbe et les 
 # le milieu des plantes (scripts/milieu.gd) : le plan que suit ce monde (1 : celui d'une partie gardée d'avant), l'échantillon
 # du plan de chaque biome (« » : le lieu lui-même) et les poids réglés sur lui, ce que la météo d'Orvane fait aux densités
 var plan_version := PLAN
+var _relief: FastNoiseLite           # le relief du lieu : le même bruit que celui du temps qu'il fait (scripts/climat.gd, preparer)
+var _crue := 0.0                     # l'eau qui reste dans ses creux (scripts/climat.gd, crue_fond)
 var _echantillons := {}
 var _tables := {}
 var _densites := {}
@@ -200,6 +202,12 @@ func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 	_lire_flore(arbre)
 	_graine = graine
 	_bosquets = bosquets
+	# (le relief : les creux où l'eau reste et vient d'abord, les buttes sèches ; le même que scripts/climat.gd, preparer)
+	_relief = FastNoiseLite.new()
+	_relief.seed = graine + 5
+	_relief.frequency = 0.0017
+	_relief.fractal_octaves = 2
+	_crue = clampf((humid - 0.85) * 3.0, 0.0, 0.3)
 	_arbre = arbre
 	_mesures = [couvert, humid, alt]
 	if ouvert:
@@ -351,6 +359,8 @@ func lieu_de(type: String) -> Dictionary:
 		axes = axes.duplicate()
 		axes["humidite"] = 0.68
 	var sous_terre := str(info.get("milieu", "terrestre")) == "souterrain"
+	# (l'eau qui reste dans les creux d'un biome détrempé : la crue de fond de scripts/climat.gd, d'après son humidité vraie)
+	var crue := 0.0 if sous_terre else clampf((float(axes.get("humidite", 0.5)) - 0.85) * 3.0, 0.0, 0.3)
 	if sous_terre:
 		# (une grotte : pour Orvane un lieu couvert et humide — sa voûte ; ici, de la roche nue, sans herbe ni arbres)
 		axes = axes.duplicate()
@@ -383,7 +393,7 @@ func lieu_de(type: String) -> Dictionary:
 	var L := {"type": type, "axes": axes, "palette": pal, "parts": parts, "sol": sol, "arbre": arbre,
 		"mesures": [float(axes.get("couvert", 0.4)), float(axes.get("humidite", 0.5)), float(axes.get("altitude", 0.3))],
 		"flore": _flore_de(type, arbre), "outils": {}, "climat": {"froid": float(parts["froid"]), "humide": float(parts["humide"])},
-		"sous_terre": sous_terre}
+		"sous_terre": sous_terre, "crue": crue}
 	_lieux[type] = L
 	return L
 
@@ -773,9 +783,10 @@ func _plan_m(k: Vector2i) -> Array:
 func _contexte(type: String, _rect: Rect2 = Rect2()) -> Dictionary:
 	if type == "" or carte == null:
 		return {"t": _terrain, "s": _parts, "mesures": _mesures, "bosquets": _bosquets, "arbre": _arbre, "type": type, "graine": _graine, "herbes": HERBES,
-			"borne": 0.0 if ouvert else R.DEMI}
+			"borne": 0.0 if ouvert else R.DEMI, "relief": _relief, "crue": _crue}
 	var L := lieu_de(type)
-	return {"t": _terrain, "s": L["parts"], "mesures": L["mesures"], "bosquets": _bosquets, "arbre": str(L["arbre"]), "type": type, "graine": _graine, "herbes": HERBES, "borne": 0.0}
+	return {"t": _terrain, "s": L["parts"], "mesures": L["mesures"], "bosquets": _bosquets, "arbre": str(L["arbre"]), "type": type, "graine": _graine, "herbes": HERBES, "borne": 0.0,
+		"relief": _relief, "crue": float(L["crue"])}
 
 
 # l'échantillon du plan d'un biome : combien de places de chaque milieu (scripts/milieu.gd, echantillon). Un lieu fermé : son

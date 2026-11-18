@@ -57,6 +57,7 @@ extends Node
 #   d'elle, de près (les arbres et leurs fruits, à chaque état ; les épis, le lichen, le cactus, les grains au jardin ; « geste » :
 #   elle cueille un pommier, de tout près) ; --gros : la caméra va de l'une à l'autre, de tout près
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
+#   --graine 7   le hasard part de ce nombre : le même lieu d'une fois à l'autre
 #   --recense   le recensement de la flore (scripts/recensement.gd) : chaque plante de l'herbier, combien on en a posé, sa part
 #   à côté de celle d'Orvane, sa distance à l'eau, son couvert ; puis on s'en va (le lieu fermé en entier ; avec --ouvert
 #   --depuis x,y : les morceaux faits autour d'elle) ; --recul vaut aussi pour un lieu fermé (une vue large)
@@ -136,6 +137,10 @@ func _ready() -> void:
 func _lancer() -> void:
 	jeu.donnees.hors_ligne_force = true
 	await jeu.donnees.charger_index()
+	# (--graine 7 : le hasard part de là, et le lieu est le même d'une fois à l'autre — pour comparer deux recensements)
+	var i_gr := OS.get_cmdline_user_args().find("--graine")
+	if i_gr >= 0 and i_gr + 1 < OS.get_cmdline_user_args().size():
+		seed(int(OS.get_cmdline_user_args()[i_gr + 1]))
 	await jeu._commencer(lieu, {}, OS.get_cmdline_user_args().has("--ouvert"))
 	var soir: float = R.DUREE * (1.0 - jeu.part_nuit)
 	match heure:

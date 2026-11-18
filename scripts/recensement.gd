@@ -24,19 +24,24 @@ const PEUPLEMENT := 170.0      # deux arbres de la même espèce à moins de tan
 
 # la distance de p à l'eau la plus proche : la rive d'une mare (une plante d'eau), ou — dans le monde ouvert — une rivière, un
 # lac (cherchés autour, jusqu'à 400 pixels ; INF au-delà)
-static func _vers_l_eau(p: Vector2, mares: Array, carte) -> float:
+static func _vers_l_eau(p: Vector2, mares: Array, carte, climat = null) -> float:
 	var d := INF
 	for m in mares:
 		var q: Vector2 = (p - m[0]) / Vector2(1.0, 0.45)
 		d = minf(d, maxf(0.0, q.length() - float(m[1])))
-	if carte != null and d > 20.0:
-		for pas in 20:
-			var r := 20.0 * (pas + 1)
+	# (l'eau que le jeu connaît : celle qui reste dans les creux d'un marais, une fondrière, un gué — scripts/climat.gd, eau — ;
+	# une rivière, un lac — scripts/carte.gd)
+	if (carte != null or climat != null) and d > 10.0:
+		if (climat != null and climat.eau(p) > 0.0) or (carte != null and carte.mouille(p)):
+			return 0.0
+		for pas in 40:
+			var r := 10.0 * (pas + 1)
 			if r >= d:
 				break
 			var vu := false
 			for k in 12:
-				if carte.mouille(p + Vector2.from_angle(TAU * k / 12.0) * r):
+				var q := p + Vector2.from_angle(TAU * k / 12.0) * r
+				if (climat != null and climat.eau(q) > 0.0) or (carte != null and carte.mouille(q)):
 					vu = true
 					break
 			if vu:
@@ -64,6 +69,7 @@ static func _part(l: Array, sous: float) -> float:
 static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -> Dictionary:
 	var objets: Array = monde.objets.filter(func(o): return is_instance_valid(o) and (rect.size.x <= 0.0 or rect.has_point(o.position)))
 	var carte = monde.get("carte")
+	var climat = monde.jeu.get("climat") if monde.get("jeu") != null else null
 	var arbres: Array = []
 	var rochers: Array = []
 	var mares: Array = []
@@ -115,7 +121,7 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 		e["n"] += 1
 		e["places"].append(o.position)
 		n_strate[e["strate"]] = float(n_strate.get(e["strate"], 0.0)) + float(parts[id]["place"])
-		e["eau"].append(_vers_l_eau(o.position, mares, carte))
+		e["eau"].append(_vers_l_eau(o.position, mares, carte, climat))
 		var autour: Array = pres.call(o.position, ALENTOUR)
 		autour.erase(o)
 		e["arbres"].append(autour.size())
@@ -228,6 +234,10 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 			d_geants.append(minf(d0, 400.0))
 		elif d0 < INF:
 			d_arbres.append(d0)
+	if OS.has_environment("LISIERE_MILIEU"):
+		for a in arbres:
+			if str(a.plante) != "" and parts.has(str(a.plante)) and GEANTS.has(parts[a.plante]["forme"]):
+				print("géant en ", a.position, " : ", Milieu.dire(int(a.get_meta("milieu", 0))), " graine ", a.graine)
 	return {"biome": biome, "plantes": P, "n_strate": n_strate, "genres": genres, "ecart": ecart, "objets": objets.size(),
 		"rives": {"n": d_rive.size(), "mediane": _mediane(d_rive), "pres": _part(d_rive, PRES_EAU), "autres_pres": _part(d_autres, PRES_EAU), "autres": d_autres.size(), "mares": mares.size()},
 		"sous_bois": {"n": sous_bois[1], "sous": float(sous_bois[0]) / maxf(1.0, float(sous_bois[1])), "ailleurs": float(sol_ailleurs[0]) / maxf(1.0, float(sol_ailleurs[1])), "n_ailleurs": sol_ailleurs[1]},
