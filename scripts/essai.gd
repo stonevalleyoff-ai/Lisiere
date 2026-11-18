@@ -8137,6 +8137,29 @@ func _le_lichen() -> void:
 	# fait ses soupes au feu, et mange quand la faim vient. Elle n'a rien d'autre
 	A.objets["gourde"] = 1
 	A.objets["popote"] = 1
+	# (le lieu en a parfois peu loin de ce qui se dresse : ses tapis vont par quatre, d'une seule plante, et un tirage les met près
+	# des blocs du pays. L'essai en pose alors autour du camp, de la plante même du lieu, à découvert, pour ne vérifier que ce qu'il
+	# vérifie : de quoi se tenir de lichen, quand on en a)
+	var poses_l := 0
+	var pl_l = null
+	for e_l in W.flore.get("sol", []):
+		if str(e_l["forme"]) == "lichen_rennes":
+			pl_l = e_l
+	if libres.size() < 13 and pl_l != null:
+		var r_l := RandomNumberGenerator.new()
+		r_l.seed = 4207
+		var essais_l := 0
+		while libres.size() < 13 and essais_l < 600:
+			essais_l += 1
+			var q_l: Vector2 = camp + Vector2.from_angle(r_l.randf() * TAU) * r_l.randf_range(140.0, 460.0)
+			var g_l := r_l.randi()
+			if debout.call(q_l) or float(jeu.climat.eau(q_l)) > 0.0 or not W.autour(q_l, 30.0).is_empty():
+				continue
+			var o_l = W._poser("sol", q_l, W.palette["herbe"], g_l, {"flore": {"sol": [pl_l]}, "climat": load("res://scripts/objet.gd").climat, "palette": W.palette})
+			if o_l != null:
+				libres.append(o_l)
+				poses_l += 1
+		libres.sort_custom(func(a, b): return a.position.distance_to(camp) < b.position.distance_to(camp))
 	var f = jeu.Feu.new()
 	f.jeu = jeu
 	f.position = camp + Vector2(30.0, 0.0)
@@ -8177,8 +8200,8 @@ func _le_lichen() -> void:
 	# jour. Le lichen des rennes se tient à découvert, sur le sol nu, par tapis de quatre ; une année sèche pour Orvane en ôte un
 	# peu : autour d'une mare gelée, il y en a parfois moins de huit à portée)
 	verif(proches.size() >= 6 and faim_min > RR.FAIM_MORD and soupes >= 6 and j.temperature >= 40.0,
-		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour) du lichen de %d touffes autour du camp (la plus loin à %d pixels), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
-		cuites, soupes, int(besoin), proches.size(), int(loin), int(faim_min)])
+		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour) du lichen de %d touffes autour du camp (la plus loin à %d pixels%s), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
+		cuites, soupes, int(besoin), proches.size(), int(loin), (" ; %d posées par l'essai, le lieu en ayant peu loin des blocs" % poses_l) if poses_l > 0 else "", int(faim_min)])
 	f.queue_free()
 	jeu.feux.erase(f)
 
