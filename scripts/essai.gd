@@ -3132,8 +3132,31 @@ func _la_botanique(F: Dictionary) -> void:
 	# cueillir : dans le sac, et un indice, qui laisse deux vertus possibles (la vraie en est)
 	var id0: String = str(un_plant.herbe)
 	j.position = un_plant.position + Vector2(6.0, 4.0)
+	# (le lieu est tiré au sort : rien d'autre à portée de main qu'« Agir » prendrait d'abord — une bête à frapper, un vestige
+	# à fouiller, un arbre et ses fruits tombés, une fleur plus près, ce que le pays pose au sol)
+	for b in get_tree().get_nodes_in_group("betes"):
+		if b.position.distance_to(un_plant.position) < 300.0:
+			_oter(b)
+	for x in jeu.atelier.poses.duplicate():
+		if is_instance_valid(x) and x.position.distance_to(un_plant.position) < 140.0:
+			jeu.atelier.poses.erase(x)
+			x.queue_free()
+	for o in jeu.monde.autour(un_plant.position, 110.0):
+		if o != un_plant:
+			jeu.monde.retirer(o)
+	var terrain_b = jeu.terrain
+	jeu.terrain = null
+	var sac_b: Dictionary = j.inventaire.duplicate()
 	jeu.agir()
+	jeu.terrain = terrain_b
 	var c0: Array = B.candidates(id0)
+	if not (B.possede(id0) == 1 and int(un_plant.reste) == 0):
+		var pris := {}
+		for k in j.inventaire:
+			if int(j.inventaire[k]) != int(sac_b.get(k, 0)):
+				pris[k] = int(j.inventaire[k]) - int(sac_b.get(k, 0))
+		print("    (l'herbe « %s » : %d dans le sac, il en reste %d au plant ; « Agir » a donné %s ; autour : %s)" % [id0, B.possede(id0), int(un_plant.reste), str(pris),
+			str(jeu.monde.autour(un_plant.position, 160.0).map(func(o): return str(o.genre)))])
 	verif(B.possede(id0) == 1 and B.connue(id0) and int(un_plant.reste) == 0 and c0.size() == 2 and c0.has(B.vertu(id0)) and not B.sue(id0) and B.lignes(id0).size() >= 1,
 		"« Agir » cueille une herbe : elle entre dans le sac et dans l'herbier, avec un indice (« %s ») qui laisse deux vertus possibles, dont la vraie" % str(B.DIT_INDICE[B.indice(id0)]))
 
