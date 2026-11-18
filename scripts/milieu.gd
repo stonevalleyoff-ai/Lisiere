@@ -273,13 +273,23 @@ static func regler(flore: Dictionary, ech: Dictionary, cibles: Dictionary) -> Di
 			total = 0.0
 			for so in sortes:
 				total += float(so[2])
-		# le goût de chacune pour chaque sorte de place
+		# le goût de chacune pour chaque sorte de place ; les sortes où toutes ont le même goût (et la même taille de groupe) se
+		# comptent ensemble : le réglage est le même, et bien plus court
 		var gouts: Array = []
+		var memes := {}
+		var fondues: Array = []
 		for so in sortes:
 			var g := PackedFloat32Array()
 			for pl in L:
 				g.append(affinite(pl, int(so[0])))
+			var cle := "%s|%d" % [str(g), int(so[1])]
+			if memes.has(cle):
+				fondues[memes[cle]][2] = int(fondues[memes[cle]][2]) + int(so[2])
+				continue
+			memes[cle] = fondues.size()
+			fondues.append([so[0], so[1], so[2]])
 			gouts.append(g)
+		sortes = fondues
 		var poids := PackedFloat32Array()
 		for i in n:
 			poids.append(parts[i] / maxf(0.0001, somme))
