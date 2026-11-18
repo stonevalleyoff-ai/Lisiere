@@ -15,6 +15,7 @@ const R := preload("res://scripts/regles.gd")
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/effets_textures.gd")
 const Decor := preload("res://scripts/decor.gd")
+const Milieu := preload("res://scripts/milieu.gd")
 const Feu := preload("res://scripts/feu.gd")
 const SOL := preload("res://shaders/temps_sol.gdshader")
 const MARQUE := 18.0           # secondes : la marque brûlée s'efface
@@ -33,6 +34,14 @@ var _mobile := false
 # quand elle s'en éloigne (le relief ligne à ligne, deux millisecondes par image : rien ne fige)
 var _ouvert := false
 var _origine := Vector2.ZERO
+# (le monde ouvert) la crue de fond de chaque lieu, aux nœuds d'une grille, cuite avec la fenêtre (scripts/monde.gd, crue_fond_en) ;
+# s'il y en a près de la veilleuse (un marais à l'écran, même quand elle n'y est pas), la nappe se montre et la fenêtre la suit
+var _crues_v := PackedFloat32Array()
+var _crues_n := 0
+var _crues_i := 0
+var _crues_k0 := Vector2i.ZERO
+var _fond_vu := Vector2.INF
+var _fond_pres := false
 var _cuit_v := PackedFloat32Array()
 var _cuit_n := 0
 var _cuit_y := -1                  # la ligne où en est la cuisson (-1 : rien en cours)
@@ -65,10 +74,10 @@ func poser(scene: Node2D, monde: Node2D) -> void:
 	_r.randomize()
 	_mat = ShaderMaterial.new()
 	_mat.shader = SOL
+	_ouvert = bool(monde.get("ouvert"))
 	_cuire()
 	_couleurs()
 	_mat.set_shader_parameter("etendue", Decor.ETENDUE)
-	_ouvert = bool(monde.get("ouvert"))
 	_mat.set_shader_parameter("demi", 1.0e9 if _ouvert else R.DEMI)
 	_mat.set_shader_parameter("simple", _mobile)
 	_nappe = Nappe.new()
@@ -102,6 +111,14 @@ func _commencer_cuisson(origine: Vector2) -> void:
 	_cuit_v.resize(_cuit_n * _cuit_n)
 	_cuit_y = 0
 	_cuit_o = origine
+	# (la crue de fond, nœud par nœud, sur la fenêtre et un nœud autour ; sans écran, rien)
+	_crues_n = 0
+	_crues_i = 0
+	if _ouvert and _climat.crue_fond_en.is_valid() and _cuit_n > 8:
+		var pas: float = Milieu.MAILLE_CRUE
+		_crues_k0 = Vector2i(((origine - Vector2.ONE * Decor.ETENDUE * 0.5) / pas).floor()) - Vector2i.ONE
+		_crues_n = int(ceil(Decor.ETENDUE / pas)) + 3
+		_crues_v.resize(_crues_n * _crues_n)
 
 
 # le relief : le bruit de climat.relief, en demi-flottants (un octet ne suffit pas : le bord de l'eau ferait des marches),
@@ -122,7 +139,15 @@ func _avancer_cuisson(budget: int) -> bool:
 		_cuit_y += 1
 		if budget >= 0 and Time.get_ticks_usec() - t0 > budget:
 			break
-	return _cuit_y >= n
+	if _cuit_y < n:
+		return false
+	# (puis la crue de fond, nœud par nœud : le monde la retient, la plupart sont déjà sus)
+	while _crues_i < _crues_n * _crues_n:
+		_crues_v[_crues_i] = float(_climat.crue_fond_en.call(Vector2(_crues_k0 + Vector2i(_crues_i % _crues_n, _crues_i / _crues_n)) * Milieu.MAILLE_CRUE))
+		_crues_i += 1
+		if budget >= 0 and _crues_i % 32 == 0 and Time.get_ticks_usec() - t0 > budget:
+			break
+	return _crues_i >= _crues_n * _crues_n
 
 
 func _finir_cuisson() -> void:
@@ -132,6 +157,14 @@ func _finir_cuisson() -> void:
 	img.convert(Image.FORMAT_RH)
 	_mat.set_shader_parameter("relief", ImageTexture.create_from_image(img))
 	_mat.set_shader_parameter("relief_milieu", RELIEF_MILIEU)
+	_mat.set_shader_parameter("crues_locales", _crues_n > 0)
+	if _crues_n > 0:
+		var ic := Image.create_from_data(_crues_n, _crues_n, false, Image.FORMAT_RF, _crues_v.to_byte_array())
+		ic.convert(Image.FORMAT_RH)
+		_mat.set_shader_parameter("crues", ImageTexture.create_from_image(ic))
+		_mat.set_shader_parameter("crues_coin", Vector2(_crues_k0) * Milieu.MAILLE_CRUE)
+		_mat.set_shader_parameter("crues_pas", Milieu.MAILLE_CRUE)
+		_mat.set_shader_parameter("crues_taille", float(_crues_n))
 	# les flaques : le bruit de climat.allure, lu par Godot lui-même (à la même échelle, au milieu de chaque texel). Ses
 	# octaves les plus fines, plus petites qu'un texel, n'y sont pas : le gain rend à la valeur sa mesure.
 	var m := 8 if n <= 8 else (512 if _mobile else 1024)
@@ -215,7 +248,11 @@ func _process(delta: float) -> void:
 	var c = _climat
 	_la_foudre(delta)
 	var pluie: float = c.pluie
-	var montre: bool = c.boue > 0.02 or c.crue > 0.01 or c.neige_sol > 0.02 or pluie > 0.03 or not _presages.is_empty() or not _marques.is_empty() or _eclair >= 0.0 or _eclat > 0.0
+	# (le monde ouvert : un lieu dont les creux gardent de l'eau, près d'elle — elle peut le voir sans y être)
+	if _ouvert and jeu.joueur != null and c.crue_fond_en.is_valid() and _fond_vu.distance_to(jeu.joueur.position) > 300.0:
+		_fond_vu = jeu.joueur.position
+		_fond_pres = float(jeu.monde.crue_uniforme(Rect2(_fond_vu - Vector2(1500.0, 1500.0), Vector2(3000.0, 3000.0)))) != 0.0
+	var montre: bool = c.boue > 0.02 or c.crue > 0.01 or _fond_pres or c.neige_sol > 0.02 or pluie > 0.03 or not _presages.is_empty() or not _marques.is_empty() or _eclair >= 0.0 or _eclat > 0.0
 	if montre and _ouvert and jeu.joueur != null and not _fenetre(jeu.joueur.position):
 		montre = false
 	if montre != _montre:
@@ -230,6 +267,8 @@ func _process(delta: float) -> void:
 	# (sous terre, ni la crue, ni la boue, ni la neige du dehors)
 	var dehors: float = 1.0 - float(c.toit)
 	m.set_shader_parameter("crue", c.crue * dehors)
+	m.set_shader_parameter("crue_exces", maxf(0.0, c.crue - c.crue_fond))
+	m.set_shader_parameter("dehors", dehors)
 	m.set_shader_parameter("boue", c.boue * dehors)
 	m.set_shader_parameter("neige_sol", c.neige_sol * dehors)
 	m.set_shader_parameter("pluie", pluie)
@@ -241,7 +280,7 @@ func _process(delta: float) -> void:
 	m.set_shader_parameter("torche", l[2])
 	# la veilleuse dans l'eau : elle la remue quand elle marche
 	var j = jeu.joueur
-	if j != null and c.crue > 0.01:
+	if j != null and (c.crue > 0.01 or _fond_pres):
 		var p: Vector2 = j.position
 		var va := p.distance_to(_avant) / maxf(delta, 0.001)
 		_avant = p

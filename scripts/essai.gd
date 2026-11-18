@@ -5827,11 +5827,33 @@ func _semer_a_part(type: String, coin: Vector2, garder: bool = false) -> Diction
 	var mal := []
 	var vides := 0
 	var gardes: Array = []
-	for e in plan:
-		var o = W._poser(str(e[0]), e[1], L["palette"][e[2]] if e[2] != "" else Color.WHITE, int(e[3]), L, int(e[5]))
+	# (comme le monde à son troisième plan : un groupe tire une seule plante, d'après sa première place)
+	var tete := Vector2.INF
+	var groupes := {}
+	var groupes_avant := {}
+	var i_tete := -1
+	for i_e in plan.size():
+		var e: Array = plan[i_e]
+		if int(e[5]) >= 0 and Mi.rang(int(e[5])) == 0:
+			tete = e[1]
+			i_tete = i_e
+		var o = W._poser(str(e[0]), e[1], L["palette"][e[2]] if e[2] != "" else Color.WHITE, int(e[3]), L, int(e[5]), false, null, tete if int(e[5]) >= 0 else Vector2.INF)
 		if o == null:
 			vides += 1
 			continue
+		if int(e[5]) >= 0 and Mi.taille(int(e[5])) > 1 and str(o.plante) != "" and str(e[0]) in ["sol", "buisson"]:
+			if not groupes.has(i_tete):
+				groupes[i_tete] = {}
+			groupes[i_tete][str(o.plante)] = true
+			# (au deuxième plan, chaque place tirait d'après sa propre cellule : ce que ce groupe y aurait tiré)
+			var tb_a = W._table(type).get(str(e[0]))
+			if tb_a != null:
+				var k_a := absi(int(e[3])) % 10007
+				var pl_a: Dictionary = Mi.tirer(tb_a, int(e[5]), k_a, Mi.cellule(str(e[0]), e[1], k_a, int(e[5]), W._graine))
+				if not pl_a.is_empty():
+					if not groupes_avant.has(i_tete):
+						groupes_avant[i_tete] = {}
+					groupes_avant[i_tete][str(pl_a["id"])] = true
 		genres[o.genre] = int(genres.get(o.genre, 0)) + 1
 		if o.plante != "":
 			par_forme[o.forme] = int(par_forme.get(o.forme, 0)) + 1
@@ -5841,7 +5863,16 @@ func _semer_a_part(type: String, coin: Vector2, garder: bool = false) -> Diction
 			gardes.append(o)
 		else:
 			W._defaire(o)
-	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides, "objets": gardes, "rect": rect, "plan": plan.size()}
+	var meles := 0
+	for g_t in groupes:
+		if groupes[g_t].size() > 1:
+			meles += 1
+	var meles_avant := 0
+	for g_t in groupes_avant:
+		if groupes_avant[g_t].size() > 1:
+			meles_avant += 1
+	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides, "objets": gardes, "rect": rect, "plan": plan.size(), "groupes": groupes.size(), "meles": meles,
+		"meles_avant": meles_avant, "groupes_avant": groupes_avant.size()}
 
 
 # --- la répartition (scripts/milieu.gd, scripts/recensement.gd) : chaque plante de l'herbier d'Orvane se tient dans son milieu
@@ -5849,6 +5880,231 @@ func _semer_a_part(type: String, coin: Vector2, garder: bool = false) -> Diction
 # espacés — et garde sa part. Tout est compté sur de grands nombres (un lieu entier, puis quatre fois sa surface par biome),
 # avec de la marge : rien ne tient à un tirage. Puis les parties gardées : celle d'avant garde son plan ---
 var _version_du_lieu_ferme := 0
+const R_TRONES: float = preload("res://scripts/regles.gd").MILIEU_TRONES      # (la trame des places de géants)
+
+
+# une frontière du monde ouvert entre deux biomes : un point de « a » tout contre « b » (Vector2.INF : aucune trouvée), en partant
+# de la région de « a » la plus proche du réveil
+func _frontiere(a: String, b: String) -> Vector2:
+	var C = jeu.carte
+	var regs: Array = []
+	for kr in C.regions.size():
+		if str(C.regions[kr]["type"]) == a:
+			regs.append(kr)
+	regs.sort_custom(func(u, v): return C.regions[u]["pos"].length() < C.regions[v]["pos"].length())
+	for kr in regs:
+		var c: Vector2 = C.regions[kr]["pos"] - C.tordre(C.regions[kr]["pos"])
+		if C.type_en(c) != a:
+			continue
+		for i_d in 16:
+			var sens := Vector2.from_angle(i_d * TAU / 16.0)
+			var avant := c
+			for pas in range(1, 200):
+				var q: Vector2 = c + sens * pas * 100.0
+				var t: String = C.type_en(q)
+				if t == b:
+					return avant
+				if t != a:
+					break
+				avant = q
+	return Vector2.INF
+
+
+# --- le troisième plan du monde ouvert (monde.gd, PLAN) : ce que la carte dit nu n'a pas d'arbre prévu, les places de géants se
+# jugent chez elles, l'eau des creux est celle du lieu (la même pour le plan, le temps qu'il fait et son dessin, où que soit la
+# veilleuse). Et les plans d'avant, ceux des parties gardées, n'ont pas bougé : leurs rangs désignent les mêmes places ---
+func _le_troisieme_plan(W) -> void:
+	var Mi = load("res://scripts/milieu.gd")
+	var C = jeu.carte
+	var Cl = jeu.climat
+	var T = jeu.terrain
+	# les plans d'avant n'ont pas bougé (leur empreinte, pour la graine de l'essai)
+	var e2 := _empreinte_du_plan(W, 2)
+	var e1 := _empreinte_du_plan(W, 1)
+	verif(W._graine == 2524636127 and e2.begins_with("75debd1f67803adf") and e1.begins_with("065ee89a0f26d072"),
+		"le deuxième plan et le premier n'ont pas bougé : une partie gardée à l'un d'eux retrouve ses places par leur rang (empreintes %s et %s%s)" % [
+		e2, e1, "" if W._graine == 2524636127 else " ; la graine de l'essai a changé (%d) : les empreintes sont à refaire" % W._graine])
+	# où regarder : une vallée de rivière, une montagne, une jungle (au cœur de leur région), une frontière entre un marais et une
+	# prairie, entre une forêt et une prairie
+	var F_m := _frontiere("marais", "prairie")
+	var F_f := _frontiere("foret", "prairie")
+	var centres: Array = [F_m, F_f]
+	for type in ["riviere", "montagne", "jungle"]:
+		var ou := -1
+		for kr in C.regions.size():
+			if str(C.regions[kr]["type"]) == type and (ou < 0 or C.regions[kr]["pos"].length() < C.regions[ou]["pos"].length()):
+				ou = kr
+		if ou >= 0:
+			centres.append(C.regions[ou]["pos"] - C.tordre(C.regions[ou]["pos"]))
+	var ks := {}
+	for c in centres:
+		if c == Vector2.INF:
+			continue
+		var k0: Vector2i = W._cle_m(c)
+		for dx in range(-2, 3):
+			for dy in range(-2, 3):
+				ks[k0 + Vector2i(dx, dy)] = true
+	# rien n'est prévu de pousser là où la carte le dit nu — un lit de rivière, un lac, une paroi : ni un arbre, ni une place de
+	# géant ; et ce qui vient au pied d'un arbre (une liane, une fougère, une orchidée) a un vrai arbre près de lui
+	var avant: int = W.plan_version
+	var fantomes := {2: 0, 3: 0}
+	var arbres := {2: 0, 3: 0}
+	var seuls := {2: 0, 3: 0}
+	var pieds := {2: 0, 3: 0}
+	var surs := 0
+	var faux_surs := 0
+	for version in [2, 3]:
+		W.plan_version = version
+		for k in ks:
+			var plan: Array = W._plan_m(k)
+			var vrais: Array = []
+			for e in plan:
+				if str(e[0]) in ["arbre", "sapin"]:
+					arbres[version] += 1
+					if C.nu(e[1]):
+						fantomes[version] += 1
+					else:
+						vrais.append(e[1])
+			for e in plan:
+				if e.size() > 5 and int(e[5]) >= 0 and (int(e[5]) & Mi.PIED) and not C.nu(e[1]):
+					pieds[version] += 1
+					if not vrais.any(func(x): return x.distance_to(e[1]) < 60.0):
+						seuls[version] += 1
+				# (une place d'un quart où la carte ne dit rien nu ne la relit pas en se posant : elle ne l'est pas)
+				if e.size() > 6 and bool(e[6]):
+					surs += 1
+					if C.nu(e[1]):
+						faux_surs += 1
+	W.plan_version = avant
+	verif(fantomes[3] == 0 and seuls[3] == 0 and fantomes[2] > 0 and arbres[3] > 300 and pieds[3] > 50 and surs > 500 and faux_surs == 0,
+		"le plan sait ce que la carte dit nu : des %d arbres prévus près d'une rivière, d'un relief, d'une jungle, d'une frontière, aucun dans l'eau ni sur une paroi (%d au deuxième plan, qui ne tenaient qu'à la pose), et les %d plantes « au pied d'un arbre » ont toutes un vrai arbre près d'elles (%d à côté de rien au deuxième plan) ; les %d places des quarts où la carte ne dit rien nu ne le sont pas (%d)" % [
+		arbres[3], fantomes[2], pieds[3], seuls[2], surs, faux_surs])
+	# les places de géants se jugent chez elles : deux quarts voisins voient les mêmes, de part et d'autre d'une frontière
+	var desaccords := {2: 0, 3: 0}
+	var vus := 0
+	for version in [2, 3]:
+		W.plan_version = version
+		var sites := {}
+		var rects := {}
+		for c in [F_m, F_f]:
+			if c == Vector2.INF:
+				continue
+			var Q0 := Vector2i((c / (W.MORCEAU * 0.5)).floor())
+			for dx in range(-3, 4):
+				for dy in range(-3, 4):
+					var Q := Q0 + Vector2i(dx, dy)
+					var t: String = W._type_du_quart(Q)
+					if t == "" or sites.has(Q):
+						continue
+					var quart := Rect2(Vector2(Q) * W.MORCEAU * 0.5, Vector2(W.MORCEAU, W.MORCEAU) * 0.5)
+					var l := {}
+					for e_s in Mi.trones(W._contexte(t, quart), quart):
+						l[Vector2i((Vector2(e_s[0]) / R_TRONES).floor())] = true
+					sites[Q] = l
+					rects[Q] = quart
+		for Q in sites:
+			for Q2 in [Q + Vector2i(1, 0), Q + Vector2i(0, 1)]:
+				if not sites.has(Q2) or W._type_du_quart(Q) == W._type_du_quart(Q2):
+					continue
+				# (les cellules que les deux regardent)
+				var r_a: Rect2 = Rect2(rects[Q]).grow(115.0)
+				var r_b: Rect2 = Rect2(rects[Q2]).grow(115.0)
+				var a_c := Vector2i((r_a.position / R_TRONES).floor()).max(Vector2i((r_b.position / R_TRONES).floor()))
+				var b_c := Vector2i((r_a.end / R_TRONES).floor()).min(Vector2i((r_b.end / R_TRONES).floor()))
+				for x in range(a_c.x, b_c.x + 1):
+					for y in range(a_c.y, b_c.y + 1):
+						if version == 3:
+							vus += 1
+						if sites[Q].has(Vector2i(x, y)) != sites[Q2].has(Vector2i(x, y)):
+							desaccords[version] += 1
+	W.plan_version = avant
+	verif(vus > 20 and desaccords[3] == 0,
+		"les places de géants se jugent chez elles (le couvert du biome où elles tombent, l'eau, la carte) : de part et d'autre d'une frontière, deux quarts voisins voient les mêmes (%d cellules regardées par les deux, %d désaccords ; %d au deuxième plan)" % [
+		vus, desaccords[3], desaccords[2]])
+	# l'eau des creux, à la frontière d'un marais et d'une prairie : la même où que soit la veilleuse (dans le marais, dans la
+	# prairie), et là où le plan la croit — un marais garde la sienne, une prairie n'en a pas ; aucun arbre n'y trempe
+	if F_m == Vector2.INF:
+		verif(false, "une frontière entre un marais et une prairie, pour y regarder l'eau des creux")
+		return
+	var garde_c := {"crue": Cl.crue, "fond": Cl.crue_fond}
+	var axes_ici: Dictionary = W.lieu_de(jeu.biome)["axes"]
+	var ecarts := 0
+	var desaccord_plan := 0
+	var mouilles := 0
+	var points := 0
+	var dans_l_eau := 0
+	var poses: Array = []
+	for kx in range(-1, 2):
+		for ky in range(-1, 2):
+			var k_m: Vector2i = W._cle_m(F_m) + Vector2i(kx, ky)
+			if not W._morceaux.has(k_m):
+				W._fabriquer(k_m)
+				poses.append(k_m)
+	var arbres_la: Array = []
+	for k_m in poses:
+		for o in W._morceaux[k_m]["objets"]:
+			if is_instance_valid(o) and o.genre in ["arbre", "sapin"]:
+				arbres_la.append(o)
+	var eau_ici := {}
+	for ou_v in ["marais", "prairie"]:
+		Cl.changer_de_lieu(W.lieu_de(ou_v)["axes"], {}, ou_v)
+		Cl.crue = Cl.crue_fond
+		var l: Array = []
+		for i in 900:
+			var q: Vector2 = F_m + Vector2(-750.0 + 50.0 * (i % 30), -750.0 + 50.0 * (i / 30))
+			l.append(float(Cl.eau(q)))
+		eau_ici[ou_v] = l
+		dans_l_eau += arbres_la.filter(func(o): return float(Cl.eau(o.position)) >= 0.6).size()
+	for i in 900:
+		var q: Vector2 = F_m + Vector2(-750.0 + 50.0 * (i % 30), -750.0 + 50.0 * (i / 30))
+		if absf(float(eau_ici["marais"][i]) - float(eau_ici["prairie"][i])) > 0.0001:
+			ecarts += 1
+		var Q := Vector2i((q / (W.MORCEAU * 0.5)).floor())
+		var t: String = W._type_du_quart(Q)
+		if t == "" or C.mouille(q) or float(C.gue_en(q)) > 0.0 or (T != null and float(T.fondriere(q)) > 0.0):
+			continue
+		points += 1
+		var ctx_q: Dictionary = W._contexte(t, Rect2(Vector2(Q) * W.MORCEAU * 0.5, Vector2(W.MORCEAU, W.MORCEAU) * 0.5))
+		var plan_mouille: bool = float(Mi.relief_en(ctx_q, q)) < float(Mi.niveau(ctx_q, q))
+		if plan_mouille:
+			mouilles += 1
+		if plan_mouille != (float(eau_ici["prairie"][i]) > 0.0):
+			desaccord_plan += 1
+	Cl.changer_de_lieu(axes_ici, jeu.meteo, jeu.biome)
+	Cl.crue = garde_c["crue"]
+	Cl.crue_fond = garde_c["fond"]
+	for k_m in poses:
+		W._oublier(k_m)
+	verif(ecarts == 0 and desaccord_plan == 0 and mouilles > 10 and points > 400 and dans_l_eau == 0 and arbres_la.size() > 10,
+		"à la frontière d'un marais et d'une prairie, l'eau des creux est celle de chaque lieu : la même que la veilleuse soit dans le marais ou dans la prairie (%d points sur 900 diffèrent), là où le plan la croit (%d désaccords sur %d points, %d mouillés), et aucun des %d arbres d'alentour n'y trempe (%d)" % [
+		ecarts, desaccord_plan, points, mouilles, arbres_la.size(), dans_l_eau])
+
+# l'empreinte du plan de quelques morceaux du monde ouvert (le cœur de quelques biomes, des frontières, une rivière, du relief),
+# à une version du plan : une partie gardée à cette version y a noté ce qu'elle a changé par le rang des places — il ne doit
+# pas bouger
+func _empreinte_du_plan(W, version: int) -> String:
+	var C = jeu.carte
+	var ks: Array = [Vector2i(0, 0), Vector2i(2, 1), Vector2i(3, -13), Vector2i(5, -12), Vector2i(11, -9), Vector2i(12, -10), Vector2i(13, -9)]
+	for type in ["foret", "marais", "desert", "lande", "taiga", "volcan", "banquise", "jungle", "montagne", "riviere"]:
+		var ou := -1
+		for kr in C.regions.size():
+			if str(C.regions[kr]["type"]) == type and (ou < 0 or C.regions[kr]["pos"].length() < C.regions[ou]["pos"].length()):
+				ou = kr
+		if ou >= 0:
+			var c: Vector2 = C.regions[ou]["pos"] - C.tordre(C.regions[ou]["pos"])
+			ks.append(W._cle_m(c))
+			ks.append(W._cle_m(c) + Vector2i(1, 0))
+	var avant: int = W.plan_version
+	W.plan_version = version
+	var hc := HashingContext.new()
+	hc.start(HashingContext.HASH_SHA256)
+	var places := 0
+	for k in ks:
+		var plan: Array = W._plan_m(k)
+		places += plan.size()
+		hc.update(var_to_bytes(plan))
+	W.plan_version = avant
+	return "%s (%d morceaux, %d places)" % [hc.finish().hex_encode().substr(0, 16), ks.size(), places]
 
 func _la_repartition() -> void:
 	print("La répartition")
@@ -6033,6 +6289,10 @@ func _la_repartition() -> void:
 	var comptes := {}
 	var i_b := 0
 	var regles_a_l_arrivee := true
+	var groupes_vus := 0
+	var groupes_meles := 0
+	var groupes_avant := 0
+	var groupes_meles_avant := 0
 	for type in ["foret", "taiga", "desert", "banquise"]:
 		await jeu.donnees.charger_lieu(type)
 		var etait: bool = W._lieux.has(type)
@@ -6042,6 +6302,10 @@ func _la_repartition() -> void:
 		i_b += 1
 		comptes[type] = Re.dire(W, type, d["rect"], "(à part)", true, false) if OS.has_environment("LISIERE_MILIEU") else Re.compter(W, type, d["rect"], true, false)
 		comptes[type]["plan"] = d["plan"]
+		groupes_vus += int(d["groupes"])
+		groupes_meles += int(d["meles"])
+		groupes_avant += int(d["groupes_avant"])
+		groupes_meles_avant += int(d["meles_avant"])
 		for o in d["objets"]:
 			if is_instance_valid(o):
 				W._defaire(o)
@@ -6079,6 +6343,11 @@ func _la_repartition() -> void:
 	verif(regles_a_l_arrivee and meme_ech and inutiles.is_empty() and W._tables.has("lande") and W.reglages_en_morceau == en_morceau_avant,
 		"les parts d'un biome se règlent quand son herbier arrive, son biome fait avec lui (l'échantillon fait avant, en plusieurs images : %s), pas dans son premier morceau (%d morceaux l'ont fait) ; une grotte, une partie au premier plan n'en règlent pas%s" % [
 		"le même que d'un coup" if meme_ech else "PAS le même que d'un coup", W.reglages_en_morceau - en_morceau_avant, (" (réglées pour rien : %s)" % str(inutiles)) if not inutiles.is_empty() else ""])
+	# une colonie, une touffe, un fourré : une seule plante, même à cheval sur deux cellules de peuplement (sa première place dit
+	# la sienne) ; chaque place tirait d'après la sienne
+	verif(groupes_vus >= 1000 and groupes_meles == 0 and groupes_meles_avant > 0,
+		"une colonie, une touffe, un fourré tirent une seule plante : %d groupes sur quatre biomes, aucun mêlé (chaque place tirant d'après sa cellule : %d sur %d, %.1f %%)" % [
+		groupes_vus, groupes_meles_avant, groupes_avant, 100.0 * float(groupes_meles_avant) / maxf(1.0, float(groupes_avant))])
 	var f: Dictionary = comptes["foret"]
 	var ta: Dictionary = comptes["taiga"]
 	var de: Dictionary = comptes["desert"]
@@ -6166,6 +6435,7 @@ func _la_repartition() -> void:
 	W.reprendre_ouvert({"changes": {}, "ajouts": {}, "plan": W.PLAN})
 	W._fabriquer(k)
 	verif(W.plan_version == W.PLAN and W._plan_m(k) == plan_a, "et le plan d'aujourd'hui revient tel quel")
+	await _le_troisieme_plan(W)
 
 
 # --- le dessin de la flore (scripts/flore_trait.gd, flore_arbres.gd, flore_sol.gd, flore_buissons.gd ; monde.gd, taille_de) : la

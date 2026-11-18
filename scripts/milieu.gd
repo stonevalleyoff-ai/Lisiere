@@ -118,6 +118,9 @@ const CARACTERES := {
 }
 # les strates où une place dont l'herbier ne veut pas reste vide (les arbres, eux, tiennent toutes leurs places : le bois)
 const ECLAIRCIES := ["buisson", "sol", "eau"]
+# (le monde ouvert, au troisième plan) la crue de fond se retient aux nœuds d'une grille de ce pas, et se mêle entre eux
+# (scripts/monde.gd, crue_fond_en ; crue_en, plus bas)
+const MAILLE_CRUE := 128.0
 # les peuplements : la taille d'une cellule (pixels), et la part des places qui y tirent la plante de la cellule
 const COHESION := {"arbre": [R.MILIEU_PEUPLEMENT, R.MILIEU_COHESION_ARBRES], "buisson": [220.0, 0.4], "sol": [170.0, 0.25]}
 
@@ -483,9 +486,14 @@ static func _vers(g: Dictionary, p: Vector2, rayon: float) -> float:
 
 # le couvert en p, de 0 à 1 : la chance qu'un arbre y pousse (le bruit des bosquets, plus le couvert du biome)
 static func couvert_en(ctx: Dictionary, p: Vector2) -> float:
+	return _couvert(ctx, p, float(ctx["mesures"][0]))
+
+
+# (le même, d'après le couvert d'un biome donné)
+static func _couvert(ctx: Dictionary, p: Vector2, base: float) -> float:
 	var b = ctx.get("bosquets")
 	var v: float = b.get_noise_2d(p.x, p.y) if b != null else 0.0
-	return clampf((0.25 + float(ctx["mesures"][0])) * 0.5 + v * 0.9, 0.0, 1.0)
+	return clampf((0.25 + base) * 0.5 + v * 0.9, 0.0, 1.0)
 
 
 # la distance de p au bord de la mare la plus proche (négative : dedans ; INF : aucune près)
@@ -501,7 +509,10 @@ static func _vers_mare(mares: Array, p: Vector2) -> float:
 
 
 # les places de géants près d'un rectangle : une trame de cellules, un site au plus par cellule, là où le couvert est épais
-# (le même calcul partout : un morceau sait où sont les géants de son voisin, et leur laisse la place)
+# (le même calcul partout : un morceau sait où sont les géants de son voisin, et leur laisse la place). Au troisième plan du
+# monde ouvert, chaque site se juge d'après ce qui est chez lui — le couvert du biome du quart où il tombe (ctx["couvert_de"] ;
+# -1 : un quart d'eau, une grotte), l'eau des creux du lieu, la carte (ctx["carte_nu"] : pas dans une rivière, un lac, une paroi,
+# la roche) —, pour que deux morceaux de part et d'autre d'une frontière voient les mêmes
 static func trones(ctx: Dictionary, rect: Rect2) -> Array:
 	var out: Array = []
 	var cote: float = R.MILIEU_TRONES
@@ -516,7 +527,12 @@ static func trones(ctx: Dictionary, rect: Rect2) -> Array:
 			var q := (Vector2(x, y) + Vector2(0.2 + 0.6 * float(h % 1000) / 1000.0, 0.2 + 0.6 * float((h / 1000) % 1000) / 1000.0)) * cote
 			if q.length() < 300.0 or (borne > 0.0 and (absf(q.x) > borne - 60.0 or absf(q.y) > borne - 60.0)):
 				continue
-			if couvert_en(ctx, q) < R.MILIEU_TRONE_COUVERT or _noye(ctx, q):
+			var base := float(ctx["mesures"][0])
+			if ctx.has("couvert_de"):
+				base = float(ctx["couvert_de"].call(q))
+				if base < 0.0:
+					continue
+			if _couvert(ctx, q, base) < R.MILIEU_TRONE_COUVERT or _noye_site(ctx, q) or (ctx.has("carte_nu") and bool(ctx["carte_nu"].call(q))):
 				continue
 			# (son tirage avance d'une cellule à l'autre, comme celui des peuplements : les géants ont leur part au plus juste)
 			var u: float = x * 0.7548776662 + y * 0.5698402910 + float(absi(graine) % 1000) / 1000.0
@@ -534,10 +550,50 @@ static func relief_en(ctx: Dictionary, p: Vector2) -> float:
 
 
 # le niveau de l'eau qui reste dans les creux d'un lieu détrempé (un marais), sur l'échelle du relief (-1 : il n'en reste pas) ;
-# ctx["crue"] : la crue de fond du biome (scripts/climat.gd, crue_fond)
-static func niveau(ctx: Dictionary) -> float:
-	var crue := float(ctx.get("crue", 0.0))
+# ctx["crue"] : la crue de fond du biome (scripts/climat.gd, crue_fond). En p, au troisième plan du monde ouvert : celle du lieu
+# (crue_en) ; sans p, la plus haute du rectangle (ctx["crue_max"])
+static func niveau(ctx: Dictionary, p = null) -> float:
+	var crue := float(ctx.get("crue_max", ctx.get("crue", 0.0))) if p == null else crue_en(ctx, p)
 	return lerpf(0.26, 0.5, crue) if crue > 0.01 else -1.0
+
+
+# la crue de fond en p : celle du biome (ctx["crue"]) ; au troisième plan du monde ouvert, celle du lieu où est p — le temps
+# qu'il fait et le dessin de l'eau la lisent aussi (scripts/climat.gd, crue_en ; scripts/monde.gd, crue_fond_en). Là où elle
+# change (près d'une frontière), ctx["crues"] la dit sur le rectangle (rect ; v : ses nœuds, de k0, n de côté), ctx["crue_champ"]
+# ailleurs ; là où elle est la même partout, ctx["crue"]
+static func crue_en(ctx: Dictionary, p: Vector2) -> float:
+	var g = ctx.get("crues")
+	if g == null:
+		return float(ctx.get("crue", 0.0))
+	if not Rect2(g["rect"]).has_point(p):
+		return float(ctx["crue_champ"].call(p))
+	var u := p / MAILLE_CRUE
+	var k := Vector2i(u.floor())
+	var t := u - Vector2(k)
+	var n: int = g["n"]
+	var i: int = (k.y - int(g["k0"].y)) * n + (k.x - int(g["k0"].x))
+	var v: PackedFloat64Array = g["v"]
+	var a := lerpf(v[i], v[i + 1], t.x)
+	var b := lerpf(v[i + n], v[i + n + 1], t.x)
+	return lerpf(a, b, t.y)
+
+
+# (une place de géant) est-elle dans l'eau qui reste dans les creux ? Au troisième plan du monde ouvert, d'après la crue du lieu
+# où elle tombe, lue de la même façon par chaque quart d'alentour (ctx["crue_champ"])
+static func _noye_site(ctx: Dictionary, q: Vector2) -> bool:
+	if not ctx.has("crue_champ"):
+		return _noye(ctx, q)
+	var c := float(ctx["crue_champ"].call(q))
+	var eau := lerpf(0.26, 0.5, c) if c > 0.01 else -1.0
+	return eau > 0.0 and relief_en(ctx, q) < eau
+
+
+# (le monde ouvert, au troisième plan) la carte dit-elle que rien ne pousse en p — une rivière, un lac, une paroi, la roche ?
+# (ctx["nu"] : là seulement où il peut y en avoir près ; la carte est lente à lire). Le plan le demande pour ce sur quoi d'autres
+# places s'appuient — un arbre (le couvert, le pied d'un arbre, une liane), un rocher (sa couronne de lichens), une mare (sa
+# ceinture) ; une plante du sol, un buisson que la carte dit nus ne se posent pas, sans plus (monde.gd, _poser)
+static func _nu(ctx: Dictionary, p: Vector2) -> bool:
+	return ctx.has("nu") and bool(ctx["nu"].call(p))
 
 
 # le milieu du sol en p : le couvert (arbres : la grille des arbres du rectangle), l'herbe, la boue, la neige, le sec, la pierre,
@@ -579,7 +635,7 @@ static func _sol(ctx: Dictionary, p: Vector2) -> int:
 		if float(ici["neige"]) > 0.4:
 			m |= NEIGE
 	var h := relief_en(ctx, p)
-	var eau := niveau(ctx)
+	var eau := niveau(ctx, p)
 	if h < R.MILIEU_CREUX:
 		m |= CREUX
 	elif not (m & BOUE) and (h > R.MILIEU_BUTTE or _sur_une_dune(ctx, p)):
@@ -591,7 +647,7 @@ static func _sol(ctx: Dictionary, p: Vector2) -> int:
 
 # p est-il dans l'eau qui reste dans les creux (à plus de « marge » de sa rive, sur l'échelle du relief) ?
 static func _noye(ctx: Dictionary, p: Vector2, marge: float = 0.0) -> bool:
-	var eau := niveau(ctx)
+	var eau := niveau(ctx, p)
 	return eau > 0.0 and relief_en(ctx, p) < eau - marge
 
 
@@ -729,15 +785,16 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 			var g := _graine(r, suite)
 			var a := r.randf() * TAU
 			var h := relief_en(ctx, q)
-			if q.length() < 260.0 or h > eau - 0.012 or _dans_l_eau(ctx, q, 30.0):
+			if q.length() < 260.0 or h > niveau(ctx, q) - 0.012 or _dans_l_eau(ctx, q, 30.0):
 				continue
 			var ombre := SOUS if couvert_en(ctx, q) >= R.MILIEU_BOSQUET else 0
 			for j in 2:
 				var p := (q + Vector2(cos(a), sin(a) * 0.4) * 34.0 * j).clamp(rect.position, rect.end - Vector2(0.01, 0.01))
 				var hp := relief_en(ctx, p)
-				if j > 0 and hp > eau - 0.012:
+				var eau_p := niveau(ctx, p)
+				if j > 0 and hp > eau_p - 0.012:
 					continue
-				plan.append(["eau", p, "feuilles", g + j * 10007, type, (COEUR if hp < eau - R.MILIEU_PROFOND else 0) | ombre | (j << RANG) | (2 << TAILLE)])
+				plan.append(["eau", p, "feuilles", g + j * 10007, type, (COEUR if hp < eau_p - R.MILIEU_PROFOND else 0) | ombre | (j << RANG) | (2 << TAILLE)])
 			n -= 1
 	var mares: Array = []
 	n = Decor._nombre(r, n_eau / 3.5)
@@ -749,7 +806,8 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		var chance := r.randf()
 		var g := _graine(r, suite)
 		var tour := r.randf() * TAU
-		if q.length() < 260.0 or _dans_l_eau(ctx, q, 70.0) or (eau > 0.0 and relief_en(ctx, q) < eau + 0.06):
+		var eau_q := niveau(ctx, q)
+		if q.length() < 260.0 or _dans_l_eau(ctx, q, 70.0) or (eau_q > 0.0 and relief_en(ctx, q) < eau_q + 0.06) or _nu(ctx, q):
 			continue
 		if terrain and float(Decor.sol_ici(t, s, q)["boue"]) < 0.5 and chance > 0.3:
 			continue
@@ -797,7 +855,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		if r.randf() > R.MILIEU_ARBRES_DE_RIVE or poses >= n:
 			continue
 		var p: Vector2 = mare[0] + Vector2(cos(a), sin(a) * ov) * (float(mare[1]) + d)
-		if not rect.has_point(p) or p.length() < 150.0 or _vers(arbres, p, R.MILIEU_ESPACE_ARBRES) < INF or sites.any(func(e): return p.distance_to(e[0]) < R.MILIEU_DEGAGE):
+		if not rect.has_point(p) or p.length() < 150.0 or _vers(arbres, p, R.MILIEU_ESPACE_ARBRES) < INF or sites.any(func(e): return p.distance_to(e[0]) < R.MILIEU_DEGAGE) or _nu(ctx, p):
 			continue
 		plan.append([arbre, p, "feuilles", g, type, (_sol(ctx, p) & ~SEC) | RIVE | (1 << TAILLE)])
 		_ranger(arbres, p)
@@ -821,7 +879,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 			if p.distance_to(e[0]) < R.MILIEU_DEGAGE:
 				pris = true
 				break
-		if pris:
+		if pris or _nu(ctx, p):
 			continue
 		var m := _sol(ctx, p)
 		if c >= R.MILIEU_COEUR:
@@ -841,7 +899,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 	# 3. les rochers (pas dans une mare)
 	var rochers := {}
 	var liste_rochers: Array = _semis(r, plan, rect, "rocher", (40.0 + 140.0 * alt) * ka, "pierre", null, 1.0, type,
-		func(p: Vector2) -> bool: return _vers_mare(mares, p) < 12.0 or _dans_l_eau(ctx, p, 14.0))
+		func(p: Vector2) -> bool: return _vers_mare(mares, p) < 12.0 or _dans_l_eau(ctx, p, 14.0) or _nu(ctx, p))
 	for p in liste_rochers:
 		_ranger(rochers, p)
 	# 4. les buissons : des fourrés (un groupe de un à quatre), près des bosquets ; et des lianes, au pied des arbres (les géants
@@ -923,7 +981,8 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		for i in n:
 			var q := Decor._dans(r, rect)
 			var h := relief_en(ctx, q)
-			if h < eau - 0.012 or h > eau + R.MILIEU_RIVAGE * 0.6 or q.length() < 170.0:
+			var eau_q := niveau(ctx, q)
+			if eau_q <= 0.0 or h < eau_q - 0.012 or h > eau_q + R.MILIEU_RIVAGE * 0.6 or q.length() < 170.0:
 				continue
 			var pente := Vector2(relief_en(ctx, q + Vector2(6.0, 0.0)) - h, relief_en(ctx, q + Vector2(0.0, 6.0)) - h)
 			if pente.length() < 0.000001 or _dans_l_eau(ctx, q, 4.0):

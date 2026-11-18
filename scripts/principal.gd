@@ -625,6 +625,8 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	couche_ciel.add_child(ciel)
 	incendie.vider()
 	climat.preparer(graine, biome_info.get("axes", {}), meteo, biome)
+	# (le monde ouvert : l'eau qui reste dans les creux est celle de chaque lieu, la même pour le plan, le temps et son dessin)
+	climat.crue_fond_en = Callable(monde, "crue_fond_en") if ouvert and carte != null else Callable()
 	# (ce que le temps dessine dans le lieu : le sol détrempé, l'eau, la foudre ; les flammes de l'incendie)
 	for dessin in [TempsSol.new(), IncendieFlammes.new()]:
 		dessin.jeu = self

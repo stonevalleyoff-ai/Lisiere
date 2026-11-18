@@ -35,8 +35,12 @@ const HERBES := 110            # les plants d'herbes d'un lieu (les six espèces
 const OUBLI := 2300.0          # plus loin, un morceau est défait : on ne garde que ce qu'on y a changé
 # la version du plan (ce qu'un morceau contient, place par place) : une partie gardée retient ce qu'on a changé par le rang des
 # places dans ce plan. 1 : chaque strate semée au hasard, une plante tirée par place selon sa seule part ; 2 : chaque place a
-# son milieu (scripts/milieu.gd). Une partie gardée d'avant garde son plan jusqu'à sa fin (reprendre_ouvert).
-const PLAN := 2
+# son milieu (scripts/milieu.gd) ; 3 : le plan sait aussi ce que la carte dit nu (pas d'arbre prévu dans un lit de rivière,
+# sur une paroi : rien ne s'appuie sur lui), il juge les places de géants d'après ce qui est chez elles (le même de part et
+# d'autre d'une frontière), l'eau des creux est celle du lieu (crue_fond_en : la même que le temps qu'il fait), le biome de
+# chaque quart ne tient qu'à sa place (_type_du_quart), et un groupe tire une seule plante (sa première place dit sa cellule).
+# Une partie gardée garde son plan jusqu'à sa fin (reprendre_ouvert) : ce qu'elle a changé y est noté par rang.
+const PLAN := 3
 # la cueillette (par lieu de 4 200 pixels de côté) : les fleurs des prés (et ce que l'herbe du sol y ajoute), les champignons
 # des bois (sous un couvert humide), les mares et leurs plantes d'eau (ce que la boue y ajoute)
 const FLEURS := 20.0
@@ -103,6 +107,11 @@ var _pays_cases := {}                # case du pays → ce qu'elle porte (script
 var _echantillons := {}
 var _tables := {}
 var _densites := {}
+var _crues := {}                     # (le troisième plan) la crue de fond aux nœuds de sa grille (crue_fond_en)
+var _crue_quarts := {}               # … sur chaque quart de morceau, si elle y est la même partout
+var _crue_cellules := {}             # … s'il peut y en avoir près, par case de la carte
+var _crues_des_regions := PackedFloat64Array()
+var _quarts := {}                    # (le troisième plan) le biome de chaque quart de morceau (_type_du_quart)
 var _a_refaire := {}                 # les morceaux faits avant que l'herbier de leur biome arrive : refaits un par image (suivre)
 
 
@@ -269,8 +278,12 @@ func _semer_tout(r: RandomNumberGenerator, gardes: Array = []) -> void:
 	if not gardes.is_empty():
 		_reposer(gardes)
 		return
+	# (un groupe tire une seule plante : sa première place dit sa cellule)
+	var tete := Vector2.INF
 	for e in plan:
-		_poser(str(e[0]), e[1], palette[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), {}, int(e[5]))
+		if int(e[5]) >= 0 and Milieu.rang(int(e[5])) == 0:
+			tete = e[1]
+		_poser(str(e[0]), e[1], palette[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), {}, int(e[5]), false, null, tete if int(e[5]) >= 0 else Vector2.INF)
 
 
 # --- une partie gardée ---
@@ -558,7 +571,9 @@ func _plante(genre: String, graine: int, flore_: Dictionary) -> Dictionary:
 # on sait que la place servira : la carte est lente à lire
 # garde : une plante d'une partie gardée (null : non) — l'id de sa plante, ou "" s'il n'est pas gardé : elle revient elle-même si
 # l'herbier l'a encore ; sinon sa place tire dans son milieu, mais ne reste pas vide (ni l'éclaircie, ni la taille du groupe)
-func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Dictionary = {}, milieu: int = -1, sur_la_carte: bool = false, garde = null):
+# tete : la première place de son groupe (une colonie, une touffe) : c'est elle qui dit la cellule du peuplement, pour que tout
+# le groupe tire la même plante (Vector2.INF : la place elle-même — une partie gardée, un monde ouvert à son deuxième plan)
+func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Dictionary = {}, milieu: int = -1, sur_la_carte: bool = false, garde = null, tete: Vector2 = Vector2.INF):
 	if not ici.is_empty():
 		Objet.climat = ici["climat"]
 	var fl: Dictionary = ici["flore"] if not ici.is_empty() else flore
@@ -602,9 +617,10 @@ func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Diction
 			var tb = _table(str(ici.get("type", ""))).get(st)
 			if tb == null:
 				return null
-			pl = Milieu.tirer(tb, m, k, Milieu.cellule(st, p, k, m, _graine))
+			var ou := p if tete == Vector2.INF else tete
+			pl = Milieu.tirer(tb, m, k, Milieu.cellule(st, ou, k, m, _graine))
 			if pl.is_empty() and garde != null:
-				pl = Milieu.tirer(tb, m, k, Milieu.cellule(st, p, k, m, _graine), true)
+				pl = Milieu.tirer(tb, m, k, Milieu.cellule(st, ou, k, m, _graine), true)
 		if pl.is_empty():
 			return null
 		vrai = str(pl["genre"])
@@ -853,7 +869,7 @@ func suivre(p: Vector2, tout := false) -> void:
 # ce qu'un morceau contient, tiré de la graine du lieu et de sa place (toujours le même) : [genre, place, ton, graine]. Les
 # mêmes densités qu'un lieu fermé, rapportées à sa surface ; plus serré là où le bruit des bosquets est haut ; rien sur le réveil
 func _plan_m(k: Vector2i) -> Array:
-	if plan_version < PLAN:
+	if plan_version < 2:
 		return _plan_m_1(k)
 	var r := RandomNumberGenerator.new()
 	r.seed = hash(Vector3i(_graine, k.x, k.y))
@@ -872,11 +888,18 @@ func _plan_m(k: Vector2i) -> Array:
 		for qx in 2:
 			for qy in 2:
 				var quart := Rect2(rect.position + Vector2(qx, qy) * MORCEAU * 0.5, Vector2(MORCEAU, MORCEAU) * 0.5)
-				var reg: Dictionary = carte.regions[carte.region_en(quart.get_center() + Vector2(r.randf_range(-130, 130), r.randf_range(-130, 130)))]
-				if reg["eau"]:
+				var type := ""
+				if plan_version >= 3:
+					type = _type_du_quart(k * 2 + Vector2i(qx, qy))
+				else:
+					var reg: Dictionary = carte.regions[carte.region_en(quart.get_center() + Vector2(r.randf_range(-130, 130), r.randf_range(-130, 130)))]
+					type = "" if reg["eau"] else str(reg["type"])
+				if type == "":
 					continue
-				var type := str(reg["type"])
 				var L := lieu_de(type)
+				var i0 := plan.size()
+				var j0 := cueillette.size()
+				var sans_nu := false
 				if bool(L.get("sous_terre", false)):
 					# (une grotte : de la pierre, et ses champignons — ceux de l'herbier d'Orvane, tirés selon leur part)
 					_prevoir_lieu(r, plan, quart, str(L["arbre"]), L["mesures"], type)
@@ -885,6 +908,7 @@ func _plan_m(k: Vector2i) -> Array:
 					_berges(ctx, quart)
 					Milieu.prevoir(ctx, r, quart, plan)
 					Milieu.cueillette(ctx, rc, quart, cueillette, _arbres_du_plan(plan, quart))
+					sans_nu = plan_version >= 3 and not ctx.has("nu")
 				# une crête (deux biomes qui ne sont pas voisins dans Orvane) : des rochers serrés, on ne passe pas
 				if carte.crete_en(quart.get_center()) < 1.0 or carte.crete_en(quart.position) < 1.0 or carte.crete_en(quart.end) < 1.0:
 					for i in 44:
@@ -892,6 +916,13 @@ func _plan_m(k: Vector2i) -> Array:
 						var g := r.randi()
 						if carte.crete_en(q) < 0.45 + 0.25 * r.randf():
 							plan.append(["rocher", q, "pierre", g, type, -1])
+				if sans_nu:
+					# (au troisième plan, un quart où la carte ne dit rien nu — ni eau, ni paroi, ni roche près — : ses places n'ont pas à
+					# la relire en se posant ; elles sont toutes dans le quart)
+					for i in range(i0, plan.size()):
+						plan[i].append(true)
+					for j in range(j0, cueillette.size()):
+						cueillette[j].append(true)
 	# au réveil, de quoi faire un premier feu à portée (les mêmes, quel que soit le morceau où ils tombent)
 	var r0 := RandomNumberGenerator.new()
 	r0.seed = _graine + 31
@@ -918,7 +949,221 @@ func _contexte(type: String, rect: Rect2 = Rect2()) -> Dictionary:
 			"borne": 0.0, "relief": _relief, "crue": float(L["crue"])}
 	if rect.size.x > 0.0:
 		_pays(ctx, rect, lieu if type == "" else type)
+		if carte != null and plan_version >= 3 and type != "":
+			_contexte_3(ctx, rect)
 	return ctx
+
+
+# (le troisième plan du monde ouvert) ce que le plan d'un quart sait de ce qui l'entoure : la carte (ce qu'elle dit nu : une
+# rivière, un lac, une paroi, la roche ; demandée là seulement où il peut y en avoir près), le couvert du biome du quart où
+# tombe chaque place de géant, l'eau des creux de chaque lieu (la même que le temps qu'il fait)
+func _contexte_3(ctx: Dictionary, rect: Rect2) -> void:
+	ctx["carte_nu"] = Callable(self, "_site_nu")
+	ctx["couvert_de"] = Callable(self, "_couvert_du_quart")
+	ctx["crue_champ"] = Callable(self, "crue_fond_en")
+	# (de l'eau près du quart : une rivière, un lac — _berges le lira ; la crue sur le quart et deux nœuds autour : la même partout,
+	# le plus souvent — loin d'un marais, au cœur d'un marais —, sinon ses nœuds)
+	ctx["eau_pres"] = _eau_pres(rect.get_center())
+	if bool(ctx["eau_pres"]):
+		ctx["nu"] = Callable(carte, "nu")
+	elif _relief_pres(rect):
+		# (sans eau près, rien n'y est mouillé : seuls la paroi et la roche — sans lire la région de chaque place)
+		ctx["nu"] = Callable(self, "_nu_relief")
+	var zone := rect.grow(2.0 * Milieu.MAILLE_CRUE)
+	var u := _crue_du_quart(Vector2i((rect.position / (MORCEAU * 0.5)).floor()))
+	if u >= 0.0:
+		ctx["crue"] = u
+		ctx["crue_max"] = u
+		return
+	var k0 := Vector2i((zone.position / Milieu.MAILLE_CRUE).floor())
+	var k1 := Vector2i((zone.end / Milieu.MAILLE_CRUE).floor()) + Vector2i(1, 1)
+	var n: int = maxi(k1.x - k0.x, k1.y - k0.y) + 1
+	var v := PackedFloat64Array()
+	v.resize(n * n)
+	var haut := 0.0
+	for y in n:
+		for x in n:
+			var c := _crue_au_noeud(k0 + Vector2i(x, y))
+			v[y * n + x] = c
+			haut = maxf(haut, c)
+	ctx["crue_max"] = haut
+	ctx["crues"] = {"rect": Rect2(Vector2(k0) * Milieu.MAILLE_CRUE, Vector2(n - 1, n - 1) * Milieu.MAILLE_CRUE), "k0": k0, "n": n, "v": v}
+
+
+# --- (le monde ouvert) l'eau qui reste dans les creux, lieu par lieu ---
+# La crue de fond (scripts/climat.gd, crue_fond) est celle du biome de chaque lieu — un marais, une mangrove en ont ; une prairie,
+# non —, retenue aux nœuds d'une grille (Milieu.MAILLE_CRUE) et mêlée entre eux : près d'une frontière, l'eau des creux baisse
+# d'un biome à l'autre. Le plan la lit (au troisième plan : scripts/milieu.gd, crue_en), le temps qu'il fait et le dessin de l'eau
+# aussi (scripts/climat.gd, crue_en ; scripts/temps_sol.gd) : l'eau d'un creux est la même pour eux, où que soit la veilleuse
+func crue_fond_en(p: Vector2) -> float:
+	if carte == null:
+		return _crue
+	# (sur un quart où elle est la même partout, et deux nœuds autour : elle, sans lire les nœuds)
+	var uq := _crue_du_quart(Vector2i((p / (MORCEAU * 0.5)).floor()))
+	if uq >= 0.0:
+		return uq
+	var u := p / Milieu.MAILLE_CRUE
+	var k := Vector2i(u.floor())
+	var t := u - Vector2(k)
+	var a := lerpf(_crue_au_noeud(k), _crue_au_noeud(k + Vector2i(1, 0)), t.x)
+	var b := lerpf(_crue_au_noeud(k + Vector2i(0, 1)), _crue_au_noeud(k + Vector2i(1, 1)), t.x)
+	return lerpf(a, b, t.y)
+
+
+func _crue_au_noeud(k: Vector2i) -> float:
+	var c = _crues.get(k)
+	if c == null:
+		if _crues.size() > 60000:
+			_crues.clear()
+		c = _crue_de_region(carte.region_en(Vector2(k) * Milieu.MAILLE_CRUE))
+		_crues[k] = c
+	return c
+
+
+# (une étendue d'eau n'a pas de creux : elle est l'eau)
+func _crue_de_region(i: int) -> float:
+	var reg: Dictionary = carte.regions[i]
+	return 0.0 if bool(reg["eau"]) else float(_base_de(str(reg["type"]))["crue"])
+
+
+# la crue de fond, si elle est la même sur tout un rectangle (-1 sinon) : chaque nœud y est de la région la plus proche de lui
+# (sur le plan tordu) ; si toutes les régions qui pourraient l'être ont la même, c'est elle. (Un point du rectangle est, sur le
+# plan tordu, à moins de deux fois sa demi-diagonale du centre : la torsion le déplace d'au plus 0,8 fois ce qu'on avance.)
+func crue_uniforme(zone: Rect2) -> float:
+	var c := zone.get_center()
+	var q: Vector2 = c + carte.tordre(c)
+	var cel := Vector2i((q / carte.cote).floor())
+	# (loin de toute région qui en a — sept cases de la carte autour —, aucune : rien à lire de plus)
+	if not _crue_pres(cel):
+		return 0.0
+	var d0 := INF
+	for x in range(cel.x - 2, cel.x + 3):
+		for y in range(cel.y - 2, cel.y + 3):
+			for i in carte._cases.get(Vector2i(x, y), []):
+				d0 = minf(d0, q.distance_to(carte.regions[i]["pos"]))
+	var marge := 2.0 * 1.8 * (zone.size.length() * 0.5 + Milieu.MAILLE_CRUE * 1.5)
+	var u := -1.0
+	for x in range(cel.x - 2, cel.x + 3):
+		for y in range(cel.y - 2, cel.y + 3):
+			for i in carte._cases.get(Vector2i(x, y), []):
+				if q.distance_to(carte.regions[i]["pos"]) > d0 + marge:
+					continue
+				var cr: float = _crues_des_regions[i]
+				if u < 0.0:
+					u = cr
+				elif cr != u:
+					return -1.0
+	return maxf(u, 0.0)
+
+
+# la crue de fond d'un quart de morceau, si elle y est la même partout (et deux nœuds autour) ; -1 sinon. Retenue
+func _crue_du_quart(Q: Vector2i) -> float:
+	var u = _crue_quarts.get(Q)
+	if u == null:
+		if _crue_quarts.size() > 30000:
+			_crue_quarts.clear()
+		u = crue_uniforme(Rect2(Vector2(Q) * MORCEAU * 0.5, Vector2(MORCEAU, MORCEAU) * 0.5).grow(2.0 * Milieu.MAILLE_CRUE))
+		_crue_quarts[Q] = u
+	return u
+
+
+# une région qui a de l'eau dans ses creux, à moins de trois cases de la carte de celle-ci ? (chaque nœud d'un rectangle de cette
+# case est de la région la plus proche de lui parmi celles de ses cinq cases autour : sept cases les couvrent toutes)
+func _crue_pres(cel: Vector2i) -> bool:
+	if _crues_des_regions.size() != carte.regions.size():
+		_crues_des_regions.resize(carte.regions.size())
+		for i in carte.regions.size():
+			_crues_des_regions[i] = _crue_de_region(i)
+	var f = _crue_cellules.get(cel)
+	if f == null:
+		f = false
+		for x in range(cel.x - 3, cel.x + 4):
+			for y in range(cel.y - 3, cel.y + 4):
+				for i in carte._cases.get(Vector2i(x, y), []):
+					if _crues_des_regions[i] > 0.0:
+						f = true
+		_crue_cellules[cel] = f
+	return f
+
+
+# (le troisième plan) la carte dit-elle nu la place d'un géant ? Retenu : chaque quart d'alentour la regarde, et la carte est lente
+var _nus := {}
+func _site_nu(q: Vector2) -> bool:
+	var r = _nus.get(q)
+	if r == null:
+		if _nus.size() > 20000:
+			_nus.clear()
+		r = carte.nu(q)
+		_nus[q] = r
+	return r
+
+
+# (le troisième plan) le biome du quart de morceau de rang Q ("" : de l'eau) : celui de la région où tombe un point près de son
+# centre, tiré de sa seule place — un morceau sait celui du quart de son voisin sans faire son plan
+func _type_du_quart(Q: Vector2i) -> String:
+	var t = _quarts.get(Q)
+	if t != null:
+		return t
+	if _quarts.size() > 30000:
+		_quarts.clear()
+	var h := absi(hash(Vector3i(_graine + 1213, Q.x, Q.y)))
+	var j := Vector2(float(h % 1000) / 1000.0 - 0.5, float((h / 1000) % 1000) / 1000.0 - 0.5) * 260.0
+	var reg: Dictionary = carte.regions[carte.region_en((Vector2(Q) + Vector2(0.5, 0.5)) * MORCEAU * 0.5 + j)]
+	t = "" if bool(reg["eau"]) else str(reg["type"])
+	_quarts[Q] = t
+	return t
+
+
+# (le troisième plan) une paroi, la roche en p (carte.nu, loin de l'eau)
+func _nu_relief(p: Vector2) -> bool:
+	return not carte._paroi(p, 10.0).is_empty() or float(carte.plein(p, 8.0)) > 0.0
+
+
+# (le troisième plan) le couvert du biome du quart où tombe p (-1 : un quart d'eau, une grotte : pas d'arbres)
+func _couvert_du_quart(p: Vector2) -> float:
+	var t := _type_du_quart(Vector2i((p / (MORCEAU * 0.5)).floor()))
+	if t == "":
+		return -1.0
+	var B := _base_de(t)
+	return -1.0 if bool(B["sous_terre"]) else float(B["mesures"][0])
+
+
+# de l'eau près d'un point : une rivière, un lac, une mer (sa région ou sa voisine, si la frontière est à moins de 450 pixels)
+func _eau_pres(c: Vector2) -> bool:
+	var pr: Array = carte.proches(c)
+	return bool(carte.regions[int(pr[0])]["riviere"]) or bool(carte.regions[int(pr[0])]["eau"]) \
+		or ((bool(carte.regions[int(pr[1])]["eau"]) or bool(carte.regions[int(pr[1])]["riviere"])) and float(pr[3]) - float(pr[2]) < 900.0)
+
+
+# une paroi, la roche d'une grotte peuvent-elles être sur ce rectangle ? La carte ne cherche le relief et la roche que près des
+# régions qui en ont (ses cases, et une autour : le rectangle, tordu, n'en touche pas d'autres) ; et là, la force du relief et le
+# creux sont mêlés entre les nœuds de leurs grilles : s'ils n'y atteignent nulle part ce qu'il faut pour une paroi (0,03), pour la
+# roche (0,5), il n'y en a pas
+func _relief_pres(rect: Rect2) -> bool:
+	var r := rect.grow(40.0)
+	var hautes := false
+	var creuses := false
+	for c in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+		var cel := Vector2i(((c + carte.tordre(c)) / carte.cote).floor())
+		for x in range(cel.x - 1, cel.x + 2):
+			for y in range(cel.y - 1, cel.y + 2):
+				hautes = hautes or carte._hautes.has(Vector2i(x, y))
+				creuses = creuses or carte._creuses.has(Vector2i(x, y))
+	if hautes:
+		var a := Vector2i((r.position / carte.MAILLE).floor())
+		var b := Vector2i((r.end / carte.MAILLE).floor()) + Vector2i.ONE
+		for x in range(a.x, b.x + 1):
+			for y in range(a.y, b.y + 1):
+				if float(carte._force_au_noeud(Vector2i(x, y))) >= 0.03:
+					return true
+	if creuses:
+		var a := Vector2i((r.position / carte.MAILLE_CREUX).floor())
+		var b := Vector2i((r.end / carte.MAILLE_CREUX).floor()) + Vector2i.ONE
+		for x in range(a.x, b.x + 1):
+			for y in range(a.y, b.y + 1):
+				if float(carte._creux_au_noeud(Vector2i(x, y))) > 0.5:
+					return true
+	return false
 
 
 # ce que le pays met dans un rectangle (scripts/biome_terrain.gd : la banquise, le volcan, le marais, le désert), pour le plan :
@@ -968,6 +1213,13 @@ func _pays(ctx: Dictionary, rect: Rect2, type: String) -> void:
 # d'une fondrière. Les eaux du rectangle sont cherchées une fois
 func _rive_du_decor(rect: Rect2, type: String, objets_: Array) -> Callable:
 	var crue := _crue if type == "" else float(lieu_de(type)["crue"])
+	# (le monde ouvert : l'eau des creux est celle de chaque lieu, la même que le temps qu'il fait dessine ; crue_fond_en)
+	# (la même sur tout le rectangle, le plus souvent : on ne la lit pas point par point)
+	var par_lieu := false
+	if carte != null:
+		var u := crue_uniforme(rect.grow(Milieu.MAILLE_CRUE))
+		par_lieu = u < 0.0
+		crue = maxf(u, 0.0)
 	var niveau := lerpf(0.26, 0.5, crue) + 0.008 if crue > 0.01 else -1.0
 	var large := rect.grow(70.0)
 	# [où, son rayon, sa hauteur pour sa largeur, de combien on peut y entrer]
@@ -984,6 +1236,7 @@ func _rive_du_decor(rect: Rect2, type: String, objets_: Array) -> Callable:
 					if str(e["genre"]) == "fondriere" and large.grow(float(e["taille"])).has_point(e["p"]):
 						eaux.append([e["p"], float(e["taille"]), 0.82, 4.0])
 	var relief := _relief
+	var champ := Callable(self, "crue_fond_en") if par_lieu else Callable()
 	return func(p: Vector2) -> float:
 		for e in eaux:
 			var c: Vector2 = e[0]
@@ -992,8 +1245,12 @@ func _rive_du_decor(rect: Rect2, type: String, objets_: Array) -> Callable:
 			var d: float = ((p - c) * Vector2(1.0, 1.0 / float(e[2]))).length() - float(e[1])
 			if d > -float(e[3]) and d < 24.0:
 				return 1.0
-		if niveau > 0.0 and relief != null:
-			return clampf(1.0 - absf(Milieu.relief_en({"relief": relief}, p) - niveau) / 0.04, 0.0, 1.0)
+		var n_ici := niveau
+		if champ.is_valid():
+			var c_ici: float = champ.call(p)
+			n_ici = lerpf(0.26, 0.5, c_ici) + 0.008 if c_ici > 0.01 else -1.0
+		if n_ici > 0.0 and relief != null:
+			return clampf(1.0 - absf(Milieu.relief_en({"relief": relief}, p) - n_ici) / 0.04, 0.0, 1.0)
 		return 0.0
 
 
@@ -1056,11 +1313,7 @@ func _pays_factice(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, type:
 # (le monde ouvert) les berges près d'un quart de morceau : là où la terre touche l'eau d'une rivière, d'un lac, d'une mer —
 # des points de la rive, et le sens où elle file. Rien si l'eau est loin (une seule lecture de la carte le dit)
 func _berges(ctx: Dictionary, quart: Rect2) -> void:
-	var c := quart.get_center()
-	var pr: Array = carte.proches(c)
-	var pres: bool = bool(carte.regions[int(pr[0])]["riviere"]) or bool(carte.regions[int(pr[0])]["eau"]) \
-		or ((bool(carte.regions[int(pr[1])]["eau"]) or bool(carte.regions[int(pr[1])]["riviere"])) and float(pr[3]) - float(pr[2]) < 900.0)
-	if not pres:
+	if not (bool(ctx["eau_pres"]) if ctx.has("eau_pres") else _eau_pres(quart.get_center())):
 		return
 	var berges: Array = []
 	var sens := {}
@@ -1368,8 +1621,13 @@ func _fabriquer_(k: Vector2i) -> void:
 	var t_a := Time.get_ticks_usec()
 	var plan := _plan_m(k)
 	var t_b := Time.get_ticks_usec()
+	# (au troisième plan, un groupe tire une seule plante : sa première place dit sa cellule ; au deuxième, chaque place la sienne)
+	var tete := Vector2.INF
 	for i in plan.size():
 		var e: Array = plan[i]
+		var m_e: int = int(e[5]) if e.size() > 5 else -1
+		if plan_version >= 3 and m_e >= 0 and Milieu.rang(m_e) == 0:
+			tete = e[1]
 		var c = changes.get(str(i), false)
 		if c == null:
 			continue
@@ -1379,7 +1637,7 @@ func _fabriquer_(k: Vector2i) -> void:
 			continue
 		var tons: Dictionary = ici["palette"] if carte != null else palette
 		types[str(e[4])] = true
-		var o = _poser(str(e[0]), e[1], tons[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), ici, int(e[5]) if e.size() > 5 else -1, true)
+		var o = _poser(str(e[0]), e[1], tons[e[2]] if e[2] != "" else Color.WHITE, int(e[3]), ici, m_e, not (e.size() > 6 and bool(e[6])), null, tete if plan_version >= 3 and m_e >= 0 else Vector2.INF)
 		if o == null:
 			# (une place que l'herbier laisse vide : une mare sans plante d'eau, un milieu dont aucune plante ne veut)
 			continue
@@ -1437,12 +1695,12 @@ func _fabriquer_(k: Vector2i) -> void:
 					L["outils"] = Decor.outils(L["parts"], L["palette"], _graine)
 				# (dans une vallée de rivière, rien dans le lit ; dans un pays de relief, rien sur une paroi, sur un col)
 				Decor.exclure = Callable(carte, "nu") if reg["riviere"] or carte.force(quart.get_center()) > 0.0 or carte.creux(quart.get_center()) > 0.3 else Callable()
-				Decor.rive = _rive_du_decor(quart, str(reg["type"]), liste) if plan_version >= PLAN and float(L["parts"]["boue"]) > 0.0 else Callable()
+				Decor.rive = _rive_du_decor(quart, str(reg["type"]), liste) if plan_version >= 2 and float(L["parts"]["boue"]) > 0.0 else Callable()
 				noeuds.append_array(Decor.semer_dans(self, _calques, _terrain, L["parts"], L["palette"], hash(Vector3i(_graine + 7 + qx * 2 + qy, k.x, k.y)), _mobile, quart, L["outils"], liste))
 		Decor.exclure = Callable()
 		Decor.rive = Callable()
 	elif _racine != null and not _outils.is_empty():
-		Decor.rive = _rive_du_decor(rect, "", liste) if plan_version >= PLAN and float(_parts["boue"]) > 0.0 else Callable()
+		Decor.rive = _rive_du_decor(rect, "", liste) if plan_version >= 2 and float(_parts["boue"]) > 0.0 else Callable()
 		noeuds = Decor.semer_dans(self, _calques, _terrain, _parts, palette, hash(Vector3i(_graine + 7, k.x, k.y)), _mobile, rect, _outils, liste)
 		Decor.rive = Callable()
 	if OS.has_environment("LISIERE_TEMPS"):
