@@ -150,7 +150,7 @@ static func ronce(o, p, r: RandomNumberGenerator) -> void:
 	# (les cannes : elles montent du collet, s'arquent et retombent, leur pointe s'enracine dans la terre, à l'écart ; celles du
 	# fond se dessinent avant le fourré, qui en cache le pied, celles de devant après ; deux ou trois passent par-dessus tout)
 	var cannes := []
-	for i in r.randi_range(6, 8):
+	for i in r.randi_range(5, 7):
 		var cote := -1.0 if i % 2 == 0 else 1.0
 		var a0 := Vector2(r.randf_range(-rx * 0.3, rx * 0.3), r.randf_range(-ry * 0.12, 0.8))
 		var b0 := Vector2(cote * r.randf_range(rx * 0.7, rx * 1.12), r.randf_range(-1.5, 2.0))
@@ -175,7 +175,7 @@ static func ronce(o, p, r: RandomNumberGenerator) -> void:
 	T.neige(o, p, avant, c2, rx * 0.6, ry * 0.36, r)
 	p.contour(avant, 1.0, ENCRE, r, 3)
 	# (des folioles dentées qui dépassent de la masse, du côté du jour)
-	for i in 6:
+	for i in 4:
 		var q := c2 + Vector2(r.randf_range(-0.9, 0.5) * rx * 0.6, -r.randf_range(0.3, 0.9) * ry * 0.36)
 		T.feuille(p, q, q + Vector2(r.randf_range(-2.4, 1.2), -r.randf_range(2.0, 3.2)), 1.3, t.lightened(0.12), 0.3, 0.45, 0.5, 3)
 	for c in dessus:
@@ -207,41 +207,43 @@ static func ronce(o, p, r: RandomNumberGenerator) -> void:
 # plus petites et plus tendres ; la pointe qui retouche terre s'y enracine (une petite touffe neuve). force < 1 : une canne du
 # fond, plus sombre
 static func _canne(p, r: RandomNumberGenerator, c: Array, tige: Color, t: Color, force: float) -> void:
-	var ligne := T.courbe(c[0], c[1], c[2], 10)
+	# (8 segments : la courbe reste lisse à cette taille ; une feuille aux nœuds 2, 5 et 7, des aiguillons entre)
+	var ligne := T.courbe(c[0], c[1], c[2], 8)
 	var ton := tige.darkened(1.6 * (1.0 - force))
 	var vert := t.darkened(0.6 * (1.0 - force))
 	p.tracer(ligne, 2.2, ENCRE, false, PackedFloat32Array([2.4, 2.1, 1.3]))
 	p.tracer(ligne, 1.2, ton, false, PackedFloat32Array([1.4, 1.15, 0.6]))
 	var clair := PackedVector2Array()
-	for k in range(1, ligne.size() - 1):
+	for k in range(1, ligne.size() - 2):
 		clair.append(ligne[k] + Vector2(-0.2, -0.4))
 	p.tracer(clair, 0.4, Color(ton.lightened(0.3).lerp(P.LUNE, 0.35), 0.6), true)
-	for k in range(1, 10):
+	for k in range(1, 8):
 		var q := ligne[k]
 		var d := (ligne[k + 1] - ligne[k - 1]).normalized()
 		var nrm := d.orthogonal()
 		var cote := 1.0 if k % 2 == 0 else -1.0
-		if k % 2 == 1:
+		if k in [1, 3, 4, 6]:
 			# (l'aiguillon, crochu vers le pied de la canne)
 			T.epine(p, q, (nrm * -cote - d * 0.5).normalized(), 1.5, 0.6)
-		if k % 2 == 0:
-			var jeune := k >= 8
-			var dir_f := (nrm * cote + Vector2(0.0, 0.55)).normalized()
-			var pq := q + dir_f * (1.1 if jeune else 1.6)
-			p.tracer(PackedVector2Array([q, pq]), 0.6, Color(ENCRE, 0.7), false)
-			var s := (0.72 if jeune else 1.0) * r.randf_range(0.9, 1.1)
-			var ton_f := vert.lightened(0.16 if jeune else 0.0)
-			ton_f = ton_f.lightened(0.08) if dir_f.dot(T.JOUR) > -0.2 else ton_f.darkened(0.12)
-			for j in [-1, 1, 0]:
-				var ang: float = dir_f.angle() + j * 0.85
-				var l: float = (3.0 if j != 0 else 3.9) * s
-				T.feuille(p, pq, pq + Vector2.from_angle(ang) * l, 1.45 * s, ton_f, j * 0.35, 0.42, 0.5, 4)
-	# (la pointe qui s'enracine : une touffe neuve au ras du sol)
+			continue
+		var jeune := k >= 7
+		var dir_f := (nrm * cote + Vector2(0.0, 0.55)).normalized()
+		var pq := q + dir_f * (1.1 if jeune else 1.6)
+		p.tracer(PackedVector2Array([q, pq]), 0.6, Color(ENCRE, 0.7), false)
+		var s := (0.72 if jeune else 1.0) * r.randf_range(0.9, 1.1)
+		var ton_f := vert.lightened(0.16 if jeune else 0.0)
+		ton_f = ton_f.lightened(0.08) if dir_f.dot(T.JOUR) > -0.2 else ton_f.darkened(0.12)
+		# (trois folioles, la médiane plus longue ; à deux tons, sans nervure : à cette taille, elle ne se verrait pas)
+		for j in [-1, 1, 0]:
+			var ang: float = dir_f.angle() + j * 0.85
+			var l: float = (3.0 if j != 0 else 3.9) * s
+			T.feuille(p, pq, pq + Vector2.from_angle(ang) * l, 1.15 * s, ton_f, j * 0.35, 0.42, 0.5, 3)
+	# (la pointe qui s'enracine, devant : une touffe neuve au ras du sol)
 	var b: Vector2 = c[2]
-	if b.y > -2.5:
+	if b.y > -2.5 and force >= 1.0:
 		T.ombre_douce(p, b + Vector2(0.4, 0.6), 2.2, 0.9, 0.25)
-		for j in 3:
-			var ang := -PI * 0.5 + (j - 1) * 0.9
+		for j in 2:
+			var ang := -PI * 0.5 + (j - 0.5) * 1.0
 			T.feuille(p, b, b + Vector2.from_angle(ang) * 2.2, 0.9, vert.lightened(0.2), 0.0, 0.42, 0.45, 3)
 
 
