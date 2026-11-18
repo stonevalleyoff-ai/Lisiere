@@ -35,7 +35,14 @@ const NEZ := 0.46                              # son nez, tête basse
 const CE_QU_IL_REND := {"bois": 4, "pierre": 4}   # rompu : ses pieux, ses pierres
 
 var jeu
-var noire                        # elle (scripts/noire.gd)
+# elle (scripts/noire.gd). Par une référence faible : elle tient son collet, qui ne doit pas la tenir en retour (deux objets
+# qui se tiennent l'un l'autre ne s'en vont jamais)
+var _elle: WeakRef = null
+var noire:
+	get:
+		return _elle.get_ref() if _elle != null else null
+	set(v):
+		_elle = weakref(v)
 var vise = null                  # le collet où elle va, celui qui la tient (une chose posée : scripts/campement.gd)
 var tenue := 0.0                 # depuis quand le nœud la tient
 var coups := 0.0                 # ce qu'elle a pris, tenue
@@ -50,6 +57,7 @@ var sortie := Vector2.ZERO       # par où elle a quitté le lieu
 var aube_dite := false           # l'aube de son départ est passée : sa piste, sa couche vide
 var page_dite := false           # la page « Elle est partie. » a été lue
 var depuis_a_coup := INF         # secondes depuis le dernier à-coup du filin (le dessin fait bouger les pieux)
+var prise_a := Vector2.INF       # où était sa patte, depuis le milieu du nœud, quand il s'est serré
 var _phase := ""                 # tenue : « saisie », « ramasse », « jette », « sonnee »
 var _pt := 0.0
 var _dir := Vector2.RIGHT        # où elle se jette
@@ -347,20 +355,23 @@ func _aller(delta: float, j) -> void:
 	var c = noire.corps
 	if noire._arrivee < 0.0:
 		noire._arrivee = noire._nuit_t
-	# (là où poser son corps : le nez sur l'appât d'abord, puis la patte de devant dans le nœud)
-	var cible: Vector2 = s.position - Vector2(_cote * (PATTE if _flaire else NEZ) * u, 0.0)
+	# (là où poser son corps : le nez sur l'appât d'abord ; puis elle avance, jusqu'à poser la patte de devant dans le nœud)
+	var cible: Vector2 = s.position - Vector2(_cote * (PATTE - 0.2 if _flaire else NEZ) * u, 0.0)
 	var d: float = c.position.distance_to(cible)
 	c.ordre = "va"
 	c.ordre_allure = 0.36 if d > 220.0 else 0.2
 	c.ordre_but = noire._contourner(noire.ou, cible) if d > 60.0 else cible
 	c.flaire = 1.0 if c.position.distance_to(s.position) < 330.0 else 0.0
-	if d < 9.0:
-		c.regard = _cote
-		if not _flaire:
-			_renifle = 0
-			noire._changer("flaire")
-		else:
+	if _flaire:
+		# (une patte de devant posée dans le rond du nœud : il se serre sur elle)
+		if c.pose_la_patte_dans(s.position, 22.0, 10.0) or d < 9.0:
+			c.regard = _cote
 			_serrer(s)
+			return
+	elif d < 9.0:
+		c.regard = _cote
+		_renifle = 0
+		noire._changer("flaire")
 		return
 	if noire._coincee(delta):
 		_laisser(8.0)
@@ -429,6 +440,7 @@ func _serrer(s) -> void:
 	s.etat["phase"] = "serre"
 	s.etat["amorce"] = false
 	s.etat["vers"] = [snappedf(-_cote, 0.01), 0.0]
+	prise_a = c.pied_pris() - s.position
 	c.flaire = 0.0
 	c.tenue_a = ancre(s)
 	c.tenue_long = R.NOIRE_COLLET_LONGE

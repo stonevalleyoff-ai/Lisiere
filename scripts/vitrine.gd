@@ -22,6 +22,15 @@ extends Node
 #   courte ; --trace fichier : où ils sont, cinq fois par seconde (outils : un script qui en dessine les chemins)
 #   --noire 2|3|4 : la Noire à cet acte (scripts/noire.gd) ; --noire dort, --noire piste : de jour, sa tanière, sa piste ;
 #   --noire reveil : de jour, endormie puis réveillée (sa charge, sa morsure, son départ, en pleine lumière)
+#   la fin de la Noire (scripts/noire_collet.gd) : --noire collet : la nuit, un collet amorcé qui sent la main, hors de la
+#   lumière ; elle y vient la tête basse, le flaire, renâcle et s'en détourne ; --noire prise : le nœud vient de se serrer, elle
+#   se jette au bout du filin, la veilleuse au bout de sa portée, lance en main (--frappe : elle frappe quand la lance porte,
+#   jusqu'à la cicatrice ; --dedans : elle se tient dans sa portée, et se fait mordre) ; --noire part : l'aube de son départ
+#   (le collet rompu, sa piste qui sort du lieu, puis la page « Elle est partie. » ; --page depart : la page tout de suite ;
+#   --aupres couche : devant sa couche vide) ; --noire cicatrices 2 : de jour, à deux pas, avec tant de cicatrices, puis elle
+#   s'en va (elle boite à deux) ; --cicatrices 2 : avec n'importe quelle autre scène d'elle ; --carnet avec --noire part : sa
+#   dernière page ; --pose collet,collet,collet,couche --etat planche : le collet tendu et amorcé, serré, rompu, et la couche
+#   (--etat amorce|serre|rompu|fouillee : cet état pour tous)
 #   l'atelier (scripts/atelier.gd) : --pose etabli,tente,hamac,recuperateur,filet,cerf_volant,vestige : ces choses, posées
 #   autour d'elle dans une clairière ; --etat travail,occupe,eau,prise,branche,foudre,fouille,popote : dans cet état ;
 #   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac
@@ -83,6 +92,8 @@ var _meute := 0                # (--meute) combien de chasseurs, pour regarder l
 var _trace: FileAccess = null  # (--trace) où ils sont, cinq fois par seconde
 var _trace_t := 0.0
 var _planche: Array = []       # (--planche) ce qui y est posé ; avec --gros, la caméra va de l'un à l'autre, de tout près
+var _fin_noire := ""           # (--noire collet|prise|part|cicatrices) la scène de sa fin qu'on regarde
+var _collet = null             # … et son collet
 
 
 func _ready() -> void:
@@ -175,6 +186,8 @@ func _lancer() -> void:
 			jeu.noire.acte = 1
 			jeu.noire.taniere = j.position + Vector2(3600.0, -900.0)
 			jeu.noire._piste(j.position + Vector2(120.0, 60.0), jeu.noire.taniere)
+		"collet", "prise", "part", "cicatrices":
+			_la_fin_de_la_noire(quelle)
 		_:
 			jeu.nuits = int(quelle) - 1
 			jeu._etait_nuit = true
@@ -328,6 +341,20 @@ func _lancer() -> void:
 					"coffre":
 						if _etats.has("ouvert"):
 							s.etat["ouvert"] = true
+					"collet":
+						# (--etat planche : le premier tendu et amorcé, le deuxième serré, le troisième rompu)
+						var rang_c: int = jeu.atelier.poses.filter(func(x): return str(x.genre) == "collet").find(s)
+						var phase_c := ""
+						if _etats.has("serre") or (_etats.has("planche") and rang_c == 1):
+							phase_c = "serre"
+						elif _etats.has("rompu") or (_etats.has("planche") and rang_c == 2):
+							phase_c = "rompu"
+						s.etat["phase"] = phase_c
+						s.etat["amorce"] = phase_c == "" and (_etats.has("amorce") or _etats.has("planche"))
+						s.etat["vers"] = [-0.94, 0.34] if phase_c == "serre" else [0.8, 0.6]
+					"couche":
+						s.etat["noeuds"] = 3
+						s.etat["fouillee"] = _etats.has("fouillee")
 					"vestige":
 						if _etats.has("fouille"):
 							s.etat["fouille"] = true
@@ -419,6 +446,8 @@ func _lancer() -> void:
 	# (--affut : elle ne bouge pas, pour regarder l'œil de l'affût s'ouvrir sur une bête ; scripts/pistage.gd)
 	if OS.get_cmdline_user_args().has("--affut"):
 		_plan = [[0.0, 1.0, "attendre"]]
+	if _fin_noire != "":
+		_plan = [[0.0, 1.0, "collet"]]
 	# (devant la Noire, elle reste près de son feu ; --sort : à mi-temps, elle s'éloigne dans le noir, pour voir la charge)
 	if quelle.is_valid_int():
 		_plan = [[0.0, 1.0, "attendre"]]
@@ -846,6 +875,12 @@ func _process(delta: float) -> void:
 		_fait["carnet"] = true
 		for cle in ["appel", "empreintes", "silence", "yeux", "feu", "taniere"]:
 			jeu.noire.su[cle] = true
+		# (partie, ou balafrée : ce que le collet a appris d'elle, et sa dernière page)
+		if jeu.noire.partie or jeu.noire.cicatrices > 0:
+			for cle in ["feinte", "torche", "coups", "odeur", "collet", "cicatrice"]:
+				jeu.noire.su[cle] = true
+			if jeu.noire.partie:
+				jeu.noire.su["depart"] = true
 		jeu.noire.vue = true
 		jeu.noire.taniere_connue = true
 		# (et les bêtes croisées : une connue, une observée, les autres seulement croisées)
@@ -927,6 +962,8 @@ func _process(delta: float) -> void:
 				b.position = j.position + Vector2(26.0 * j.regard, 0)
 				_cadence("chasser", delta)
 			j.deplacer(Vector2.ZERO, delta, jeu.monde)
+		"collet":
+			_devant_le_collet(u, delta)
 		"est":
 			j.deplacer(Vector2(1.0, 0.12).normalized(), delta, jeu.monde)
 		"aller":
@@ -958,6 +995,143 @@ func _process(delta: float) -> void:
 				j.deplacer(Vector2(cote, 0.0), delta, jeu.monde)
 			else:
 				j.deplacer(Vector2.ZERO, delta, jeu.monde)
+
+
+# --- la fin de la Noire (scripts/noire_collet.gd) : son collet, sa prise, ses cicatrices, son départ ---
+
+# la scène : une place dégagée à gauche du feu, hors de sa lumière, où le collet est tendu ; elle, à deux pas
+func _la_fin_de_la_noire(quelle: String) -> void:
+	var ar := OS.get_cmdline_user_args()
+	var j = jeu.joueur
+	var N = jeu.noire
+	var C = N.collet
+	_fin_noire = quelle
+	# (--cicatrices 2, ou « --noire cicatrices 2 » : ce qu'elle porte déjà)
+	var i_c := ar.find("--cicatrices")
+	var i_n := ar.find("--noire")
+	if quelle == "cicatrices" and i_n + 2 < ar.size() and ar[i_n + 2].is_valid_int():
+		N.cicatrices = clampi(int(ar[i_n + 2]), 0, R.NOIRE_CICATRICES)
+	elif i_c >= 0 and i_c + 1 < ar.size():
+		N.cicatrices = clampi(int(ar[i_c + 1]), 0, R.NOIRE_CICATRICES)
+	for b in get_tree().get_nodes_in_group("betes"):
+		b.remove_from_group("betes")
+		b.queue_free()
+	var feu_p: Vector2 = jeu.feux[0].position if not jeu.feux.is_empty() else j.position + Vector2(40.0, 0.0)
+	if not jeu.feux.is_empty():
+		jeu.feux[0].bois = 46.0
+	var place := feu_p + Vector2(-400.0, 26.0)
+	for o in jeu.monde.autour(place + Vector2(60.0, 0.0), 520.0):
+		if float(o.rayon) > 0.0 or str(o.genre) == "buisson":
+			jeu.monde.retirer(o)
+	for x in jeu.atelier.poses.duplicate():
+		if is_instance_valid(x) and x.position.distance_to(place) < 700.0:
+			jeu.atelier.poses.erase(x)
+			x.queue_free()
+	jeu.nuits = 6
+	jeu.jour = 7
+	jeu._etait_nuit = heure != "jour"
+	N.acte = 3
+	N.taniere = feu_p + Vector2(-1900.0, -1300.0)
+	N.ou = N.taniere
+	for cle in ["appel", "silence", "yeux", "feu"]:
+		N.su[cle] = true
+	j.lance = R.USURE_LANCE
+	match quelle:
+		"collet", "prise":
+			N.tombee()
+			N.acte = 3
+			N._appel = true
+			_collet = jeu.atelier._creer("collet", place, {"amorce": true, "odeur": quelle == "collet" and not ar.has("--propre"), "phase": ""})
+			C.poses_n = 1
+			if quelle == "collet":
+				# (elle arrive par la gauche, à trois cents pas du nœud : elle le sent déjà)
+				j.position = feu_p + Vector2(-70.0, 12.0)
+				j.regard = -1.0
+				N._apparaitre(place + Vector2(-360.0, 40.0))
+				C.vise = _collet
+				C._cote = 1.0
+				C._flaire = false
+				N._changer("appat")
+				jeu.camera.position = Vector2(-190.0, 0.0)
+			else:
+				# (le nœud vient de se serrer ; la veilleuse est sortie, au bout de sa portée)
+				N._apparaitre(place - Vector2(C.PATTE * R.NOIRE_LARGEUR, 0.0))
+				N.corps.regard = 1.0
+				C.vise = _collet
+				C._cote = 1.0
+				C._serrer(_collet)
+				var pieu: Vector2 = C.ancre(_collet)
+				var d := R.NOIRE_COLLET_LONGE + (R.NOIRE_COLLET_MORD - 22.0 if ar.has("--dedans") else R.NOIRE_COLLET_MORD + 26.0)
+				j.position = pieu + Vector2(d, 14.0)
+				j.regard = -1.0
+				jeu.camera.position = Vector2(-120.0, -10.0)
+		"part":
+			# (l'aube de son départ : le collet rompu, sa piste qui en part et sort du lieu, sa couche vide ; puis la page)
+			jeu.horloge = R.DUREE * 7.0 + R.TRANSITION * 0.5
+			jeu._etait_nuit = false
+			_collet = jeu.atelier._creer("collet", place, {"amorce": false, "odeur": false, "phase": "rompu", "vers": [-0.92, 0.38]})
+			N.cicatrices = R.NOIRE_CICATRICES
+			N.partie = true
+			N.vue = true
+			C.poses_n = 4
+			C.prises_n = 4
+			C.morsures_n = 1
+			C.emportes = 3
+			C.jour_du_depart = 7
+			C.depart_de = C.ancre(_collet)
+			C.sortie = C._hors_du_lieu(C.depart_de, PI - 0.36)
+			for cle in ["empreintes", "feinte", "torche", "coups", "taniere", "odeur", "collet", "cicatrice"]:
+				N.su[cle] = true
+			if ar.has("--aupres") and ar[ar.find("--aupres") + 1] == "couche":
+				N.taniere = feu_p + Vector2(-140.0, 190.0)
+				for o in jeu.monde.autour(N.taniere, 200.0):
+					if float(o.rayon) > 0.0 or str(o.genre) == "buisson":
+						jeu.monde.retirer(o)
+				j.position = N.taniere + Vector2(96.0, 30.0)
+				j.regard = -1.0
+				jeu.camera.position = Vector2(-70.0, -20.0)
+			else:
+				j.position = place + Vector2(150.0, 40.0)
+				j.regard = -1.0
+				jeu.camera.position = Vector2(-150.0, -10.0)
+			N.aube()
+			if ar.has("--page") and ar[ar.find("--page") + 1] == "depart":
+				C._page_dans = 0.8
+			elif ar.has("--sans-page") or ar.has("--carnet"):
+				C._page_dans = -1.0
+		"cicatrices":
+			# (de jour, à deux pas, debout devant elle ; puis elle s'en va, vers sa tanière)
+			N.vue = true
+			N.taniere = j.position + Vector2(3200.0, 240.0)
+			N._apparaitre(j.position + Vector2(-250.0, 34.0))
+			N.corps.regard = 1.0
+			N.corps.ordre = "guette"
+			N._colere = 9999.0
+			N.etat = "pose"
+			jeu.camera.position = Vector2(-150.0, -40.0)
+
+
+# la veilleuse devant le collet : elle attend ; --frappe : lance en main, elle frappe dès que la bête est à sa portée
+func _devant_le_collet(u: float, delta: float) -> void:
+	var j = jeu.joueur
+	var N = jeu.noire
+	j.deplacer(Vector2.ZERO, delta, jeu.monde)
+	if _fin_noire == "cicatrices":
+		# (aux trois cinquièmes : elle se détourne, et s'en va en boitant)
+		if u > 0.6 and not _fait.has("s_en_va") and N.corps != null:
+			_fait["s_en_va"] = true
+			N._colere = 0.0
+			N._changer("rentre")
+		elif u <= 0.6 and N.corps != null:
+			N.corps.ordre = "guette"
+		return
+	if N.corps != null and is_instance_valid(N.corps) and absf(N.corps.position.x - j.position.x) > 12.0:
+		j.regard = signf(N.corps.position.x - j.position.x)
+	if _fin_noire == "prise" and OS.get_cmdline_user_args().has("--frappe") and N.etat == "prise" and N.corps != null:
+		_coup -= delta
+		if _coup <= 0.0 and N.corps.position.distance_to(j.position) - N.corps.largeur * 0.3 < R.PORTEE_COUP:
+			_coup = R.CADENCE
+			jeu.agir()
 
 
 func _cadence(_quoi: String, delta: float) -> void:

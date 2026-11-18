@@ -679,15 +679,43 @@ func _decalages() -> void:
 		_dec_bond.append(c)
 
 
-# (la Noire) où est sa patte de devant, celle que prend le collet, dans le monde : le filin s'y tend (scripts/collet_dessin.gd)
-func pied_pris() -> Vector2:
+# (la Noire) où est le pied de cette patte, dans le monde (là où ses pattes l'ont mis ; hors de l'écran, où elles ne se
+# posent pas une à une, sous son épaule)
+func _pied_dans_le_lieu(i: int) -> Vector2:
 	var cote := regard
 	if _pivot != null and _pivot.scale.x != 0.0:
 		cote = signf(_pivot.scale.x)
-	if _prise_i >= 0 and _prise_i < _pieds.size() and _pieds[_prise_i] != null and _pieds[_prise_i].size() > 0:
-		var pied: Vector2 = _pieds[_prise_i][_pieds[_prise_i].size() - 1]
+	if _a_l_ecran and i >= 0 and i < _pieds.size() and _pieds[i] != null and _pieds[i].size() > 0:
+		var pied: Vector2 = _pieds[i][_pieds[i].size() - 1]
 		return position + Vector2(pied.x * cote, pied.y)
 	return position + Vector2(0.15 * largeur * cote, 0.0)
+
+
+# (la Noire) où est sa patte de devant, celle que prend le collet, dans le monde : le filin s'y tend (scripts/collet_dessin.gd)
+func pied_pris() -> Vector2:
+	return _pied_dans_le_lieu(_prise_i)
+
+
+# (la Noire) une de ses pattes de devant est-elle posée dans ce rond du sol (son milieu, ses demi-axes) ? Celle de notre côté
+# d'abord. C'est alors celle-là que le collet prend (scripts/noire_collet.gd)
+func pose_la_patte_dans(centre: Vector2, rx: float, ry: float) -> bool:
+	var devant: Array = []
+	for i in _p_pts.size():
+		if _p_devant[i]:
+			if _p_loin[i]:
+				devant.append(i)
+			else:
+				devant.push_front(i)
+	if devant.is_empty() or not _a_l_ecran:
+		var q0: Vector2 = pied_pris() - centre
+		return absf(q0.x) < rx and absf(q0.y) < ry
+	for i in devant:
+		if i < _p_pose.size() and _p_pose[i] == 1 and _p_lev[i] < 1.0:
+			var q: Vector2 = _pied_dans_le_lieu(i) - centre
+			if absf(q.x) < rx and absf(q.y) < ry:
+				_prise_i = i
+				return true
+	return false
 
 
 # où brille son œil, dans le monde : il suit la tête, le pas, le souffle, le retournement
