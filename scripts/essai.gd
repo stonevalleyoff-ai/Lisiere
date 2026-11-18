@@ -2808,12 +2808,18 @@ func _la_partie_sur_le_compte() -> void:
 		service = "http://127.0.0.1:%d" % _port(0)
 	S.url = service
 	var pret := false
-	for i in 300:
+	# (le monde attend pendant qu'on attend le faux service : la partie en pause, sinon la nuit continue et ses chasseurs avec ;
+	# et l'on attend à l'horloge, pas en images : sans écran les images filent, et node met parfois quelques secondes à partir)
+	var pause_c: bool = jeu.en_pause
+	jeu.en_pause = true
+	var depuis_c := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - depuis_c < 20000:
 		var r0: Dictionary = await S._http(service + "/__etat", null, HTTPClient.METHOD_GET, "")
 		if r0["ok"]:
 			pret = true
 			break
 		await get_tree().process_frame
+	jeu.en_pause = pause_c
 	if not pret:
 		print("  (le faux service ne répond pas : la partie sur le compte n'est pas essayée)")
 		S.url = garde["url"]
@@ -2919,11 +2925,16 @@ func _les_lots(F: Dictionary) -> void:
 		return
 	var service := "http://127.0.0.1:%d" % _port(1)
 	var pret := false
-	for i in 300:
+	# (le monde attend déjà pendant qu'on attend le faux service, à l'horloge : voir « la partie sur le compte »)
+	var pause_l: bool = jeu.en_pause
+	jeu.en_pause = true
+	var depuis_l := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - depuis_l < 20000:
 		if (await S._http(service + "/__lots", null, HTTPClient.METHOD_GET, ""))["ok"]:
 			pret = true
 			break
 		await get_tree().process_frame
+	jeu.en_pause = pause_l
 	if not pret:
 		print("  (le faux service ne répond pas : les lots ne sont pas essayés)")
 		OS.kill(pid)
@@ -2938,6 +2949,10 @@ func _les_lots(F: Dictionary) -> void:
 	var pause0: bool = jeu.en_pause
 	jeu.en_pause = true
 	var etat := "en partie : %s, santé %d, à terre : %s" % [jeu.en_partie, int(jeu.joueur.sante), jeu._mort >= 0.0]
+	if not jeu.en_partie or jeu._mort >= 0.0:
+		# (elle est tombée avant d'arriver ici : ce qui l'a prise, pour le retrouver)
+		etat += " — « %s », la Noire : %s, acte %d, à %d pixels ; nuit %d, le jour à %.2f" % [jeu._titre_de_fin(), str(jeu.noire.etat), int(jeu.noire.acte),
+			int(minf(jeu.noire.ou.distance_to(jeu.joueur.position), 99999.0)), int(jeu.nuits), jeu.jour_du_ciel()]
 
 	# ce qui est compté se garde à chaque sauvegarde (toutes les vingt secondes), sans faire de lot
 	Orvane.compter("essai-lot", "prairie", "rencontre", 2.0)
@@ -3595,7 +3610,9 @@ func _l_affut(e: Dictionary, f) -> void:
 			break
 	m1._poste_t = 999.0
 	var tourne1 := absf(wrapf((m1.position - centre).angle() - a1, -PI, PI))
-	verif(parti and dans_la_lumiere and detourne1 >= 1.0 and tourne1 >= 0.8 and m1.poste >= 1.0,
+	# (son nouveau poste est à 0,8 radian ou plus de là où il était quand il l'a choisi, scripts/affut.gd ; on le mesure ici
+	# depuis là où il était avant qu'elle marche sur lui : à quelques degrés près, donc)
+	verif(parti and dans_la_lumiere and detourne1 >= 1.0 and tourne1 >= 0.7 and m1.poste >= 1.0,
 		"elle marche sur lui sans sortir de la lumière : il recule, se détourne, et va se poster ailleurs (%d degrés plus loin)" % int(rad_to_deg(tourne1)))
 	# --- elle sort de la lumière : ils viennent, de leurs postes, l'un après l'autre (on s'arrête avant la morsure)
 	for i in 100:
