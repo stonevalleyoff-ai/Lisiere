@@ -40,8 +40,8 @@ const EAUX := 10.0
 const EAUX_BOUE := 80.0
 # la hauteur de chaque forme à la mesure de son dessin (m) : la plante de l'herbier, plus haute ou plus basse, est plus grande ou
 # plus petite que lui (taille_de). Les dessins eux-mêmes sont à l'échelle les uns des autres, une échelle resserrée (la hauteur à
-# la puissance 0,4 : scripts/objet.gd, _mesurer ; scripts/flore_dessins.gd, mesurer) : un arbre de 12 m fait 86 pixels, deux fois
-# la veilleuse ; un géant de 45 m, 147 ; un pionnier de 9 m, 77, et de 4,5 m, 58 ; un fruitier de 6 m, 65 ; un conifère de 20 m, 106
+# la puissance 0,4 : scripts/objet.gd, _mesurer ; scripts/flore_dessins.gd, mesurer) : un arbre de 12 m fait 85 pixels, deux fois
+# la veilleuse ; un géant de 45 m, 147 ; un pionnier de 9 m, 72, et de 4,5 m, 55 ; un fruitier de 6 m, 64 ; un conifère de 20 m, 108
 const HAUTEURS := {"arbre": 12.0, "pionnier": 9.0, "fruitier": 6.0, "geant": 45.0, "emergent": 45.0, "figuier": 20.0, "bouteille": 20.0,
 	"sous_bois": 5.0, "palmier": 15.0, "paletuvier": 6.0, "fougere_arbre": 8.0, "conifere": 12.0,
 	# (ce qui se dresse sur le sol, et dont la hauteur d'Orvane se voit aussi : un bambou de 8 m dépasse un bambou de 4 m)

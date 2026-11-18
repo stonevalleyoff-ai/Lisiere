@@ -314,7 +314,7 @@ func _mesurer() -> void:
 	r.seed = graine
 	match genre:
 		"arbre":
-			# (un arbre de douze mètres : deux fois la veilleuse, à peu près — 86 pixels du pied à la cime)
+			# (un arbre de douze mètres : deux fois la veilleuse, à peu près — 85 pixels du pied à la cime en moyenne, 72 avant)
 			_ht = r.randf_range(26.5, 37.0)
 			_rx = r.randf_range(28.5, 37.5)
 			_ry = _rx * r.randf_range(0.84, 0.95)

@@ -87,9 +87,9 @@ static func mesurer(o, r: RandomNumberGenerator, f: String) -> void:
 			_porter(o)
 			return
 		"pionnier":
-			# (9 m : 77 pixels)
-			ht = r.randf_range(30.0, 36.0)
-			rx = r.randf_range(22.5, 27.0)
+			# (9 m : 72 pixels, à l'échelle des autres — un arbre de 12 m en fait 81 : un pionnier reste plus petit que lui)
+			ht = r.randf_range(27.5, 33.0)
+			rx = r.randf_range(20.5, 24.5)
 			ry = rx * r.randf_range(0.98, 1.1)
 		"fruitier":
 			# (6 m : 65 pixels ; bas, rond)

@@ -5898,7 +5898,8 @@ func _le_dessin_de_la_flore() -> void:
 		"la taille d'une plante suit sa hauteur d'Orvane, sur une échelle resserrée et bornée : à la hauteur de sa forme, 1 ; un pionnier de 4,5 m, %.2f ; un conifère de 20 m, %.2f ; un arbre de 0,5 m, 0,6 et de 500 m, 1,5 ; un bambou de 8 m, %.2f, de 4 m, %.2f" % [
 		k_p45, k_c20, W.taille_de("bambou", "touffe", "sol", 8.0), W.taille_de("bambou", "touffe", "sol", 4.0)])
 	# les hauteurs dessinées : un arbre ordinaire fait deux fois la veilleuse (44 pixels), un cinquième de plus qu'avant (72) ;
-	# un géant le domine, un pionnier nain est plus petit
+	# un géant le domine, un pionnier de 9 m reste plus petit que lui (72 pixels : l'échelle est la même pour toutes les formes),
+	# un pionnier de 4,5 m plus encore
 	var h_arbre := _hauteur_dessinee("arbre", 12.0)
 	var h_geant := _hauteur_dessinee("geant", 45.0)
 	var h_p9 := _hauteur_dessinee("pionnier", 9.0)
@@ -5907,7 +5908,7 @@ func _le_dessin_de_la_flore() -> void:
 	var h_conifere := _hauteur_dessinee("conifere", 20.0)
 	var h_cactus := _hauteur_dessinee("cactus", 6.0)
 	verif(h_arbre > 80.0 and h_arbre < 93.0 and h_arbre > 44.0 * 1.8 and h_geant > h_arbre * 1.55 and h_geant < h_arbre * 1.95 and h_p45 < h_p9 * 0.85
-		and h_p9 < h_arbre and h_fruitier < h_p9 and h_conifere > h_arbre * 1.12 and h_conifere < h_geant and h_cactus > 44.0 * 1.3 and h_cactus < h_arbre,
+		and h_p9 < h_arbre * 0.95 and h_fruitier < h_p9 and h_conifere > h_arbre * 1.12 and h_conifere < h_geant and h_cactus > 44.0 * 1.3 and h_cactus < h_arbre,
 		"la hauteur d'Orvane se voit (la veilleuse fait 44 pixels) : un arbre de 12 m, %d pixels (72 avant) ; un géant de 45 m, %d ; un conifère de 20 m, %d ; un pionnier de 9 m, %d, de 4,5 m, %d ; un fruitier de 6 m, %d ; un cactus de 6 m, %d" % [
 		int(h_arbre), int(h_geant), int(h_conifere), int(h_p9), int(h_p45), int(h_fruitier), int(h_cactus)])
 	# chaque forme : un dessin fourni, peint en volume, une ombre au sol (portée, pour ce qui se dresse), et le feu l'emporte
