@@ -612,15 +612,25 @@ static func _graine(r: RandomNumberGenerator, suite: Array) -> int:
 # milieu, leur rang et la taille du groupe
 static func _groupe(ctx: Dictionary, r: RandomNumberGenerator, suite: Array, plan: Array, rect: Rect2, genre: String, ton: String, type: String, q: Vector2, milieu: int, n: int, large: float, places: Array = []) -> void:
 	var g := _graine(r, suite)
-	var sur := q
+	var ps: Array = []
 	for j in n:
 		var p := q
 		if j < places.size():
 			p = places[j]
 		elif j > 0:
 			p = q + Vector2(r.randf_range(-large, large), r.randf_range(-large, large) * 0.55)
-		p = p.clamp(rect.position, rect.end - Vector2(0.01, 0.01))
-		# (aucune ne va au large de l'eau qui reste dans les creux : celle qui y tomberait se serre contre la précédente)
+		ps.append(p.clamp(rect.position, rect.end - Vector2(0.01, 0.01)))
+	# (aucune ne va au large de l'eau qui reste dans les creux : celle qui y tomberait se serre contre une voisine au sec — la
+	# première qui l'est ; un groupe tout entier dans l'eau n'a pas lieu)
+	var sur = null
+	for p in ps:
+		if not _noye(ctx, p, 0.03):
+			sur = p
+			break
+	if sur == null:
+		return
+	for j in n:
+		var p: Vector2 = ps[j]
 		if _noye(ctx, p, 0.03):
 			p = sur + Vector2(r.randf_range(-3.0, 3.0), r.randf_range(-2.0, 2.0))
 		else:

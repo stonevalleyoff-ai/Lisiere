@@ -5870,6 +5870,23 @@ func _la_repartition() -> void:
 	verif(cases_pareilles == T._cases.size() and fondrieres > 40 and noyes == 0 and dans_l_eau == 0,
 		"le plan connaît le pays : les %d cases du marais (%d fondrières) sont celles qu'il a lues ; pas un tronc dans une fondrière (%d), rien de planté au large de l'eau (%d)" % [
 		T._cases.size(), fondrieres, noyes, dans_l_eau])
+	# la clairière du réveil reste libre : pas un tronc à moins de 150 pixels, pas une plante à moins de 100 ; le bois mort et
+	# les deux pierres d'un premier feu y sont
+	var reveil := func(Wm) -> Array:
+		var vivants_r: Array = Wm.objets.filter(func(o): return is_instance_valid(o))
+		var tronc := INF
+		var plante := INF
+		for o in vivants_r:
+			if o.genre in ["arbre", "sapin"]:
+				tronc = minf(tronc, o.position.length())
+			elif o.genre in ["buisson", "touffe", "aquatique"]:
+				plante = minf(plante, o.position.length())
+		return [tronc, plante, vivants_r.filter(func(o): return o.genre == "brindille" and o.position.length() < 160.0).size(),
+			vivants_r.filter(func(o): return o.genre == "rocher" and o.position.length() < 220.0).size()]
+	var rv_f: Array = reveil.call(W)
+	verif(float(rv_f[0]) >= 150.0 and float(rv_f[1]) >= 100.0 and int(rv_f[2]) >= 6 and int(rv_f[3]) >= 2,
+		"la clairière du réveil reste libre : le tronc le plus proche à %d pixels, la plante la plus proche à %d ; %d brindilles et %d pierres pour un premier feu" % [
+		int(rv_f[0]), int(rv_f[1]), int(rv_f[2]), int(rv_f[3])])
 	# le marais entier, compté : les plantes de rive au bord de l'eau, le palétuvier les pieds dedans, les nénuphars au large
 	var c: Dictionary = Re.compter(W, "marais")
 	var P: Dictionary = c["plantes"]
@@ -5914,22 +5931,31 @@ func _la_repartition() -> void:
 				pareilles += 1
 			W._defaire(o1)
 	# (et une plante gardée sans milieu — une partie d'avant — se repose aussi, tirée de sa seule part)
-	var vieille: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) == "sol")
-	var revenue := false
-	if not vieille.is_empty():
-		var g1: Array = vieille[0].slice(0, vieille[0].size() - 1)
-		var avant_n: int = W.objets.size()
-		W._reposer([g1])
-		revenue = W.objets.size() == avant_n + 1 and str(W.objets[W.objets.size() - 1].plante) != "" and not W.objets[W.objets.size() - 1].has_meta("milieu")
-		if W.objets.size() == avant_n + 1:
-			W._defaire(W.objets[W.objets.size() - 1])
-	verif(avec >= 100 and pareilles == essayees and revenue,
-		"le lieu gardé : la photo de chaque plante porte son milieu, et %d sur %d se retirent les mêmes, à leur place ; une plante gardée sans milieu (une partie d'avant) se repose aussi, de sa seule part" % [
-		pareilles, essayees])
+	# (une partie gardée d'avant : la même photo, sans le milieu — c'est ainsi qu'elle était gardée —, se repose entière : chaque
+	# plante revient à sa place, de sa graine et de sa seule part, une plante de l'herbier d'aujourd'hui, sans milieu)
+	var vieille: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) in ["arbre", "sapin", "buisson", "sol", "eau"]).map(func(g): return g.slice(0, g.size() - 1))
+	var avant_v: int = W.objets.size()
+	W._reposer(vieille)
+	var revenues: Array = W.objets.slice(avant_v)
+	var a_sa_place := 0
+	for i in mini(revenues.size(), vieille.size()):
+		var o_v = revenues[i]
+		if is_instance_valid(o_v) and str(o_v.plante) != "" and not o_v.has_meta("milieu") and o_v.position.distance_to(Vector2(float(vieille[i][2]), float(vieille[i][3]))) < 0.2:
+			a_sa_place += 1
+	for o_v in revenues:
+		if is_instance_valid(o_v):
+			W._defaire(o_v)
+	verif(avec >= 100 and pareilles == essayees and vieille.size() >= 300 and revenues.size() == vieille.size() and a_sa_place == vieille.size(),
+		"le lieu gardé : la photo de chaque plante porte son milieu, et %d sur %d se retirent les mêmes, à leur place ; gardées sans milieu (une partie d'avant), les %d plantes du lieu se reposent toutes (%d), à leur place (%d), de leur seule part" % [
+		pareilles, essayees, vieille.size(), revenues.size(), a_sa_place])
 	# le monde ouvert : quatre biomes, chacun semé à part sur quatre fois la surface d'un lieu, et compté
 	seed(20261121)
 	await jeu._commencer("prairie", {}, true)
 	W = jeu.monde
+	var rv_o: Array = reveil.call(W)
+	verif(float(rv_o[0]) >= 150.0 and float(rv_o[1]) >= 100.0 and int(rv_o[2]) >= 6 and int(rv_o[3]) >= 2,
+		"au monde ouvert aussi : le tronc le plus proche du réveil à %d pixels, la plante la plus proche à %d ; %d brindilles, %d pierres" % [
+		int(rv_o[0]), int(rv_o[1]), int(rv_o[2]), int(rv_o[3])])
 	var comptes := {}
 	var i_b := 0
 	for type in ["foret", "taiga", "desert", "banquise"]:
