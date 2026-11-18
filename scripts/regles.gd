@@ -191,6 +191,8 @@ const NOIRE_TORCHE := [0.0, 0.0, 0.0, 14.0, 7.0]     # par acte : le temps que l
 const NOIRE_PRESAGE := 1.4       # elle s'aplatit et gronde ce temps-là, avant de charger
 const NOIRE_PEUR := 5.0          # la peur gagnée par seconde sous son regard
 const NOIRE_REVEIL := 120.0      # le jour, à cette distance de sa tanière, on la réveille
+# --- la Noire, acte 5 : la faim (elle rôde dès le crépuscule, saccage le camp, prend les bêtes attachées) ---
+# --- la Noire, la fin : le collet de filin, l'appât, les cicatrices, son départ ---
 # --- la cueillette : les fleurs, les champignons des bois, les épines (scripts/flore.gd, principal.gd : agir, manger) ---
 const CHAMPIGNON := 9.0           # ce qu'un cèpe rend à la faim (cru : moins qu'une poignée de baies)
 const REPOUSSE_FLEURS := 300.0    # secondes avant qu'une fleur cueillie refleurisse

@@ -86,10 +86,18 @@ func _lancer() -> void:
 	print("Lisière — l'essai")
 	jeu.donnees.hors_ligne_force = not ("--en-ligne" in OS.get_cmdline_user_args())
 	await jeu.donnees.charger_index()
-	# (--seulement cueillette : la cueillette nourricière seule, pour la mettre au point vite ; c'est l'essai entier qui fait foi)
-	if "--seulement" in OS.get_cmdline_user_args():
-		await _la_cueillette_nourriciere()
-		await _les_retouches()
+	# (--seulement cueillette | faim | collet : une partie seule, pour la mettre au point vite ; c'est l'essai entier qui fait foi)
+	var args_e: PackedStringArray = OS.get_cmdline_user_args()
+	if "--seulement" in args_e:
+		var quoi: String = args_e[args_e.find("--seulement") + 1] if args_e.find("--seulement") + 1 < args_e.size() else "cueillette"
+		match quoi:
+			"faim":
+				await _la_faim_de_la_noire()
+			"collet":
+				await _le_collet_de_la_noire()
+			_:
+				await _la_cueillette_nourriciere()
+				await _les_retouches()
 		await _conclure()
 		return
 	var L: Array = jeu.donnees.lieux()
@@ -634,6 +642,8 @@ func _lancer() -> void:
 	await _l_artisanat()
 	await _la_cueillette_nourriciere()
 	await _les_retouches()
+	await _la_faim_de_la_noire()
+	await _le_collet_de_la_noire()
 	await _conclure()
 
 
@@ -711,6 +721,18 @@ func _les_retouches() -> void:
 	var pomme: bool = jeu.tactile._disponible("manger")
 	j.inventaire["pomme"] = 0
 	verif(rien and pomme, "au doigt, le bouton « Manger » s'allume pour une pomme, comme pour la viande")
+
+
+# la Noire, acte 5 : la faim (scripts/noire.gd) — elle rôde dès le crépuscule, saccage le camp quand le feu baisse, prend les
+# bêtes attachées. (À écrire : l'équipe « la faim ».)
+func _la_faim_de_la_noire() -> void:
+	print("13. La Noire : la faim")
+
+
+# la Noire, la fin : le collet de filin, l'appât, les cicatrices, son départ (scripts/noire.gd, scripts/atelier.gd).
+# (À écrire : l'équipe « le collet ».)
+func _le_collet_de_la_noire() -> void:
+	print("14. La Noire : le collet et la fin")
 
 
 func _conclure() -> void:

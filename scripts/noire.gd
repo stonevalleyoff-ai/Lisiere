@@ -96,6 +96,10 @@ var _avant := Vector2.ZERO
 var _piste_de := Vector2.ZERO    # d'où part sa piste du jour (pour la refaire, quand on reprend une partie)
 var _a_piste := false
 var _r := RandomNumberGenerator.new()
+# (la fin : chaque fois qu'elle est prise au collet de filin et blessée, une nuit, elle en garde une cicatrice ; à la troisième,
+# elle quitte le lieu pour de bon)
+var cicatrices := 0              # de 0 à 3 : ce qu'elle garde des nuits où on l'a prise et blessée
+var partie := false              # elle a quitté le lieu : elle ne reviendra plus
 
 
 # --- ce que le jeu appelle ---
@@ -112,6 +116,8 @@ func commencer() -> void:
 	_retiree = false
 	_a_piste = false
 	_colere = 0.0
+	cicatrices = 0
+	partie = false
 	_r.seed = int(jeu.graine) ^ 0x5eed
 	_choisir_taniere(jeu.joueur.position)
 	ou = taniere
@@ -272,6 +278,7 @@ func photo() -> Dictionary:
 		"acte": acte, "tx": snappedf(taniere.x, 0.1), "ty": snappedf(taniere.y, 0.1), "connue": taniere_connue, "su": su.keys(),
 		"vue": vue, "retiree": _retiree, "prise": snappedf(_prise, 0.1), "torche": snappedf(_torche, 0.1), "nuit": snappedf(_nuit_t, 0.1),
 		"appel": _appel, "piste": [snappedf(_piste_de.x, 0.1), snappedf(_piste_de.y, 0.1)] if _a_piste else [],
+		"cicatrices": cicatrices, "partie": partie,
 	}
 
 
@@ -291,6 +298,8 @@ func reprendre(d: Dictionary) -> void:
 	_torche = float(d.get("torche", 0.0))
 	_nuit_t = float(d.get("nuit", 0.0))
 	_appel = bool(d.get("appel", false))
+	cicatrices = clampi(int(d.get("cicatrices", 0)), 0, 3)
+	partie = bool(d.get("partie", false))
 	_duree_nuit = R.DUREE * float(jeu.part_nuit)
 	_depart = float(R.NOIRE_DEPART[clampi(acte, 0, 4)]) * _duree_nuit
 	ou = taniere
