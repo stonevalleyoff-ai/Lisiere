@@ -282,7 +282,6 @@ static func _dessus(p: Planche, u: float) -> void:
 			p.aplat(_meche(Vector2(0.124, -0.585) * u, 1.33, 0.15 * u, 0.007 * u, 0.06), T["lumiere"], 0.4)
 			p.aplat(_frange(p, sil, 7 * PAS + 2, 9 * PAS, 6.0, 2.0, 0.2, 0.02 * u, 0.04 * u, 0.008 * u, 0.01 * u), T["lumiere"], 0.55)
 			p.aplat(_frange(p, sil, 4 * PAS, 8 * PAS - 2, 6.0, 0.6, 0.7, 0.02 * u, 0.045 * u, 0.015 * u) + _frange(p, sil, 7 * PAS + 3, 9 * PAS + 4, 4.0, 2.0, -0.2, 0.016 * u, 0.036 * u, 0.014 * u), T["dos"], 0.95)
-			Cicatrices.epaule(p, u)
 		else:
 			# (la pointe de la hanche, et le poil de la fesse)
 			p.tracer("M%s Q%s %s" % [Planche.pt(Vector2(-0.224, -0.432) * u), Planche.pt(Vector2(-0.19, -0.458) * u), Planche.pt(Vector2(-0.15, -0.43) * u)], 0.006 * u, T["lumiere"], 0.36)
@@ -413,6 +412,7 @@ static func _tete(p: Planche, u: float) -> void:
 	d += _frange(p, bas, 2, bas.size() - 4, 5.0, 0.5, 1.0, 0.025 * u, 0.055 * u, 0.016 * u)
 	p.aplat(d, T["dos"], 0.96)
 	p.aplat(_frange(p, haut, 3, haut.size() - 1, 9.0, 2.6, 0.1, 0.025 * u, 0.05 * u, 0.008 * u, 0.012 * u), T["lumiere"], 0.5)
+	Cicatrices.encolure(p, u)
 	# la mâchoire (derrière la tête : fermée, ses dents sont sous la lèvre)
 	p.calque_en_plus("_bas")
 	var machoire := _h(MACHOIRE, o, hs, INCL)

@@ -2,8 +2,8 @@ extends RefCounted
 # Lisière — les cicatrices de la Noire (scripts/noire_cicatrices.gd)
 # Chaque nuit où on l'a prise au collet et blessée (scripts/noire_collet.gd), elle en garde une : une balafre sans poil, pâle,
 # que son dessin porte ensuite (scripts/noire_corps.gd l'appelle, calque par calque) et que le feu accroche.
-#  - la première : en travers de l'épaule, là où la lance l'a prise au bout de son élan ; et l'anneau du nœud, pelé, au
-#    canon de sa patte de devant ;
+#  - la première : à la naissance du cou, en avant de l'épaule, là où la lance l'a prise au bout de son élan ; et l'anneau
+#    du nœud, pelé, au canon de sa patte de devant ;
 #  - la deuxième : longue, sur les côtes ; elle boite dès lors de la patte prise (scripts/bete.gd) ;
 #  - la troisième : en travers du chanfrein, devant l'œil. On ne la lui voit qu'en portrait : cette nuit-là, elle part.
 # Leur nombre est dans le plan de sa lignée (« cicatrices » : scripts/noire.gd, lignee_a). Rien ici ne touche au hasard de sa
@@ -68,10 +68,10 @@ static func balafre(p: Planche, a: Vector2, b: Vector2, w: float, graine: int) -
 		p.aplat(Planche.ferme(Planche.ellipse(q, w * 0.22, w * 0.16, 6, dir.angle()), 1.0), _pale(), 0.7)
 
 
-# la première : en travers de l'épaule (le calque « dessus », par-dessus l'omoplate)
-static func epaule(p: Planche, u: float) -> void:
+# la première : à la naissance du cou, en avant de l'épaule (son cou, qui passe devant l'omoplate : il se dessine avec la tête)
+static func encolure(p: Planche, u: float) -> void:
 	if nombre(p) >= 1:
-		balafre(p, Vector2(0.108, -0.548) * u, Vector2(0.174, -0.436) * u, 0.0135 * u, 1)
+		balafre(p, Vector2(0.166, -0.522) * u, Vector2(0.234, -0.402) * u, 0.0135 * u, 1)
 
 
 # la deuxième : sur les côtes (le calque « corps »), plus longue

@@ -729,10 +729,503 @@ func _la_faim_de_la_noire() -> void:
 	print("13. La Noire : la faim")
 
 
-# la Noire, la fin : le collet de filin, l'appât, les cicatrices, son départ (scripts/noire.gd, scripts/atelier.gd).
-# (À écrire : l'équipe « le collet ».)
+# la Noire, la fin : le collet de filin, l'appât, les cicatrices, son départ (scripts/noire_collet.gd, scripts/atelier.gd).
+# La scène est jouée de bout en bout, sans attendre (noire.maj, puis son corps, comme _noire_joue) : le collet fabriqué, tendu
+# de jour, amorcé ; la nuit, elle le flaire ; la prise, les élans au bout du filin, les coups, la cicatrice ; trois fois ;
+# l'aube, la piste qui sort, la couche vide, la page ; la partie gardée et reprise. Rien n'y dépend du tirage du lieu : la
+# place est dégagée (arbres, buissons, choses posées, bêtes), le temps clair, le hasard fixé.
 func _le_collet_de_la_noire() -> void:
 	print("14. La Noire : le collet et la fin")
+	await jeu._commencer("foret")
+	seed(20261118)
+	var j = jeu.joueur
+	var N = jeu.noire
+	var A = jeu.atelier
+	var B = jeu.botanique
+	var RR = jeu.R
+	var W = jeu.monde
+	var T = jeu.traces
+	var inv: Dictionary = j.inventaire
+	var Best = load("res://scripts/bestiaire.gd")
+	var Ic = load("res://scripts/atelier_icones.gd")
+	var SA = load("res://scripts/sons_atelier.gd")
+	var Dessin = load("res://scripts/collet_dessin.gd")
+	jeu.climat.forcer("clair", 0.0, 99999.0)
+	jeu.graine = 4242
+	N.commencer()
+	var C = N.collet
+	# le camp, et la place du collet : 420 pixels à gauche du feu, hors de sa lumière ; tout dégagé autour
+	var camp := Vector2(260.0, 120.0)
+	_remettre(camp)
+	j.torche = 0.0
+	for o in W.autour(camp + Vector2(-300.0, 0.0), 1250.0):
+		if float(o.rayon) > 0.0 or str(o.genre) in ["buisson", "touffe", "brindille", "fleur", "cepe", "amanite", "herbe", "aquatique"]:
+			W.retirer(o)
+	for x in A.poses.duplicate():
+		if is_instance_valid(x) and x.position.distance_to(camp) < 1500.0:
+			A.poses.erase(x)
+			x.queue_free()
+	var feu = jeu.Feu.new()
+	feu.jeu = jeu
+	feu.position = camp + Vector2(30.0, 0.0)
+	feu.bois = 40.0
+	W.add_child(feu)
+	jeu.feux.append(feu)
+	var r: float = feu.rayon()
+	var place: Vector2 = feu.position + Vector2(-420.0, 0.0)
+	var pieu: Vector2 = place + C.PIEU
+	var base: float = floorf(jeu.horloge / RR.DUREE) * RR.DUREE
+	var nuit_h: float = base + RR.DUREE * (1.0 - jeu.part_nuit) + 20.0
+	var jour_h: float = base + RR.DUREE * 0.3
+	var duree_nuit: float = RR.DUREE * jeu.part_nuit
+	N.taniere = camp + Vector2(-1500.0, -900.0)
+	N.ou = N.taniere
+	jeu.sons.journal = []
+	var entendu := func(nom: String) -> int:
+		return jeu.sons.journal.filter(func(x): return str(x[1]).rstrip("0123456789") == nom).size()
+	var collet_pose := func():
+		for x in A.poses:
+			if is_instance_valid(x) and str(x.genre) == "collet":
+				return x
+		return null
+
+	# --- la recette, la pose de jour, l'appât ---
+	jeu.horloge = jour_h
+	var cout: Dictionary = A.OBJETS["collet"]["cout"]
+	var etabli = A._creer("etabli", camp + Vector2(70.0, 40.0), {})
+	j.position = etabli.position + Vector2(-34.0, 8.0)
+	for k in cout:
+		inv[k] = 0
+	var sans_rien: bool = not A.peut("collet")
+	for k in cout:
+		inv[k] = int(cout[k])
+	var fait: bool = A.fabriquer("collet")
+	var paye := true
+	for k in cout:
+		paye = paye and int(inv[k]) == 0
+	verif(A.ORDRE.has("collet") and int(cout.get("filin", 0)) >= 3 and int(cout.get("bois", 0)) >= 2 and int(cout.get("pierre", 0)) >= 2 and bool(A.OBJETS["collet"].get("pose", false))
+		and sans_rien and fait and paye and A.possede("collet") == 1 and Ic.connue("collet"),
+		"le grand collet se fabrique à l'établi : %d filins, %d bois, %d pierres (rien sans eux) ; il a son icône, et se pose" % [int(cout["filin"]), int(cout["bois"]), int(cout["pierre"])])
+	# (de nuit, il ne se tend pas)
+	j.position = place + Vector2(46.0, -6.0)
+	j.regard = -1.0
+	jeu.horloge = nuit_h
+	var de_nuit: String = A.empeche_poser("collet")
+	jeu.horloge = jour_h
+	B.parfum = 0.0
+	var pose_ok: bool = A.poser("collet")
+	var s = collet_pose.call()
+	verif(de_nuit != "" and pose_ok and s != null and s.position.distance_to(place) < 2.0 and A.possede("collet") == 0 and bool(s.etat.get("odeur", false)) and not bool(s.etat.get("amorce", true))
+		and A.Campement.rayon("collet") == 0.0 and not C._eclaire(s),
+		"il se tend de jour (la nuit : « %s »), devant elle, à %d pixels du feu, hors de sa lumière ; posé à mains nues, il garde l'odeur de sa main" % [de_nuit, int(s.position.distance_to(feu.position)) if s != null else -1])
+	# (l'appât : de la viande crue, « Agir » auprès de lui ; la viande cuite n'y fait rien)
+	inv["viande"] = 0
+	inv["viande_cuite"] = 1
+	jeu.agir()
+	var cuite_refusee: bool = not bool(s.etat.get("amorce", false)) and int(inv["viande_cuite"]) == 1
+	inv["viande"] = 2
+	jeu.agir()
+	verif(cuite_refusee and bool(s.etat.get("amorce", false)) and int(inv["viande"]) == 1 and Dessin.cle(s).contains("true"),
+		"« Agir » auprès du collet, avec de la viande crue, l'amorce (la viande cuite n'y fait rien) ; son dessin le montre")
+
+	# --- la nuit : il sent sa main. Elle vient, le flaire, renâcle et s'en détourne ---
+	j.position = camp
+	jeu.horloge = nuit_h
+	jeu.nuits = N.premiere_nuit(2)
+	N.mettre_en_scene(2, 900.0, PI)
+	var o1 := {"appat": false, "flaire": false, "nez": INF, "attire": false, "tete": 0.0, "prise": false, "pres_feu": INF}
+	_noire_joue(48.0, func(_t):
+		o1["appat"] = o1["appat"] or N.etat == "appat"
+		o1["prise"] = o1["prise"] or N.etat == "prise"
+		o1["attire"] = o1["attire"] or (N.etat in ["appat", "flaire"] and N.appat_l_attire())
+		if N.corps == null:
+			return
+		o1["pres_feu"] = minf(o1["pres_feu"], N.corps.position.distance_to(feu.position) / r)
+		if N.etat == "flaire":
+			o1["flaire"] = true
+			o1["nez"] = minf(o1["nez"], absf(N.corps.position.distance_to(s.position) - C.NEZ * RR.NOIRE_LARGEUR))
+			o1["tete"] = maxf(o1["tete"], N.corps.flaire))
+	verif(o1["appat"] and o1["attire"] and o1["flaire"] and o1["nez"] < 12.0 and o1["tete"] > 0.9 and not o1["prise"] and N.su.has("odeur") and entendu.call("noire_renacle") == 1
+		and entendu.call("noire_flaire") >= 2 and int(s.etat.get("evente", -1)) == int(jeu.nuits) and str(s.etat.get("phase", "")) == "" and bool(s.etat.get("amorce", false))
+		and N.etat in ["tourne", "guette"] and not N.appat_l_attire() and j.sante == 100.0 and o1["pres_feu"] >= 0.97,
+		"la nuit, l'appât l'attire : elle y vient la tête basse et le flaire, le nez dessus ; il sent la main : elle renâcle et s'en détourne, sans y toucher (le jeu le dit, le carnet le garde), et reprend sa ronde")
+	_noire_joue(20.0)
+	verif(not N.appat_l_attire() and C.vise == null and str(s.etat.get("phase", "")) == "", "éventé, ce collet ne l'attire plus de la nuit ; il reste tendu, amorcé, pour une autre")
+	N.aube()
+	N._disparaitre()
+	N.etat = "dort"
+	# (la pluie lave l'odeur d'une main : une demi-minute d'averse)
+	jeu.climat.pluie = 1.0
+	for i in int(RR.NOIRE_COLLET_PLUIE) - 2:
+		C._laver(1.0)
+	var encore: bool = bool(s.etat.get("odeur", false))
+	for i in 4:
+		C._laver(1.0)
+	var lave: bool = not bool(s.etat.get("odeur", true))
+	jeu.climat.pluie = 0.0
+	s.etat["odeur"] = true
+	# (replié : il revient dans son sac, avec sa viande ; retendu avec l'odeur des aromates sur elle, il ne sent rien)
+	jeu.horloge = jour_h
+	j.position = place + Vector2(46.0, -6.0)
+	j.regard = -1.0
+	var viande_avant := int(inv["viande"])
+	var replie: bool = A.replier()
+	var rendu: bool = A.possede("collet") == 1 and int(inv["viande"]) == viande_avant + 1 and collet_pose.call() == null
+	# (l'odeur : des aromates au feu, elle se tient dans leur fumée)
+	inv["aromates"] = RR.AROMATES_FEU
+	j.position = feu.position + Vector2(-30.0, 10.0)
+	var fume: bool = B.fumiger()
+	B.maj(1.0)
+	B.maj(1.0)
+	var parfumee: bool = B.impregnee()
+	j.position = place + Vector2(46.0, -6.0)
+	j.regard = -1.0
+	A.poser("collet")
+	s = collet_pose.call()
+	jeu.agir()
+	verif(encore and lave and replie and rendu and fume and parfumee and s != null and bool(s.etat.get("amorce", false)) and not bool(s.etat.get("odeur", true)) and C.note_du_sac(s).contains("ne sent rien"),
+		"une averse de %d secondes lave l'odeur ; replié, le collet revient dans le sac avec sa viande ; retendu et amorcé avec l'odeur des aromates sur elle, il ne sent rien (le sac le dit)" % int(RR.NOIRE_COLLET_PLUIE))
+
+	# --- la prise : elle y met la patte, le nœud se serre ; tenue, elle se jette au bout du filin ---
+	# (les nombres, par le calcul : la bande où la lance porte et où sa gueule ne porte pas)
+	var lance_porte: float = RR.PORTEE_COUP + 0.3 * RR.NOIRE_LARGEUR
+	var bande: float = lance_porte - RR.NOIRE_COLLET_MORD
+	var coups_lance := int(ceil(RR.NOIRE_COLLET_BLESSE / RR.DEGATS_LANCE))
+	var elan_s: float = RR.NOIRE_COLLET_ELAN + RR.NOIRE_COLLET_SONNEE + 0.75 * RR.NOIRE_COLLET_LONGE / RR.NOIRE_VITESSE
+	verif(bande >= 40.0 and coups_lance >= 2 and coups_lance <= 3 and (coups_lance - 1) * RR.CADENCE < RR.NOIRE_COLLET_SONNEE and RR.NOIRE_COLLET_TENUE / elan_s >= 5.0
+		and RR.NOIRE_MORSURE * 2.0 < 100.0 and RR.NOIRE_COLLET_MORD < 100.0,
+		"par le calcul : tenue, sa gueule porte à %d pixels et la lance à %d (une bande de %d) ; %d coups de lance font une cicatrice, ils tiennent dans la seconde où elle est sonnée (%.2f s pour %.1f) ; %d élans en %d secondes" % [
+		int(RR.NOIRE_COLLET_MORD), int(lance_porte), int(bande), coups_lance, (coups_lance - 1) * RR.CADENCE, RR.NOIRE_COLLET_SONNEE, int(RR.NOIRE_COLLET_TENUE / elan_s), int(RR.NOIRE_COLLET_TENUE)])
+	# la nuit d'une prise : la veilleuse attend au feu ; le nœud serré, elle sort se battre (ou non)
+	var une_nuit := func(k: int, acte: int, frappe: bool, dedans: bool) -> Dictionary:
+		var m := {"prise": -1.0, "patte": INF, "loin_du_pieu": 0.0, "morsures": 0, "coups": 0, "a_coups": 0, "liberee": -1.0, "furie": -1.0, "charge": -1.0, "presage": false,
+			"cicatrice": false, "pres_feu": INF, "ramasse": false, "attire": false, "serre": false, "vers_elle": 0,
+			"part": false, "part_de": Vector2.ZERO, "part_cap": 1.0, "loin_taniere": INF}
+		j.position = camp
+		j.sante = 100.0
+		j.lance = RR.USURE_LANCE
+		jeu.horloge = nuit_h
+		jeu.nuits = N.premiere_nuit(2) + k
+		jeu.sons.journal = []
+		N.mettre_en_scene(acte, 900.0, PI)
+		var cic0: int = N.cicatrices
+		var sante := [100.0]
+		var cadence := [0.0]
+		var a_coups0 := [0]
+		_noire_joue(34.0 + RR.NOIRE_COLLET_TENUE + 12.0, func(t):
+			if N.corps == null:
+				return
+			var c = N.corps
+			m["pres_feu"] = minf(m["pres_feu"], c.position.distance_to(feu.position) / r)
+			if N.etat == "prise":
+				if m["prise"] < 0.0:
+					m["prise"] = t
+					m["patte"] = c.pied_pris().distance_to(s.position)
+					m["serre"] = str(s.etat.get("phase", "")) == "serre" and not bool(s.etat.get("amorce", true))
+					# (elle sort de la lumière : au bout de la portée de la bête, du côté du camp ; ou dedans, pour voir)
+					j.position = pieu + Vector2(RR.NOIRE_COLLET_LONGE + (RR.NOIRE_COLLET_MORD - 25.0 if dedans else RR.NOIRE_COLLET_MORD + 0.45 * bande), 0.0)
+				m["attire"] = m["attire"] or N.appat_l_attire()
+				m["loin_du_pieu"] = maxf(m["loin_du_pieu"], c.position.distance_to(pieu))
+				m["ramasse"] = m["ramasse"] or (C._phase == "ramasse" and c.aplatie > 0.5)
+				if C._phase == "jette":
+					if C._dir.dot((j.position - pieu).normalized()) > 0.9:
+						m["vers_elle"] += 1
+				cadence[0] -= 0.05
+				if frappe and cadence[0] <= 0.0 and c.position.distance_to(j.position) - c.largeur * 0.3 < RR.PORTEE_COUP and N.etat == "prise":
+					cadence[0] = RR.CADENCE
+					jeu.agir()
+					m["coups"] += 1
+			elif m["prise"] >= 0.0:
+				if m["liberee"] < 0.0:
+					m["liberee"] = t
+					m["cicatrice"] = N.cicatrices == cic0 + 1
+				if N.etat == "furie" and m["furie"] < 0.0:
+					m["furie"] = t
+				if N.etat == "furie":
+					m["presage"] = m["presage"] or c.aplatie > 0.5
+				if N.etat == "charge" and m["charge"] < 0.0:
+					m["charge"] = t
+					# (elle court vers son feu)
+					j.position = camp
+				if N.etat == "part":
+					# (elle quitte le lieu : par où, et à quelle distance de sa tanière elle passe)
+					if not m["part"]:
+						m["part"] = true
+						m["part_de"] = c.position
+					m["loin_taniere"] = minf(m["loin_taniere"], c.position.distance_to(N.taniere))
+					if c.position.distance_to(m["part_de"]) > 200.0:
+						m["part_cap"] = (c.position - Vector2(m["part_de"])).normalized().dot((N.taniere - Vector2(m["part_de"])).normalized())
+			if j.sante < sante[0] - 1.0:
+				m["morsures"] += 1
+				sante[0] = j.sante
+				if dedans and m["morsures"] >= 2:
+					# (deux morsures : elle en réchapperait à peine d'une troisième ; elle sort de sa portée)
+					j.position = camp
+			m["a_coups"] = entendu.call("collet_coup"))
+		return m
+	# deuxième nuit : elle s'y prend. La veilleuse se tient au bout de sa portée, sans frapper : pas une morsure ; le temps
+	# passé, les pieux cèdent ; furieuse, elle s'aplatit (le présage), puis charge ; un feu vif la tient encore
+	var n1: Dictionary = une_nuit.call(1, 2, false, false)
+	var s1 = s
+	verif(n1["prise"] > 0.0 and n1["patte"] < 14.0 and n1["serre"] and n1["attire"] and N.su.has("collet") and entendu.call("collet_claque") == 1 and entendu.call("noire_cri") >= 1 and n1["pres_feu"] >= 0.97,
+		"le collet ne sent rien : elle le flaire, y met la patte (à %d pixels du milieu du nœud), le nœud claque et se serre, elle crie ; le carnet le garde ; elle n'est pas entrée dans la lumière (%.2f rayon)" % [int(n1["patte"]), n1["pres_feu"]])
+	verif(n1["loin_du_pieu"] <= RR.NOIRE_COLLET_LONGE + 0.5 and n1["a_coups"] >= 5 and n1["ramasse"] and n1["vers_elle"] >= 4 and n1["morsures"] == 0,
+		"tenue, elle se ramasse puis se jette au bout du filin (%d à-coups, jamais plus loin que %d pixels du pieu : %.1f), sur la veilleuse qui se tient au bout de sa portée : pas une morsure en %d secondes" % [
+		n1["a_coups"], int(RR.NOIRE_COLLET_LONGE), n1["loin_du_pieu"], int(RR.NOIRE_COLLET_TENUE)])
+	verif(absf(n1["liberee"] - n1["prise"] - RR.NOIRE_COLLET_TENUE) < 0.2 and not n1["cicatrice"] and N.cicatrices == 0 and n1["furie"] >= 0.0 and n1["presage"]
+		and absf(n1["charge"] - n1["furie"] - RR.NOIRE_PRESAGE) < 0.15 and str(s1.etat.get("phase", "")) == "rompu" and entendu.call("collet_arrache") == 1 and j.sante == 100.0 and not N.partie,
+		"sans coups, le nœud la tient %d secondes ; puis les pieux cèdent : libre, furieuse, elle s'aplatit %.1f s (son présage) avant de charger ; le collet est perdu ; la veilleuse a regagné son feu, sans une morsure" % [
+		int(n1["liberee"] - n1["prise"]), n1["charge"] - n1["furie"]])
+	# (rompu, on en reprend les pieux et les pierres, pas le filin)
+	N.aube()
+	N._disparaitre()
+	N.etat = "dort"
+	jeu.horloge = jour_h
+	j.position = s1.position + Vector2(30.0, 4.0)
+	for k in cout:
+		inv[k] = 0
+	jeu.agir()
+	verif(int(inv["bois"]) == int(C.CE_QU_IL_REND["bois"]) and int(inv["pierre"]) == int(C.CE_QU_IL_REND["pierre"]) and int(inv["filin"]) == 0 and collet_pose.call() == null and A.possede("collet") == 0,
+		"du collet rompu, elle reprend ses pieux et ses pierres (%d bois, %d pierres) ; le nœud, la bête l'a emporté" % [int(inv["bois"]), int(inv["pierre"])])
+	# un collet de plus, tendu au même endroit, l'odeur des aromates sur elle
+	var retendre := func():
+		jeu.horloge = jour_h
+		for k in cout:
+			inv[k] = int(cout[k])
+		j.position = etabli.position + Vector2(-34.0, 8.0)
+		A.fabriquer("collet")
+		B.parfum = RR.PARFUM
+		j.position = place + Vector2(46.0, -6.0)
+		j.regard = -1.0
+		A.poser("collet")
+		inv["viande"] = 1
+		jeu.agir()
+		return collet_pose.call()
+	# troisième nuit : dedans sa portée, elle mord
+	s = retendre.call()
+	var n2: Dictionary = une_nuit.call(2, 3, false, true)
+	verif(n2["prise"] > 0.0 and n2["morsures"] == 2 and absf(100.0 - j.sante - RR.NOIRE_MORSURE * 2.0) < 0.01 and C.morsures_n == 2 and j.sante > 0.0,
+		"qui entre dans sa portée est mordue, à chaque élan : deux morsures à %d pixels du bout de son filin (%d de santé chacune) ; sortie de sa portée, plus aucune" % [
+		int(RR.NOIRE_COLLET_MORD - 25.0), int(RR.NOIRE_MORSURE)])
+	N.aube()
+	N._disparaitre()
+	N.etat = "dort"
+	for x in A.poses.duplicate():
+		if is_instance_valid(x) and str(x.genre) == "collet":
+			A.poses.erase(x)
+			x.queue_free()
+	var morsures_avant: int = C.morsures_n
+
+	# --- les coups comptent : la première cicatrice ---
+	var portrait0: Dictionary = Best.portrait(N.lignee_a(0), 300.0)
+	s = retendre.call()
+	var n3: Dictionary = une_nuit.call(3, 3, true, false)
+	var lance_usee: int = RR.USURE_LANCE - int(j.lance)
+	verif(n3["prise"] > 0.0 and n3["coups"] == coups_lance and lance_usee == coups_lance and n3["cicatrice"] and N.cicatrices == 1 and n3["morsures"] == 0 and N._retiree
+		and str(s.etat.get("phase", "")) == "rompu" and N.su.has("cicatrice") and not N.partie and n3["liberee"] - n3["prise"] < RR.NOIRE_COLLET_TENUE,
+		"tenue, les coups comptent : au %de coup de lance (en %.1f s, sans une morsure, du bout de sa portée), elle s'arrache et se retire ; elle en garde une cicatrice" % [n3["coups"], n3["liberee"] - n3["prise"]])
+	_noire_joue(45.0)
+	var rentree: bool = N.corps == null and N.etat == "dort" and T.pres(N.taniere, 300.0, 2)
+	_noire_joue(20.0)
+	verif(rentree and N.corps == null and C.emportes >= 2, "blessée, elle rentre à sa tanière (sa piste y mène) et ne revient pas de la nuit")
+	N.aube()
+	# ce que la cicatrice change : son dessin, sa charge
+	var portrait1: Dictionary = Best.portrait(N.lignee_a(1), 300.0)
+	var portrait2: Dictionary = Best.portrait(N.lignee_a(2), 300.0)
+	var portrait3: Dictionary = Best.portrait(N.lignee_a(3), 300.0)
+	var clair := func(po: Dictionary, q: Vector2) -> float:
+		var img: Image = po["image"]
+		var px := Vector2i(((q * 300.0 - Vector2(po["pos"])) * 2.0).round())
+		var v := 0.0
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				v = maxf(v, img.get_pixel(clampi(px.x + dx, 0, img.get_width() - 1), clampi(px.y + dy, 0, img.get_height() - 1)).get_luminance())
+		return v
+	var epaule := Vector2(0.2, -0.462)
+	var flanc := Vector2(-0.021, -0.412)
+	var e0: float = clair.call(portrait0, epaule)
+	var e1: float = clair.call(portrait1, epaule)
+	var f1: float = clair.call(portrait1, flanc)
+	var f2: float = clair.call(portrait2, flanc)
+	verif(e1 > e0 + 0.25 and f2 > f1 + 0.25 and portrait0["image"].get_data() != portrait1["image"].get_data() and portrait2["image"].get_data() != portrait3["image"].get_data()
+		and Vector2(portrait0["taille"]) == Vector2(portrait1["taille"]),
+		"chaque cicatrice se voit sur son dessin : une balafre pâle à la naissance du cou à la première (%.2f de clair, pour %.2f), sur les côtes à la deuxième (%.2f pour %.2f), au chanfrein à la troisième ; son poil, lui, reste le même" % [e1, e0, f2, f1])
+	jeu.horloge = nuit_h
+	jeu.nuits += 1
+	N.mettre_en_scene(3, 900.0, PI)
+	for x in A.poses.duplicate():
+		if is_instance_valid(x) and str(x.genre) == "collet":
+			A.poses.erase(x)
+			x.queue_free()
+	_noire_joue(3.0)
+	var v1: float = N.corps.vitesse if N.corps != null else 0.0
+	verif(N.corps != null and absf(v1 - RR.NOIRE_VITESSE * (1.0 - RR.NOIRE_CICATRICE_FREIN)) < 0.01 and v1 > RR.VITESSE and N.corps._boite_i < 0,
+		"une cicatrice ralentit sa charge : %d pixels par seconde au lieu de %d (la veilleuse court à %d) ; elle ne boite pas encore" % [int(v1), int(RR.NOIRE_VITESSE), int(RR.VITESSE)])
+	N.aube()
+	N._disparaitre()
+	N.etat = "dort"
+
+	# --- la deuxième : elle boite ---
+	s = retendre.call()
+	var n4: Dictionary = une_nuit.call(5, 4, true, false)
+	_noire_joue(45.0)
+	N.aube()
+	jeu.horloge = nuit_h
+	jeu.nuits += 1
+	for x in A.poses.duplicate():
+		if is_instance_valid(x) and str(x.genre) == "collet":
+			A.poses.erase(x)
+			x.queue_free()
+	N.mettre_en_scene(4, 900.0, PI)
+	_noire_joue(3.0)
+	var v2: float = N.corps.vitesse if N.corps != null else 0.0
+	verif(n4["cicatrice"] and N.cicatrices == 2 and not N.partie and N.corps != null and absf(v2 - RR.NOIRE_VITESSE * (1.0 - 2.0 * RR.NOIRE_CICATRICE_FREIN)) < 0.01 and v2 > RR.VITESSE
+		and N.corps._boite_i >= 0 and N.corps._boite_i == N.corps._prise_i,
+		"la deuxième : %d pixels par seconde, toujours plus que la veilleuse ; et elle boite de la patte prise" % int(v2))
+	N.aube()
+	N._disparaitre()
+	N.etat = "dort"
+
+	# --- la troisième : elle quitte le lieu ---
+	s = retendre.call()
+	var nuits_tenues := 9
+	jeu.jour = nuits_tenues + 1
+	var n5: Dictionary = une_nuit.call(7, 4, true, false)
+	_noire_joue(20.0)
+	verif(n5["cicatrice"] and N.cicatrices == 3 and N.partie and n5["part"] and n5["part_cap"] < 0.75 and n5["loin_taniere"] > 700.0 and N.corps == null and N.etat == "dort"
+		and entendu.call("dernier_appel") == 1 and entendu.call("appel") == 0 and C.jour_du_depart == nuits_tenues + 1 and n5["morsures"] == 0,
+		"à la troisième cicatrice, elle ne rentre pas : elle s'en va, pas vers sa tanière (jamais à moins de %d pixels d'elle), pousse un dernier appel, qui n'est pas le sien, et disparaît" % int(minf(n5["loin_taniere"], 99999.0)))
+	# l'aube : sa piste part du collet et sort du lieu ; sa couche est vide ; le carnet écrit sa dernière page
+	jeu.horloge = jour_h + RR.DUREE
+	jeu.jour = nuits_tenues + 2
+	jeu.nuits = nuits_tenues
+	N.aube()
+	var hors := 0
+	var pres_taniere := false
+	var au_collet := false
+	for e in T._liste:
+		if int(e[6]) != 2:
+			continue
+		var q := Vector2(e[0], e[1])
+		if absf(q.x) > RR.DEMI or absf(q.y) > RR.DEMI:
+			hors += 1
+		pres_taniere = pres_taniere or q.distance_to(N.taniere) < 500.0
+		au_collet = au_collet or q.distance_to(pieu) < 140.0
+	var couche = null
+	for x in A.poses:
+		if is_instance_valid(x) and str(x.genre) == "couche":
+			couche = x
+	verif(T.nombre(2) >= 12 and au_collet and hors >= 1 and not pres_taniere and (absf(C.sortie.x) > RR.DEMI or absf(C.sortie.y) > RR.DEMI),
+		"à l'aube, sa piste part du collet et sort du lieu (%d empreintes, dont %d au-delà de son bord), sans passer par sa tanière" % [T.nombre(2), hors])
+	inv["filin"] = 0
+	j.position = N.taniere + Vector2(20.0, 6.0)
+	_noire_joue(2.0)
+	var pas_de_corps: bool = N.corps == null
+	jeu.agir()
+	var fouillee: bool = couche != null and bool(couche.etat.get("fouillee", false)) and int(inv["filin"]) == 1
+	jeu.agir()
+	verif(couche != null and couche.position.distance_to(N.taniere) < 1.0 and int(couche.etat.get("noeuds", 0)) >= 2 and pas_de_corps and fouillee and int(inv["filin"]) == 1 and j.sante > 60.0,
+		"sa tanière est vide : sa couche froide, et les nœuds qu'elle y a rongés (%d), dont la veilleuse tire un filin, une fois ; plus personne à réveiller" % int(couche.etat.get("noeuds", 0)) if couche != null else "sa couche")
+	# (le carnet : ce qu'on a appris d'elle, sa dernière page, son portrait aux trois cicatrices)
+	var cles := []
+	for sv in N.SAVOIRS:
+		cles.append(str(sv[0]))
+	N.vue = true
+	jeu.en_pause = true
+	jeu.ui.montrer_pause(true)
+	var carnet = jeu.ui._pause.savoirs
+	var textes := PackedStringArray()
+	for l in carnet.find_children("*", "Label", true, false):
+		textes.append(str(l.text))
+	var images: Array = carnet.find_children("*", "TextureRect", true, false)
+	jeu.ui.montrer_pause(false)
+	jeu.en_pause = false
+	var tout_le_carnet := "\n".join(textes)
+	verif(cles.has("odeur") and cles.has("collet") and cles.has("cicatrice") and cles.has("depart") and N.su.has("depart") and N.savoirs().size() == N.su.size()
+		and tout_le_carnet.contains("La Noire, partie") and tout_le_carnet.contains(C.derniere_page()) and C.derniere_page().contains("nuit %d" % (nuits_tenues + 1))
+		and not images.is_empty() and images[0].texture == portrait3["tex"],
+		"le carnet garde l'odeur, le collet, les cicatrices, son départ (%d choses sues sur %d), écrit sa dernière page (« %s ») et la montre avec ses trois cicatrices" % [N.su.size(), N.SAVOIRS.size(), C.derniere_page()])
+	# la page « Elle est partie. » : après l'aube ; ce n'est pas une fin, la partie continue
+	j.position = camp
+	var avant_page: bool = jeu.page == "" and C._page_dans > 0.0
+	_noire_joue(RR.NOIRE_DEPART_PAGE + 1.0)
+	var pg = jeu.ui._page_depart
+	var montree: bool = jeu.page == "depart" and jeu.en_pause and pg != null and pg.visible and pg._titre.text == "Elle est partie."
+	var d_page: Dictionary = C.page()
+	var chiffres := PackedStringArray()
+	if pg != null:
+		for c in pg._chiffres:
+			chiffres.append("%s %s" % [c[0].text, c[1].text])
+	jeu.fermer_page()
+	verif(avant_page and montree and int(d_page["nombres"][0][0]) == nuits_tenues and int(d_page["nombres"][1][0]) == 3 and int(d_page["nombres"][2][0]) == C.poses_n and C.poses_n >= 5
+		and int(d_page["nombres"][3][0]) == C.morsures_n and C.morsures_n == morsures_avant and morsures_avant == 2 and chiffres.size() == 4 and chiffres[1] == "3 cicatrices"
+		and jeu.page == "" and not jeu.en_pause and not pg.visible and C.page_dite and jeu.en_partie and jeu._mort < 0.0 and j.sante > 0.0,
+		"%d secondes après l'aube, la page « Elle est partie. » : %s ; deux choix, et « Rester veiller » rend la partie, qui continue (ce n'est pas une fin)" % [int(RR.NOIRE_DEPART_PAGE), ", ".join(chiffres)])
+	# les nuits d'après : plus rien d'elle
+	jeu.horloge = nuit_h + RR.DUREE
+	jeu.nuits = nuits_tenues + 1
+	jeu.sons.journal = []
+	N.tombee()
+	var revue := [false]
+	var silence := [0.0]
+	_noire_joue(duree_nuit, func(_t):
+		revue[0] = revue[0] or N.corps != null or N.presente()
+		silence[0] = maxf(silence[0], N.silence))
+	N.aube()
+	verif(not revue[0] and silence[0] < 0.01 and entendu.call("appel") == 0 and N.peur() == 0.0 and T.nombre(2) == 0 and C._page_dans < 0.0 and not N.appat_l_attire(),
+		"les nuits d'après : elle ne vient pas, n'appelle pas, ne fait rien taire (les nuits ont retrouvé leurs bruits) ; à l'aube, plus de piste, plus de page")
+
+	# --- la partie gardée, et reprise ---
+	var PG = jeu.PartieGardee
+	var photo: Dictionary = JSON.parse_string(JSON.stringify(PG.photo(jeu)))
+	var poses_n: int = C.poses_n
+	await jeu._commencer("foret", photo)
+	N = jeu.noire
+	C = N.collet
+	A = jeu.atelier
+	j = jeu.joueur
+	var couche2 = null
+	for x in A.poses:
+		if is_instance_valid(x) and str(x.genre) == "couche":
+			couche2 = x
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * (1.0 - jeu.part_nuit) + 20.0
+	N.tombee()
+	var revue2 := [false]
+	_noire_joue(30.0, func(_t): revue2[0] = revue2[0] or N.corps != null or N.presente())
+	verif(N.partie and N.cicatrices == 3 and C.poses_n == poses_n and C.page_dite and C.aube_dite and N.su.has("depart") and couche2 != null and bool(couche2.etat.get("fouillee", false))
+		and not revue2[0] and jeu.page == "" and N.acte_de(99) >= 4,
+		"la partie gardée s'en souvient : reprise, elle est toujours partie (ses trois cicatrices, sa couche fouillée, la page lue), et ne revient pas")
+	# (une partie gardée la nuit du départ, avant l'aube : reprise, l'aube fait sa piste et sa page)
+	C.aube_dite = false
+	C.page_dite = false
+	C.depart_de = Vector2(-160.0, 115.0)
+	C.sortie = Vector2(-RR.DEMI - 260.0, 115.0)
+	var photo2: Dictionary = JSON.parse_string(JSON.stringify(N.photo()))
+	var N3 = jeu.Noire.new()
+	N3.jeu = jeu
+	N3.commencer()
+	N3.reprendre(photo2)
+	jeu.traces.vider()
+	jeu.horloge = floorf(jeu.horloge / RR.DUREE) * RR.DUREE + RR.DUREE * 0.3
+	N3.aube()
+	verif(N3.partie and N3.collet.aube_dite and N3.collet._page_dans > 0.0 and jeu.traces.nombre(2) >= 8 and N3.collet.sortie.distance_to(C.sortie) < 0.2,
+		"gardée la nuit même de son départ, la partie reprise retrouve à l'aube sa piste (%d empreintes) et sa page" % jeu.traces.nombre(2))
+	jeu.traces.vider()
+	# les sons du collet, faits à la main : chacun se fabrique
+	var rs := RandomNumberGenerator.new()
+	rs.seed = 7
+	var faits := 0
+	var durees := PackedStringArray()
+	for nom in ["collet_claque", "collet_coup0", "collet_coup1", "collet_arrache", "noire_cri", "noire_flaire", "noire_renacle", "dernier_appel"]:
+		var a: Array = SA.fabriquer(nom, rs)
+		if a.size() == 2 and a[0].size() > int(a[1]) / 5 and SA.NOMS.has(nom):
+			var crete := 0.0
+			for v in a[0]:
+				crete = maxf(crete, absf(v))
+			if crete > 0.1 and crete <= 1.0:
+				faits += 1
+				durees.append("%s %.1f s" % [nom, float(a[0].size()) / float(a[1])])
+	verif(faits == 8, "les sons du collet sont faits à la main, comme les autres : %s" % ", ".join(durees))
 
 
 func _conclure() -> void:

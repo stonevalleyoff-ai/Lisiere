@@ -116,7 +116,7 @@ func pose(s) -> void:
 	else:
 		jeu.ui.message("Le collet est tendu : le nœud ouvert, les pieux enfoncés. Il lui faut un appât : de la viande crue.", CLAIR)
 	if _eclaire(s):
-		jeu.ui.message("Ton feu l'éclaire : elle n'entre pas dans sa lumière. Tends-le plus loin.", TEINTE)
+		jeu.ui.message("Trop près de ton feu : elle n'entre pas dans sa lumière. Tends-le plus loin.", TEINTE)
 
 
 # « Agir » auprès du collet : de la viande crue l'amorce ; rompu, elle en reprend ce qui reste. Auprès de la couche vide de
@@ -280,10 +280,16 @@ static func _amorce(s) -> bool:
 	return is_instance_valid(s) and str(s.genre) == "collet" and str(s.etat.get("phase", "")) == "" and bool(s.etat.get("amorce", false))
 
 
-# la lumière d'un feu atteint-elle ce collet ? (elle ne tient pas dans cette lumière : bete.gd l'en repousse)
+# ce collet est-il trop près d'un feu ? Elle ne tient pas dans sa lumière (bete.gd l'en repousse) : il faut qu'elle puisse
+# poser son corps devant le nœud ; et que la veilleuse ne puisse pas la frapper sans sortir de la lumière qui la protège (la
+# lance porte à PORTEE_COUP + 0,3 × sa largeur ; tant que la veilleuse est à l'abri, elle tire de l'autre côté du pieu)
 func _eclaire(s) -> bool:
+	var lance := R.PORTEE_COUP + 0.3 * R.NOIRE_LARGEUR - 0.25 * R.NOIRE_COLLET_LONGE + 12.0
 	for f in jeu.feux_et_foyers():
-		if f.allume() and f.position.distance_to(s.position) < float(f.rayon()) * 0.98 + PATTE * R.NOIRE_LARGEUR + 8.0:
+		if not f.allume():
+			continue
+		var r: float = float(f.rayon())
+		if f.position.distance_to(s.position) < r * 0.98 + PATTE * R.NOIRE_LARGEUR + 8.0 or f.position.distance_to(ancre(s)) < r * 0.85 + lance:
 			return true
 	return false
 
@@ -295,7 +301,7 @@ func _dire_la_lumiere() -> void:
 	for s in jeu.atelier.poses:
 		if _amorce(s) and _eclaire(s) and s.position.distance_to(noire.ou) < R.NOIRE_COLLET_FLAIR:
 			_lumiere_dite = int(jeu.nuits)
-			jeu.ui.message("Elle a senti la viande, mais ton feu éclaire le collet. Elle n'entrera pas dans sa lumière.", TEINTE)
+			jeu.ui.message("Elle a senti la viande, mais le collet est trop près de ton feu. Elle n'entrera pas dans sa lumière.", TEINTE)
 			return
 
 
@@ -486,14 +492,19 @@ func _tenir(delta: float, j) -> void:
 				_elan(j, pieu)
 
 
-# un élan de plus : sur la veilleuse si elle est à sa portée ou presque, sinon à l'opposé du pieu, pour s'arracher
+# un élan de plus : sur la veilleuse si elle est à sa portée ou presque ; sinon pour s'arracher, d'un côté puis de l'autre.
+# Un feu vif la tient toujours : tant que la veilleuse est dans sa lumière, elle ne se jette pas vers elle, elle tire à
+# l'opposé du feu (il faut sortir pour l'atteindre)
 func _elan(j, pieu: Vector2) -> void:
 	var c = noire.corps
 	_elans += 1
 	var vers_elle: Vector2 = j.position - pieu
-	if vers_elle.length() < R.NOIRE_COLLET_LONGE + R.NOIRE_COLLET_MORD + 75.0 and vers_elle.length() > 1.0:
+	var feu = jeu.feu_qui_protege(j.position)
+	if feu == null and vers_elle.length() < R.NOIRE_COLLET_LONGE + R.NOIRE_COLLET_MORD + 75.0 and vers_elle.length() > 1.0:
 		_dir = vers_elle.normalized()
 		jeu.grognement(c, true)
+	elif feu != null:
+		_dir = Vector2.from_angle((pieu - feu.position).angle() + (1.0 if _elans % 2 == 0 else -1.0) * _r.randf_range(0.2, 0.9))
 	else:
 		# (elle tire d'un côté, puis de l'autre : jamais deux fois le même)
 		var ici: Vector2 = c.position - pieu
