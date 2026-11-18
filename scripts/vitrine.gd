@@ -56,6 +56,14 @@ extends Node
 #   ceux des branches (et les épis mûrs, le lichen des rennes, la pulpe des cactus) ; --planche arbres|sol : une planche de la cueillette nourricière, posée dans une clairière à côté
 #   d'elle, de près (les arbres et leurs fruits, à chaque état ; les épis, le lichen, le cactus, les grains au jardin ; « geste » :
 #   elle cueille un pommier, de tout près) ; --gros : la caméra va de l'une à l'autre, de tout près
+#   la flore de l'herbier (scripts/flore_dessins.gd) : --planche flore --lieu marais : toutes les plantes de l'herbier du biome,
+#   côte à côte, chacune à sa taille (celle que lui donne le monde d'après sa hauteur d'Orvane), la veilleuse à gauche pour
+#   l'échelle, la planche d'Orvane de chacune à sa droite, son nom, sa forme, sa hauteur et ses caractères dessous ; le cadre
+#   se règle tout seul. --strate arbre,buisson,sol,eau,champignon : ces strates seulement (de plus près) ; --formes cactus,agave :
+#   ces formes seulement ; --fois 3 : trois individus de chacune (trois graines) ; --etat entame,cueilli,neige,feu,roussi,
+#   calcine,souche,printemps,automne,hiver,sans-fruits : toutes dans cet état ; --sans-orvane : sans les planches d'Orvane ;
+#   --sur-le-sol : sur le vrai sol du lieu (sinon, un fond uni à sa couleur) ;
+#   --toutes : toutes les formes que Lisière sait dessiner (même celles que l'herbier du lieu n'a pas), une de chaque
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -1232,6 +1240,9 @@ func _fruitier_proche():
 # (--planche arbres|sol) la cueillette nourricière, posée en planche dans une clairière à côté d'elle, regardée de près : chaque
 # plante dans chacun de ses états, comme sur une page de l'herbier. Rien n'y bouge que le vent ; elle se tient au bord
 func _planche_cueillette(quoi: String) -> void:
+	if quoi == "flore":
+		_planche_flore()
+		return
 	var j = jeu.joueur
 	var W = jeu.monde
 	var Objet := load("res://scripts/objet.gd")
@@ -1308,6 +1319,259 @@ func _planche_cueillette(quoi: String) -> void:
 		jeu.camera.position = centre + Vector2(0.0, 30.0) - j.position
 	jeu.camera.reset_smoothing()
 
+
+
+# (--planche flore) l'herbier du biome, en planche : chaque plante telle que le monde la pose (sa forme, sa taille d'après sa
+# hauteur d'Orvane, sa couleur, ses caractères), rangée par strate, la planche d'Orvane à sa droite pour comparer, et la
+# veilleuse à gauche de chaque rangée pour l'échelle (la vraie, et des silhouettes d'encre à sa mesure : 22 sur 44)
+func _planche_flore() -> void:
+	var j = jeu.joueur
+	var W = jeu.monde
+	var Objet := load("res://scripts/objet.gd")
+	var Flore := load("res://scripts/flore.gd")
+	var ar := OS.get_cmdline_user_args()
+	var option := func(nom: String) -> PackedStringArray:
+		var i := ar.find(nom)
+		return ar[i + 1].split(",") if i >= 0 and i + 1 < ar.size() else PackedStringArray()
+	var strates: PackedStringArray = option.call("--strate")
+	var formes: PackedStringArray = option.call("--formes")
+	var fois := maxi(1, int(option.call("--fois")[0])) if not option.call("--fois").is_empty() else 1
+	var i_e := ar.find("--etat")
+	if i_e >= 0 and i_e + 1 < ar.size():
+		for e in ar[i_e + 1].split(","):
+			_etats[e] = true
+	var centre: Vector2 = j.position + Vector2(0.0, -60.0)
+	for o in W.autour(centre, 1500.0):
+		if is_instance_valid(o) and o != j:
+			W.retirer(o)
+	for b in get_tree().get_nodes_in_group("betes"):
+		b.queue_free()
+	for f in jeu.feux:
+		if is_instance_valid(f):
+			f.visible = false
+	_plan = [[0.0, 1.0, "attendre"]]
+	# (rien que le sol et les ombres : ni l'herbe du décor, ni ses mares, ni ses pierres)
+	for i in mini(3, W._calques.size()):
+		W._calques[i].visible = false
+	# ce que l'herbier dit de chacune (sa hauteur, pour l'étiquette)
+	var hauteurs := {}
+	for e in Orvane.plantes(lieu):
+		hauteurs[str(e["id"])] = float(e.get("hauteur_m", 0.0))
+	var flore: Dictionary = W._flore_de(lieu)
+	if ar.has("--toutes"):
+		# (toutes les formes que Lisière dessine, une de chaque : celles que l'herbier du lieu n'a pas y sont aussi)
+		flore = {}
+		for forme in Flore.FORMES:
+			var genre: String = Flore.FORMES[forme][0]
+			var strate: String = Flore.FORMES[forme][1]
+			if not flore.has(strate):
+				flore[strate] = []
+			flore[strate].append({"id": "planche-" + forme, "poids": 1.0, "taille": 1.0, "port": forme, "forme": forme, "genre": genre, "planche": false,
+				"nom": forme, "stade": "feuilles", "defense": [], "caracteres": [], "couleur": null, "fleur": null})
+	var saison := "été"
+	for s in ["printemps", "automne", "hiver"]:
+		if _etats.has(s):
+			saison = s
+	var climat: Dictionary = {"froid": 0.9, "humide": 0.5} if _etats.has("neige") else Objet.climat
+	var orvane := not ar.has("--sans-orvane")
+	# les rangées : une strate après l'autre, à la ligne quand la rangée est pleine ; la largeur des rangées qui remplit le mieux l'image
+	var rangs: Array = []
+	for strate in ["arbre", "buisson", "sol", "eau", "champignon"]:
+		if not flore.has(strate) or (not strates.is_empty() and not strates.has(strate)):
+			continue
+		var L: Array = flore[strate].duplicate()
+		if not formes.is_empty():
+			L = L.filter(func(e): return formes.has(str(e["forme"])))
+		if L.is_empty():
+			continue
+		L.sort_custom(func(a, b): return str(a["forme"]) + str(a["id"]) < str(b["forme"]) + str(b["id"]))
+		rangs.append([strate, L])
+	var vue: Vector2 = get_viewport().get_visible_rect().size
+	var plan: Array = []
+	var cadre := Rect2()
+	var meilleur := 0.0
+	for large in [520.0, 680.0, 840.0, 1000.0, 1200.0, 1400.0, 1700.0, 2100.0]:
+		var essai := _ranger_flore(rangs, fois, orvane, large)
+		var c: Rect2 = essai[1]
+		if not c.has_area():
+			continue
+		var recul := minf(vue.x / (R.ZOOM * c.size.x), vue.y / (R.ZOOM * c.size.y))
+		if recul > meilleur:
+			meilleur = recul
+			plan = essai[0]
+			cadre = c
+	if plan.is_empty():
+		print("vitrine : rien à montrer sur la planche de la flore (« %s »)" % lieu)
+		return
+	var dessus := Node2D.new()
+	dessus.z_index = 60
+	W.add_child(dessus)
+	var police: Font = load("res://polices/alegreya-sans/AlegreyaSans-Regular.ttf") if ResourceLoader.exists("res://polices/alegreya-sans/AlegreyaSans-Regular.ttf") else null
+	var premiere := true
+	for pl in plan:
+		var strate: String = pl[0]
+		var e: Dictionary = pl[1]
+		var k: int = pl[2]
+		var x: float = pl[3]
+		var y: float = pl[4]
+		var pw: float = pl[5]
+		if bool(pl[6]):
+			# (l'échelle, au début de chaque rangée : la veilleuse elle-même à la première ; ailleurs, sa silhouette)
+			if premiere:
+				j.position = centre + Vector2(22.0, y)
+				premiere = false
+			else:
+				var sil := _Silhouette.new()
+				sil.position = centre + Vector2(22.0, y)
+				dessus.add_child(sil)
+		var p := centre + Vector2(x + pw * 0.5, y)
+		var garde: String = Objet.saison
+		Objet.saison = saison
+		var graine: int = 5000 + absi(hash(str(e["id"]))) % 9000 + k * 977
+		if strate == "arbre" and not _etats.has("sans-fruits"):
+			graine = _graine_qui_porte(graine % 4000)
+		var o = W._poser(strate, p, W.palette["feuilles" if strate == "arbre" else "herbe"], graine, {"flore": {strate: [e]}, "climat": climat, "palette": W.palette})
+		Objet.saison = garde
+		if o == null:
+			continue
+		_planche.append(o)
+		_mettre_en_etat(o)
+		if k > 0:
+			continue
+		if orvane:
+			var tex: Texture2D = Orvane.texture_plante(str(e["id"]), 60.0, lieu)
+			if tex != null:
+				var carte := _Carte.new()
+				carte.tex = tex
+				carte.position = centre + Vector2(x + pw + 34.0, y + 4.0)
+				dessus.add_child(carte)
+		var mot := Label.new()
+		var h: float = hauteurs.get(str(e["id"]), 0.0)
+		var car: Array = e.get("caracteres", []) if typeof(e.get("caracteres")) == TYPE_ARRAY else []
+		var nom := str(e.get("nom", "")).split(" ")[0]
+		mot.text = "%s · %s%s\n%s%s" % [nom, str(e["forme"]), (" · %s m" % str(snappedf(h, 0.01))) if h > 0.0 else "",
+			("×%.2f " % float(e.get("taille", 1.0))) if absf(float(e.get("taille", 1.0)) - 1.0) > 0.005 else "", ", ".join(PackedStringArray(car))]
+		if police != null:
+			mot.add_theme_font_override("font", police)
+		mot.add_theme_font_size_override("font_size", 9)
+		mot.add_theme_color_override("font_color", Color(0.96, 0.93, 0.84))
+		mot.add_theme_color_override("font_outline_color", Color(0.08, 0.07, 0.06, 0.9))
+		mot.add_theme_constant_override("outline_size", 3)
+		mot.add_theme_constant_override("line_spacing", -3)
+		mot.position = centre + Vector2(x + 2.0, y + 10.0)
+		dessus.add_child(mot)
+	if not ar.has("--sur-le-sol") and W._racine != null and W._calques.size() > 3:
+		# (un fond uni, de la couleur de la terre du lieu, sous les ombres : la planche se lit sans les mares ni les mousses du
+		# sol ; --sur-le-sol : sur le vrai sol)
+		var fond := Polygon2D.new()
+		var c := Rect2(centre + cadre.position, cadre.size).grow(400.0)
+		fond.polygon = PackedVector2Array([c.position, Vector2(c.end.x, c.position.y), c.end, Vector2(c.position.x, c.end.y)])
+		var terre: Color = W.palette.get("terre", Color(0.42, 0.36, 0.27))
+		fond.color = terre.lerp(W.palette.get("herbe", terre), 0.25).lerp(Color(0.5, 0.46, 0.36), 0.35)
+		W._racine.add_child(fond)
+		W._racine.move_child(fond, W._calques[3].get_index())
+	# (le cadre : toute la planche tient dans l'image)
+	jeu.effets.recul = meilleur
+	jeu.camera.position = centre + cadre.get_center() - j.position
+	jeu.camera.reset_smoothing()
+	print("vitrine : la planche de la flore de « %s », %d plantes, recul %.2f" % [lieu, _planche.size(), jeu.effets.recul])
+
+
+# où va chaque plante de la planche, pour des rangées de cette largeur : [[strate, plante, rang de l'individu, x, y (son pied), la
+# place qu'elle a, début de rangée ?]…], et le cadre de l'ensemble
+func _ranger_flore(rangs: Array, fois: int, orvane: bool, large_max: float) -> Array:
+	# (la place de la plante ; la planche d'Orvane vient à sa droite)
+	var places := {"arbre": 124.0, "buisson": 64.0, "sol": 60.0, "eau": 64.0, "champignon": 60.0}
+	var hautes := {"arbre": 250.0, "buisson": 100.0, "sol": 104.0, "eau": 96.0, "champignon": 104.0}
+	var plan: Array = []
+	var cadre := Rect2()
+	var y := 0.0
+	for rg in rangs:
+		var strate: String = rg[0]
+		var L: Array = rg[1]
+		var pw: float = places[strate]
+		var lh: float = hautes[strate]
+		var hauts := 0.0
+		for e in L:
+			hauts = maxf(hauts, float(e.get("taille", 1.0)))
+			if strate == "sol" and str(e["forme"]) in ["cactus", "bambou"]:
+				lh = 150.0
+		if strate == "arbre":
+			lh = 100.0 + 150.0 * hauts
+		var x := 46.0
+		y += lh
+		var debut := true
+		for e in L:
+			for k in fois:
+				var lw: float = pw + (74.0 if orvane and k == 0 else 10.0)
+				if x + lw > large_max and not debut:
+					x = 46.0
+					y += lh + 30.0
+					debut = true
+				plan.append([strate, e, k, x, y, pw, debut])
+				debut = false
+				var r := Rect2(x, y - lh + 22.0, lw, lh + 8.0)
+				cadre = cadre.merge(r) if cadre.has_area() else r
+				x += lw
+		y += 30.0
+	if cadre.has_area():
+		cadre = cadre.merge(Rect2(4.0, cadre.position.y, 10.0, 10.0)).grow(10.0)
+	return [plan, cadre]
+
+
+# (--planche flore --etat …) une plante de la planche, mise dans l'état qu'on veut voir
+func _mettre_en_etat(o) -> void:
+	if _etats.has("entame") and o.plein > 1 and o.genre != "arbre" and o.genre != "sapin":
+		o.reste = o.plein - 1
+	if _etats.has("entame") and (o.genre == "arbre" or o.genre == "sapin"):
+		o.reste = 2
+		o.fruits = o.fruits_plein / 2
+	if _etats.has("cueilli"):
+		if o.genre == "arbre" or o.genre == "sapin":
+			o.fruits = 0
+			o.tombes = 0
+			if o.fruits_plein > 0:
+				o._repousse_fruits = 0.4 * R.REPOUSSE_FRUITS
+		elif o.plein > 0:
+			o.reste = 0
+	if _etats.has("souche") and (o.genre == "arbre" or o.genre == "sapin"):
+		o.reprendre("souche", 0, 0.0)
+	if _etats.has("roussi"):
+		o.roussi = 0.8
+	if _etats.has("calcine") and o.combustible():
+		o.calciner()
+		o._tiede = -1.0
+		o.material = o._matiere_au_repos()
+	if _etats.has("feu") and o.combustible():
+		o.enflammer(600.0)
+		o.brule = 600.0 * (0.55 if o.get_index() % 2 == 0 else 0.25)
+	if o.couronne != null:
+		o.couronne.queue_redraw()
+	o.queue_redraw()
+	o._ombre_changee()
+
+
+# la planche d'Orvane d'une plante, sur un carton de papier, le pied à l'origine
+class _Carte extends Node2D:
+	var tex: Texture2D
+
+	func _draw() -> void:
+		var t := tex.get_size()
+		var coin := Vector2(-t.x * 0.5, -t.y * 144.0 / 150.0)
+		draw_rect(Rect2(coin - Vector2(2, 2), t + Vector2(4, 4)), Color(0.09, 0.08, 0.06, 0.9))
+		draw_rect(Rect2(coin - Vector2(1, 1), t + Vector2(2, 2)), Color(0.93, 0.89, 0.78))
+		draw_texture(tex, coin)
+
+
+# la silhouette de la veilleuse, à sa mesure (22 pixels de large, 44 de haut), pour l'échelle d'une rangée
+class _Silhouette extends Node2D:
+	func _draw() -> void:
+		var e := Color(0.09, 0.08, 0.06, 0.82)
+		draw_colored_polygon(PackedVector2Array([Vector2(-7, 0), Vector2(-9, -24), Vector2(-6, -33), Vector2(6, -33), Vector2(9, -24), Vector2(7, 0)]), e)
+		draw_circle(Vector2(0, -37), 6.5, e)
+		draw_line(Vector2(-13, 0), Vector2(-13, -44), Color(0.96, 0.93, 0.84, 0.9), 1.0)
+		draw_line(Vector2(-16, 0), Vector2(-10, 0), Color(0.96, 0.93, 0.84, 0.9), 1.0)
+		draw_line(Vector2(-16, -44), Vector2(-10, -44), Color(0.96, 0.93, 0.84, 0.9), 1.0)
 
 
 # une graine d'arbre qui porte des fruits cette année (scripts/objet.gd, _porter_fruits : une part de la graine en décide)
