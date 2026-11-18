@@ -204,12 +204,13 @@ const NOIRE_FAIM := 5              # l'acte où la faim commence (elle vaut pour
 # est donc quand la nuit commence, à quelques secondes près ; l'hiver, où les nuits sont longues, on la voit arriver dans le
 # jour qui tombe. Qui a dormi plus loin d'elle la voit toujours arriver plus tard
 # la torche : 4 secondes (NOIRE_TORCHE), puis le présage (1,4) et la course (elle part de 215 pixels et reprend 50 pixels par
-# seconde à la veilleuse) : neuf secondes hors de la lumière, 1 500 pixels à la course. De quoi passer d'un feu à l'autre ;
-# plus de quoi aller défendre sa tente la torche à la main
+# seconde à la veilleuse : quatre secondes encore) : moins de dix secondes hors de la lumière, 1 500 pixels à la course. De
+# quoi passer d'un feu à l'autre ; plus de quoi aller défendre sa tente la torche à la main
 const NOIRE_FAIM_ATTENTE := 12.0   # secondes qu'un feu la tient avant qu'elle se tourne vers le camp (et après une bûche qui l'en a chassée)
 const NOIRE_FAIM_REPIT := 26.0     # secondes entre deux choses mises en pièces
-# (12 d'attente, 9 pour venir, flairer et déchirer, 26 de répit, 9 encore : la seconde chose tombe 56 secondes après son
-# arrivée. Deux tiennent dans la plus courte nuit, 79 secondes ; une troisième, à 91, n'y tiendrait pas)
+# (12 d'attente, une dizaine pour venir, flairer et déchirer, 26 de répit, une dizaine encore : la seconde chose tombe une
+# soixantaine de secondes après son arrivée (61 à l'essai). Deux tiennent dans la plus courte nuit, 79 secondes ; une troisième,
+# vers 97, n'y tiendrait pas)
 const NOIRE_SACCAGES := 2          # ce qu'elle met en pièces par nuit, au plus : une erreur ne coûte pas tout le camp
 const NOIRE_FAIM_PORTEE := 900.0   # jusqu'où elle va chercher, depuis le feu qui la tient : là où s'entend encore un son du lieu
 const NOIRE_FLAIRE := 4.0          # secondes : elle flaire et gronde, le museau sur la chose, avant d'y mettre la dent (l'annonce)

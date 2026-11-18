@@ -517,6 +517,47 @@ func recolte(p: Vector2, genre: String) -> void:
 				{"vitesse": [40.0, 90.0], "gravite": Vector2(0, 300), "duree": 0.6, "taille": [0.4, 0.6], "tourne": true})
 
 
+# la Noire met une chose du camp en pièces (scripts/noire_faim.gd), en p : ce qu'elle en arrache vole du côté où elle tire
+# (vers : 1, à droite) et retombe. matiere : « toile » (des lambeaux de bâche), « corde » (des brins de fibre), « paille »
+# (les brins d'un épouvantail, un lambeau), « bois » (des éclats de rondin, du foin), « terre » (des mottes, des tiges) ;
+# fort : le dernier coup, quand tout s'effondre. Rien n'y brille : la nuit les mange, un feu les éclaire s'ils passent dans sa lumière
+func saccage(p: Vector2, matiere: String, vers: float = 1.0, fort: bool = false) -> void:
+	if _air() == null:
+		return
+	var v := vent()
+	var k := 1.6 if fort else 1.0
+	var dir := Vector2(0.75 * vers, -0.65)
+	var toile := Color("b9a585")
+	var paille := Color("d2b987")
+	var eclat := P.TERRE.lerp(P.IVOIRE, 0.5)
+	match matiere:
+		"toile":
+			_gerbe(p + Vector2(0, -18), int(6 * k), T.feuille(), T.rampe([[0.0, toile.lightened(0.12)], [0.7, toile], [1.0, Color(toile.darkened(0.3), 0.0)]]), true,
+				{"vitesse": [50.0, 130.0], "dir": dir, "spread": 55.0, "gravite": Vector2(v * 40.0, 150), "amortir": 60.0, "duree": 1.5, "taille": [0.6, 1.1], "tourne": true, "rayon": 12.0})
+			_gerbe(p + Vector2(0, -14), int(3 * k), T.brin(), T.rampe([[0.0, paille], [1.0, Color(paille.darkened(0.25), 0.0)]]), true,
+				{"vitesse": [60.0, 120.0], "dir": dir, "spread": 70.0, "gravite": Vector2(0, 260), "duree": 0.8, "taille": [0.5, 0.8], "tourne": true})
+		"corde":
+			_gerbe(p + Vector2(0, -5), int(7 * k), T.brin(), T.rampe([[0.0, paille.lightened(0.1)], [1.0, Color(paille.darkened(0.3), 0.0)]]), true,
+				{"vitesse": [50.0, 120.0], "dir": dir, "spread": 80.0, "gravite": Vector2(v * 20.0, 240), "amortir": 30.0, "duree": 0.9, "taille": [0.5, 0.9], "tourne": true, "rayon": 10.0})
+		"paille":
+			_gerbe(p + Vector2(0, -28), int(9 * k), T.brin(), T.rampe([[0.0, paille.lightened(0.14)], [0.7, paille], [1.0, Color(paille.darkened(0.3), 0.0)]]), true,
+				{"vitesse": [40.0, 120.0], "dir": dir, "spread": 85.0, "gravite": Vector2(v * 45.0, 130), "amortir": 50.0, "duree": 1.6, "taille": [0.5, 0.95], "tourne": true, "rayon": 9.0})
+			_gerbe(p + Vector2(0, -24), int(3 * k), T.feuille(), T.rampe([[0.0, toile], [1.0, Color(toile.darkened(0.3), 0.0)]]), true,
+				{"vitesse": [40.0, 100.0], "dir": dir, "spread": 60.0, "gravite": Vector2(v * 40.0, 150), "amortir": 60.0, "duree": 1.4, "taille": [0.5, 0.9], "tourne": true})
+		"bois":
+			_gerbe(p + Vector2(0, -14), int(7 * k), T.eclat(), T.rampe([[0.0, eclat.lightened(0.1)], [1.0, P.TERRE]]), true,
+				{"vitesse": [80.0, 170.0], "dir": dir, "spread": 70.0, "gravite": Vector2(0, 420), "duree": 0.6, "taille": [0.3, 0.55], "tourne": true})
+			_gerbe(p + Vector2(0, -16), int(5 * k), T.brin(), T.rampe([[0.0, paille.lightened(0.14)], [1.0, Color(paille.darkened(0.3), 0.0)]]), true,
+				{"vitesse": [40.0, 100.0], "dir": dir, "spread": 85.0, "gravite": Vector2(v * 40.0, 140), "amortir": 50.0, "duree": 1.4, "taille": [0.5, 0.9], "tourne": true})
+		_:
+			var pal: Dictionary = jeu.monde.palette if jeu != null and jeu.monde != null else {}
+			var herbe: Color = pal.get("herbe", P.MOUSSE)
+			_gerbe(p + Vector2(0, -3), int(7 * k), T.eclat(), T.rampe([[0.0, P.TERRE.lightened(0.12)], [1.0, P.TERRE.darkened(0.25)]]), true,
+				{"vitesse": [70.0, 150.0], "dir": dir, "spread": 75.0, "gravite": Vector2(0, 430), "duree": 0.6, "taille": [0.3, 0.5], "tourne": true, "rayon": 12.0})
+			_gerbe(p + Vector2(0, -5), int(5 * k), T.brin(), T.rampe([[0.0, herbe.lightened(0.2)], [1.0, herbe.darkened(0.25)]]), true,
+				{"vitesse": [50.0, 110.0], "dir": dir, "spread": 80.0, "gravite": Vector2(v * 20.0, 230), "amortir": 30.0, "duree": 0.9, "taille": [0.5, 0.8], "tourne": true, "rayon": 12.0})
+
+
 # un pas sur le sol (la veilleuse) : dans l'eau, des éclaboussures ; dans la boue, des éclats de boue ; au sec, un peu de
 # poussière de la couleur du sol, qui retombe (principal.gd l'appelle à chaque pied posé)
 func pas(p: Vector2, fort: float = 0.5) -> void:
