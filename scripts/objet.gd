@@ -166,6 +166,10 @@ var couleur_fleur := Color(0, 0, 0, 0)
 var epaisseur := 1.0
 var ecorce_teinte := Color(0, 0, 0, 0)
 var haut_touffe := 1.0
+# ses caractères dans l'herbier (« naine », « geante », « echasses », « coriace », « rapide », « vent »… : son dessin les montre,
+# scripts/flore_trait.gd) ; une plante raide (un cactus, un agave, un lichen) : le vent ne la plie pas
+var caracteres: Array = []
+var raide := false
 # (la cueillette nourricière : scripts/flore.gd) un arbre qui porte des fruits : lequel (« pomme », « figue », « coco »,
 # « pain_de_singe », « baies » ; "" : aucun), combien il en porte encore et au plus, ceux qui sont tombés à son pied (les bêtes
 # qui broutent viennent les manger), le temps avant qu'il en porte de nouveau. Où en est la saison : des fruits mûrs, des fleurs
@@ -234,6 +238,8 @@ func porter_plante(e: Dictionary) -> void:
 	forme = str(e.get("forme", ""))
 	stade = str(e.get("stade", ""))
 	planche = bool(e.get("planche", false))
+	var car = e.get("caracteres", [])
+	caracteres = car if typeof(car) == TYPE_ARRAY else []
 	en_fleurs = Flore.fleurit(forme, stade)
 	a_fruits = Flore.fruits(forme, e.get("caracteres", []))
 	piquant = Flore.pique(forme, genre, epineux)
@@ -254,6 +260,9 @@ func porter_plante(e: Dictionary) -> void:
 	var k := float(e.get("taille", 1.0))
 	if absf(k - 1.0) > 0.01:
 		_echelle(k)
+	Dessins.ajuster(self)
+	if raide and material == vegetation:
+		material = fixe
 	if couronne != null:
 		couronne.queue_redraw()
 	queue_redraw()
@@ -293,6 +302,9 @@ func _echelle(k: float) -> void:
 	_ry *= k
 	_cc *= k
 	hauteur *= k
+	# (le tronc épaissit ou s'affine avec elle, moins vite qu'elle ne monte)
+	if genre == "arbre" or genre == "sapin":
+		epaisseur *= pow(k, 0.7)
 	# (le feuillage, autour du pied : à la même échelle)
 	couronne_rect = Rect2(couronne_rect.position * k, couronne_rect.size * k)
 
@@ -302,17 +314,18 @@ func _mesurer() -> void:
 	r.seed = graine
 	match genre:
 		"arbre":
-			_ht = r.randf_range(22.0, 31.0)
-			_rx = r.randf_range(24.0, 32.0)
+			# (un arbre de douze mètres : deux fois la veilleuse, à peu près — 86 pixels du pied à la cime)
+			_ht = r.randf_range(26.5, 37.0)
+			_rx = r.randf_range(28.5, 37.5)
 			_ry = _rx * r.randf_range(0.84, 0.95)
 			_penche = r.randf_range(-0.07, 0.07)
 			_cc = Vector2(_penche * (_ht + _ry * 0.8) + r.randf_range(-2.0, 2.0), -(_ht + _ry * 0.8))
 			hauteur = -_cc.y + _ry
 			couronne_rect = Rect2(_cc - Vector2(_rx, _ry), Vector2(_rx, _ry) * 2.0)
 		"sapin":
-			_ht = r.randf_range(7.0, 10.0)
-			_ry = r.randf_range(58.0, 74.0)
-			_rx = r.randf_range(17.0, 22.0)
+			_ht = r.randf_range(8.5, 12.0)
+			_ry = r.randf_range(69.0, 87.0)
+			_rx = r.randf_range(20.0, 26.0)
 			_penche = r.randf_range(-0.04, 0.04)
 			hauteur = _ht + _ry
 			couronne_rect = Rect2(-_rx, -hauteur, _rx * 2.0, _ry)
@@ -530,7 +543,7 @@ func tiedeur() -> float:
 
 
 func _matiere_au_repos() -> ShaderMaterial:
-	return vegetation if genre in ["arbre", "sapin", "buisson", "touffe", "fleur"] else fixe
+	return vegetation if genre in ["arbre", "sapin", "buisson", "touffe", "fleur"] and not raide else fixe
 
 
 # la pluie l'a éteint avant la fin : il reste debout, roussi (d'autant plus qu'il a brûlé longtemps)
@@ -619,7 +632,11 @@ func cache(p: Vector2) -> bool:
 	if couronne == null or _chute >= 0.0 or p.y >= position.y - 2.0:
 		return false
 	var corps := Rect2(p.x - 9.0, p.y - 40.0, 18.0, 40.0)
-	return corps.intersects(Rect2(couronne_rect.position + position, couronne_rect.size).grow(-5.0))
+	if corps.intersects(Rect2(couronne_rect.position + position, couronne_rect.size).grow(-5.0)):
+		return true
+	# (un fût assez large pour la cacher à lui seul — un géant, un baobab : il s'efface aussi, avec sa couronne)
+	var w := _demi_largeur(-24.0)
+	return w >= 7.5 and _espece == "arbre" and corps.intersects(Rect2(position.x + _axe(-24.0) - w + 2.0, position.y + _cc.y, w * 2.0 - 4.0, -_cc.y - 9.0))
 
 
 func _ombre_changee() -> void:
@@ -759,8 +776,7 @@ func _draw() -> void:
 	var depuis: int = p.uvs.size()
 	match genre:
 		"arbre", "sapin":
-			if not Dessins.pied(self, p, r):
-				_pied(p, r, false)
+			_pied(p, r, false)
 			# (ses fruits tombés, dans l'herbe à son pied : scripts/flore_dessins.gd)
 			if tombes > 0:
 				Dessins.tombes(self, p)
@@ -804,7 +820,11 @@ func _dessiner_couronne(c: CanvasItem) -> void:
 			_flammes(p, Vector2(0, -_ht + 4.0), _rx * 1.6, _ry + 48.0, 0.0, 0.71)
 		else:
 			_flammes(p, _cc + Vector2(0, _ry * 0.8), _rx * 1.5, _ry * 2.0 + 52.0, 0.5, 0.71)
-		_bois_nu(p)
+			if -_cc.y - _ry > 46.0:
+				# (un long fût nu sous la couronne : le feu y monte en langue)
+				_flammes(p, Vector2(_axe(-10.0), -6.0), 7.0 + 5.0 * epaisseur, (-_cc.y - _ry) * 0.92, 0.0, 0.19)
+		if not Dessins.bois_nu(self, p):
+			_bois_nu(p)
 	var depuis: int = p.uvs.size()
 	if sapin:
 		_sapin(p, r)
@@ -822,7 +842,7 @@ func _dessiner_couronne(c: CanvasItem) -> void:
 		else:
 			_flammes(p, _cc + Vector2(-_rx * 0.42, _ry * 0.8), _rx * 0.72, _ry * 1.25 + 14.0, 0.2, 0.37)
 			_flammes(p, _cc + Vector2(_rx * 0.4, _ry * 0.55), _rx * 0.66, _ry * 1.15 + 16.0, 0.2, 0.83)
-	elif roussi > 0.35:
+	elif roussi > 0.35 and not Dessins.bois_nu(self, p, true):
 		_bois_nu(p, true)
 	teinte = garde
 	p.finir()
@@ -844,7 +864,8 @@ func _dessiner_feu(p, depuis: int) -> void:
 			_flammes(p, Vector2(0, 8), 25.0, 20.0, 1.0, 0.57)
 		"touffe":
 			_marquer(p, depuis, true)
-			_flammes(p, Vector2(0, 2), 14.0, 30.0, 0.0, 0.31)
+			# (une plante haute — un bambou, un cactus — brûle à sa taille)
+			_flammes(p, Vector2(0, 2), 14.0 if hauteur < 40.0 else 18.0, maxf(30.0, hauteur + 18.0), 0.0, 0.31)
 			_flammes(p, Vector2(0, 7), 24.0, 16.0, 1.0, 0.57)
 
 
@@ -1012,8 +1033,8 @@ func _axe(y: float) -> float:
 func _demi_largeur(y: float) -> float:
 	var haut := -_cc.y if _espece == "arbre" else _ht + 6.0
 	var u := clampf(-y / haut, 0.0, 1.0)
-	var w := lerpf(5.0, 2.8, u) if _espece == "arbre" else lerpf(3.6, 2.6, u)
-	return (w + 2.6 * (1.0 - smoothstep(0.0, 6.0, -y))) * epaisseur
+	var w := lerpf(5.6, 3.1, u) if _espece == "arbre" else lerpf(4.0, 2.8, u)
+	return (w + 2.8 * (1.0 - smoothstep(0.0, 6.0, -y))) * epaisseur
 
 
 # un morceau de tronc, de y0 à y1 (négatifs), en écorce, bordé d'encre
@@ -1045,14 +1066,19 @@ func _tronc(p, y0: float, y1: float, c: Color) -> void:
 
 func _racines(p, r: RandomNumberGenerator, c: Color) -> void:
 	var n := r.randi_range(2, 4)
+	# (un tronc plus fort a des racines plus fortes ; des racines profondes : plus nombreuses, plus longues, elles empoignent le sol)
+	var k := 0.55 + 0.45 * epaisseur
+	if caracteres.has("racines_profondes"):
+		n += 2
+		k *= 1.25
 	for i in n:
 		var cote := -1.0 if i % 2 == 0 else 1.0
 		var a := cote * r.randf_range(0.15, 1.2)
-		var l := r.randf_range(6.0, 11.0)
+		var l := r.randf_range(6.0, 11.0) * k
 		var dir := Vector2(sin(a), cos(a) * 0.35)
-		var depart := Vector2(_axe(0.0) + cote * 3.5, -1.5)
+		var depart := Vector2(_axe(0.0) + cote * 3.5 * k, -1.5)
 		var bout := depart + dir * l + Vector2(0, 2.0)
-		var nrm := dir.orthogonal()
+		var nrm := dir.orthogonal() * k
 		var poly := PackedVector2Array([depart + nrm * 2.4 + Vector2(0, -2.5), depart + dir * l * 0.5 + nrm * 1.3, bout, depart + dir * l * 0.5 - nrm * 1.5, depart - nrm * 2.4])
 		p.aplat(poly, c.darkened(0.08), Pinceau.ECORCE, depart + dir * l * 0.4, Vector2(5.0, 5.0))
 		p.tracer(PackedVector2Array([depart - nrm * 2.4, depart + dir * l * 0.5 - nrm * 1.5, bout]), 1.2, ENCRE)
@@ -1061,9 +1087,12 @@ func _racines(p, r: RandomNumberGenerator, c: Color) -> void:
 # le pied d'un arbre : les racines, le bas du tronc, les entailles des coups ; ou la souche qu'il laisse
 func _pied(p, r: RandomNumberGenerator, souche: bool) -> void:
 	var c := _ecorce()
-	_racines(p, r, c)
+	# (les racines d'une forme à elle : des échasses, des contreforts ; scripts/flore_arbres.gd)
+	if not Dessins.racines(self, p, r, souche):
+		_racines(p, r, c)
 	var haut := -9.0
-	_tronc(p, 0.5, haut, c)
+	_tronc(p, Dessins.pied_du_tronc(self), haut, c)
+	Dessins.ecorce_du_pied(self, p, r)
 	if _climat.get("humide", 0.5) > 0.5:
 		# (de la mousse au pied, du côté de l'ombre)
 		for i in r.randi_range(1, 3):

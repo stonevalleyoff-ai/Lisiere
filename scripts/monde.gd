@@ -38,10 +38,16 @@ const SOL_NU := 35.0          # sur le sol nu (peu de couvert) : des groupes de 
 const CHAMPIGNONS := 130.0
 const EAUX := 10.0
 const EAUX_BOUE := 80.0
-# la hauteur habituelle de chaque forme d'arbre (m) : la plante de l'herbier, plus haute ou plus basse, est un peu plus grande
-# ou plus petite que son dessin
+# la hauteur de chaque forme à la mesure de son dessin (m) : la plante de l'herbier, plus haute ou plus basse, est plus grande ou
+# plus petite que lui (taille_de). Les dessins eux-mêmes sont à l'échelle les uns des autres, une échelle resserrée (la hauteur à
+# la puissance 0,4 : scripts/objet.gd, _mesurer ; scripts/flore_dessins.gd, mesurer) : un arbre de 12 m fait 86 pixels, deux fois
+# la veilleuse ; un géant de 45 m, 147 ; un pionnier de 9 m, 77, et de 4,5 m, 58 ; un fruitier de 6 m, 65 ; un conifère de 20 m, 106
 const HAUTEURS := {"arbre": 12.0, "pionnier": 9.0, "fruitier": 6.0, "geant": 45.0, "emergent": 45.0, "figuier": 20.0, "bouteille": 20.0,
-	"sous_bois": 6.0, "palmier": 15.0, "paletuvier": 6.0, "fougere_arbre": 8.0, "conifere": 20.0}
+	"sous_bois": 5.0, "palmier": 15.0, "paletuvier": 6.0, "fougere_arbre": 8.0, "conifere": 12.0,
+	# (ce qui se dresse sur le sol, et dont la hauteur d'Orvane se voit aussi : un bambou de 8 m dépasse un bambou de 4 m)
+	"cactus": 6.0, "bambou": 6.0, "roseau": 1.8, "jonc": 0.4, "riz": 1.2, "cereale": 1.0, "papyrus": 2.5, "grande_herbe": 1.5,
+	"fougere": 0.8, "agave": 1.5, "succulente": 0.8}
+const TAILLE_PUISSANCE := 0.4
 
 var jeu
 var objets: Array = []
@@ -310,13 +316,7 @@ func _flore_de(type: String, _arbre: String = "") -> Dictionary:
 		var forme: String = so["forme"]
 		var strate: String = so["strate"]
 		var h := float(e.get("hauteur_m", 1.0))
-		# (la taille : à la hauteur habituelle de sa forme, elle est à la mesure de son dessin ; plus haute, un peu plus grande,
-		# sans excès)
-		var k := 1.0
-		if strate == "arbre":
-			k = clampf(pow(h / float(HAUTEURS.get(forme, 12.0)), 0.35), 0.85, 1.2)
-		elif genre == "buisson":
-			k = clampf(pow(h / 1.5, 0.35), 0.8, 1.3)
+		var k := taille_de(forme, genre, strate, h)
 		if not out.has(strate):
 			out[strate] = []
 		var id := str(e["id"])
@@ -326,6 +326,22 @@ func _flore_de(type: String, _arbre: String = "") -> Dictionary:
 			"couleur": _couleur_plante(id, type) if genre != "champignon" else null,
 			"fleur": _couleur_fleur(id, type) if Flore.FLEURISSENT.has(forme) else null})
 	return out
+
+
+# la taille d'une plante de l'herbier, d'après sa hauteur d'Orvane (en mètres) : ce par quoi son dessin est agrandi ou réduit. À
+# la hauteur de sa forme (HAUTEURS), elle est à la mesure de son dessin ; plus haute ou plus basse, elle suit une échelle
+# resserrée (TAILLE_PUISSANCE) : un conifère de 20 m est d'un quart plus haut que le sapin du jeu, un pionnier de 4,5 m d'un
+# quart plus petit qu'un pionnier de 9 m. Un arbre, de 0,6 à 1,5 ; un buisson, de 0,8 à 1,3 ; au sol, de 0,75 à 1,3
+static func taille_de(forme: String, genre: String, strate: String, h: float) -> float:
+	if h <= 0.0:
+		return 1.0
+	if strate == "arbre":
+		return clampf(pow(h / float(HAUTEURS.get(forme, 12.0)), TAILLE_PUISSANCE), 0.6, 1.5)
+	if genre == "buisson":
+		return clampf(pow(h / 1.5, 0.35), 0.8, 1.3)
+	if HAUTEURS.has(forme):
+		return clampf(pow(h / float(HAUTEURS[forme]), TAILLE_PUISSANCE), 0.75, 1.3)
+	return 1.0
 
 
 # ce qu'est un biome du monde ouvert, d'après ses axes (fait une fois, à sa première rencontre)
