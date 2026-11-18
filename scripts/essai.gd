@@ -1923,6 +1923,90 @@ func _la_noire_reunie() -> void:
 	verif(tenue_sage and libre_a >= 0.0 and rompu and int(N.cicatrices) == 0 and C.prise_cette_nuit and saccage_a >= 0.0 and int(F.prises) == 1 and not N.au_collet(),
 		"tenue %d s sans un coup, elle se libère (le collet est rompu, pas de cicatrice) ; le feu la tient, et %d s plus tard c'est la tente qu'elle met en pièces" % [
 		int(libre_a), int(saccage_a)])
+	# --- on ne lui apporte pas le feu : de la lumière, les coups ne comptent pas ; un feu allumé près du pieu la libère ---
+	for x in [collet, tente]:
+		A.poses.erase(x)
+		x.queue_free()
+	var collet2 = A._creer("collet", feu.position + Vector2(-420.0, 0.0), {"amorce": true, "odeur": false})
+	_faim_nuit(3)
+	var prise2: float = _faim_jusqu_a(func(): return N.etat == "prise", 60.0)
+	j.position = camp
+	var a_l_abri: bool = jeu.feu_qui_protege(j.position) != null
+	for i in 3:
+		N.frappee(26.0)
+	var sans_effet: bool = float(C.coups) == 0.0 and N.etat == "prise" and int(N.cicatrices) == 0
+	var dit_abri: bool = " | ".join(PackedStringArray(jeu.ui._messages.map(func(m): return str(m[0].text)))).contains("Il faut sortir")
+	var feu2 = _faim_feu(C.ancre(collet2) + Vector2(70.0, 0.0), 40.0)
+	_faim_joue(0.5)
+	var arrachee: bool = N.etat != "prise" and int(N.cicatrices) == 0 and str(collet2.etat.get("phase", "")) != ""
+	jeu.feux.erase(feu2)
+	feu2.queue_free()
+	if not (prise2 >= 0.0 and a_l_abri and sans_effet and arrachee):
+		print("    (prise à %.1f s ; à l'abri %s ; coups comptés %.0f ; elle : %s, %d cicatrices ; le collet : « %s »)" % [prise2, str(a_l_abri), float(C.coups), str(N.etat), int(N.cicatrices), str(collet2.etat.get("phase", ""))])
+	verif(prise2 >= 0.0 and a_l_abri and sans_effet and dit_abri and arrachee,
+		"on ne lui apporte pas le feu : trois coups de lance donnés de la lumière ne l'entament pas (« Il faut sortir ») ; un feu allumé près du pieu, et elle arrache tout, sans cicatrice")
+	# --- un collet à l'est du feu, juste au-delà de « trop près » : elle fait le tour de la lumière et s'y prend ---
+	A.poses.erase(collet2)
+	collet2.queue_free()
+	var x_est: float = r
+	var collet3 = A._creer("collet", feu.position + Vector2(x_est, 0.0), {"amorce": true, "odeur": false})
+	while C._eclaire(collet3) and x_est < r + 600.0:
+		x_est += 5.0
+		collet3.position = feu.position + Vector2(x_est, 0.0)
+	x_est += 8.0
+	collet3.position = feu.position + Vector2(x_est, 0.0)
+	_faim_nuit(3)
+	var prise3: float = _faim_jusqu_a(func(): return N.etat == "prise", 150.0)
+	var cote_noir: bool = N.corps != null and N.corps.position.x > collet3.position.x and jeu.feu_qui_protege(N.corps.position) == null
+	if not (prise3 >= 0.0 and cote_noir):
+		print("    (le collet à %d pixels à l'est du feu, sa lumière à %d ; prise à %.1f s ; elle : %s, son côté %s, boudé %s)" % [
+			int(x_est), int(r), prise3, str(N.etat), str(C._cote), str(collet3.etat.get("boude", ""))])
+	verif(not C._eclaire(collet3) and prise3 >= 0.0 and cote_noir,
+		"un collet à l'est du feu, à %d pixels (juste au-delà de « trop près », la lumière à %d) : elle en fait le tour et s'y prend par le côté du noir (%d s) ; elle ne reste pas plantée devant" % [
+		int(x_est), int(r), int(prise3)])
+	# --- à l'acte de la faim, un collet près de sa tanière : elle part au crépuscule, et il la prend au passage ---
+	N._disparaitre()
+	N.etat = "dort"
+	F.tombee()
+	A.poses.erase(collet3)
+	collet3.queue_free()
+	N.taniere = camp + Vector2(-900.0, -300.0)
+	N.ou = N.taniere
+	var collet4 = A._creer("collet", N.taniere + (camp - N.taniere).normalized() * 320.0, {"amorce": true, "odeur": false})
+	jeu.nuits = N.premiere_nuit(RR.NOIRE_FAIM)
+	jeu.horloge = base + D + D * (1.0 - jeu.part_nuit) - 14.0
+	var jour_la: float = jeu.jour_du_ciel()
+	var prise4: float = _faim_jusqu_a(func(): return N.etat == "prise", 90.0)
+	var partie_au_soir: bool = F.soir
+	_faim_joue(3.0)
+	var tient_au_soir: bool = N.etat == "prise"
+	# (et l'aube qui la trouve au collet : elle arrache les pieux et rentre, sans annoncer une charge qui n'aura pas lieu)
+	jeu.ui._messages.clear()
+	N.aube()
+	var dit_aube: String = " | ".join(PackedStringArray(jeu.ui._messages.map(func(m): return str(m[0].text))))
+	if not (prise4 >= 0.0 and tient_au_soir and N.etat == "rentre"):
+		print("    (le jour à %.2f ; partie au soir %s ; prise à %.1f s ; tient %s ; à l'aube : %s, « %s »)" % [jour_la, str(partie_au_soir), prise4, str(tient_au_soir), str(N.etat), dit_aube])
+	verif(jour_la > 0.0 and partie_au_soir and prise4 >= 0.0 and tient_au_soir and N.etat == "rentre" and int(N.cicatrices) == 0 and dit_aube.contains("Le jour vient") and not dit_aube.contains("charger"),
+		"à l'acte de la faim, un collet près de sa tanière la prend au crépuscule, quand elle part (le jour encore à %.2f, %d s) et la tient ; l'aube qui la trouve au collet la renvoie sans annoncer de charge" % [jour_la, int(prise4)])
+	A.poses.erase(collet4)
+	collet4.queue_free()
+	# --- une bête laissée dans le noir : elle ne la prend ni au collet, ni blessée et retirée, ni quand elle rentre ---
+	N.silence = 1.0
+	N._retiree = false
+	N.etat = "tourne"
+	var prend: bool = N.prend_dans_le_noir()
+	N.etat = "prise"
+	var pas_prise: bool = not N.prend_dans_le_noir()
+	N.etat = "furie"
+	pas_prise = pas_prise and not N.prend_dans_le_noir()
+	N.etat = "rentre"
+	pas_prise = pas_prise and not N.prend_dans_le_noir()
+	N.etat = "tourne"
+	N._retiree = true
+	pas_prise = pas_prise and not N.prend_dans_le_noir()
+	N._retiree = false
+	N.silence = 0.0
+	verif(prend and pas_prise, "une bête laissée dans le noir : elle la prend quand elle assiège, pas quand le collet la mène, ni libérée et furieuse, ni blessée et retirée, ni quand elle rentre")
 	# --- partie pour de bon : le crépuscule de la faim ne la fait plus venir ; la partie gardée le retient ---
 	N._disparaitre()
 	N.etat = "dort"
@@ -1945,7 +2029,7 @@ func _la_noire_reunie() -> void:
 	N.reprendre(d)
 	verif(nuit_tombee and not venue and not Faim.est_epave(garde_fou) and N.partie and int(N.cicatrices) == 3 and not F.soir and N.au_collet(),
 		"partie pour de bon : au crépuscule d'une nuit de la faim, puis la nuit tombée, elle ne vient pas (ni appel, ni corps, ni silence), l'épouvantail hors de la lumière n'a rien ; une partie reprise s'en souvient")
-	for x in [collet, tente, garde_fou]:
+	for x in [garde_fou]:
 		if is_instance_valid(x):
 			A.poses.erase(x)
 			x.queue_free()

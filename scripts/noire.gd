@@ -211,7 +211,11 @@ func tombee() -> void:
 
 # l'aube : elle rentre, et sa piste mène à sa tanière. Si la veilleuse est trop loin, elle en prend une autre, plus près.
 func aube() -> void:
-	# (la faim : le jour montre ce qu'elle a laissé, même le matin de son départ)
+	# (la faim : le jour montre ce qu'elle a laissé ; le matin de son départ, c'est sa dernière piste qu'on lit, et le sol ne
+	# garde qu'elle : scripts/noire_collet.gd efface les autres)
+	if partie:
+		faim.prises = 0
+		faim.betes = 0
 	faim.aube()
 	# (partie pour de bon : sa dernière piste, sa couche vide, puis plus rien ; scripts/noire_collet.gd)
 	if collet.aube():
@@ -311,6 +315,12 @@ func appat_l_attire() -> bool:
 # prend alors rien d'autre, ni une bête laissée dans le noir (scripts/elevage.gd)
 func au_collet() -> bool:
 	return partie or etat in ["appat", "flaire", "prise", "part"]
+
+
+# prend-elle une bête laissée dans le noir (scripts/elevage.gd) ? Pas quand le collet la mène ; ni blessée, retirée pour la
+# nuit ; ni quand elle rentre, ou qu'elle vient de se libérer (c'est la veilleuse qu'elle veut alors)
+func prend_dans_le_noir() -> bool:
+	return presente() and not au_collet() and not _retiree and etat != "rentre" and etat != "furie"
 
 
 # sa lignée, telle que son dessin la veut : avec ce nombre de cicatrices (scripts/noire_corps.gd les lit dans son plan)

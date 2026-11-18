@@ -234,6 +234,7 @@ const NOIRE_COLLET_FLAIR := 750.0      # jusqu'où elle sent un collet amorcé, 
 const NOIRE_COLLET_FLAIRE := 2.4       # secondes : elle flaire un collet qui sent la main, le nez dessus, avant de renâcler
 const NOIRE_COLLET_PLUIE := 30.0       # secondes d'averse qui lavent d'un collet l'odeur d'une main
 const NOIRE_COLLET_TENUE := 15.0       # secondes : le nœud la tient ce temps-là (six ou sept élans : ci-dessous)
+const NOIRE_COLLET_RENONCE := 22.0     # secondes : son corps là, en route vers l'appât, sans avoir pu y mettre le nez : elle y renonce pour la nuit
 const NOIRE_COLLET_LONGE := 90.0       # jusqu'où va son corps, du pieu, au bout du filin
 const NOIRE_COLLET_MORD := 85.0        # tenue par la patte, sa gueule porte moins loin (libre : 100)
 const NOIRE_COLLET_ELAN := 0.5         # avant chaque élan elle se ramasse ce temps-là : on la voit venir

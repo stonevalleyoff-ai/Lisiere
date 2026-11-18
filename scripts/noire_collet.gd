@@ -71,6 +71,9 @@ var _boude := 0.0                # avant de regarder de nouveau vers un collet q
 var _lumiere_dite := -1          # la nuit où l'on a dit que le feu éclaire le collet
 var _appel := false              # son dernier appel est poussé
 var _page_dans := -1.0           # avant la page (-1 : rien)
+var _en_route := 0.0             # depuis quand elle marche vers l'appât, son corps là, sans l'avoir flairé
+var _rates := 0                  # les fois où elle est restée coincée devant, cette nuit
+var _abri_dit := -1              # la nuit où l'on a dit que les coups donnés de la lumière ne comptent pas
 var _a_revoir := false           # une partie vient d'être reprise : les collets posés sont à revoir, une fois
 var _r := RandomNumberGenerator.new()
 
@@ -265,7 +268,8 @@ func maj(delta: float, j) -> bool:
 			vise = s
 			_flaire = false
 			_devant = 0.0
-			_cote = 1.0 if s.position.x >= noire.ou.x else -1.0
+			_en_route = 0.0
+			_cote = _cote_pour(s, noire.ou)
 			noire._changer("appat")
 		_:
 			return false
@@ -274,12 +278,12 @@ func maj(delta: float, j) -> bool:
 
 # le collet amorcé le plus proche qu'elle sente de là (null : aucun) : tendu, pas éventé cette nuit, hors de la lumière
 func _appat_pour(ou: Vector2):
-	if noire.partie or prise_cette_nuit or noire.acte < 2 or noire._retiree or noire._colere > 0.0 or _boude > 0.0 or jeu.jour_du_ciel() > 0.0:
+	if noire.partie or prise_cette_nuit or noire.acte < 2 or noire._retiree or noire._colere > 0.0 or _boude > 0.0 or _jour() > 0.0:
 		return null
 	var mieux = null
 	var d0 := R.NOIRE_COLLET_FLAIR
 	for s in jeu.atelier.poses:
-		if not _amorce(s) or int(s.etat.get("evente", -1)) == int(jeu.nuits) or _eclaire(s):
+		if not _amorce(s) or int(s.etat.get("evente", -1)) == int(jeu.nuits) or int(s.etat.get("boude", -1)) == int(jeu.nuits) or _eclaire(s):
 			continue
 		var d: float = s.position.distance_to(ou)
 		if d < d0:
@@ -342,7 +346,7 @@ func _laver(delta: float) -> void:
 # puis la patte dedans
 func _aller(delta: float, j) -> void:
 	var s = vise
-	if not _amorce(s) or _eclaire(s) or jeu.jour_du_ciel() > 0.0:
+	if not _amorce(s) or _eclaire(s) or _jour() > 0.0:
 		_laisser(4.0)
 		return
 	var u := R.NOIRE_LARGEUR
@@ -354,11 +358,17 @@ func _aller(delta: float, j) -> void:
 		elif noire.ou.distance_to(s.position) < 460.0:
 			noire._apparaitre(noire.ou)
 		if noire.corps != null:
-			_cote = 1.0 if s.position.x >= noire.ou.x else -1.0
+			_cote = _cote_pour(s, noire.ou)
 		return
 	var c = noire.corps
 	if noire._arrivee < 0.0:
 		noire._arrivee = noire._nuit_t
+	# (elle n'y arrive pas : un feu trop près de là où poser son corps, un obstacle. Au bout d'un moment elle y renonce pour
+	# la nuit, et le jeu le dit : elle ne reste pas plantée là jusqu'à l'aube)
+	_en_route += delta
+	if _en_route > R.NOIRE_COLLET_RENONCE and not _flaire:
+		_renoncer(s)
+		return
 	# (là où poser son corps : le nez sur l'appât d'abord ; puis elle avance, jusqu'à poser la patte de devant dans le nœud)
 	var cible: Vector2 = s.position - Vector2(_cote * (PATTE if _flaire else NEZ) * u, 0.0)
 	var d: float = c.position.distance_to(cible)
@@ -383,7 +393,45 @@ func _aller(delta: float, j) -> void:
 		noire._changer("flaire")
 		return
 	if noire._coincee(delta):
-		_laisser(8.0)
+		_rates += 1
+		if _rates >= 2:
+			_renoncer(s)
+		else:
+			_laisser(8.0)
+
+
+# fait-il jour, pour elle ? À l'acte de la faim, partie au crépuscule (scripts/noire_faim.gd), le jour qui baisse est déjà
+# sa nuit : un collet sur sa piste, près de sa tanière, l'attire quand elle passe, et la tient
+func _jour() -> float:
+	if noire.faim != null and bool(noire.faim.soir):
+		return 0.0
+	return float(jeu.jour_du_ciel())
+
+
+# de quel côté du nœud elle se tient pour le flairer (1 : à sa gauche) : celui d'où elle vient, sauf si son corps y serait
+# dans la lumière d'un feu, d'où bete.gd la repousse ; alors l'autre, dans le noir
+func _cote_pour(s, de: Vector2) -> float:
+	var cote := 1.0 if s.position.x >= de.x else -1.0
+	for essai in [cote, -cote]:
+		if not _dans_la_lumiere(s.position - Vector2(essai * NEZ * R.NOIRE_LARGEUR, 0.0)):
+			return essai
+	return cote
+
+
+func _dans_la_lumiere(p: Vector2) -> bool:
+	for f in jeu.feux_et_foyers():
+		if f.allume() and f.position.distance_to(p) < float(f.rayon()) * 0.98 + 14.0:
+			return true
+	return false
+
+
+# elle n'a pas pu y venir (la lumière, un obstacle) : elle renonce à ce collet pour la nuit, et le jeu le dit
+func _renoncer(s) -> void:
+	if is_instance_valid(s):
+		s.etat["boude"] = int(jeu.nuits)
+	if noire.corps != null and noire.ou.distance_to(jeu.joueur.position) < 1100.0:
+		jeu.ui.message("Elle tourne autour du collet, et n'y vient pas : quelque chose la gêne, la lumière d'un feu ou le terrain. Il faudra le tendre ailleurs.", TEINTE)
+	_laisser(8.0)
 
 
 # elle renonce à ce collet (il n'est plus amorcé, le feu l'éclaire, quelque chose lui barre le chemin) : elle reprend sa nuit
@@ -481,8 +529,13 @@ func _tenir(delta: float, j) -> void:
 		return
 	tenue += delta
 	_pt += delta
-	if tenue >= R.NOIRE_COLLET_TENUE or (jeu.jour_du_ciel() > 0.5 and not de_jour):
+	if tenue >= R.NOIRE_COLLET_TENUE or (_jour() > 0.5 and not de_jour):
 		_se_liberer()
+		return
+	# (la lumière d'un feu sur le collet, pendant qu'il la tient — un feu allumé à côté du pieu, des bûches jetées dans celui du
+	# camp : elle ne tient pas dans la lumière. Elle arrache tout d'un coup, sans cicatrice : on ne lui apporte pas le feu)
+	if _eclaire(s) and not de_jour:
+		_se_liberer("lumiere")
 		return
 	var pieu := ancre(s)
 	c.tenue_a = pieu
@@ -570,10 +623,17 @@ func frappee(n: float) -> bool:
 		return false
 	if noire.etat != "prise":
 		return false
-	coups += n
 	var c = noire.corps
 	if c != null and is_instance_valid(c):
 		c.sursauter()
+	# (de la lumière d'un feu, on ne la blesse pas : un galet tiré de l'abri, un coup donné du bord de la lumière la font
+	# tressaillir, sans plus. Il faut sortir : c'est là qu'elle peut mordre)
+	if jeu.feu_qui_protege(jeu.joueur.position) != null:
+		if _abri_dit != int(jeu.nuits):
+			_abri_dit = int(jeu.nuits)
+			jeu.ui.message("De la lumière du feu, tes coups ne l'entament pas : elle se dérobe au bout du filin. Il faut sortir.", TEINTE)
+		return true
+	coups += n
 	if coups >= R.NOIRE_COLLET_BLESSE:
 		_blesser()
 	return true
@@ -600,25 +660,40 @@ func _blesser() -> void:
 		jeu.effets.secousse(0.5)
 	if noire.cicatrices >= R.NOIRE_CICATRICES:
 		_quitter_le_lieu(s, c, j)
+		_garder_la_partie()
 		return
 	if not noire._apprendre("cicatrice"):
 		jeu.ui.message("Elle s'arrache et s'en va dans le noir, sur trois pattes. Une cicatrice de plus.", TEINTE)
 	emportes += 1
 	noire._changer("rentre")
+	_garder_la_partie()
+
+
+# (une cicatrice, son départ : la partie se garde aussitôt, sans attendre les vingt secondes ; scripts/principal.gd)
+func _garder_la_partie() -> void:
+	if jeu.has_method("_garder"):
+		jeu._garder(false)
 
 
 # le temps est passé sans assez de coups : les pieux cèdent. Furieuse, elle s'aplatit (le présage), puis elle charge
-func _se_liberer() -> void:
+func _se_liberer(pourquoi: String = "") -> void:
 	var s = vise
 	var c = noire.corps
 	_rompre(s)
 	emportes += 1
-	if jeu.jour_du_ciel() > 0.5:
+	if pourquoi == "aube":
+		# (le jour l'a trouvée au collet : elle arrache les pieux et rentre, sans charger ; scripts/noire.gd, aube, la renvoie)
+		jeu.ui.message("Le jour vient. Elle arrache les pieux et s'en va, sans se retourner.", TEINTE)
+		return
+	if _jour() > 0.5:
 		noire._changer("rentre")
 		return
 	noire._changer("furie")
 	jeu.grognement(c, true)
-	jeu.ui.message("Les pieux ont cédé : elle est libre. Elle s'aplatit. Elle va charger.", TEINTE)
+	if pourquoi == "lumiere":
+		jeu.ui.message("La lumière du feu sur elle : elle a tout arraché d'un coup. On ne lui apporte pas le feu. Elle s'aplatit. Elle va charger.", TEINTE)
+	else:
+		jeu.ui.message("Les pieux ont cédé : elle est libre. Elle s'aplatit. Elle va charger.", TEINTE)
 
 
 # libre, furieuse : elle s'aplatit et gronde (le présage, comme toujours), puis charge ; un feu vif la tient encore
@@ -720,6 +795,8 @@ func tombee() -> bool:
 	tenue = 0.0
 	_phase = ""
 	_boude = 0.0
+	_en_route = 0.0
+	_rates = 0
 	if not noire.partie:
 		return false
 	if jeu.traces != null:
@@ -735,7 +812,7 @@ func tombee() -> bool:
 func aube() -> bool:
 	if not noire.partie:
 		if noire.etat == "prise":
-			_se_liberer()
+			_se_liberer("aube")
 		elif noire.etat in ["appat", "flaire"]:
 			vise = null
 		return false

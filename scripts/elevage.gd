@@ -442,8 +442,8 @@ func maj(delta: float) -> void:
 		return
 	_t += delta
 	var nuit: bool = jeu.jour_du_ciel() <= 0.0
-	# (prise au collet, ou occupée de son appât, elle ne prend pas une bête : scripts/noire.gd, au_collet)
-	var noire: bool = jeu.noire != null and jeu.noire.presente() and not jeu.noire.au_collet()
+	# (prise au collet, occupée de son appât, blessée et retirée, elle ne prend pas une bête : scripts/noire.gd)
+	var noire: bool = jeu.noire != null and jeu.noire.prend_dans_le_noir()
 	for s in _atelier().poses:
 		if is_instance_valid(s) and str(s.genre) == "piquet":
 			s.etat["attache"] = false

@@ -1644,7 +1644,9 @@ func _mordre_si_pres(dj: float) -> void:
 	if role == "noire":
 		# (sa gueule porte loin devant elle ; elle mord moins vite qu'un chasseur, mais chaque morsure compte)
 		# (tenue au collet par une patte, elle porte moins loin : scripts/noire_collet.gd)
-		if dj < (R.NOIRE_COLLET_MORD if tenue_a != Vector2.INF else 100.0) and _morsure <= 0.0:
+		# (et tenue, elle ne mord pas qui se tient dans la lumière d'un feu : un feu vif la tient toujours)
+		if dj < (R.NOIRE_COLLET_MORD if tenue_a != Vector2.INF else 100.0) and _morsure <= 0.0 \
+				and not (tenue_a != Vector2.INF and jeu.feu_qui_protege(jeu.joueur.position) != null):
 			_morsure = 1.6
 			_claque = 0.0
 			jeu.mordre(self)
