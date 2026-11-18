@@ -120,6 +120,30 @@ static func sur_tube(t: Dictionary, k: int, s: float) -> Vector2:
 	return t["axe"][k] + t["nd"][k] * float(t["r"][k]) * s
 
 
+# un triangle d'une couleur (une foliole de palme, une penne de fougère : par centaines, sans triangulation)
+static func tri(p, pa: Vector2, pb: Vector2, pc: Vector2, c: Color) -> void:
+	p._plein()
+	var base: int = p.pts.size()
+	p.pts.append(pa)
+	p.pts.append(pb)
+	p.pts.append(pc)
+	for i in 3:
+		p.cols.append(c)
+		p.uvs.append(Vector2.ZERO)
+	p.idx.append_array([base, base + 1, base + 2])
+
+
+# à partir d'ici, ce qu'on dessine est du feuillage : le feu l'emportera (scripts/objet.gd, _marquer, le cherche au premier aplat
+# de feuillage). Des palmes, des frondes faites de traits et de triangles n'en ont pas : ce triangle sans surface le lui dit
+static func debut_feuillage(p) -> void:
+	var base: int = p.pts.size()
+	for i in 3:
+		p.pts.append(Vector2.ZERO)
+		p.cols.append(Color(0, 0, 0, 0))
+		p.uvs.append(Vector2(Pinceau.FEUILLAGE, Pinceau.FEUILLAGE))
+	p.idx.append_array([base, base + 1, base + 2])
+
+
 # une courbe douce par trois points (de a à c, tirée vers b), en n pas
 static func courbe(pa: Vector2, pb: Vector2, pc: Vector2, n := 8) -> PackedVector2Array:
 	var out := PackedVector2Array()

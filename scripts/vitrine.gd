@@ -1353,6 +1353,8 @@ func _planche_flore() -> void:
 	# (rien que le sol et les ombres : ni l'herbe du décor, ni ses mares, ni ses pierres)
 	for i in mini(3, W._calques.size()):
 		W._calques[i].visible = false
+	if not ar.has("--sur-le-sol") and jeu.terrain != null and jeu.terrain.get("_sol") != null:
+		jeu.terrain._sol.visible = false
 	# ce que l'herbier dit de chacune (sa hauteur, pour l'étiquette)
 	var hauteurs := {}
 	for e in Orvane.plantes(lieu):

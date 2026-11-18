@@ -24,6 +24,8 @@ const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
 # --- ce que la forme change à sa conduite ---
 
 static func regler(o) -> void:
+	if str(o.genre) == "arbre" or str(o.genre) == "sapin":
+		o.epaisseur = 1.0
 	match str(o.forme):
 		"pionnier":
 			o.epaisseur = 0.7
@@ -86,9 +88,9 @@ static func mesurer(o, r: RandomNumberGenerator, f: String) -> void:
 			return
 		"pionnier":
 			# (9 m : 77 pixels)
-			ht = r.randf_range(33.0, 40.0)
-			rx = r.randf_range(19.0, 23.0)
-			ry = rx * r.randf_range(1.02, 1.16)
+			ht = r.randf_range(30.0, 36.0)
+			rx = r.randf_range(22.5, 27.0)
+			ry = rx * r.randf_range(0.98, 1.1)
 		"fruitier":
 			# (6 m : 65 pixels ; bas, rond)
 			ht = r.randf_range(21.0, 26.0)
@@ -96,8 +98,8 @@ static func mesurer(o, r: RandomNumberGenerator, f: String) -> void:
 			ry = rx * r.randf_range(0.8, 0.88)
 		"geant":
 			# (45 m : 147 pixels ; un long fût, la couronne tout en haut — plus de trois fois la veilleuse)
-			ht = r.randf_range(90.0, 104.0)
-			rx = r.randf_range(30.0, 36.0)
+			ht = r.randf_range(88.0, 100.0)
+			rx = r.randf_range(33.0, 39.0)
 			ry = rx * r.randf_range(0.8, 0.88)
 		"emergent":
 			# (45 m : une ombrelle plate au bout d'un fût nu)
@@ -306,7 +308,7 @@ static func _echasses(o, p, r: RandomNumberGenerator, c: Color, n: int, portee: 
 		var ligne := T.courbe(x[0], x[1], x[2], 7)
 		var devant := float(x[3]) > 0.8
 		var ton: Color = c.lightened(0.04 + 0.1 * float(x[4])) if devant else c.darkened(0.16)
-		var gros := 3.3 * (0.75 + 0.3 * o.epaisseur)
+		var gros: float = 3.3 * (0.75 + 0.3 * o.epaisseur)
 		var larg_e := PackedFloat32Array()
 		var larg_c := PackedFloat32Array()
 		var haut_l := PackedVector2Array()
@@ -524,8 +526,8 @@ static func couronne(o, p, r: RandomNumberGenerator) -> bool:
 			# (un bouleau : un fût blanc taché d'encre, une couronne légère en quatre touffes, plus claire, d'où pendent de
 			# fins rameaux)
 			var haut := cc.y + ry * 0.5
-			lobes = [[cc + Vector2(0, ry * 0.2), rx * 0.86, ry * 0.6], [cc + Vector2(-rx * 0.36, -ry * 0.28), rx * 0.62, ry * 0.5],
-				[cc + Vector2(rx * 0.42, -ry * 0.08), rx * 0.56, ry * 0.46], [cc + Vector2(rx * r.randf_range(-0.1, 0.16), -ry * 0.58), rx * 0.46, ry * 0.4]]
+			lobes = [[cc + Vector2(0, ry * 0.26), rx * 0.92, ry * 0.62], [cc + Vector2(-rx * 0.36, -ry * 0.22), rx * 0.66, ry * 0.54],
+				[cc + Vector2(rx * 0.4, -ry * 0.1), rx * 0.62, ry * 0.52], [cc + Vector2(rx * r.randf_range(-0.1, 0.16), -ry * 0.56), rx * 0.52, ry * 0.44]]
 			var clair := t.lightened(0.1).lerp(P.BRAISE_COEUR, 0.07)
 			o._tronc(p, -8.5, haut, o._ecorce())
 			lenticelles(o, p, r, -9.0, haut + 4.0)
@@ -637,7 +639,7 @@ static func houppier(o, p, r: RandomNumberGenerator, lobes: Array, haut: float, 
 			for j in 6:
 				arc.append(a0 + Vector2(cos(d + j * 0.32), sin(d + j * 0.32) * 0.9) * rr)
 			p.tracer(arc, 0.85, Color(ENCRE, 0.55))
-		brins(p, r, poly, q, tl, 2 if lx < 16.0 else 3)
+		brins(p, r, poly, q, tl, 1 if lx < 16.0 else 2)
 		rang += 1
 
 
@@ -652,9 +654,9 @@ static func brins(p, r: RandomNumberGenerator, poly: PackedVector2Array, centre:
 		if dehors.dot(T.JOUR) < 0.25:
 			continue
 		var tourne := r.randf_range(-0.5, 0.5)
-		T.feuille(p, q - dehors * 1.2, q + dehors.rotated(tourne) * r.randf_range(2.6, 3.8), 1.15, t.lightened(0.1), 0.0, 0.4, 0.5, 3)
-		if r.randf() < 0.6:
-			T.feuille(p, q - dehors * 1.2, q + dehors.rotated(tourne + 0.9) * r.randf_range(2.2, 3.0), 1.0, t, 0.0, 0.4, 0.5, 3)
+		T.feuille(p, q - dehors * 1.4, q + dehors.rotated(tourne) * r.randf_range(3.4, 4.6), 1.5, t.lightened(0.08), 0.0, 0.42, 0.55, 3)
+		if r.randf() < 0.5:
+			T.feuille(p, q - dehors * 1.4, q + dehors.rotated(tourne + 0.95) * r.randf_range(2.8, 3.6), 1.3, t, 0.0, 0.42, 0.55, 3)
 		faits += 1
 
 
@@ -664,21 +666,17 @@ static func caracteres_de_couronne(o, p, lobes: Array, t: Color) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = int(o.graine) + 97
 	if T.a(o, "rapide"):
-		# (les pousses de l'année, droites, d'un vert tendre, au-dessus des touffes hautes)
-		var tendre := t.lerp(P.MOUSSE.lightened(0.25), 0.5).lerp(P.BRAISE_COEUR, 0.14)
+		# (les pousses de l'année : de petites touffes d'un vert tendre, posées sur le haut de la couronne)
+		var tendre := t.lerp(P.MOUSSE.lightened(0.25), 0.55).lerp(P.BRAISE_COEUR, 0.16)
 		for l in lobes:
 			var q: Vector2 = l[0]
-			if q.y > o._cc.y + 0.2 * float(o._ry):
+			if q.y > o._cc.y + 0.25 * float(o._ry):
 				continue
-			for k in 2:
-				var pied: Vector2 = q + Vector2(r.randf_range(-0.6, 0.6) * float(l[1]), -float(l[2]) * r.randf_range(0.72, 0.9))
-				var bout := pied + Vector2(r.randf_range(-1.6, 1.6), -r.randf_range(4.5, 7.0))
-				p.tracer(PackedVector2Array([pied, bout]), 1.5, ENCRE, false, PackedFloat32Array([1.6, 1.0]))
-				p.tracer(PackedVector2Array([pied, bout]), 0.7, tendre.darkened(0.2), false)
-				for j in 3:
-					var a0 := pied.lerp(bout, 0.35 + 0.3 * j)
-					var cote := -1.0 if j % 2 == 0 else 1.0
-					T.feuille(p, a0, a0 + Vector2(cote * 2.6, -1.8), 1.0, tendre, 0.0, 0.4, 0.45, 3)
+			var centre: Vector2 = q + Vector2(r.randf_range(-0.35, 0.3) * float(l[1]), -float(l[2]) * r.randf_range(0.6, 0.78))
+			var lx: float = float(l[1]) * r.randf_range(0.34, 0.44)
+			var poly: PackedVector2Array = o.festons(centre, lx, lx * 0.62, 5, 0.22, r, 20, 0.1)
+			p.aplat(poly, tendre, Pinceau.FEUILLAGE, centre, Vector2(lx, lx * 0.62) * 1.1)
+			p.contour(poly, 0.9, ENCRE, r, 3)
 	if T.a(o, "coriace"):
 		_luisant(p, r, lobes, 3)
 	if T.a(o, "graines_abondantes"):
@@ -737,17 +735,17 @@ static func _ecailles_d_ecorce(o, p, r: RandomNumberGenerator, y0: float, y1: fl
 # les rameaux d'un bouleau : de fins brins qui pendent sous la couronne, leurs petites feuilles (derrière les touffes)
 static func _rameaux_pleureurs(o, p, r: RandomNumberGenerator, lobes: Array, t: Color) -> void:
 	var chatons := T.a(o, "vent")
-	for i in r.randi_range(5, 7):
+	for i in r.randi_range(4, 5):
 		var l: Array = lobes[i % 3]
 		var q: Vector2 = l[0] + Vector2(r.randf_range(-0.85, 0.85) * float(l[1]), float(l[2]) * r.randf_range(0.5, 0.8))
-		var h := r.randf_range(6.0, 11.0)
+		var h := r.randf_range(7.0, 11.0) * float(o._ry) / 25.0
 		var bout := q + Vector2(r.randf_range(-1.5, 2.5), h)
 		var ligne := T.courbe(q, q + Vector2(0.6, h * 0.5), bout, 4)
 		p.tracer(ligne, 0.6, Color(ENCRE, 0.75), false)
 		for k in range(1, 5):
 			var a0: Vector2 = ligne[k]
 			var cote := -1.0 if k % 2 == 0 else 1.0
-			T.feuille(p, a0, a0 + Vector2(cote * 2.0, 1.7), 0.9, t.lightened(0.04), 0.0, 0.45, 0.4, 3)
+			T.feuille(p, a0, a0 + Vector2(cote * 2.6, 2.1), 1.25, t.lightened(0.04), 0.0, 0.45, 0.5, 3)
 		if chatons and i % 2 == 0:
 			# (un chaton, que le vent secoue)
 			p.tracer(PackedVector2Array([bout, bout + Vector2(0.5, 3.2)]), 1.5, ENCRE, false)

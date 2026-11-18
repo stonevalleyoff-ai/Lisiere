@@ -12,6 +12,8 @@ extends RefCounted
 
 const P := preload("res://scripts/palette.gd")
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
+const T := preload("res://scripts/flore_trait.gd")
+const Arbres := preload("res://scripts/flore_arbres.gd")
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
 const R_BAIES := preload("res://scripts/regles.gd").BAIES_PAR_BUISSON
 
@@ -32,31 +34,9 @@ static func sait(forme: String) -> bool:
 static func regler(o) -> void:
 	if bool(o.planche):
 		_planche(o)
+	# (les arbres : leur tronc, leur écorce ; scripts/flore_arbres.gd)
+	Arbres.regler(o)
 	match str(o.forme):
-		"pionnier":
-			o.epaisseur = 0.72
-			# (un bouleau : l'écorce blanche)
-			o.ecorce_teinte = P.PAPIER.lerp(P.IVOIRE, 0.45).darkened(0.04)
-		"geant", "emergent":
-			o.epaisseur = 1.35
-		"figuier":
-			o.epaisseur = 1.15
-			o.ecorce_teinte = P.CENDRE.lerp(P.IVOIRE, 0.42)
-		"bouteille":
-			o.epaisseur = 2.2
-			o.ecorce_teinte = P.CENDRE.lerp(P.IVOIRE, 0.38).lerp(P.TERRE, 0.2)
-			o.rayon = 15.0
-		"sous_bois":
-			o.epaisseur = 0.8
-		"palmier":
-			o.epaisseur = 0.68
-			o.ecorce_teinte = P.TERRE.lerp(P.IVOIRE, 0.32)
-		"fougere_arbre":
-			o.epaisseur = 0.74
-			o.ecorce_teinte = P.ENCRE_DOUCE.lerp(P.TERRE, 0.45)
-		"paletuvier":
-			o.epaisseur = 0.85
-			o.ecorce_teinte = P.TERRE.lerp(P.CENDRE, 0.4)
 		"cactus":
 			o.plein = 2
 			o.rayon = 7.0
@@ -81,7 +61,7 @@ static func mesurer(o, r: RandomNumberGenerator) -> void:
 	var f := str(o.forme)
 	match str(o.genre):
 		"arbre":
-			_mesurer_arbre(o, r, f)
+			Arbres.mesurer(o, r, f)
 		"touffe":
 			match f:
 				"cactus":
@@ -142,79 +122,13 @@ static func mesurer(o, r: RandomNumberGenerator) -> void:
 			o.hauteur = o._ry
 
 
-static func _mesurer_arbre(o, r: RandomNumberGenerator, f: String) -> void:
-	var ht := 0.0
-	var rx := 0.0
-	var ry := 0.0
-	match f:
-		"pionnier":
-			ht = r.randf_range(30.0, 38.0)
-			rx = r.randf_range(17.0, 21.0)
-			ry = rx * r.randf_range(1.05, 1.2)
-		"fruitier":
-			ht = r.randf_range(16.0, 21.0)
-			rx = r.randf_range(22.0, 27.0)
-			ry = rx * r.randf_range(0.82, 0.9)
-		"geant":
-			ht = r.randf_range(30.0, 36.0)
-			rx = r.randf_range(33.0, 38.0)
-			ry = rx * r.randf_range(0.78, 0.86)
-		"emergent":
-			ht = r.randf_range(56.0, 66.0)
-			rx = r.randf_range(34.0, 40.0)
-			ry = rx * r.randf_range(0.38, 0.46)
-		"figuier":
-			ht = r.randf_range(20.0, 25.0)
-			rx = r.randf_range(34.0, 40.0)
-			ry = rx * r.randf_range(0.62, 0.7)
-		"sous_bois":
-			ht = r.randf_range(13.0, 17.0)
-			rx = r.randf_range(16.0, 20.0)
-			ry = rx * r.randf_range(0.85, 0.95)
-		"bouteille":
-			ht = r.randf_range(30.0, 36.0)
-			rx = r.randf_range(27.0, 32.0)
-			ry = rx * r.randf_range(0.42, 0.5)
-		"paletuvier":
-			ht = r.randf_range(22.0, 27.0)
-			rx = r.randf_range(26.0, 31.0)
-			ry = rx * r.randf_range(0.68, 0.76)
-		"palmier", "fougere_arbre":
-			# (un fût, et les palmes en haut : le centre du feuillage est au sommet du fût)
-			var palmier := f == "palmier"
-			ht = r.randf_range(54.0, 66.0) if palmier else r.randf_range(34.0, 42.0)
-			rx = r.randf_range(36.0, 42.0) if palmier else r.randf_range(29.0, 34.0)
-			ry = r.randf_range(15.0, 18.0) if palmier else r.randf_range(13.0, 16.0)
-			o._ht = ht
-			o._rx = rx
-			o._ry = ry
-			o._penche = r.randf_range(0.1, 0.2) * (1.0 if o.graine % 2 == 0 else -1.0)
-			o._cc = Vector2(_courbe_palme(o, -ht), -ht)
-			o.hauteur = ht + ry
-			o.couronne_rect = Rect2(o._cc - Vector2(rx, ry * 0.9), Vector2(rx * 2.0, ry * 2.1))
-			return
-		_:
-			return
-	o._ht = ht
-	o._rx = rx
-	o._ry = ry
-	o._penche = r.randf_range(-0.06, 0.06)
-	o._cc = Vector2(o._penche * (ht + ry * 0.8) + r.randf_range(-2.0, 2.0), -(ht + ry * 0.8))
-	o.hauteur = -o._cc.y + ry
-	o.couronne_rect = Rect2(o._cc - Vector2(rx, ry), Vector2(rx, ry) * 2.0)
-
-
-# l'axe d'un fût de palmier, qui se courbe vers le haut (à la hauteur y, négative)
-static func _courbe_palme(o, y: float) -> float:
-	var u := clampf((-y - 8.5) / maxf(1.0, o._ht - 8.5), 0.0, 1.0)
-	return o._axe(-8.5) + o._penche * 70.0 * u * u
-
-
 # --- les ombres d'une forme à elle ([] : aucune ; null : celles de son genre) ---
 
 static func ombres(o):
 	var f := str(o.forme)
 	match str(o.genre):
+		"arbre":
+			return Arbres.ombres(o)
 		"fleur":
 			return [[Vector2(0, 1), Vector2(o._rx * 0.8, 3.0), 0.18, 0.0, 0.0]]
 		"aquatique":
@@ -234,288 +148,36 @@ static func ombres(o):
 	return null
 
 
-# --- les arbres : leur pied ---
+# --- les arbres (scripts/flore_arbres.gd) : ce qu'objet.gd demande de leur pied et de leur couronne ---
 
-static func pied(o, p, r: RandomNumberGenerator) -> bool:
-	match str(o.forme):
-		"paletuvier":
-			_pied_paletuvier(o, p, r)
-			return true
-	return false
+# là où l'on bute, d'après le tronc (après la mesure et l'échelle)
+static func ajuster(o) -> void:
+	Arbres.ajuster(o)
 
 
-# le palétuvier : ses racines en échasses, arquées, qui le tiennent au-dessus de la vase
-static func _pied_paletuvier(o, p, r: RandomNumberGenerator) -> void:
-	var c: Color = o._ecorce()
-	p.eventail(Vector2(0, 1.5), 20.0, 5.0, Color(P.ENCRE_DOUCE.lerp(P.TERRE, 0.4), 0.55), Color(P.ENCRE_DOUCE, 0.0), 14)
-	var n := r.randi_range(5, 7)
-	var racines := []
-	for i in n:
-		var cote := -1.0 if i % 2 == 0 else 1.0
-		var depart := Vector2(o._axe(-9.0) + cote * r.randf_range(0.5, 2.5), -r.randf_range(7.0, 12.0))
-		var bout := Vector2(cote * r.randf_range(7.0, 19.0), r.randf_range(-0.5, 2.5))
-		var haut := depart + Vector2(cote * r.randf_range(3.0, 7.0), -r.randf_range(3.0, 6.0))
-		racines.append([depart, haut, bout, r.randf()])
-	racines.sort_custom(func(a, b): return a[3] < b[3])
-	for x in racines:
-		var ligne := PackedVector2Array()
-		for k in 7:
-			var t := k / 6.0
-			ligne.append(x[0].lerp(x[1], t).lerp(x[1].lerp(x[2], t), t))
-		p.tracer(ligne, 2.9, ENCRE, false, PackedFloat32Array([3.0, 3.0, 2.8, 2.6, 2.4, 2.2, 2.0]))
-		p.tracer(ligne, 1.7, c.lightened(0.05 + 0.1 * x[3]), false, PackedFloat32Array([1.8, 1.8, 1.6, 1.5, 1.4, 1.2, 1.0]))
-	o._tronc(p, -6.0, -9.0, c)
+# les racines d'une forme à elle (faux : celles de tous les arbres)
+static func racines(o, p, r: RandomNumberGenerator, souche: bool) -> bool:
+	return Arbres.racines(o, p, r, souche)
 
 
-# --- les arbres : leur haut (la couronne, sur son propre nœud) ---
+# d'où part le bas du tronc (0,5 : du sol ; plus haut : il est sur des échasses)
+static func pied_du_tronc(o) -> float:
+	return Arbres.pied_du_tronc(o)
 
+
+# ce que l'écorce porte au pied
+static func ecorce_du_pied(o, p, r: RandomNumberGenerator) -> void:
+	Arbres.ecorce_du_pied(o, p, r)
+
+
+# le haut de l'arbre (la couronne, sur son propre nœud) ; faux : le feuillu d'objet.gd
 static func couronne(o, p, r: RandomNumberGenerator) -> bool:
-	var f := str(o.forme)
-	var cc: Vector2 = o._cc
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var t: Color = o.teinte.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.18))
-	match f:
-		"pionnier":
-			# (un bouleau : un fût blanc taché d'encre, un feuillage léger en deux ou trois touffes, plus clair)
-			var haut := cc.y + ry * 0.5
-			var lobes := [[cc + Vector2(0, ry * 0.2), rx * 0.85, ry * 0.62], [cc + Vector2(-rx * 0.3, -ry * 0.35), rx * 0.62, ry * 0.5]]
-			if r.randf() < 0.6:
-				lobes.append([cc + Vector2(rx * 0.42, -ry * 0.05), rx * 0.55, ry * 0.45])
-			_houppier(o, p, r, lobes, haut, t.lightened(0.1).lerp(P.BRAISE_COEUR, 0.06))
-			_lenticelles(o, p, r, -9.0, haut + 4.0)
-		"fruitier":
-			# (ses fruits, ronds et luisants, sont posés sur le feuillage après lui : fruits_couronne)
-			_houppier(o, p, r, [[cc, rx, ry]], cc.y + ry * 0.35, t)
-		"geant":
-			var lobes := [[cc + Vector2(-rx * 0.42, ry * 0.18), rx * 0.62, ry * 0.62], [cc + Vector2(rx * 0.44, ry * 0.22), rx * 0.6, ry * 0.6],
-				[cc + Vector2(r.randf_range(-3.0, 3.0), -ry * 0.32), rx * 0.66, ry * 0.62]]
-			_houppier(o, p, r, lobes, cc.y + ry * 0.55, t.lerp(P.FEUILLE_SOMBRE, 0.12))
-		"emergent":
-			# (au-dessus des autres : un long fût nu, une ombrelle plate)
-			var lobes := [[cc + Vector2(-rx * 0.45, 0), rx * 0.6, ry * 0.85], [cc + Vector2(rx * 0.45, ry * 0.05), rx * 0.58, ry * 0.8],
-				[cc + Vector2(0, -ry * 0.3), rx * 0.55, ry * 0.75]]
-			_houppier(o, p, r, lobes, cc.y + ry * 0.5, t)
-		"figuier":
-			var lobes := [[cc + Vector2(-rx * 0.5, ry * 0.12), rx * 0.58, ry * 0.75], [cc + Vector2(rx * 0.5, ry * 0.15), rx * 0.56, ry * 0.72],
-				[cc + Vector2(0, -ry * 0.2), rx * 0.62, ry * 0.8]]
-			# (ses racines aériennes, qui tombent du feuillage jusqu'au sol)
-			var corde := P.CENDRE.lerp(P.IVOIRE, 0.35)
-			for i in r.randi_range(4, 6):
-				var x := cc.x + r.randf_range(-0.8, 0.8) * rx
-				var y0 := cc.y + ry * r.randf_range(0.3, 0.6)
-				var ligne := PackedVector2Array([Vector2(x, y0), Vector2(x + r.randf_range(-1.5, 1.5), lerpf(y0, 0.0, 0.5)), Vector2(x + r.randf_range(-2.5, 2.5), r.randf_range(-1.0, 1.5))])
-				p.tracer(ligne, 1.6, ENCRE, false)
-				p.tracer(ligne, 0.8, corde, false)
-			_houppier(o, p, r, lobes, cc.y + ry * 0.4, t)
-		"sous_bois":
-			_houppier(o, p, r, [[cc, rx, ry]], cc.y + ry * 0.35, t.lerp(P.FEUILLE_SOMBRE, 0.3))
-		"paletuvier":
-			var lobes := [[cc + Vector2(-rx * 0.38, ry * 0.1), rx * 0.66, ry * 0.7], [cc + Vector2(rx * 0.4, ry * 0.12), rx * 0.64, ry * 0.68],
-				[cc + Vector2(0, -ry * 0.25), rx * 0.6, ry * 0.65]]
-			_houppier(o, p, r, lobes, cc.y + ry * 0.45, t.lerp(P.FEUILLE_SOMBRE, 0.15))
-		"bouteille":
-			_baobab(o, p, r, t)
-		"palmier":
-			_palmier(o, p, r, t, false)
-		"fougere_arbre":
-			_palmier(o, p, r, t, true)
-		_:
-			return false
-	return true
+	return Arbres.couronne(o, p, r)
 
 
-# un feuillu en plusieurs touffes : le tronc jusqu'à haut, une branche vers chaque touffe, puis les touffes (celles du fond
-# d'abord), chacune bordée d'encre, des arcs d'ombre en bas à droite
-static func _houppier(o, p, r: RandomNumberGenerator, lobes: Array, haut: float, teinte: Color) -> void:
-	var c: Color = o._ecorce()
-	o._tronc(p, -8.5, haut, c)
-	for i in r.randi_range(2, 3):
-		var y := r.randf_range(-12.0, haut + 6.0)
-		var x: float = o._axe(y) + r.randf_range(-1.5, 2.0)
-		p.tracer(PackedVector2Array([Vector2(x, y), Vector2(x + 0.3, y - r.randf_range(4.0, 7.0))]), 0.7, Color(ENCRE, 0.45))
-	var depart := Vector2(o._axe(haut + 3.0), haut + 3.0)
-	var ep: float = o.epaisseur
-	for l in lobes:
-		var b: Vector2 = l[0] + Vector2(0, float(l[2]) * 0.25)
-		if b.distance_to(depart) < 4.0:
-			continue
-		var m := (depart + b) * 0.5 + Vector2((b.x - depart.x) * -0.12, 2.0)
-		p.tracer(PackedVector2Array([depart, m, b]), 3.4 * ep, ENCRE)
-		p.tracer(PackedVector2Array([depart, m, b]), 2.2 * ep, c)
-	var bas := -INF
-	for l in lobes:
-		bas = maxf(bas, l[0].y + float(l[2]))
-	p.eventail(Vector2(o._axe(bas), bas - 2.0), 6.5 * ep, 5.0, Color(P.ENCRE, 0.5), Color(P.ENCRE, 0.0), 12)
-	var tries := lobes.duplicate()
-	tries.sort_custom(func(a, b): return a[0].y < b[0].y)
-	for l in tries:
-		var q: Vector2 = l[0]
-		var lx: float = l[1]
-		var ly: float = l[2]
-		var poly: PackedVector2Array = o.festons(q, lx, ly, r.randi_range(6, 8), 0.17, r, 48, 0.12)
-		var tl := teinte.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.12)).lightened(r.randf_range(0.0, 0.07))
-		p.aplat(poly, tl, Pinceau.FEUILLAGE, q, Vector2(lx, ly) * 1.08)
-		p.contour(poly, 1.4, ENCRE, r, 4)
-		for k in r.randi_range(2, 3):
-			var a0 := q + Vector2(r.randf_range(-0.05, 0.7) * lx, r.randf_range(0.0, 0.65) * ly)
-			var rr := r.randf_range(4.5, 7.0)
-			var arc := PackedVector2Array()
-			var d := r.randf_range(-0.2, 0.4)
-			for j in 6:
-				arc.append(a0 + Vector2(cos(d + j * 0.32), sin(d + j * 0.32) * 0.9) * rr)
-			p.tracer(arc, 0.85, Color(ENCRE, 0.55))
-
-
-# les taches d'encre d'un fût de bouleau, en travers
-static func _lenticelles(o, p, r: RandomNumberGenerator, y0: float, y1: float) -> void:
-	var y := y0 - r.randf_range(1.0, 3.0)
-	while y > y1:
-		var w: float = o._demi_largeur(y)
-		var x: float = o._axe(y)
-		var a := x - w * r.randf_range(0.2, 0.9)
-		var b := a + w * r.randf_range(0.5, 1.1)
-		p.tracer(PackedVector2Array([Vector2(a, y), Vector2(b, y + r.randf_range(-0.4, 0.4))]), r.randf_range(0.8, 1.4), Color(ENCRE, 0.8))
-		y -= r.randf_range(3.0, 6.0)
-
-
-# un baobab : un fût en bouteille, ventru, lisse et gris ; quelques grosses branches courtes, un feuillage maigre
-static func _baobab(o, p, r: RandomNumberGenerator, t: Color) -> void:
-	var c: Color = o._ecorce()
-	var haut: float = o._cc.y + o._ry * 0.4
-	var gauche := PackedVector2Array()
-	var droite := PackedVector2Array()
-	var n := 9
-	for i in n + 1:
-		var u := float(i) / n
-		var y := lerpf(-8.5, haut, u)
-		var w: float = o._demi_largeur(-8.5) * (1.0 + 0.28 * sin(u * PI * 0.9)) * lerpf(1.0, 0.55, smoothstep(0.65, 1.0, u))
-		gauche.append(Vector2(o._axe(y) - w, y))
-		droite.append(Vector2(o._axe(y) + w, y))
-	var poly := PackedVector2Array(gauche)
-	var rev := droite.duplicate()
-	rev.reverse()
-	poly.append_array(rev)
-	var milieu := Vector2(o._axe((haut - 8.5) * 0.5), (haut - 8.5) * 0.5)
-	p.aplat(poly, c, Pinceau.ECORCE, milieu, Vector2(o._demi_largeur(-8.5) * 1.3, absf(haut) * 0.6))
-	p.tracer(gauche, 1.2, ENCRE, false)
-	p.tracer(droite, 1.8, ENCRE, false)
-	# (des plis verticaux sur l'écorce lisse)
-	for i in 3:
-		var x0: float = milieu.x + r.randf_range(-0.5, 0.6) * o._demi_largeur(-8.5)
-		p.tracer(PackedVector2Array([Vector2(x0, -10.0), Vector2(x0 + r.randf_range(-1.0, 1.0), lerpf(-10.0, haut, 0.6))]), 0.7, Color(ENCRE, 0.4))
-	var sommet := Vector2(o._axe(haut), haut)
-	var touffes := []
-	for i in r.randi_range(4, 6):
-		var a := lerpf(-2.7, -0.45, (i + r.randf_range(0.2, 0.8)) / 5.0)
-		var bout: Vector2 = sommet + Vector2(cos(a) * o._rx * r.randf_range(0.6, 0.95), sin(a) * o._ry * r.randf_range(0.8, 1.4))
-		var mil := sommet.lerp(bout, 0.5) + Vector2(0, -2.0)
-		p.tracer(PackedVector2Array([sommet, mil, bout]), 4.2, ENCRE, true, PackedFloat32Array([5.0, 3.6, 1.6]))
-		p.tracer(PackedVector2Array([sommet, mil, bout]), 2.8, c, true, PackedFloat32Array([3.6, 2.4, 0.8]))
-		touffes.append(bout)
-	# (ses fruits pendent au bout de ces branches, sous leurs touffes : fruits_couronne les y retrouve)
-	o.set_meta("bouts", touffes)
-	for q in touffes:
-		var poly2: PackedVector2Array = o.festons(q + Vector2(0, -2.0), r.randf_range(9.0, 12.0), r.randf_range(5.5, 7.5), 6, 0.25, r, 26, 0.1)
-		p.aplat(poly2, t, Pinceau.FEUILLAGE, q + Vector2(0, -2.0), Vector2(12.0, 7.5))
-		p.contour(poly2, 1.0, ENCRE, r, 2)
-
-
-# un palmier (ou une fougère arborescente) : le fût qui se courbe, annelé (ou hérissé de fibres sombres), puis ses palmes qui
-# retombent en bouquet ; la fougère a ses folioles plus fines, et des crosses au cœur
-static func _palmier(o, p, r: RandomNumberGenerator, t: Color, fougere: bool) -> void:
-	var c: Color = o._ecorce()
-	var ht: float = o._ht
-	var gauche := PackedVector2Array()
-	var droite := PackedVector2Array()
-	var axe := PackedVector2Array()
-	var n := 10
-	for i in n + 1:
-		var y := lerpf(-8.5, -ht, float(i) / n)
-		var x := _courbe_palme(o, y)
-		var w: float = o._demi_largeur(-8.5) * lerpf(1.0, 0.82, float(i) / n)
-		axe.append(Vector2(x, y))
-		gauche.append(Vector2(x - w, y))
-		droite.append(Vector2(x + w, y))
-	var poly := PackedVector2Array(gauche)
-	var rev := droite.duplicate()
-	rev.reverse()
-	poly.append_array(rev)
-	var cols := PackedColorArray()
-	var uvs := PackedVector2Array()
-	for i in poly.size():
-		cols.append(c)
-		uvs.append(Vector2(10.0 if i <= n else 12.0, 11.0))
-	p.aplat_libre(poly, cols, uvs)
-	p.tracer(gauche, 1.0, ENCRE, false)
-	p.tracer(droite, 1.6, ENCRE, false)
-	# (les anneaux des palmes tombées ; les fibres d'une fougère)
-	for i in range(1, n):
-		var q := axe[i]
-		var w := gauche[i].distance_to(axe[i])
-		if fougere:
-			for k in 2:
-				var x0 := q.x + r.randf_range(-w, w) * 0.8
-				p.tracer(PackedVector2Array([Vector2(x0, q.y), Vector2(x0 + r.randf_range(-1.5, 1.5), q.y + 2.5)]), 0.8, Color(ENCRE, 0.65))
-		else:
-			p.tracer(PackedVector2Array([q + Vector2(-w, 0.6), q + Vector2(0, 1.4), q + Vector2(w, 0.4)]), 0.8, Color(ENCRE, 0.6), false)
-	var cc: Vector2 = o._cc
-	var rx: float = o._rx
-	var ry: float = o._ry
-	# les palmes : de celles du fond (vers le haut) à celles qui viennent vers nous, en tombant
-	var palmes := []
-	var np := r.randi_range(8, 10) if fougere else r.randi_range(7, 9)
-	for i in np:
-		var a := lerpf(-PI + 0.15, -0.15, float(i) / (np - 1)) + r.randf_range(-0.12, 0.12)
-		palmes.append([a, r.randf_range(0.85, 1.05)])
-	palmes.append([r.randf_range(0.35, 0.6), r.randf_range(0.6, 0.75)])
-	palmes.append([PI - r.randf_range(0.35, 0.6), r.randf_range(0.6, 0.75)])
-	palmes.sort_custom(func(a, b): return sin(a[0]) < sin(b[0]))
-	var m := 11 if fougere else 9
-	for pa in palmes:
-		var a: float = pa[0]
-		var l: float = rx * float(pa[1])
-		var d := Vector2(cos(a), sin(a) * 0.55)
-		var tombe := ry * (0.9 if fougere else 0.75)
-		var axe_p := PackedVector2Array()
-		for k in m + 1:
-			var u := float(k) / m
-			# (elle monte un peu, puis retombe sous son poids)
-			axe_p.append(cc + d * l * u + Vector2(0, -ry * 0.55 * sin(u * PI * 0.7) + tombe * u * u))
-		for passe in 2:
-			var e := 0.6 if passe == 0 else 0.0
-			var g := PackedVector2Array()
-			var dr := PackedVector2Array()
-			for k in m + 1:
-				var u := float(k) / m
-				var tan_ := (axe_p[mini(k + 1, m)] - axe_p[maxi(k - 1, 0)]).normalized()
-				var nrm := tan_.orthogonal()
-				var w := (5.2 if fougere else 6.2) * sin(PI * minf(1.0, u * 1.15 + 0.06)) * (1.0 - u * 0.55)
-				# (des folioles : la palme dentée, plus finement pour une fougère)
-				w *= (1.0 if k % 2 == 0 else (0.45 if fougere else 0.62))
-				w += e
-				var avance := tan_ * (1.4 if k % 2 == 0 else 0.0)
-				g.append(axe_p[k] + nrm * w + avance)
-				dr.append(axe_p[k] - nrm * w + avance)
-			if passe == 0:
-				p.bande(g, dr, Color(ENCRE, 0.75))
-			else:
-				var face := t.lerp(t.lightened(0.22), clampf(-sin(a), 0.0, 1.0) * 0.6 + 0.15)
-				p.bande(g, axe_p, face)
-				p.bande(axe_p, dr, face.darkened(0.22))
-				p.tracer(axe_p, 0.7, face.darkened(0.45), false, PackedFloat32Array(), false)
-	if fougere:
-		# (des crosses qui se déroulent, au cœur)
-		for i in 2:
-			var q := cc + Vector2((i - 0.5) * 5.0, -2.0)
-			var spi := PackedVector2Array()
-			for k in 12:
-				var u := k / 11.0
-				var ang := -PI * 0.5 + u * TAU * 1.1 * (1.0 if i == 0 else -1.0)
-				spi.append(q + Vector2(0, -6.0 * (1.0 - u)) + Vector2(cos(ang), sin(ang)) * (2.6 * u))
-			p.tracer(spi, 1.6, ENCRE, false)
-			p.tracer(spi, 0.9, t.lightened(0.3), false)
-	# (un palmier : ses noix, en grappe sous les palmes, sont dessinées après elles : fruits_couronne)
+# le bois nu d'un arbre en feu, roussi (faux : les branches de tous les arbres)
+static func bois_nu(o, p, dehors := false) -> bool:
+	return Arbres.bois_nu(o, p, dehors)
 
 
 # --- la cueillette nourricière : les fruits des arbres (scripts/flore.gd, FRUITS ; scripts/objet.gd, cueillir_fruit) ---
