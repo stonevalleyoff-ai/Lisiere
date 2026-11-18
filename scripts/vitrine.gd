@@ -623,6 +623,18 @@ func _lancer() -> void:
 			print("vitrine : près d'un « %s », en %s (%d dans le lieu)" % [args[i_vers + 1], str(jeu.joueur.position), quelles.size()])
 	if args.has("--recense"):
 		var ou_r: String = str(jeu.monde.carte.type_en(jeu.joueur.position)) if jeu.monde.carte != null else str(jeu.biome)
+		# (le monde ouvert : l'herbier du biome où elle est se lit en approchant ; on l'attend, et ses morceaux refaits)
+		var attente := 0
+		while jeu.ouvert and jeu.monde.carte != null and jeu.monde.lieu_de(ou_r)["flore"].is_empty() and attente < 80:
+			attente += 1
+			await get_tree().create_timer(0.1).timeout
+		if jeu.ouvert:
+			jeu.monde.suivre(jeu.joueur.position, true)
+		if OS.has_environment("LISIERE_BRUT"):
+			# (pour compter un lieu semé par l'ancien plan : chaque pied compte pour un)
+			load("res://scripts/recensement.gd").dire(jeu.monde, ou_r, Rect2(), "(compté pied à pied)", false)
+			get_tree().quit()
+			return
 		load("res://scripts/recensement.gd").dire(jeu.monde, ou_r, Rect2(), "(monde ouvert, autour de %d,%d)" % [int(jeu.joueur.position.x), int(jeu.joueur.position.y)] if jeu.ouvert else "(lieu fermé)")
 		get_tree().quit()
 		return

@@ -500,7 +500,7 @@ func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Diction
 		# (la cueillette de Lisière : il y a plus de places que de fleurs, de champignons ; la météo d'Orvane dit combien servent)
 		if genre in ["fleur", "cepe", "amanite"]:
 			var d: Dictionary = _densite(str(ici.get("type", "")))
-			if float((absi(graine) % 10007 * 7919) % 10007) / 10007.0 >= float(d["fleurs" if genre == "fleur" else "champignons"]) / R.MILIEU_CUEILLETTE_RESERVE:
+			if float(absi(hash(absi(graine) % 10007 + 77003)) % 10007) / 10007.0 >= float(d["fleurs" if genre == "fleur" else "champignons"]) / R.MILIEU_CUEILLETTE_RESERVE:
 				return null
 	elif milieu >= 0 and fl.is_empty():
 		# (sans herbier : un arbre, un buisson, une touffe, deux par groupe ; rien de ce qui était offert en plus, pas de mare)
@@ -762,6 +762,7 @@ func _plan_m(k: Vector2i) -> Array:
 					_prevoir_lieu(r, plan, quart, str(L["arbre"]), L["mesures"], type)
 				else:
 					var ctx := _contexte(type, quart)
+					_berges(ctx, quart)
 					Milieu.prevoir(ctx, r, quart, plan)
 					Milieu.cueillette(ctx, rc, quart, cueillette, _arbres_du_plan(plan, quart))
 				# une crête (deux biomes qui ne sont pas voisins dans Orvane) : des rochers serrés, on ne passe pas
@@ -874,6 +875,73 @@ func rive_en(p: Vector2, type: String) -> float:
 	return x
 
 
+# (l'échantillon d'un pays : le carré où l'on essaie son plan n'est pas chez lui ; on y met autant de fondrières, de
+# fumerolles, de failles, de scories, de dunes qu'une de ses cases en porte — scripts/biomes.gd, « sorts » —, au hasard)
+func _pays_factice(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, type: String) -> void:
+	var sorts: Dictionary = Biomes.de(type).get("sorts", {})
+	if sorts.is_empty():
+		return
+	var cases := rect.get_area() / (Pays.CASE * Pays.CASE)
+	var eaux: Array = []
+	var feux: Array = []
+	var dunes: Array = []
+	for genre in ["fondriere", "mare", "fumerolle", "faille", "scories", "dune"]:
+		for i in Decor._nombre(r, float(sorts.get(genre, 0.0)) * cases):
+			var p := Decor._dans(r, rect)
+			match genre:
+				"fondriere":
+					eaux.append([p, r.randf_range(42.0, 86.0), true])
+				"mare":
+					eaux.append([p, r.randf_range(34.0, 54.0), false])
+				"fumerolle":
+					feux.append([p, R.MILIEU_FEU])
+					eaux.append([p, 26.0, false])
+				"faille":
+					var sens := Vector2.from_angle(r.randf() * TAU)
+					var pas := r.randf_range(80.0, 160.0) * 2.0 / 7.0
+					for j in 8:
+						feux.append([p + sens * pas * (j - 3.5), R.MILIEU_FEU])
+						eaux.append([p + sens * pas * (j - 3.5), 16.0, false])
+				"scories":
+					feux.append([p, r.randf_range(110.0, 200.0)])
+				"dune":
+					dunes.append([p, r.randf_range(150.0, 250.0) * 0.7])
+	ctx["eaux"] = eaux
+	ctx["feux"] = feux
+	ctx["dunes"] = dunes
+
+
+# (le monde ouvert) les berges près d'un quart de morceau : là où la terre touche l'eau d'une rivière, d'un lac, d'une mer —
+# des points de la rive, et le sens où elle file. Rien si l'eau est loin (une seule lecture de la carte le dit)
+func _berges(ctx: Dictionary, quart: Rect2) -> void:
+	var c := quart.get_center()
+	var pr: Array = carte.proches(c)
+	var pres: bool = bool(carte.regions[int(pr[0])]["riviere"]) or bool(carte.regions[int(pr[0])]["eau"]) \
+		or ((bool(carte.regions[int(pr[1])]["eau"]) or bool(carte.regions[int(pr[1])]["riviere"])) and float(pr[3]) - float(pr[2]) < 900.0)
+	if not pres:
+		return
+	var berges: Array = []
+	var sens := {}
+	var pas := quart.size.x / 6.0
+	for x in 6:
+		for y in 6:
+			var q := quart.position + Vector2(x + 0.5, y + 0.5) * pas
+			if carte.mouille(q):
+				continue
+			# (vers où est l'eau, à quarante pixels ?)
+			var vers := Vector2.ZERO
+			for d in [Vector2.RIGHT, Vector2.DOWN, Vector2.LEFT, Vector2.UP]:
+				if carte.mouille(q + d * 40.0):
+					vers += d
+			if vers == Vector2.ZERO:
+				continue
+			berges.append(q)
+			sens[q] = vers.normalized().orthogonal()
+	if not berges.is_empty():
+		ctx["berges"] = berges
+		ctx["berges_sens"] = sens
+
+
 func _notification(quoi: int) -> void:
 	if quoi == NOTIFICATION_PREDELETE and _pays_calcul != null and is_instance_valid(_pays_calcul):
 		_pays_calcul.free()
@@ -891,9 +959,11 @@ func _echantillon(type: String) -> Dictionary:
 	var cote := MORCEAU * (0.5 if carte != null else 1.0)
 	var n := int(R.MILIEU_ECHANTILLON / cote)
 	var plan: Array = []
+	var coin := Vector2(40000.0, 40000.0)
+	_pays_factice(ctx, r, Rect2(coin, Vector2(n, n) * cote), lieu if (type == "" or carte == null) else type)
 	for x in n:
 		for y in n:
-			Milieu.prevoir(ctx, r, Rect2(Vector2(40000.0, 40000.0) + Vector2(x, y) * cote, Vector2(cote, cote)), plan)
+			Milieu.prevoir(ctx, r, Rect2(coin + Vector2(x, y) * cote, Vector2(cote, cote)), plan)
 	var ech := Milieu.echantillon(plan)
 	ech["aire"] = n * n * cote * cote
 	_echantillons[type] = ech

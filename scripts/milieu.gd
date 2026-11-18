@@ -85,7 +85,7 @@ const FORMES := {
 	"agave": {NU: 3.0, SEC: 2.0, CREUX: 0.5, SOUS: 0.05, BOUE: 0.02, "groupe": 2},            # la rosette et son rejet
 	"cactus": {NU: 3.0, SEC: 2.5, CREUX: 0.4, SOUS: 0.03, BOUE: 0.01},                        # seul : ses racines prennent toute l'eau
 	"caillou": {PIERRE: 10.0, NU: 2.0, "ailleurs": 0.1, "groupe": 3},                         # la plante-caillou, parmi les cailloux
-	"roseau": {RIVE: 12.0, BOUE: 2.5, CREUX: 2.0, "ailleurs": 0.02, "groupe": 6},             # la roselière : la ceinture des eaux
+	"roseau": {RIVE: 12.0, BOUE: 2.5, "ailleurs": 0.02, "groupe": 6},                         # la roselière : la ceinture des eaux, la boue
 	"jonc": {RIVE: 5.0, BOUE: 5.0, CREUX: 3.0, "ailleurs": 0.03, "groupe": 3},                # la boue, le bord, les fonds mouillés
 	"riz": {RIVE: 14.0, "ailleurs": 0.01, "groupe": 4},                                       # les pieds dans l'eau, et nulle part ailleurs
 	"papyrus": {RIVE: 14.0, "ailleurs": 0.01, "groupe": 3},                                   # la touffe au bord de l'eau
@@ -332,7 +332,7 @@ static func tirer(tb: Dictionary, milieu: int, k: int, k_cellule: int = -1) -> D
 	if s <= 0.0:
 		return {}
 	# (une place dont l'herbier veut peu reste souvent vide : le même tirage pour tout le groupe)
-	if bool(tb["eclaircie"]) and s < 1.0 and float((k * 7919) % 10007) / 10007.0 >= s:
+	if bool(tb["eclaircie"]) and s < 1.0 and float(absi(hash(k + 77003)) % 10007) / 10007.0 >= s:
 		return {}
 	var x := float(k_cellule if k_cellule >= 0 else k) / 10007.0 * s
 	var i := 0
