@@ -16,6 +16,7 @@ extends RefCounted
 
 const R := preload("res://scripts/regles.gd")
 const Campement := preload("res://scripts/campement.gd")
+const Faim := preload("res://scripts/noire_faim.gd")
 
 # les matières, dans l'ordre où on les montre ; celles du début sont dans le sac depuis toujours (regles.gd, NOMS)
 const MATIERES := ["bois", "pierre", "fibre", "peau", "ferraille", "corde", "bache", "eau", "galet",
@@ -54,6 +55,9 @@ const OBJETS := {
 		"dit": "Tendu au sol : une petite bête qui passe s'y prend."},
 	"filet_filin": {"nom": "Grand filet", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"filin": 3, "pierre": 4},
 		"dit": "Une large maille de filin, lestée de grosses pierres : une bête jusqu'à 30 kilos s'y prend, et n'en sort pas."},
+	# (la fin de la Noire : scripts/noire_collet.gd. Il se pose de jour, s'amorce de viande crue, et ne sert qu'une fois)
+	"collet": {"nom": "Grand collet", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"filin": 4, "bois": 4, "pierre": 4},
+		"dit": "Un nœud coulant de filin, large comme un buste, couché en rond entre ses pieux. Amorcé de viande crue, il n'est fait que pour une bête."},
 	"cerf_volant": {"nom": "Cerf-volant", "famille": "camp", "ou": "etabli", "pose": true, "cout": {"bache": 1, "bois": 2, "corde": 2, "ferraille": 1},
 		"dit": "Par grand vent il recharge les piles. Sous l'orage, il appelle la foudre."},
 	"sac_a_dos": {"nom": "Sac à dos", "famille": "tenue", "ou": "etabli", "porte": true, "cout": {"peau": 2, "corde": 1},
@@ -107,7 +111,7 @@ const OBJETS := {
 	"lance_obsidienne": {"nom": "Lance d'obsidienne", "famille": "outil", "ou": "etabli", "cout": {"obsidienne": 2, "bois": 2, "corde": 1},
 		"dit": "Une pointe de verre noir, ligaturée sur une hampe. Elle frappe comme une lance ferrée."},
 }
-const ORDRE := ["corde", "bache", "galet", "filin", "etabli", "tente", "hamac", "recuperateur", "filet", "filet_filin", "cerf_volant", "sac_a_dos",
+const ORDRE := ["corde", "bache", "galet", "filin", "etabli", "tente", "hamac", "recuperateur", "filet", "filet_filin", "collet", "cerf_volant", "sac_a_dos",
 	"vetement_chaud", "vetement_pluie", "gourde", "popote", "duvet", "lampe", "piles", "mortier", "lance_pierre", "carte", "plume", "houe", "arrosoir",
 	"epouvantail", "licol", "longe", "piquet", "mangeoire", "sacoche", "selle", "lance_obsidienne"]
 const GESTES := ["marteler", "scier", "coudre", "monter", "fouiller", "boire", "remuer", "becher", "semer", "arroser", "caresser", "seller", "traire"]
@@ -222,10 +226,10 @@ func fabriquer(id: String) -> bool:
 	# (son geste, et ce qu'on entend : les fibres qu'on tresse, la toile, l'alêne et le fil ; le bois se scie ; le reste se
 	# martèle, et chaque coup de maillet sonne quand il tombe : coup())
 	var cousu: bool = str(o["famille"]) == "tenue" or id in ["corde", "bache", "duvet", "gourde", "hamac", "filet", "licol", "sacoche", "selle", "arrosoir", "carte",
-		"filin", "filet_filin", "longe"]
+		"filin", "filet_filin", "longe", "collet"]
 	var scie: bool = not cousu and o["cout"].has("bois")
 	jeu.joueur.geste_atelier("coudre" if cousu else ("scier" if scie else "marteler"))
-	if id in ["filin", "filet_filin", "longe"]:
+	if id in ["filin", "filet_filin", "longe", "collet"]:
 		# (la fibre longue se commet en torons, puis le filin se tend, raide, et grince : on l'entend tenir)
 		jeu.sons.atelier("tresse", 0.0, 0.86)
 		jeu.sons.atelier("filin", -2.0)
@@ -289,6 +293,9 @@ func empeche_poser(id: String) -> String:
 		return "Le sol est sous l'eau : rien ne s'y pose."
 	if id == "hamac" and not _un_arbre(p, 90.0):
 		return "Un hamac se tend près d'un arbre."
+	# (le grand collet : de jour seulement ; scripts/noire_collet.gd)
+	if id == "collet" and jeu.noire != null and jeu.noire.collet.empeche_poser() != "":
+		return jeu.noire.collet.empeche_poser()
 	# (ni sur un buisson, ni sur un feu)
 	var r := Campement.rayon(id)
 	for o in jeu.monde.autour(p, r + 14.0):
@@ -323,7 +330,10 @@ func poser(id: String) -> bool:
 	for o in jeu.monde.autour(p, maxf(14.0, Campement.rayon(id)) + 4.0):
 		if float(o.rayon) <= 0.0 and str(o.genre) in ["brindille", "touffe", "fleur", "cepe", "amanite", "aquatique"]:
 			jeu.monde.retirer(o)
-	_creer(id, p, {})
+	var posee = _creer(id, p, {})
+	# (le grand collet : il garde l'odeur de la main qui le pose, sauf si elle sent les aromates ; scripts/noire_collet.gd)
+	if id == "collet" and jeu.noire != null:
+		jeu.noire.collet.pose(posee)
 	j.geste_atelier("monter")
 	_son_de_pose(id, p)
 	return true
@@ -332,14 +342,20 @@ func poser(id: String) -> bool:
 # elle replie la chose posée la plus proche, et la reprend dans son sac
 func replier() -> bool:
 	var s = _la_plus_proche(PORTEE)
-	if s == null or str(s.genre) in ["vestige", "appat", "coffre"]:
+	if s == null or str(s.genre) in ["vestige", "appat", "coffre", "couche"]:
 		return false
+	# (le grand collet : entier, il revient dans le sac avec sa viande ; rompu, il ne rend que ses pieux et ses pierres)
+	if str(s.genre) == "collet" and jeu.noire != null:
+		return jeu.noire.collet.replier(s)
 	if str(s.genre) == "carre":
 		# (un carré se comble : la terre reprend sa place, ce qui y poussait est perdu)
 		poses.erase(s)
 		s.queue_free()
 		jeu.joueur.geste_atelier("fouiller")
 		return true
+	# (la faim de la Noire : une épave ne revient pas dans le sac ; elle en sauve la moitié des matières)
+	if Faim.est_epave(s):
+		return _replier_epave(s)
 	if fil == s:
 		fil = null
 	if lit == s:
@@ -352,13 +368,89 @@ func replier() -> bool:
 	return true
 
 
+# --- les épaves : ce que la Noire a mis en pièces, à son cinquième acte (scripts/noire_faim.gd ; scripts/campement_epave.gd
+# les dessine). Une épave vaut la moitié de la chose (regles.gd, NOIRE_EPAVE) : on la répare sur place pour l'autre moitié de
+# chaque matière (« Agir »), ou on la replie pour ce qui s'en sauve ---
+
+# ce que coûte de réparer cette chose, ce qu'on en sauve en la repliant (la matière → combien)
+func cout_reparation(id: String) -> Dictionary:
+	return Faim.cout_reparation(OBJETS[id]["cout"])
+
+
+func restes(id: String) -> Dictionary:
+	return Faim.restes(OBJETS[id]["cout"])
+
+
+# un prix, dit : « 1 bâche, 1 corde, 2 bois »
+func dire_cout(cout: Dictionary) -> String:
+	var dits := PackedStringArray()
+	for k in cout:
+		dits.append("%d %s" % [int(cout[k]), str(NOMS_MATIERES.get(k, k))])
+	return ", ".join(dits)
+
+
+# ce qui lui manque pour réparer cette épave ("" : rien)
+func empeche_reparer(s) -> String:
+	var manque_ := {}
+	var cout := cout_reparation(str(s.genre))
+	for k in cout:
+		if int(cout[k]) > possede(k):
+			manque_[k] = int(cout[k]) - possede(k)
+	return "" if manque_.is_empty() else "Il te manque %s." % dire_cout(manque_)
+
+
+# elle répare sur place ce que la Noire a mis en pièces : les matières partent, la chose est debout, comme neuve (vide : son
+# eau, sa prise, son foin sont perdus) ; faux si elle n'a pas de quoi (et le jeu dit ce qu'il faut)
+func reparer(s) -> bool:
+	if not Faim.est_epave(s) or not OBJETS.has(str(s.genre)):
+		return false
+	var id := str(s.genre)
+	var nom := str(Faim.CHOSES[id][0])
+	var cout := cout_reparation(id)
+	var pourquoi := empeche_reparer(s)
+	if pourquoi != "":
+		jeu.ui.message("Pour réparer %s : %s. %s Repliée, l'épave rend %s." % [nom, dire_cout(cout), pourquoi, dire_cout(restes(id)) if not restes(id).is_empty() else "peu de chose"],
+			Color(0.75, 0.7, 0.66))
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	for k in cout:
+		inv[k] = int(inv.get(k, 0)) - int(cout[k])
+	for k in ["saccage", "cote", "mangee", "mordu", "nuit"]:
+		s.etat.erase(k)
+	s.redessiner(true)
+	# (elle recoud la toile, renoue les cordes ; le bois se replante au maillet : coup(), « monter »)
+	jeu.joueur.geste_atelier("monter")
+	jeu.sons.atelier("couture" if cout.has("bache") or cout.has("corde") or cout.has("filin") else "corde", -1.0, 1.0, s.position)
+	jeu.ui.message("Tu répares %s : %s." % [nom, dire_cout(cout)], TEINTE)
+	return true
+
+
+# elle replie une épave : ce qui s'en sauve entre dans son sac, le reste est perdu
+func _replier_epave(s) -> bool:
+	var id := str(s.genre)
+	var sauve := restes(id)
+	var pris := {}
+	for k in sauve:
+		var n := ranger(k, int(sauve[k]))
+		if n > 0:
+			pris[k] = n
+	if fil == s:
+		fil = null
+	poses.erase(s)
+	jeu.sons.atelier("toile", -4.0, 0.9, s.position)
+	s.queue_free()
+	jeu.joueur.geste_atelier("fouiller")
+	jeu.ui.message("Tu replies ce qui reste de %s : %s." % [str(Faim.CHOSES[id][0]), dire_cout(pris) if not pris.is_empty() else "rien qui vaille"], TEINTE)
+	return true
+
+
 # ce qu'on entend quand elle monte une chose : la corde qu'on tend, la toile qu'on déplie (le piquet qu'on enfonce sonne
 # quand son geste frappe : coup())
 func _son_de_pose(id: String, p: Vector2) -> void:
 	match id:
 		"hamac", "filet":
 			jeu.sons.atelier("corde", 0.0, 1.0, p)
-		"filet_filin":
+		"filet_filin", "collet":
 			jeu.sons.atelier("filin", 0.0, 1.0, p)
 		"etabli":
 			pass
@@ -417,7 +509,7 @@ func pluie_k() -> float:
 # l'abri d'une tente, à cet endroit (de 0 à 1)
 func abri(p: Vector2) -> float:
 	for s in poses:
-		if is_instance_valid(s) and str(s.genre) == "tente" and s.position.distance_to(p) < 40.0:
+		if is_instance_valid(s) and str(s.genre) == "tente" and s.position.distance_to(p) < 40.0 and not Faim.est_epave(s):
 			return 1.0
 	return 0.0
 
@@ -460,6 +552,10 @@ func agir() -> bool:
 	var s = _la_plus_proche(PORTEE)
 	if s == null:
 		return false
+	# (une épave : elle ne sert plus à rien ; « Agir » la répare, si elle a de quoi. Un carré piétiné : le jardin le retourne)
+	if Faim.est_epave(s) and str(s.genre) != "carre":
+		reparer(s)
+		return true
 	match str(s.genre):
 		"etabli":
 			jeu.ouvrir_page("etabli")
@@ -483,6 +579,11 @@ func agir() -> bool:
 			_fouiller(s)
 		"coffre":
 			_ouvrir(s)
+		# (le grand collet : de la viande crue l'amorce ; la couche vide de la Noire, partie : scripts/noire_collet.gd)
+		"collet", "couche":
+			if jeu.noire == null:
+				return false
+			jeu.noire.collet.agir(s)
 		_:
 			return false
 	return true
@@ -765,7 +866,8 @@ func maj(delta: float) -> void:
 	var pluie: float = float(C.pluie) if C != null else 0.0
 	var vent: float = vent_force if vent_force >= 0.0 else float(jeu.vent())
 	for s in poses:
-		if not is_instance_valid(s):
+		# (une épave ne fait plus rien : elle ne se remplit pas, rien ne s'y prend)
+		if not is_instance_valid(s) or Faim.est_epave(s):
 			continue
 		match str(s.genre):
 			"etabli":
@@ -1117,6 +1219,7 @@ func reprendre(d: Dictionary) -> void:
 			continue
 		var etat: Dictionary = x[3] if typeof(x[3]) == TYPE_DICTIONARY else {}
 		etat.erase("occupe")
+		etat.erase("mordu")
 		var s = _creer(str(x[0]), Vector2(float(x[1]), float(x[2])), etat)
 		if x.size() > 4 and bool(x[4]):
 			fil = s

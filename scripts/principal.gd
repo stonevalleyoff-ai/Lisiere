@@ -968,12 +968,34 @@ func ouvrir_page(quelle: String) -> void:
 func fermer_page() -> void:
 	if page == "":
 		return
+	if page == "depart":
+		# (« Rester veiller » : la page de son départ est lue, la partie continue sans elle)
+		noire.collet.page_lue()
+		ui.cacher_depart()
+		ui.message("Tu restes. Le lieu est à toi, et ses nuits ont retrouvé leurs bruits.", Color(0.98, 0.86, 0.6))
 	ui.montrer_etabli(false)
 	ui.montrer_sac(false)
 	ui._montrer_page("herbier", false)
 	ui._montrer_page("carte", false)
 	page = ""
 	en_pause = false
+
+
+# la Noire est partie pour de bon (scripts/noire_collet.gd) : à l'aube, une page le dit (scripts/interface_depart.gd). Ce
+# n'est pas une fin : la partie attend derrière elle, comme derrière une page d'atelier ; « Rester veiller » (ou la touche de
+# pause) la reprend, sans elle ; « Revenir au titre » la garde
+func montrer_depart() -> void:
+	if not en_partie or _mort >= 0.0 or noire == null or not noire.partie:
+		return
+	if page != "":
+		fermer_page()
+	if atelier.endormie:
+		atelier.reveiller("")
+	ui.montrer_pause(false)
+	page = "depart"
+	en_pause = true
+	ui.montrer_depart(noire.collet.page())
+	_garder()
 
 
 func _gestes(delta: float) -> void:

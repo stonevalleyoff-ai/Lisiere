@@ -3,7 +3,8 @@ extends RefCounted
 # Ce qu'on entend à l'établi et au camp (scripts/atelier.gd) : le maillet, la scie, l'alêne et le fil, les fibres, la bâche,
 # le piquet, la corde, la ferraille d'un vestige, l'eau dans la gourde et dans la gorge, le bouillon, la lampe, le fil du
 # cerf-volant, les piles qui chargent, la bête prise au filet, la sangle ; et l'artisanat des plantes : le filin qui se tend et
-# grince, les aromates qui crépitent dans un feu, le souffle de qui respire leur fumée. Faits comme ceux de sons_recettes.gd, avec les
+# grince, les aromates qui crépitent dans un feu, le souffle de qui respire leur fumée ; et ce que la Noire fait du camp, à son
+# cinquième acte (scripts/noire_faim.gd) : la toile qui se déchire, le bois qui casse, la corde qui cède. Faits comme ceux de sons_recettes.gd, avec les
 # mêmes outils (sons_outils.gd) : du bruit filtré, des éclats, des résonances amorties. Courts, mats ; rien qui tienne une note.
 # fabriquer(nom, r) rend [échantillons, taux] ; un chiffre au bout du nom tire une variante (« marteau1 », « etincelle2 » :
 # tout nom en accepte un, chaque tirage est différent ; pour le marteau et la scie, il choisit aussi le caractère).
@@ -20,11 +21,18 @@ const TAUX := {
 	"marteau": VIF, "scie": VIF, "couture": VIF, "tresse": VIF, "toile": VIF, "piquet": VIF, "corde": SOURD, "fouille": VIF,
 	"gourde": LENT, "gorgee": LENT, "bouillon": SOURD, "clic": VIF, "fil": SOURD, "etincelle": VIF, "filet": VIF, "sangle": VIF,
 	"filin": SOURD, "aromates": VIF, "inspire": LENT,
+	# (la fin de la Noire, le collet de filin : faits dans scripts/sons_collet.gd)
+	"collet_claque": VIF, "collet_coup": SOURD, "collet_arrache": VIF, "noire_cri": SOURD, "noire_flaire": LENT, "noire_renacle": SOURD,
+	"dernier_appel": SOURD,
+	# (la faim de la Noire : ce qu'elle met en pièces)
+	"dechire": VIF, "brise": VIF, "cede": VIF,
 }
 # tous les noms, avec leurs variantes (ce qui revient souvent en a plusieurs : on ne reconnaît pas deux fois la même étincelle)
 const NOMS := ["marteau0", "marteau1", "marteau2", "scie0", "scie1", "couture", "tresse", "toile", "piquet", "corde", "fouille",
 	"gourde", "gorgee", "bouillon0", "bouillon1", "clic", "fil0", "fil1", "etincelle0", "etincelle1", "etincelle2", "filet0", "filet1",
-	"sangle", "filin", "aromates", "inspire"]
+	"sangle", "filin", "aromates", "inspire",
+	"collet_claque", "collet_coup0", "collet_coup1", "collet_arrache", "noire_cri", "noire_flaire", "noire_renacle", "dernier_appel",
+	"dechire0", "dechire1", "brise0", "brise1", "cede"]
 # les deux couches continues, en tuiles qui se chevauchent comme celles de sons_recettes.gd : [longueur, fondu] (en secondes)
 const TUILES := {"bouillon": [3.6, 0.9], "fil": [4.0, 1.2]}
 # le niveau conseillé de chaque son (en dB : tout son volume, pas un appoint), celui où il pèse à l'oreille ce qu'il faut à
@@ -33,8 +41,11 @@ const TUILES := {"bouillon": [3.6, 0.9], "fil": [4.0, 1.2]}
 # fait tout contre soi n'en a pas
 const NIVEAUX := {"marteau": -7.0, "scie": -16.0, "couture": -12.0, "tresse": -16.0, "toile": -9.0, "piquet": -8.0, "corde": -16.0,
 	"fouille": -12.0, "gourde": -17.0, "gorgee": -15.0, "clic": -10.0, "etincelle": -11.0, "filet": -13.0, "sangle": -17.0,
-	"bouillon": -15.0, "fil": -14.0, "filin": -13.0, "aromates": -12.0, "inspire": -19.0}
-const MOUILLE := {"marteau": 0.3, "scie": 0.15, "toile": 0.3, "piquet": 0.35, "corde": 0.1, "fouille": 0.2, "filet": 0.25, "filin": 0.15, "aromates": 0.1}
+	"bouillon": -15.0, "fil": -14.0, "filin": -13.0, "aromates": -12.0, "inspire": -19.0,
+	"collet_claque": -6.0, "collet_coup": -8.0, "collet_arrache": -6.0, "noire_cri": -3.0, "noire_flaire": -15.0, "noire_renacle": -9.0, "dernier_appel": -4.0,
+	"dechire": -8.0, "brise": -7.0, "cede": -9.0}
+const MOUILLE := {"marteau": 0.3, "scie": 0.15, "toile": 0.3, "piquet": 0.35, "corde": 0.1, "fouille": 0.2, "filet": 0.25, "filin": 0.15, "aromates": 0.1,
+	"collet_claque": 0.35, "collet_coup": 0.3, "collet_arrache": 0.35, "noire_renacle": 0.25}
 # un choc part juste après le fondu d'entrée (O.bords, 1,5 ms), qui sinon lui mange son attaque
 const T0 := 0.002
 # chaque son est réglé par son énergie (c'est elle qui pèse à l'oreille : d'un tirage à l'autre il sonne aussi fort), sans
@@ -85,6 +96,16 @@ static func fabriquer(nom: String, r: RandomNumberGenerator) -> Array:
 			return [_aromates(r), TAUX[base]]
 		"inspire":
 			return [_inspire(r), TAUX[base]]
+		# (le collet de la Noire : ses sons sont faits à part, avec les briques d'ici ; scripts/sons_collet.gd, qui hérite de
+		# ce fichier, est donc lu au moment de s'en servir)
+		"collet_claque", "collet_coup", "collet_arrache", "noire_cri", "noire_flaire", "noire_renacle", "dernier_appel":
+			return [load("res://scripts/sons_collet.gd").fabriquer_collet(base, k, r), TAUX[base]]
+		"dechire":
+			return [_dechire(k, r), TAUX[base]]
+		"brise":
+			return [_brise(k, r), TAUX[base]]
+		"cede":
+			return [_cede(r), TAUX[base]]
 	return []
 
 
@@ -671,3 +692,100 @@ static func _inspire(r: RandomNumberGenerator) -> PackedFloat32Array:
 	_souffle(s, 0.88, 0.8, 1100.0 * k, 600.0 * k, 1.6, 0.5, LENT, r, 0.2)
 	O.niveau(s, 0.06, CRETE)
 	return O.bords(s, LENT)
+
+
+# --- la faim de la Noire : ce qu'elle fait du camp (scripts/noire_faim.gd) ---
+
+# une déchirure : un pan de toile qui se fend d'un trait. « t » : où elle commence ; « duree » : ce qu'elle dure ; « k » : sa
+# hauteur. Les fils cèdent un à un, de plus en plus vite (c'est ce qui fait monter la déchirure vers l'aigu), dans le souffle
+# de la toile qui s'ouvre
+static func _dechirure(s: PackedFloat32Array, t: float, duree: float, k: float, amp: float, r: RandomNumberGenerator) -> void:
+	var a := _grince(duree, 150.0, 520.0, [[1150.0 * k, 2.2, 0.7], [2500.0 * k, 2.0, 1.0], [4100.0 * k, 2.4, 0.5]], 0.75, VIF, r)
+	O.enveloppe(a, 0.012, duree * 0.3, VIF)
+	_mettre(s, a, t, amp, VIF)
+	_souffle(s, t, duree, 1500.0 * k, 3400.0 * k, 1.1, amp * 0.5, VIF, r, 0.7)
+	_grains(s, t, duree * 0.9, int(duree * 110.0), 3000.0 * k, 1.2, amp * 0.5, VIF, r, Vector2(0.0002, 0.0008), 0.7)
+
+
+# la toile qui se déchire sous une dent : elle se tend (un froissement sourd), puis se fend. k : 0, d'un seul long trait, et le
+# pan arraché claque ; 1, en deux fois (elle tire, reprend sa prise, tire encore), plus court et plus haut
+static func _dechire(k: int, r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.92, VIF)
+	var h := r.randf_range(0.93, 1.07)
+	_souffle(s, 0.0, 0.14, 420.0, 900.0, 0.9, 0.3, VIF, r, 0.8)
+	var fin := 0.0
+	if k == 0:
+		_dechirure(s, 0.09, 0.46, h, 1.0, r)
+		fin = 0.55
+	else:
+		_dechirure(s, 0.07, 0.2, h * 1.12, 0.85, r)
+		_dechirure(s, 0.36, 0.3, h * 1.25, 1.0, r)
+		fin = 0.66
+	# (le pan qui lâche : la toile claque, l'air chassé d'un coup, comme quand on la déplie, en plus sec)
+	var c := O.vide(0.05, VIF)
+	O.eclat(c, 0.0, 0.003, 1.0, r, VIF)
+	O.bas(c, 2600.0, VIF)
+	O.haut(c, 280.0, VIF)
+	_mettre(s, c, fin, 0.8, VIF)
+	O.mode(s, fin, 170.0, 0.028, 0.4, VIF, 0.75)
+	O.mode(s, fin, 380.0, 0.014, 0.3, VIF, 0.85)
+	_souffle(s, fin + 0.02, 0.22, 1000.0, 520.0, 0.8, 0.16, VIF, r, 0.15)
+	O.bas(s, 6200.0, VIF)
+	O.niveau(s, 0.075, CRETE)
+	return O.bords(s, VIF)
+
+
+# le bois qui casse : une perche ploie (ses fibres craquent, une à une), puis rompt d'un coup sec ; ses éclats, et le bout qui
+# tombe. k : 0, une perche (grave, lourde) ; 1, une traverse, un piquet : plus sec, plus haut, en deux fois
+static func _brise(k: int, r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.78, VIF)
+	var h := r.randf_range(0.92, 1.08) * (1.0 if k == 0 else 1.45)
+	# (elle ploie : quelques fibres qui craquent, de plus en plus serrées)
+	_grains(s, 0.0, 0.16, 7 if k == 0 else 4, 1500.0 * h, 1.4, 0.4, VIF, r, Vector2(0.0006, 0.002), 0.5)
+	var t := 0.17 if k == 0 else 0.1
+	for coup in (1 if k == 0 else 2):
+		var b := O.vide(0.32, VIF)
+		O.eclat(b, 0.0, 0.0016, 1.0, r, VIF)
+		# (le bois répond : court, mat, sans note qui tienne)
+		O.mode(b, 0.0003, 410.0 * h, 0.018, 0.6, VIF, 0.9)
+		O.mode(b, 0.0003, 930.0 * h, 0.011, 0.55, VIF, 0.94)
+		O.mode(b, 0.0003, 1900.0 * h, 0.005, 0.4, VIF)
+		O.mode(b, 0.0003, 3300.0 * h, 0.003, 0.22, VIF)
+		_mettre(s, b, t, 1.0 if coup == 0 else 0.7, VIF)
+		t += r.randf_range(0.11, 0.15)
+	# (les éclats qui sautent, la fibre qui finit de se déchirer)
+	_grains(s, t - 0.08, 0.2, 12, 2300.0 * h, 1.1, 0.35, VIF, r, Vector2(0.0004, 0.0016), 1.6)
+	_souffle(s, t - 0.1, 0.16, 1300.0, 700.0, 1.0, 0.14, VIF, r, 0.2)
+	# (le bout qui tombe à terre : un coup sourd, en plus ; et de quoi l'entendre sur un téléphone, qui ne rend rien sous 200 Hz)
+	var tc := t + r.randf_range(0.12, 0.18)
+	O.mode(s, tc, 104.0, 0.035, 0.14 if k == 0 else 0.08, VIF, 0.8)
+	O.mode(s, tc, 360.0 * h, 0.018, 0.3 if k == 0 else 0.2, VIF, 0.9)
+	O.mode(s, tc, 780.0 * h, 0.008, 0.14, VIF, 0.92)
+	O.bas(s, 5600.0, VIF)
+	O.niveau(s, 0.07, CRETE)
+	return O.bords(s, VIF)
+
+
+# une corde qui cède sous une dent (une ralingue, une longe, le filin même) : elle se tend, ses brins crient, de plus en plus
+# haut, de plus en plus serré ; elle rompt (un claquement sec), son bout fouette l'air ; ce qu'elle tenait retombe
+static func _cede(r: RandomNumberGenerator) -> PackedFloat32Array:
+	var s := O.vide(0.7, VIF)
+	var k := r.randf_range(0.93, 1.07)
+	var a := _grince(0.24, 36.0, 190.0, [[620.0 * k, 5.0, 1.0], [1500.0 * k, 6.0, 0.6], [2700.0 * k, 5.0, 0.3]], 0.35, VIF, r)
+	O.enveloppe(a, 0.05, 0.02, VIF)
+	_mettre(s, a, 0.0, 0.6, VIF)
+	var tc := 0.245
+	var c := O.vide(0.03, VIF)
+	O.eclat(c, 0.0, 0.0012, 1.0, r, VIF)
+	O.haut(c, 500.0, VIF)
+	_mettre(s, c, tc, 1.0, VIF)
+	O.mode(s, tc, 520.0 * k, 0.012, 0.45, VIF, 0.7)
+	O.mode(s, tc, 1300.0 * k, 0.006, 0.3, VIF, 0.8)
+	# (le bout qui fouette : un souffle qui tombe de l'aigu, très court)
+	_souffle(s, tc + 0.005, 0.13, 3200.0, 900.0, 2.0, 0.55, VIF, r, 0.12)
+	# (ce qu'elle tenait retombe)
+	O.mode(s, tc + 0.16, 120.0, 0.04, 0.3, VIF, 0.8)
+	O.mode(s, tc + 0.16, 340.0, 0.016, 0.22, VIF, 0.9)
+	O.bas(s, 5800.0, VIF)
+	O.niveau(s, 0.075, CRETE)
+	return O.bords(s, VIF)

@@ -122,7 +122,8 @@ var _tourne := false             # à la torche : il cherche le dos de la veille
 var _dos_n := -1                 # … et la place qu'il y prend (scripts/affut.gd, AU_DOS ; -1 : aucune)
 const LISERE := 2.6              # la Noire : la force du liseré que le feu accroche sur son échine (le shader de son encre)
 # la Noire : ce que scripts/noire.gd lui fait faire
-var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »
+var ordre := ""                  # « va » (vers ordre_but, à ordre_allure), « guette », « charge », « efface » (elle s'en va les yeux clos), « dort »,
+									# « fouille » (la faim, scripts/noire_faim.gd : immobile, de profil, tournée vers ordre_but)
 var ordre_but := Vector2.ZERO
 var ordre_allure := 0.3
 var aplatie := 0.0               # de 0 à 1 : elle s'aplatit, avant de charger
@@ -131,6 +132,11 @@ var yeux_clos := 0.0             # de 0 à 1 : ses yeux se ferment (elle dort, e
 var de_face := 0.0               # de 0 à 1 : elle regarde la veilleuse en face, et l'on voit ses deux yeux (scripts/yeux.gd)
 var _claque := -1.0              # son coup de gueule, de 0 à 1 (-1 : rien) : le corps se jette en avant, la tête claque
 var _tic := 0.0                  # un mouvement de tête brusque, qui retombe
+# (la faim, scripts/noire_faim.gd : ce qu'elle fait d'une chose posée, d'une bête attachée)
+var fouille := 0.0               # de 0 à 1 : la tête basse, le museau sur ce qu'elle flaire, ce qu'elle mange
+var secoue := 0.0                # de 0 à 1 : elle secoue ce qu'elle tient dans sa gueule
+var _fouille := 0.0              # … l'un et l'autre, sans à-coups
+var _secoue := 0.0
 # (son dessin, scripts/noire_corps.gd : ce que sa planche a de plus que les autres)
 var _machoire: Sprite2D          # sa mâchoire, derrière sa tête : montrée seulement quand sa gueule s'ouvre
 var _gueule := 0.0               # de combien sa gueule est ouverte (radians)
@@ -138,6 +144,15 @@ var _roulee: Sprite2D            # endormie : son corps roulé, à la place de t
 var _guet := 0.0                 # de 0 à 1 : elle guette, ramassée sur ses épaules
 var _oeil_axe := 0.0             # de combien son museau pique sur sa planche (axe_oeil) ; 0 pour les autres bêtes
 var _tic_t := 2.0
+# (la fin de la Noire : scripts/noire_collet.gd)
+var flaire := 0.0                # de 0 à 1 : le nez au sol, elle flaire (un appât, un collet)
+var tenue_a := Vector2.INF       # le pieu du collet qui la tient par la patte (INF : rien ne la tient)
+var tenue_long := 0.0            # et jusqu'où son corps va, de ce pieu, au bout du filin
+var sonnee := 0.0                # de 0 à 1 : l'à-coup du filin l'a sonnée (la tête pend et ballotte, elle ne mord pas)
+var _flaire_l := 0.0
+var _sonnee_l := 0.0
+var _boite_i := -1               # la patte dont elle boite : celle qu'on a prise deux fois (-1 : aucune)
+var _prise_i := -1               # sa patte de devant, de notre côté : celle que prend le collet
 # la bête apprivoisée (rôle « compagne », scripts/elevage.gd), et ce qui tente une proie (un appât, un jardin)
 var harnais := {}                # « licol », « selle », « sacoche » : vrai quand elle le porte (son dessin les montre)
 var longe = null                 # où tient le bout de sa longe, dans le lieu (la main de la veilleuse, un piquet) ; null : aucune
@@ -336,7 +351,8 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 	flair = 90.0 + 230.0 * float(plan.get("perception", 0.5))
 	audace = float(plan.get("temperament", 0.3))
 	if role == "noire":
-		vitesse = R.NOIRE_VITESSE
+		# (chaque cicatrice gardée du collet ralentit sa charge : scripts/noire_collet.gd)
+		vitesse = R.NOIRE_VITESSE * (1.0 - R.NOIRE_CICATRICE_FREIN * float(int(plan.get("cicatrices", 0))))
 	# (ses empreintes : assez grande pour qu'on les voie, et des pattes pour les faire ; un chasseur marque plus longtemps)
 	var forme_ := str(plan.get("corps", {}).get("forme", "")) if typeof(plan.get("corps", {})) == TYPE_DICTIONARY else ""
 	if role != "echo" and largeur >= 58.0 and forme_ in ["quadrupede", "bipede", "oiseau"]:
@@ -389,6 +405,11 @@ func preparer(e: Dictionary, r: String, j, biome: String) -> void:
 			_trace_genre = int(PIEDS.get(str(_sq["pattes"][0].get("pied_genre", "")), 0))
 		for i in _p_pts.size():
 			_trace_ou.append(Vector2(INF, INF))
+			# (la Noire : la patte que prend le collet ; à deux cicatrices, elle en boite)
+			if role == "noire" and _p_devant[i] and not _p_loin[i]:
+				_prise_i = i
+				if int(plan.get("cicatrices", 0)) >= 2:
+					_boite_i = i
 	regard = 1.0 if randf() < 0.5 else -1.0
 	_face = regard
 	_souffle = randf() * TAU
@@ -664,6 +685,45 @@ func _decalages() -> void:
 		_dec_pas.append(a)
 		_dec_affut.append(b)
 		_dec_bond.append(c)
+
+
+# (la Noire) où est le pied de cette patte, dans le monde (là où ses pattes l'ont mis ; hors de l'écran, où elles ne se
+# posent pas une à une, sous son épaule)
+func _pied_dans_le_lieu(i: int) -> Vector2:
+	var cote := regard
+	if _pivot != null and _pivot.scale.x != 0.0:
+		cote = signf(_pivot.scale.x)
+	if _a_l_ecran and i >= 0 and i < _pieds.size() and _pieds[i] != null and _pieds[i].size() > 0:
+		var pied: Vector2 = _pieds[i][_pieds[i].size() - 1]
+		return position + Vector2(pied.x * cote, pied.y)
+	return position + Vector2(0.15 * largeur * cote, 0.0)
+
+
+# (la Noire) où est sa patte de devant, celle que prend le collet, dans le monde : le filin s'y tend (scripts/collet_dessin.gd)
+func pied_pris() -> Vector2:
+	return _pied_dans_le_lieu(_prise_i)
+
+
+# (la Noire) une de ses pattes de devant est-elle posée dans ce rond du sol (son milieu, ses demi-axes) ? Celle de notre côté
+# d'abord. C'est alors celle-là que le collet prend (scripts/noire_collet.gd)
+func pose_la_patte_dans(centre: Vector2, rx: float, ry: float) -> bool:
+	var devant: Array = []
+	for i in _p_pts.size():
+		if _p_devant[i]:
+			if _p_loin[i]:
+				devant.append(i)
+			else:
+				devant.push_front(i)
+	if devant.is_empty() or not _a_l_ecran:
+		var q0: Vector2 = pied_pris() - centre
+		return absf(q0.x) < rx and absf(q0.y) < ry
+	for i in devant:
+		if i < _p_pose.size() and _p_pose[i] == 1 and _p_lev[i] < 1.0:
+			var q: Vector2 = _pied_dans_le_lieu(i) - centre
+			if absf(q.x) < rx and absf(q.y) < ry:
+				_prise_i = i
+				return true
+	return false
 
 
 # où brille son œil, dans le monde : il suit la tête, le pas, le souffle, le retournement
@@ -1583,7 +1643,10 @@ func _tenue_torche() -> float:
 func _mordre_si_pres(dj: float) -> void:
 	if role == "noire":
 		# (sa gueule porte loin devant elle ; elle mord moins vite qu'un chasseur, mais chaque morsure compte)
-		if dj < 100.0 and _morsure <= 0.0:
+		# (tenue au collet par une patte, elle porte moins loin : scripts/noire_collet.gd)
+		# (et tenue, elle ne mord pas qui se tient dans la lumière d'un feu : un feu vif la tient toujours)
+		if dj < (R.NOIRE_COLLET_MORD if tenue_a != Vector2.INF else 100.0) and _morsure <= 0.0 \
+				and not (tenue_a != Vector2.INF and jeu.feu_qui_protege(jeu.joueur.position) != null):
 			_morsure = 1.6
 			_claque = 0.0
 			jeu.mordre(self)
@@ -1611,8 +1674,18 @@ func _noire(delta: float) -> void:
 			if absf(j.position.x - position.x) > 8.0:
 				regard = signf(j.position.x - position.x)
 			face = 1.0
+		"fouille":
+			# (la faim : elle ne regarde plus la veilleuse, mais ce qu'elle a sous le museau ; on la voit de profil)
+			if absf(ordre_but.x - position.x) > 8.0:
+				regard = signf(ordre_but.x - position.x)
 		"va", "charge", "efface":
 			_aller(ordre_but, vitesse * ordre_allure, delta)
+			if tenue_a != Vector2.INF:
+				# (tenue au collet : son corps ne va pas plus loin que son filin ; scripts/noire_collet.gd)
+				var au_pieu: Vector2 = position - tenue_a
+				if au_pieu.length() > tenue_long:
+					position = tenue_a + au_pieu.normalized() * tenue_long
+				dj = position.distance_to(j.position)
 			if ordre == "charge":
 				_mordre_si_pres(dj)
 			elif ordre == "efface":
@@ -2046,17 +2119,48 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			else:
 				x += H * 0.26 * sin(PI * _claque)
 				tang += 0.07 * sin(PI * _claque)
+		# la faim : le museau sur une chose, les épaules s'abaissent, la croupe reste haute ; quand elle la secoue, tout
+		# l'avant-main suit sa tête, d'un côté, de l'autre, et elle tire en arrière
+		_fouille = lerpf(_fouille, fouille, 1.0 - exp(-delta * 3.2))
+		_secoue = lerpf(_secoue, secoue, 1.0 - exp(-delta * 9.0))
+		var branle := sin(_anim * 19.0) * (0.55 + 0.45 * sin(_anim * 5.3 + 1.0))
+		tang += 0.085 * _fouille + 0.022 * branle * _secoue
+		y += H * 0.03 * _fouille
+		x += H * (0.035 * branle - 0.07 * (0.5 + 0.5 * sin(_anim * 4.1))) * _secoue
+		sx *= 1.0 + 0.014 * branle * _secoue
 		# elle guette : ramassée, les épaules plus basses que la croupe
 		_guet = lerpf(_guet, 1.0 if ordre == "guette" else 0.0, 1.0 - exp(-delta * 2.5))
 		y += H * 0.07 * _guet * (1.0 - aplatie)
 		tang += 0.03 * _guet * (1.0 - aplatie)
 		pose_y = H * (_bas + 0.07 * _guet * (1.0 - aplatie))
+		# (la fin : scripts/noire_collet.gd) elle flaire, le nez au sol : ses épaules s'abaissent
+		_flaire_l = lerpf(_flaire_l, flaire, 1.0 - exp(-delta * 3.2))
+		y += H * 0.06 * _flaire_l
+		tang += 0.09 * _flaire_l
+		# sonnée par l'à-coup : elle plie sur ses pattes de devant, et vacille
+		_sonnee_l = lerpf(_sonnee_l, sonnee, 1.0 - exp(-delta * (11.0 if sonnee > _sonnee_l else 4.0)))
+		y += H * 0.07 * _sonnee_l
+		tang += 0.07 * _sonnee_l
+		x += H * 0.03 * sin(_anim * 7.0) * _sonnee_l
+		if _boite_i >= 0 and marche > 0.05:
+			# deux cicatrices : elle boite de la patte prise. Son garrot se relève quand cette patte touche (elle ne s'y
+			# appuie pas), et retombe sur l'autre
+			var ub := fposmod(_phase + _p_dec[_boite_i], 1.0)
+			if ub < _appui:
+				tang -= 0.04 * sin(PI * ub / maxf(_appui, 0.01)) * marche
+			else:
+				var wb := sin(PI * (ub - _appui) / maxf(1.0 - _appui, 0.01)) * marche
+				tang += 0.035 * wb
+				y += H * 0.022 * wb
 		# sa gueule : fermée, une fente. Elle s'ouvre grand et claque quand elle mord ; entrouverte tant qu'elle charge
 		var ouvre := 0.0
 		if _claque >= 0.0:
 			ouvre = 0.44 * smoothstep(0.0, 0.2, _claque) * (1.0 - smoothstep(0.46, 0.6, _claque))
 		elif ordre == "charge":
 			ouvre = 0.2 + 0.05 * sin(_anim * 9.0)
+		elif _secoue > 0.05:
+			# (ce qu'elle tient, elle le tient à pleines dents : la gueule entrouverte, qui se referme à chaque coup)
+			ouvre = (0.17 + 0.06 * sin(_anim * 19.0)) * _secoue
 		_gueule = lerpf(_gueule, ouvre, 1.0 - exp(-delta * 28.0))
 	# le chasseur posté dans le noir (poste) : tapi. Les épaules plus basses que la croupe, ramassé sur ses pattes ; il ne bouge
 	# plus que de son souffle. (On ne le voit ainsi que lorsqu'une lumière le touche : la lampe, un éclair, l'aube, la voyance.)
@@ -2167,7 +2271,13 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			var pieds: Vector2 = jeu.joueur.position - position
 			var devant := pieds.x * signf(fx) > -20.0
 			var visee := clampf(atan2(maxf(-pv0.y - 36.0, 0.0), maxf(absf(pieds.x), 40.0)) * 0.6 + 0.3 * clampf(pieds.y / 160.0, -1.0, 1.0), -0.3, 0.55)
-			rot = lerpf(rot, visee, (0.45 if ordre == "charge" else 0.9) * (1.0 if devant else 0.25))
+			rot = lerpf(rot, visee, (0.45 if ordre == "charge" else 0.9) * (1.0 if devant else 0.25) * (1.0 - _flaire_l) * (1.0 - 0.8 * _sonnee_l))
+			# (sonnée : la tête pend, de côté, et ballotte)
+			rot += (0.3 + 0.06 * sin(_anim * 13.0)) * _sonnee_l
+			d += Vector2(-0.05, 0.16) * H * _sonnee_l
+			# (elle flaire : le nez au sol, qui cherche, à petits coups ; scripts/noire_collet.gd)
+			rot += (0.4 + 0.03 * sin(_anim * 11.0) + 0.02 * sin(_anim * 4.3)) * _flaire_l
+			d += Vector2(0.07 + 0.012 * sin(_anim * 2.7), 0.3) * H * _flaire_l
 			# (un tic : de temps en temps sa tête se penche d'un coup, puis revient)
 			_tic_t -= delta
 			if _tic_t <= 0.0:
@@ -2178,6 +2288,13 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			# (avant de charger : la tête au ras du sol, qui tremble ; quand elle mord : elle claque)
 			rot += 0.2 * aplatie + 0.014 * sin(_anim * 43.0) * aplatie
 			d += Vector2(0.1, 0.2) * H * aplatie
+			if _fouille > 0.01:
+				# (la faim : elle quitte la veilleuse des yeux. La tête plonge au bout du cou, le museau sur la chose ;
+				# elle la flaire, à petits coups ; elle la secoue, la tête d'un côté puis de l'autre, et l'arrache)
+				var flair := 0.035 * sin(_anim * 10.5) * (0.5 + 0.5 * sin(_anim * 1.9)) * (1.0 - _secoue)
+				var branle_t := sin(_anim * 19.0) * (0.55 + 0.45 * sin(_anim * 5.3 + 1.0))
+				rot = lerpf(rot, 0.5 + flair + 0.2 * branle_t * _secoue - 0.14 * _secoue, _fouille)
+				d = d.lerp(Vector2(0.03 + 0.04 * branle_t * _secoue, 0.2 - 0.05 * _secoue) * H, _fouille)
 			if _claque >= 0.0:
 				rot += 0.5 * sin(TAU * _claque) * (1.0 - _claque)
 				d += Vector2(0.12, 0.0) * H * sin(PI * _claque)
@@ -2377,6 +2494,9 @@ func _pas_des_pattes() -> void:
 		var pied := pts[n] + Vector2(_p_off[i], -_p_lev[i])
 		# (frappée : les pieds s'écartent, les pattes plient)
 		pied.x += (pts[n].x - c.x) * 0.18 * _derobe
+		if i == _boite_i and plie <= 0.0:
+			# (la Noire, deux cicatrices : la patte prise, elle la pose à peine ; à l'arrêt, elle la tient levée)
+			pied.y -= H * lerpf(0.075, 0.03, _marche)
 		var lev := clampf(_p_lev[i] / haut, 0.0, 1.0)
 		if plie > 0.0:
 			# morte : les pattes ne portent plus. Sur le dos, elles se replient et frémissent ; sur le flanc, celles de devant

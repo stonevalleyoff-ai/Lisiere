@@ -37,7 +37,9 @@ const NOMS := ["corde", "bache", "etabli", "tente", "hamac", "recuperateur", "fi
 	# (ce que donnent les pays qui ont leur caractère : scripts/biomes.gd)
 	"obsidienne", "tourbe", "lance_obsidienne",
 	# (l'artisanat des plantes : scripts/atelier.gd, scripts/elevage.gd, scripts/botanique.gd)
-	"fibre_longue", "filin", "filet_filin", "longe", "aromates", "baume_aromates", "fumigation"]
+	"fibre_longue", "filin", "filet_filin", "longe", "aromates", "baume_aromates", "fumigation",
+	# (la fin de la Noire : le grand collet ; scripts/noire_collet.gd)
+	"collet"]
 
 const TOILE := Color("aba888")          # (la bâche : une toile écrue, enduite, entre l'ivoire et la mousse)
 const TOILE_CLAIRE := Color("cbc6a4")
@@ -279,6 +281,8 @@ static func _icone(ci, id: String, w: float, m: Color) -> void:
 			_baume_aromates(ci, w, m)
 		"fumigation":
 			_fumigation(ci, w, m)
+		"collet":
+			_collet(ci, w, m)
 
 
 # --- les briques ---
@@ -2012,3 +2016,46 @@ static func _fumigation(ci, w: float, m: Color) -> void:
 	_forme(ci, _bezier(Vector2(-10, 32), Vector2(-12, 16), Vector2(-2, 10), 6) + _bezier(Vector2(-2, 10), Vector2(10, 18), Vector2(8, 32), 6).slice(1), P.BRAISE_COEUR, w * 0.6, m)
 	# (le brin d'aromate, en travers des flammes)
 	_brin_aromate(ci, Vector2(-44, 4), Vector2(-14, -22), w * 0.8, m, true)
+
+
+# le grand collet (scripts/noire_collet.gd) : un nœud coulant de filin blond couché en rond, son œil surlié, le brin qui file
+# vers deux pieux croisés, liés de filin, calés d'une pierre ; au milieu du nœud, l'appât, un morceau de viande
+static func _collet(ci, w: float, m: Color) -> void:
+	_forme(ci, _ellipse(Vector2(-4, 22), 44.0, 17.0, 0.0, 26), Color(P.TERRE.lightened(0.12), 0.55), w * 0.7, m)
+	# (les pieux, derrière le nœud : croisés, leurs têtes claires)
+	var pieu_a := PackedVector2Array([Vector2(22, -40), Vector2(31, -42), Vector2(41, 6), Vector2(33, 8)])
+	var pieu_b := PackedVector2Array([Vector2(45, -36), Vector2(37, -39), Vector2(22, 4), Vector2(30, 7)])
+	_volume(ci, pieu_b, MANCHE, w, m, 4.0, 0.3)
+	_volume(ci, pieu_a, BOIS, w, m, 4.0, 0.3)
+	_forme(ci, _ellipse(Vector2(26.5, -41), 5.6, 2.6, -0.2, 14), BOIS.lightened(0.14), w * 0.8, m)
+	_forme(ci, _ellipse(Vector2(41, -37.5), 5.2, 2.4, 0.3, 14), BOIS.lightened(0.06), w * 0.8, m)
+	for y in [-18.0, -12.0, -6.0]:
+		_cordon(ci, PackedVector2Array([Vector2(24, float(y) + 1.5), Vector2(41, float(y) - 1.0)]), 3.4, FILIN, w * 0.8, m)
+	# (la pierre de lest, au pied)
+	var p0 := Vector2(40, 12)
+	_volume(ci, _lisse(PackedVector2Array([p0 + Vector2(-11, 2), p0 + Vector2(-4, -9), p0 + Vector2(9, -5), p0 + Vector2(11, 6), p0 + Vector2(-6, 9)]), 1), PIERRE, w * 0.9, m, 3.0, 0.35)
+	# (le nœud : son tour, de l'œil à l'œil ; l'appât dedans ; puis le devant du tour, par-dessus)
+	var centre := Vector2(-10, 20)
+	var tour := _ellipse(centre, 33.0, 15.0, 0.0, 30)
+	var fond := PackedVector2Array()
+	var devant := PackedVector2Array()
+	for i in range(15, 31):
+		fond.append(tour[i % 30])
+	for i in range(0, 16):
+		devant.append(tour[i])
+	_cordon(ci, fond, 4.6, FILIN.darkened(0.08), w, m)
+	var viande := _lisse(PackedVector2Array([centre + Vector2(-11, 1), centre + Vector2(-7, -7), centre + Vector2(3, -8), centre + Vector2(10, -2), centre + Vector2(7, 5), centre + Vector2(-4, 6)]), 1)
+	ci.draw_line(centre + Vector2(7, -3), centre + Vector2(16, -8), P.ENCRE * m, w * 2.2, true)
+	ci.draw_line(centre + Vector2(7, -3), centre + Vector2(16, -8), LAIT * m, w * 1.0, true)
+	_volume(ci, viande, ROUGE.darkened(0.12), w * 0.9, m, 3.0, 0.3)
+	ci.draw_line(centre + Vector2(-8, -1), centre + Vector2(-3, -5), Color(LAIT, 0.8) * m, w * 0.5, true)
+	_cordon(ci, devant, 5.0, FILIN, w, m)
+	for i in range(1, devant.size() - 1, 2):
+		var t: Vector2 = (devant[i + 1] - devant[i - 1]).normalized()
+		ci.draw_line(devant[i] - t.orthogonal() * 2.4, devant[i] + t.orthogonal() * 2.4 + t * 1.6, Color(FILIN_SOMBRE, 0.8) * m, w * 0.4, true)
+	# (l'œil, surlié de sombre, et le brin qui monte aux pieux)
+	var oeil := Vector2(23, 18)
+	_cordon(ci, _bezier(oeil, Vector2(30, 8), Vector2(31, -8), 8), 4.2, FILIN, w, m)
+	_forme(ci, _ellipse(oeil, 5.6, 4.4, 0.2, 14), FILIN.lightened(0.1), w, m)
+	ci.draw_circle(oeil, 1.6, P.ENCRE * m)
+	_forme(ci, _capsule(oeil + Vector2(-7, -1), oeil + Vector2(-5, 3), 2.2), FILIN_SOMBRE.darkened(0.25), w * 0.6, m)
