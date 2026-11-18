@@ -525,52 +525,125 @@ static func _bulbes(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color,
 			p.disque(bout, 0.7, 1.1, vert.lightened(0.15))
 
 
-# des orchidées : quelques larges feuilles au pied, une hampe arquée, des fleurs en lèvre le long
+# des orchidées : deux ou trois larges feuilles charnues couchées au pied (tachées de pourpre, chez la plupart), la dernière
+# qui engaine la hampe ; la hampe monte puis s'arque, ses fleurs alternes le long, les plus ouvertes en bas : chacune son casque
+# (trois sépales, deux pétales, en éventail) et sa lèvre qui pend devant, plus claire, piquetée de sombre ; vers la pointe, des
+# boutons verts qui s'ouvriront. Cueillie : la hampe coupée, ses boutons
 static func _orchidees(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, la: bool, u: float) -> void:
+	T.ombre_douce(p, Vector2(0.5, 0.6), 6.5, 1.8, 0.22)
+	var tachee := int(o.graine) % 3 != 0
+	var charnu := vert.lerp(P.FEUILLE_SOMBRE, 0.12)
 	for i in 3:
 		var cote := -1.0 if i % 2 == 0 else 1.0
-		var a := Vector2(0, 0)
-		var b := Vector2(cote * r.randf_range(6.0, 9.0), -r.randf_range(2.0, 4.0))
-		_lance(p, a, b, 2.4, vert.lightened(0.05 * i))
+		var pa := Vector2(cote * 0.4, 0.2)
+		var pb := Vector2(cote * r.randf_range(6.0, 8.5), -r.randf_range(0.4, 2.4)) if i < 2 else Vector2(cote * r.randf_range(2.2, 3.2), -r.randf_range(5.0, 6.5))
+		var fe: Dictionary = T.feuille_charnue(p, pa, pb, 2.2 if i < 2 else 1.5, charnu.lightened(0.05 * i), cote * (0.9 if i < 2 else 0.4), 0.4, 0.6, 6, 0.25)
+		if tachee and i < 2:
+			for k in [2, 3, 4]:
+				var q: Vector2 = fe["axe"][k].lerp(fe["g"][k] if k % 2 == 0 else fe["d"][k], 0.5)
+				p.disque(q, 0.5, 0.34, Color(P.SANG.lerp(P.NUIT, 0.35), 0.7))
 	var hampe := PackedVector2Array()
 	var sens := 1.0 if o.graine % 2 == 0 else -1.0
-	for k in 7:
-		var t := k / 6.0
-		hampe.append(Vector2(sens * 7.0 * t * t, -16.0 * u * sin(t * PI * 0.6) / sin(PI * 0.6)))
-	p.tracer(hampe, 1.5, ENCRE, false)
-	p.tracer(hampe, 0.8, vert.darkened(0.2), false)
-	for k in range(3, 7):
-		var q := hampe[k] + Vector2(0, 1.5)
-		if not la:
-			p.disque(q, 1.0, 1.3, vert.lightened(0.1))
+	var haut := 18.0 * u
+	for k in 9:
+		var t := k / 8.0
+		hampe.append(Vector2(sens * 6.5 * t * t, -haut * sin(t * PI * 0.6) / sin(PI * 0.6)))
+	if not la and u < 0.6:
+		# (coupée : un chicot de hampe, sa coupe claire)
+		var bout := hampe[3]
+		p.tracer(PackedVector2Array([hampe[0], hampe[1], hampe[2], bout]), 1.5, ENCRE, false)
+		p.tracer(PackedVector2Array([hampe[0], hampe[1], hampe[2], bout]), 0.8, vert.darkened(0.2), false)
+		p.disque(bout, 0.6, 0.5, P.IVOIRE)
+		return
+	p.tracer(hampe, 1.5, ENCRE, false, PackedFloat32Array([1.6, 1.4, 1.0]))
+	p.tracer(hampe, 0.8, vert.darkened(0.2), false, PackedFloat32Array([0.9, 0.8, 0.5]))
+	var levre := couleur.lightened(0.2)
+	var sombre := couleur.darkened(0.45).lerp(P.SANG, 0.3)
+	for k in range(3, 9):
+		var tg := (hampe[mini(k + 1, 8)] - hampe[k - 1]).normalized()
+		var cote := 1.0 if k % 2 == 0 else -1.0
+		var q := hampe[k] + tg.orthogonal() * cote * 0.9 + Vector2(0.0, 0.6)
+		var s := lerpf(0.9, 0.62, (k - 3) / 5.0)
+		if not la or k >= 7:
+			# (les boutons : verts, pointus, de plus en plus petits vers la pointe)
+			p.disque(q, 0.95 * s + 0.4, 1.2 * s + 0.4, ENCRE)
+			p.disque(q, 0.95 * s, 1.2 * s, vert.lightened(0.14).lerp(couleur, 0.15 if la else 0.0), Pinceau.DOME)
 			continue
-		for j in 3:
-			var a := -PI * 0.5 + (j - 1) * 1.15
-			var s := q + Vector2.from_angle(a) * 1.6
-			p.disque(s, 1.5, 1.0, ENCRE)
-			p.disque(s, 1.1, 0.7, couleur.lightened(0.12))
-		p.disque(q + Vector2(0, 1.0), 1.6, 1.4, ENCRE)
-		p.disque(q + Vector2(0, 1.0), 1.15, 1.0, couleur.darkened(0.2))
-		p.disque(q + Vector2(0, 0.6), 0.4, 0.35, P.BRAISE_COEUR)
+		# (le casque : trois sépales et deux pétales en éventail, au-dessus)
+		p.disque(q + Vector2(0.0, -0.75 * s), 2.05 * s, 1.55 * s, Color(ENCRE, 0.8))
+		for j in 5:
+			var ang := -PI * 0.5 + (j - 2) * 0.62
+			var e := q + Vector2.from_angle(ang) * 1.25 * s
+			p.disque(e, 0.62 * s, 0.44 * s, couleur.lightened(0.12) if j < 2 else couleur.darkened(0.06), Pinceau.DOME)
+		# (la lèvre : trois lobes qui pendent devant, plus clairs, piquetés de sombre ; la gorge au-dessus)
+		var lv := q + Vector2(0.0, 1.0 * s)
+		p.disque(lv, 1.35 * s + 0.4, 1.1 * s + 0.4, ENCRE)
+		for j in [-1.0, 1.0]:
+			p.disque(lv + Vector2(j * 0.85 * s, -0.15), 0.7 * s, 0.6 * s, levre.darkened(0.05))
+		p.disque(lv + Vector2(0.0, 0.2), 0.95 * s, 0.85 * s, levre, Pinceau.DOME)
+		# (ses points, en traînée sur la lèvre, d'un côté)
+		p.disque(lv + Vector2(0.2 * cote, 0.15), 0.2, 0.17, sombre)
+		p.disque(lv + Vector2(0.45 * cote, 0.5), 0.17, 0.15, sombre)
 
 
-# une broméliacée : une rosette de feuilles raides, rouges au cœur, et l'épi rouge vif qui en sort
+# une broméliacée : une rosette en vase de feuilles raides, charnues, arquées, cerclées de bandes pâles ; au cœur, l'eau
+# qu'elle garde (un miroir sombre qui luit) ; en fleurs, ses feuilles du cœur rougissent et il en sort, sur sa hampe, un épi de
+# bractées rouges imbriquées comme les écailles d'un cône, piquées de petites fleurs bleues. Cueillie : la rosette seule
 static func _bromelia(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, la: bool, u: float) -> void:
-	var c0 := Vector2(0, -2.0)
+	var c0 := Vector2(0, -2.2)
+	var glauque := vert.lerp(P.LUNE, 0.14)
+	var rouge := couleur if couleur.r > couleur.g + 0.2 and couleur.r > couleur.b + 0.2 else P.BRAISE_ROUGE.lerp(P.BRAISE, 0.2)
+	var bandes := int(o.graine) % 2 == 0
+	T.ombre_douce(p, Vector2(0.6, 0.6), 8.5, 2.2, 0.26)
 	var feuilles := []
-	for i in 9:
-		feuilles.append(lerpf(-PI + 0.2, -0.2, i / 8.0) + r.randf_range(-0.1, 0.1))
-	feuilles.sort_custom(func(a, b): return sin(a) < sin(b))
-	for a in feuilles:
-		var bout := c0 + Vector2(cos(a) * 9.0, sin(a) * 7.0 * u)
-		_lance(p, c0, bout, 1.8, vert.lerp(P.BRAISE_ROUGE, 0.12 if absf(cos(a)) < 0.5 else 0.0))
-	if la:
-		var rouge := couleur if couleur.r > couleur.g + 0.2 and couleur.r > couleur.b + 0.2 else P.BRAISE_ROUGE.lerp(P.BRAISE, 0.2)
-		var epi := PackedVector2Array([c0 + Vector2(-2.0, 0), c0 + Vector2(-1.6, -7.0), c0 + Vector2(0, -11.0), c0 + Vector2(1.6, -7.0), c0 + Vector2(2.0, 0)])
-		p.aplat(_grossi(epi, c0 + Vector2(0, -5.0), 0.7), ENCRE)
-		p.aplat(epi, rouge, Pinceau.DOME, c0 + Vector2(0, -5.0), Vector2(2.2, 6.0))
-		for k in 4:
-			p.tracer(PackedVector2Array([c0 + Vector2(-1.6, -2.0 - k * 2.2), c0 + Vector2(1.6, -3.0 - k * 2.2)]), 0.5, Color(ENCRE, 0.5))
+	for i in 11:
+		feuilles.append([lerpf(-PI + 0.12, -0.12, i / 10.0) + r.randf_range(-0.08, 0.08), r.randf_range(0.85, 1.1)])
+	for i in 3:
+		feuilles.append([lerpf(0.55, PI - 0.55, i / 2.0) + r.randf_range(-0.1, 0.1), r.randf_range(0.6, 0.75)])
+	feuilles.sort_custom(func(x, y): return sin(x[0]) < sin(y[0]))
+	var coeur_fait := false
+	for fe in feuilles:
+		var a: float = fe[0]
+		if not coeur_fait and sin(a) > -0.3:
+			# (le cœur du vase, entre les feuilles du fond et celles de devant : l'eau qu'il garde, et l'épi qui en sort)
+			coeur_fait = true
+			p.disque(c0 + Vector2(0.0, -1.4), 2.4, 1.2, ENCRE)
+			p.disque(c0 + Vector2(0.0, -1.4), 1.8, 0.8, P.NUIT_BLEUE.lerp(glauque, 0.25))
+			p.tracer(PackedVector2Array([c0 + Vector2(-1.1, -1.7), c0 + Vector2(0.2, -1.9)]), 0.4, Color(P.LUNE, 0.8))
+			if la:
+				_epi_de_bromelia(p, c0 + Vector2(0.0, -1.6), 13.0 * u, rouge)
+		var l: float = 9.6 * float(fe[1]) * (0.75 + 0.25 * u)
+		var leve := 2.6 + 4.2 * (1.0 - absf(cos(a))) * (1.0 if sin(a) < 0.0 else 0.35)
+		var bout := c0 + Vector2(cos(a) * l * 0.9, sin(a) * l * 0.42 - leve)
+		var du_coeur := absf(cos(a)) < 0.5 and sin(a) < 0.0
+		var ton := glauque.lerp(rouge, 0.5 if (la and du_coeur) else 0.0)
+		ton = ton.lightened(0.06) if cos(a) < 0.0 else ton.darkened(0.06)
+		var pied := c0 + Vector2(cos(a) * 1.2, 0.4)
+		var f: Dictionary = T.feuille_charnue(p, pied, bout, 1.35 + 0.2 * absf(cos(a)), ton, signf(cos(a)) * 2.0, 0.3, 0.6, 6, 0.3)
+		if bandes:
+			for k in [2, 4]:
+				p.tracer(PackedVector2Array([f["g"][k], f["d"][k]]), 0.45, Color(P.LUNE.lerp(ton, 0.3), 0.55), false)
+		# (sa pointe, un peu rougie, armée)
+		p.disque(bout, 0.4, 0.4, ton.lerp(rouge, 0.4).darkened(0.1))
+
+
+# l'épi d'une broméliacée, de pied à pied + (0, -h) : sa hampe, puis ses bractées rouges, celles du haut d'abord (chacune cache
+# la base de celle du dessus), une petite fleur bleue au bout d'une sur deux
+static func _epi_de_bromelia(p, pied: Vector2, h: float, rouge: Color) -> void:
+	var sommet := pied + Vector2(0.0, -h)
+	p.tracer(PackedVector2Array([pied, pied + Vector2(0.0, -h * 0.5)]), 1.5, ENCRE, false)
+	p.tracer(PackedVector2Array([pied, pied + Vector2(0.0, -h * 0.5)]), 0.75, rouge.darkened(0.25), false)
+	for k in range(6, -1, -1):
+		var t := k / 6.0
+		var q := pied.lerp(sommet, 0.42 + t * 0.58)
+		var w := 1.55 * (1.0 - t * 0.5)
+		var cote := 1.0 if k % 2 == 0 else -1.0
+		var pointe := q + Vector2(cote * w * 0.6, -2.0 * (1.0 - t * 0.3))
+		T.tri(p, q + Vector2(-w - 0.45, 0.9), q + Vector2(w + 0.45, 0.9), pointe + Vector2(cote * 0.2, -0.6), ENCRE)
+		T.tri(p, q + Vector2(-w, 0.7), q + Vector2(w, 0.7), pointe, rouge.lightened(0.14) if cote < 0.0 else rouge.darkened(0.08))
+		if k % 2 == 1:
+			p.disque(pointe + Vector2(cote * 0.5, 0.2), 0.5, 0.45, Color(ENCRE, 0.7))
+			p.disque(pointe + Vector2(cote * 0.5, 0.2), 0.32, 0.28, P.PEUR.lerp(P.LUNE, 0.3))
 
 
 # -- l'eau : une mare, et ce qui y flotte --

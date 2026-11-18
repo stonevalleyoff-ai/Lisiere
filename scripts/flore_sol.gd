@@ -896,12 +896,26 @@ static func fougere(o, p, r: RandomNumberGenerator) -> void:
 	frondes.append([r.randf_range(0.25, 0.5), h * 0.62])
 	frondes.append([PI - r.randf_range(0.25, 0.5), h * 0.62])
 	frondes.sort_custom(func(u, v): return sin(u[0]) < sin(v[0]))
+	# (la souche, au cœur : le pied des frondes, gainé d'écailles rousses, en bosse — on la devine entre les frondes du fond
+	# et celles de devant)
+	var souche := P.TERRE.lerp(P.BRAISE, 0.22).darkened(0.12)
+	var devant := 0
 	for fr in frondes:
+		if sin(float(fr[0])) > -0.35:
+			devant += 1
+	for j in frondes.size():
+		var fr: Array = frondes[j]
+		if j == frondes.size() - devant:
+			p.disque(pied + Vector2(0.0, 0.3), 3.6, 2.4, ENCRE)
+			p.disque(pied + Vector2(0.0, 0.1), 2.9, 1.8, souche, Pinceau.DOME)
+			for k in 4:
+				var e := pied + Vector2(-2.0 + k * 1.3, -0.6 + absf(k - 1.5) * 0.3)
+				p.tracer(PackedVector2Array([e + Vector2(0.0, 0.8), e + Vector2(0.3, -0.7)]), 0.55, Color(ENCRE, 0.55), false)
 		var a: float = fr[0]
 		var l: float = fr[1]
 		var face := t.lerp(t.lightened(0.18), clampf(-sin(a), 0.0, 1.0) * 0.5 + 0.15)
 		Arbres._palme(p, r, pied, a, l, l * 0.34, l * 0.22, face, true, 0.62)
-	# (les crosses, au cœur)
+	# (les crosses, au cœur : la tête enroulée, charnue, d'un vert tendre ; le reste de la crosse velu de roux)
 	for i in 2:
 		var q := pied + Vector2((i * 2 - 1) * 1.8, -1.0)
 		var spi := PackedVector2Array()
@@ -909,8 +923,13 @@ static func fougere(o, p, r: RandomNumberGenerator) -> void:
 			var u := k / 9.0
 			var ang := -PI * 0.5 + u * TAU * 1.1 * (1.0 if i == 0 else -1.0)
 			spi.append(q + Vector2(0, -5.0 * (1.0 - u)) + Vector2(cos(ang), sin(ang)) * (1.9 * u))
-		p.tracer(spi, 1.6, ENCRE, false)
-		p.tracer(spi, 0.8, t.lightened(0.3).lerp(P.BRAISE_COEUR, 0.2), false)
+		var tete := q + Vector2(0.0, -4.4)
+		var tendre := t.lightened(0.14).lerp(P.MOUSSE, 0.2)
+		p.disque(tete + Vector2(0.0, 0.2), 1.2, 1.05, ENCRE)
+		p.disque(tete + Vector2(0.0, 0.2), 0.8, 0.7, tendre, Pinceau.DOME)
+		p.tracer(spi, 1.3, ENCRE, false)
+		p.tracer(spi, 0.65, tendre, false)
+		p.tracer(PackedVector2Array([spi[6], spi[9]]), 0.5, Color(souche.lightened(0.2), 0.8), false)
 	if T.a(o, "mellifere") and not Flore.SANS_FLEURS.has(str(o.stade).to_lower()):
 		# (Orvane la dit mellifère : de petites grappes pâles entre les frondes)
 		for i in 3:

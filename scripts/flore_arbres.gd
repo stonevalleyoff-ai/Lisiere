@@ -97,10 +97,11 @@ static func mesurer(o, r: RandomNumberGenerator, f: String) -> void:
 			rx = r.randf_range(24.0, 29.0)
 			ry = rx * r.randf_range(0.8, 0.88)
 		"geant":
-			# (45 m : 147 pixels ; un long fût, la couronne tout en haut — plus de trois fois la veilleuse)
-			ht = r.randf_range(88.0, 100.0)
-			rx = r.randf_range(33.0, 39.0)
-			ry = rx * r.randf_range(0.8, 0.88)
+			# (45 m : 150 pixels ; un long fût, la couronne tout en haut — plus de trois fois la veilleuse —, large, en chou-fleur :
+			# elle domine les autres de haut et de large)
+			ht = r.randf_range(87.0, 98.0)
+			rx = r.randf_range(38.0, 44.0)
+			ry = rx * r.randf_range(0.7, 0.77)
 		"emergent":
 			# (45 m : une ombrelle plate au bout d'un fût nu)
 			ht = r.randf_range(112.0, 126.0)
@@ -791,9 +792,12 @@ static func _geant(o, p, r: RandomNumberGenerator, t: Color) -> void:
 	branche(p, PackedVector2Array([a0, a0.lerp(a1, 0.5) + Vector2(0.0, 0.8), a1]), 3.6, 2.4, c.darkened(0.08))
 	p.disque(a1, 1.3, 1.1, P.IVOIRE.lerp(P.BRAISE, 0.25).darkened(0.1))
 	p.tracer(PackedVector2Array([a0.lerp(a1, 0.6), a0.lerp(a1, 0.6) + Vector2(cote * 2.0, -5.0)]), 1.2, ENCRE, false, PackedFloat32Array([1.4, 0.5]))
-	var lobes := [[cc + Vector2(-rx * 0.5, ry * 0.3), rx * 0.56, ry * 0.56], [cc + Vector2(rx * 0.52, ry * 0.34), rx * 0.54, ry * 0.54],
-		[cc + Vector2(-rx * 0.24, -ry * 0.16), rx * 0.6, ry * 0.6], [cc + Vector2(rx * 0.3, -ry * 0.1), rx * 0.56, ry * 0.56],
-		[cc + Vector2(rx * r.randf_range(-0.12, 0.12), -ry * 0.5), rx * 0.52, ry * 0.5]]
+	# (six bouquets, chacun au bout de sa charpentière : deux bas sur les côtés, qui débordent, deux au-dessus, la cime, et un
+	# bouquet du devant, sous la cime, qui fait de l'ombre aux autres)
+	var lobes := [[cc + Vector2(-rx * 0.62, ry * 0.34), rx * 0.42, ry * 0.5], [cc + Vector2(rx * 0.64, ry * 0.38), rx * 0.4, ry * 0.48],
+		[cc + Vector2(-rx * 0.28, -ry * 0.2), rx * 0.48, ry * 0.6], [cc + Vector2(rx * 0.3, -ry * 0.12), rx * 0.46, ry * 0.58],
+		[cc + Vector2(rx * r.randf_range(-0.12, 0.12), -ry * 0.55), rx * 0.42, ry * 0.5],
+		[cc + Vector2(rx * r.randf_range(-0.1, 0.06), ry * 0.36), rx * 0.46, ry * 0.5]]
 	houppier(o, p, r, lobes, haut, t.lerp(P.FEUILLE_SOMBRE, 0.12), true, 4)
 	caracteres_de_couronne(o, p, lobes, t)
 

@@ -136,43 +136,50 @@ static func _herisser(p, poly: PackedVector2Array, centre: Vector2, pas: int) ->
 
 # -- le roncier --
 
-# un roncier : un fond de feuillage bas, et par-dessus des cannes arquées, rougeâtres, qui retombent jusqu'au sol, leurs
-# aiguillons, leurs feuilles par trois (deux tons) ; des mûres noires (quelques-unes encore rouges), ou ses fleurs au printemps
+# un roncier : un fourré bas en deux masses (celle de devant, plus claire, fait de l'ombre à l'autre), des cannes arquées
+# d'un brun pourpre qui en sortent et retombent jusqu'au sol, où leur pointe s'enracine — celles du fond derrière le fourré,
+# deux ou trois par-dessus ; leurs aiguillons crochus, leurs feuilles alternes de trois folioles ; des mûres noires
+# (quelques-unes encore rouges), ou ses fleurs au printemps
 static func ronce(o, p, r: RandomNumberGenerator) -> void:
 	var rx: float = o._rx
 	var ry: float = o._ry
-	var tige := P.SANG.lerp(P.TERRE, 0.45)
+	# (des cannes d'un brun pourpre, pruineuses, pas d'un rouge vif : elles se fondent dans leur fouillis)
+	var tige := P.SANG.lerp(P.TERRE, 0.58).lerp(P.NUIT, 0.12)
 	var t: Color = T.feuillage(o, o.teinte.lerp(P.FEUILLE_SOMBRE, 0.22))
 	var centre := Vector2(0, -ry * 0.45)
-	# (un fond de feuillage bas, sous les tiges)
-	var fond: PackedVector2Array = o.festons(centre + Vector2(0, ry * 0.12), rx * 0.82, ry * 0.42, 8, 0.22, r, 40, 0.3)
-	p.aplat(fond, t.darkened(0.12), Pinceau.FEUILLAGE, centre, Vector2(rx, ry * 0.5))
-	T.neige(o, p, fond, centre + Vector2(0, ry * 0.12), rx * 0.82, ry * 0.42, r)
-	p.contour(fond, 1.1, ENCRE, r, 3)
+	# (les cannes : elles montent du collet, s'arquent et retombent, leur pointe s'enracine dans la terre, à l'écart ; celles du
+	# fond se dessinent avant le fourré, qui en cache le pied, celles de devant après ; deux ou trois passent par-dessus tout)
 	var cannes := []
-	for i in r.randi_range(5, 7):
+	for i in r.randi_range(6, 8):
 		var cote := -1.0 if i % 2 == 0 else 1.0
-		var a0 := Vector2(r.randf_range(-rx * 0.35, rx * 0.35), 1.0)
-		var b0 := Vector2(cote * r.randf_range(rx * 0.75, rx * 1.15), r.randf_range(-1.0, 2.0))
-		var h := r.randf_range(ry * 0.7, ry * 1.1)
-		cannes.append([a0, Vector2((a0.x + b0.x) * 0.5, -h), b0])
+		var a0 := Vector2(r.randf_range(-rx * 0.3, rx * 0.3), r.randf_range(-ry * 0.12, 0.8))
+		var b0 := Vector2(cote * r.randf_range(rx * 0.7, rx * 1.12), r.randf_range(-1.5, 2.0))
+		var h := r.randf_range(ry * 0.8, ry * 1.15)
+		var sommet := Vector2(lerpf(a0.x, b0.x, r.randf_range(0.3, 0.55)), -h)
+		cannes.append([a0, sommet, b0, i % 3 != 0])
+	var dessus := []
 	for c in cannes:
-		var ligne := T.courbe(c[0], c[1], c[2], 8)
-		p.tracer(ligne, 2.3, ENCRE, false)
-		p.tracer(ligne, 1.3, tige, false)
-		var clair := PackedVector2Array()
-		for q in ligne:
-			clair.append(q + Vector2(-0.2, -0.4))
-		p.tracer(clair, 0.45, Color(tige.lightened(0.3), 0.7), true)
-		# (des aiguillons le long, et des feuilles par trois)
-		for k in range(1, 8, 2):
-			var q := ligne[k]
-			var d := (ligne[k + 1] - ligne[k - 1]).normalized()
-			T.epine(p, q, (d.orthogonal() + d * 0.4).normalized(), 2.0, 0.75)
-			if k % 4 == 1:
-				for j in 3:
-					var ang := d.angle() - PI * 0.5 + (j - 1) * 0.75
-					T.feuille(p, q, q + Vector2.from_angle(ang) * r.randf_range(3.6, 4.6), 1.7, t.lightened(0.08), 0.0, 0.5, 0.55, 3)
+		if not bool(c[3]):
+			dessus.append(c)
+			continue
+		_canne(p, r, c, tige, t, 0.85)
+	# (le fourré : une masse de feuilles, une autre, plus claire, devant et au-dessus, qui lui fait de l'ombre)
+	var fond: PackedVector2Array = o.festons(centre + Vector2(0, ry * 0.1), rx * 0.86, ry * 0.46, 9, 0.24, r, 40, 0.3)
+	p.aplat(fond, t.darkened(0.14), Pinceau.FEUILLAGE, centre, Vector2(rx, ry * 0.5))
+	T.neige(o, p, fond, centre + Vector2(0, ry * 0.1), rx * 0.86, ry * 0.46, r)
+	p.contour(fond, 1.1, ENCRE, r, 3)
+	var c2 := centre + Vector2(-rx * 0.12, -ry * 0.06)
+	var avant: PackedVector2Array = o.festons(c2, rx * 0.6, ry * 0.36, 7, 0.26, r, 32, 0.25)
+	p.aplat(o.festons(c2 + Vector2(1.2, 1.4), rx * 0.6, ry * 0.36, 7, 0.26, r, 32, 0.25), Color(P.NUIT, 0.3))
+	p.aplat(avant, t, Pinceau.FEUILLAGE, c2, Vector2(rx * 0.6, ry * 0.36) * 1.1)
+	T.neige(o, p, avant, c2, rx * 0.6, ry * 0.36, r)
+	p.contour(avant, 1.0, ENCRE, r, 3)
+	# (des folioles dentées qui dépassent de la masse, du côté du jour)
+	for i in 6:
+		var q := c2 + Vector2(r.randf_range(-0.9, 0.5) * rx * 0.6, -r.randf_range(0.3, 0.9) * ry * 0.36)
+		T.feuille(p, q, q + Vector2(r.randf_range(-2.4, 1.2), -r.randf_range(2.0, 3.2)), 1.3, t.lightened(0.12), 0.3, 0.45, 0.5, 3)
+	for c in dessus:
+		_canne(p, r, c, tige, t, 1.0)
 	var rb := RandomNumberGenerator.new()
 	rb.seed = int(o.graine) + 5
 	if o.reste > 0 and str(o.maturite) == "fleurs":
@@ -195,10 +202,54 @@ static func ronce(o, p, r: RandomNumberGenerator) -> void:
 				p.disque(q + Vector2(rb.randf_range(-0.9, 0.9), rb.randf_range(-1.1, 1.1)), 0.45, 0.45, Color(1.0, 0.92, 0.9, 0.6))
 
 
+# une canne de ronce : arquée, pruineuse (un fil pâle sur son dos), effilée vers sa pointe ; ses aiguillons crochus, de loin en
+# loin ; ses feuilles alternes, de trois folioles au bout d'un pétiole, qui pendent un peu ; les plus jeunes, vers la pointe,
+# plus petites et plus tendres ; la pointe qui retouche terre s'y enracine (une petite touffe neuve). force < 1 : une canne du
+# fond, plus sombre
+static func _canne(p, r: RandomNumberGenerator, c: Array, tige: Color, t: Color, force: float) -> void:
+	var ligne := T.courbe(c[0], c[1], c[2], 10)
+	var ton := tige.darkened(1.6 * (1.0 - force))
+	var vert := t.darkened(0.6 * (1.0 - force))
+	p.tracer(ligne, 2.2, ENCRE, false, PackedFloat32Array([2.4, 2.1, 1.3]))
+	p.tracer(ligne, 1.2, ton, false, PackedFloat32Array([1.4, 1.15, 0.6]))
+	var clair := PackedVector2Array()
+	for k in range(1, ligne.size() - 1):
+		clair.append(ligne[k] + Vector2(-0.2, -0.4))
+	p.tracer(clair, 0.4, Color(ton.lightened(0.3).lerp(P.LUNE, 0.35), 0.6), true)
+	for k in range(1, 10):
+		var q := ligne[k]
+		var d := (ligne[k + 1] - ligne[k - 1]).normalized()
+		var nrm := d.orthogonal()
+		var cote := 1.0 if k % 2 == 0 else -1.0
+		if k % 2 == 1:
+			# (l'aiguillon, crochu vers le pied de la canne)
+			T.epine(p, q, (nrm * -cote - d * 0.5).normalized(), 1.5, 0.6)
+		if k % 2 == 0:
+			var jeune := k >= 8
+			var dir_f := (nrm * cote + Vector2(0.0, 0.55)).normalized()
+			var pq := q + dir_f * (1.1 if jeune else 1.6)
+			p.tracer(PackedVector2Array([q, pq]), 0.6, Color(ENCRE, 0.7), false)
+			var s := (0.72 if jeune else 1.0) * r.randf_range(0.9, 1.1)
+			var ton_f := vert.lightened(0.16 if jeune else 0.0)
+			ton_f = ton_f.lightened(0.08) if dir_f.dot(T.JOUR) > -0.2 else ton_f.darkened(0.12)
+			for j in [-1, 1, 0]:
+				var ang: float = dir_f.angle() + j * 0.85
+				var l: float = (3.0 if j != 0 else 3.9) * s
+				T.feuille(p, pq, pq + Vector2.from_angle(ang) * l, 1.45 * s, ton_f, j * 0.35, 0.42, 0.5, 4)
+	# (la pointe qui s'enracine : une touffe neuve au ras du sol)
+	var b: Vector2 = c[2]
+	if b.y > -2.5:
+		T.ombre_douce(p, b + Vector2(0.4, 0.6), 2.2, 0.9, 0.25)
+		for j in 3:
+			var ang := -PI * 0.5 + (j - 1) * 0.9
+			T.feuille(p, b, b + Vector2.from_angle(ang) * 2.2, 0.9, vert.lightened(0.2), 0.0, 0.42, 0.45, 3)
+
+
 # -- l'aromatique --
 
-# un buisson aromatique : un dôme bas, gris-vert, sur son vieux bois tordu ; il en monte des hampes droites, chacune finie
-# d'un épi de fleurs en étages (lavande, ou jaunes). Ce qu'on y a cueilli se voit, en fleurs ou non : des brins coupés court,
+# un buisson aromatique : un dôme bas, gris-vert, d'aiguilles feutrées qui le hérissent sur son pourtour, sur son vieux bois
+# tordu ; il en monte des hampes grêles, chacune finie d'un épi effilé de fleurs en étages serrés (de la couleur de sa planche
+# d'Orvane ; sinon lavande, ou jaunes). Ce qu'on y a cueilli se voit, en fleurs ou non : des brins coupés court,
 # leur coupe claire. Sur échasses : son bois nu le soulève. Aux fruits charnus : de petites baies dans le gris
 static func aromatique(o, p, r: RandomNumberGenerator) -> void:
 	var rx: float = o._rx
@@ -213,6 +264,12 @@ static func aromatique(o, p, r: RandomNumberGenerator) -> void:
 	p.aplat(poly, t, Pinceau.FEUILLAGE, centre, Vector2(rx, ry * 0.5) * 1.08)
 	T.neige(o, p, poly, centre, rx, ry * 0.5, r)
 	p.contour(poly, 1.2, ENCRE, r, 3)
+	# (son feuillage est fait d'aiguilles feutrées, gris argent : de fins traits clairs du côté du jour, des creux d'ombre en
+	# bas à droite ; et sur son pourtour, des touffes d'aiguilles qui le hérissent)
+	for i in 9:
+		var q := centre + Vector2(r.randf_range(-0.75, 0.35) * rx, r.randf_range(-0.55, 0.15) * ry * 0.5)
+		var dq := Vector2(r.randf_range(-0.5, 0.3), -1.0).normalized()
+		p.tracer(PackedVector2Array([q, q + dq * r.randf_range(1.6, 2.6)]), 0.5, Color(t.lightened(0.32), 0.85), true)
 	for i in 3:
 		var q := centre + Vector2(r.randf_range(0.0, 0.6) * rx, r.randf_range(0.0, 0.35) * ry * 0.5)
 		var arc := PackedVector2Array()
@@ -220,39 +277,64 @@ static func aromatique(o, p, r: RandomNumberGenerator) -> void:
 			var a := 0.1 + k * 0.33
 			arc.append(q + Vector2(cos(a), sin(a) * 0.8) * 3.6)
 		p.tracer(arc, 0.7, Color(ENCRE, 0.45))
+	for i in range(1, poly.size(), 3):
+		var q: Vector2 = poly[i]
+		if q.y > centre.y + ry * 0.1:
+			continue
+		var dehors := (q - centre).normalized()
+		var jour := dehors.dot(T.JOUR) > 0.0
+		for k in 3:
+			var dk := dehors.rotated((k - 1) * 0.42 + r.randf_range(-0.12, 0.12)) + Vector2(0.0, -0.35)
+			var bout := q + dk.normalized() * r.randf_range(1.4, 2.4)
+			p.tracer(PackedVector2Array([q - dehors * 0.6, bout]), 1.1, Color(ENCRE, 0.6), false, PackedFloat32Array([1.1, 0.5]))
+			p.tracer(PackedVector2Array([q - dehors * 0.6, bout]), 0.5, t.lightened(0.16) if jour else t.darkened(0.12), false)
 	if T.a(o, "fruits_charnus"):
 		for i in 6:
 			var q := centre + Vector2(r.randf_range(-0.7, 0.7) * rx, r.randf_range(-0.1, 0.4) * ry * 0.5)
 			p.disque(q, 1.3, 1.25, ENCRE)
 			p.disque(q, 0.9, 0.85, P.BRAISE_ROUGE.lerp(P.BRAISE, 0.3), Pinceau.DOME)
-	var fleur: Color = P.PEUR.lerp(P.CREPUSCULE, 0.45) if int(o.graine) % 2 == 0 else P.BRAISE_COEUR.darkened(0.1)
-	var n := 14
+	# (la couleur de ses fleurs : celle de sa planche d'Orvane ; sinon lavande, ou jaune comme l'immortelle)
+	var fleur: Color = o.couleur_fleur if o.couleur_fleur.a > 0.0 else (P.PEUR.lerp(P.CREPUSCULE, 0.45) if int(o.graine) % 2 == 0 else P.BRAISE_COEUR.darkened(0.1))
+	var n := 12
 	var fleuries: int = n * int(o.reste) / maxi(1, int(o.plein)) if o.en_fleurs else 0
 	# (ce qu'on y a cueilli se voit, en fleurs ou non : des brins coupés court, leur coupe claire ; scripts/flore.gd, des aromates)
 	var restent: int = n * int(o.reste) / maxi(1, int(o.plein))
 	for i in n:
-		var x := lerpf(-rx * 0.85, rx * 0.85, (i + r.randf_range(0.2, 0.8)) / n)
+		var x := lerpf(-rx * 0.8, rx * 0.8, (i + r.randf_range(0.2, 0.8)) / n)
 		var y0 := centre.y + absf(x) / rx * ry * 0.25 - ry * 0.25
-		var bout := Vector2(x * 1.15 + r.randf_range(-1.0, 1.0), y0 - r.randf_range(4.5, 8.5))
+		var bout := Vector2(x * 1.22 + r.randf_range(-1.0, 1.0), y0 - r.randf_range(6.0, 10.0) * (1.0 - absf(x) / rx * 0.3))
 		if i >= restent:
-			bout = Vector2(x, y0).lerp(bout, 0.4)
+			bout = Vector2(x, y0).lerp(bout, 0.35)
 			p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 1.0, t.darkened(0.25))
 			p.disque(bout, 0.8, 0.6, P.IVOIRE.lerp(t, 0.3))
 			continue
-		p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 1.5, Color(ENCRE, 0.7), false, PackedFloat32Array([1.5, 1.0]))
-		p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 0.8, t.darkened(0.2), false)
 		var d := (bout - Vector2(x, y0)).normalized()
+		var nrm := d.orthogonal()
+		# (la hampe : grêle, carrée, une paire de petites feuilles à mi-hauteur)
+		p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 1.2, Color(ENCRE, 0.7), false, PackedFloat32Array([1.2, 0.8]))
+		p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 0.6, t.darkened(0.2), false)
+		var mi := Vector2(x, y0).lerp(bout, 0.38)
+		for cote in [-1.0, 1.0]:
+			p.tracer(PackedVector2Array([mi, mi + nrm * cote * 1.5 - d * 0.6]), 0.6, t.lightened(0.05), true)
 		if i < fleuries:
-			# (l'épi : trois étages de fleurs, le plus petit en haut)
-			for k in 3:
-				var q := bout - d * (k * 1.5)
-				var s0 := 0.8 + 0.25 * k
-				p.disque(q, s0 + 0.5, s0 * 0.8 + 0.5, ENCRE)
-				p.disque(q, s0, s0 * 0.8, fleur.lightened(0.12 * (2 - k)), Pinceau.DOME)
+			# (l'épi : une silhouette d'encre effilée, puis les fleurs en étages serrés, deux par étage, plus petites vers la
+			# pointe ; un bouton pâle au bout)
+			var lg := r.randf_range(3.6, 4.8)
+			var base := bout - d * lg
+			p.aplat(PackedVector2Array([bout + d * 0.9, bout - d * 1.2 + nrm * 1.25, base - d * 0.2 + nrm * 1.05, base - d * 0.7,
+				base - d * 0.2 - nrm * 1.05, bout - d * 1.2 - nrm * 1.25]), Color(ENCRE, 0.85))
+			for k in 5:
+				var q := base.lerp(bout, k / 4.6)
+				var s0 := 0.62 - 0.06 * k
+				for cote in [-1.0, 1.0]:
+					var fq: Vector2 = q + nrm * cote * (0.42 - 0.04 * k) + d * (0.22 if cote > 0.0 else 0.0)
+					var clair: bool = (nrm * cote).dot(T.JOUR) > 0.0
+					p.disque(fq, s0, s0 * 0.85, fleur.lightened(0.16) if clair else fleur.darkened(0.12), Pinceau.DOME)
+			p.disque(bout + d * 0.3, 0.42, 0.42, fleur.lightened(0.3))
 		else:
 			# (pas en fleurs : deux petites feuilles au bout du brin)
 			for cote in [-1.0, 1.0]:
-				T.feuille(p, bout - d * 1.5, bout + d.orthogonal() * cote * 2.0 + d * 0.8, 0.8, t.lightened(0.1), 0.0, 0.45, 0.35, 3)
+				T.feuille(p, bout - d * 1.5, bout + nrm * cote * 2.0 + d * 0.8, 0.8, t.lightened(0.1), 0.0, 0.45, 0.35, 3)
 
 
 # -- la bruyère --
