@@ -97,6 +97,8 @@ func _lancer() -> void:
 				await _le_collet_de_la_noire()
 			"reunie":
 				await _la_noire_reunie()
+			"repartition":
+				await _la_repartition()
 			_:
 				await _la_cueillette_nourriciere()
 				await _les_retouches()
@@ -640,6 +642,7 @@ func _lancer() -> void:
 	_les_pattes()
 	await _lieu_sans_bord()
 	await _la_flore()
+	await _la_repartition()
 	await _les_pays()
 	await _l_artisanat()
 	await _la_cueillette_nourriciere()
@@ -5793,23 +5796,28 @@ func _l_atelier(F: Dictionary) -> void:
 
 # un grand rectangle d'un biome, loin de tout, semé comme un morceau du monde ouvert (son plan, puis ses objets) : ce qu'il y
 # pousse, par forme (les objets sont défaits ensuite)
-func _semer_a_part(type: String, coin: Vector2) -> Dictionary:
+# (le plan est celui du monde : scripts/milieu.gd — chaque place a son milieu, et sa plante s'y tire selon sa part et son goût.
+# garder : les objets restent, pour qu'on les compte — scripts/recensement.gd — ; ils sont rendus dans « objets », à défaire)
+func _semer_a_part(type: String, coin: Vector2, garder: bool = false) -> Dictionary:
 	var W = jeu.monde
+	var Mi = load("res://scripts/milieu.gd")
 	var L: Dictionary = W.lieu_de(type)
 	var rect := Rect2(coin, Vector2(8400.0, 8400.0))
 	var r := RandomNumberGenerator.new()
 	r.seed = 4242
 	var plan: Array = []
-	W._prevoir_lieu(r, plan, rect, str(L["arbre"]), L["mesures"], type)
+	var ctx: Dictionary = W._contexte(type)
+	Mi.prevoir(ctx, r, rect, plan)
 	var rc := RandomNumberGenerator.new()
 	rc.seed = 4343
-	W._prevoir_cueillette(rc, plan, rect, type, W._arbres_du_plan(plan, rect))
+	Mi.cueillette(ctx, rc, rect, plan, W._arbres_du_plan(plan, rect))
 	var par_forme := {}
 	var genres := {}
 	var mal := []
 	var vides := 0
+	var gardes: Array = []
 	for e in plan:
-		var o = W._poser(str(e[0]), e[1], L["palette"][e[2]] if e[2] != "" else Color.WHITE, int(e[3]), L)
+		var o = W._poser(str(e[0]), e[1], L["palette"][e[2]] if e[2] != "" else Color.WHITE, int(e[3]), L, int(e[5]))
 		if o == null:
 			vides += 1
 			continue
@@ -5818,8 +5826,194 @@ func _semer_a_part(type: String, coin: Vector2) -> Dictionary:
 			par_forme[o.forme] = int(par_forme.get(o.forme, 0)) + 1
 			if not load("res://scripts/flore_dessins.gd").sait(o.forme) or o.planche:
 				mal.append(o.forme)
-		W._defaire(o)
-	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides}
+		if garder:
+			gardes.append(o)
+		else:
+			W._defaire(o)
+	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides, "objets": gardes, "rect": rect, "plan": plan.size()}
+
+
+# --- la répartition (scripts/milieu.gd, scripts/recensement.gd) : chaque plante de l'herbier d'Orvane se tient dans son milieu
+# — les roseaux au bord de l'eau, les fougères sous le couvert, les géants à l'écart, les lichens contre la pierre, les cactus
+# espacés — et garde sa part. Tout est compté sur de grands nombres (un lieu entier, puis quatre fois sa surface par biome),
+# avec de la marge : rien ne tient à un tirage. Puis les parties gardées : celle d'avant garde son plan ---
+func _la_repartition() -> void:
+	print("La répartition")
+	var Mi = load("res://scripts/milieu.gd")
+	var Re = load("res://scripts/recensement.gd")
+	seed(20261120)
+	await jeu._commencer("marais")
+	var W = jeu.monde
+	var C = jeu.climat
+	var T = jeu.terrain
+	C.forcer("clair", 0.0, 9999.0)
+	# le relief du plan est celui du temps qu'il fait : l'eau qui reste au creux du marais est là où le plan la croit
+	var pire := 0.0
+	var mouilles := 0
+	var ctx: Dictionary = W._contexte("")
+	for i in 400:
+		var q := Vector2(-2000.0 + 200.0 * (i % 20), -2000.0 + 200.0 * (i / 20))
+		pire = maxf(pire, absf(float(Mi.relief_en(ctx, q)) - float(C.relief(q))))
+		if (float(C.eau(q)) > 0.0 and float(T.fondriere(q)) <= 0.0) != (float(Mi.relief_en(ctx, q)) < float(Mi.niveau(ctx))):
+			mouilles += 1
+	verif(pire < 0.0001 and mouilles == 0 and float(Mi.niveau(ctx)) > 0.3,
+		"le relief que lit le plan est celui du temps qu'il fait (écart %.5f sur 400 points) : l'eau qui reste au creux du marais (niveau %.2f) est là où il la croit" % [pire, float(Mi.niveau(ctx))])
+	# le pays : ses fondrières sont celles que le plan a lues (la même liste, une fois), et aucun tronc n'y trempe
+	var cases_pareilles := 0
+	var fondrieres := 0
+	for k in T._cases:
+		if W.pays_case(k) == T._cases[k]:
+			cases_pareilles += 1
+		fondrieres += T._cases[k].filter(func(x): return str(x["genre"]) == "fondriere").size()
+	var noyes: int = W.objets.filter(func(o): return o.genre in ["arbre", "sapin"] and float(T.fondriere(o.position)) > 0.0).size()
+	var dans_l_eau: int = W.objets.filter(func(o): return o.genre in ["arbre", "sapin", "buisson", "touffe"] and float(C.eau(o.position)) >= 0.6).size()
+	verif(cases_pareilles == T._cases.size() and fondrieres > 40 and noyes == 0 and dans_l_eau == 0,
+		"le plan connaît le pays : les %d cases du marais (%d fondrières) sont celles qu'il a lues ; pas un tronc dans une fondrière (%d), rien de planté au large de l'eau (%d)" % [
+		T._cases.size(), fondrieres, noyes, dans_l_eau])
+	# le marais entier, compté : les plantes de rive au bord de l'eau, le palétuvier les pieds dedans, les nénuphars au large
+	var c: Dictionary = Re.compter(W, "marais")
+	var P: Dictionary = c["plantes"]
+	var au_bord := func(formes: Array) -> Array:
+		var d: Array = []
+		for id in P:
+			if formes.has(P[id]["forme"]):
+				d.append_array(P[id]["eau"])
+		return [d.size(), Re._part(d, Re.PRES_EAU), Re._mediane(d)]
+	var roseaux: Array = au_bord.call(["roseau", "riz", "papyrus"])
+	var paletuviers: Array = au_bord.call(["paletuvier"])
+	var autres_arbres: Array = au_bord.call(["arbre", "pionnier", "geant"])
+	verif(int(roseaux[0]) >= 60 and float(roseaux[1]) >= 0.8 and float(roseaux[2]) <= 40.0,
+		"au marais, les roseaux et le riz tiennent le bord de l'eau : %d, %d %% à moins de %d pixels d'une mare, d'une fondrière, de l'eau des creux (médiane %d)" % [
+		int(roseaux[0]), int(float(roseaux[1]) * 100.0), int(Re.PRES_EAU), int(roseaux[2])])
+	verif(int(paletuviers[0]) >= 8 and float(paletuviers[1]) >= 0.55 and float(paletuviers[1]) > float(autres_arbres[1]) + 0.15,
+		"le palétuvier a les pieds dans l'eau : %d, %d %% au bord (les autres arbres : %d %%)" % [int(paletuviers[0]), int(float(paletuviers[1]) * 100.0), int(float(autres_arbres[1]) * 100.0)])
+	verif(int(c["fond"]["n"]) >= 15 and float(c["fond"]["nenuphars"]) > float(c["fond"]["lentilles"]) + 0.2,
+		"sur l'eau, les nénuphars sont au large (%d %% au milieu d'une mare, là où l'eau est profonde) et les lentilles d'eau au bord (%d %%)" % [
+		int(float(c["fond"]["nenuphars"]) * 100.0), int(float(c["fond"]["lentilles"]) * 100.0)])
+	verif(float(c["ecart_grand"]) < 0.12 and int(c["genres"].get("arbre", 0)) > 250 and int(c["genres"].get("touffe", 0)) > 120,
+		"et chacune garde sa part d'Orvane dans sa strate, à %.1f points près sur ce lieu (%d arbres, %d plantes du sol, %d plantes d'eau)" % [100.0 * float(c["ecart_grand"]),
+		int(c["genres"].get("arbre", 0)), int(c["genres"].get("touffe", 0)), int(c["genres"].get("aquatique", 0))])
+	# le lieu fermé gardé : la photo de chaque plante porte son milieu, et elle s'en retire la même
+	var photo: Array = JSON.parse_string(JSON.stringify(W.photo_objets()))
+	var avec := 0
+	var pareilles := 0
+	var essayees := 0
+	var vivants: Array = W.objets.filter(func(o): return is_instance_valid(o))
+	for i in range(0, mini(photo.size(), vivants.size()), 3):
+		var g: Array = photo[i]
+		var o0 = vivants[i]
+		if typeof(g.back()) != TYPE_STRING or str(o0.plante) == "":
+			continue
+		avec += 1
+		var avant_n: int = W.objets.size()
+		W._reposer([g])
+		essayees += 1
+		if W.objets.size() == avant_n + 1:
+			var o1 = W.objets[W.objets.size() - 1]
+			if str(o1.plante) == str(o0.plante) and o1.position.distance_to(o0.position) < 0.2 and int(o1.get_meta("milieu", -1)) == int(o0.get_meta("milieu", -2)):
+				pareilles += 1
+			W._defaire(o1)
+	# (et une plante gardée sans milieu — une partie d'avant — se repose aussi, tirée de sa seule part)
+	var vieille: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) == "sol")
+	var revenue := false
+	if not vieille.is_empty():
+		var g1: Array = vieille[0].slice(0, vieille[0].size() - 1)
+		var avant_n: int = W.objets.size()
+		W._reposer([g1])
+		revenue = W.objets.size() == avant_n + 1 and str(W.objets[W.objets.size() - 1].plante) != "" and not W.objets[W.objets.size() - 1].has_meta("milieu")
+		if W.objets.size() == avant_n + 1:
+			W._defaire(W.objets[W.objets.size() - 1])
+	verif(avec >= 100 and pareilles == essayees and revenue,
+		"le lieu gardé : la photo de chaque plante porte son milieu, et %d sur %d se retirent les mêmes, à leur place ; une plante gardée sans milieu (une partie d'avant) se repose aussi, de sa seule part" % [
+		pareilles, essayees])
+	# le monde ouvert : quatre biomes, chacun semé à part sur quatre fois la surface d'un lieu, et compté
+	seed(20261121)
+	await jeu._commencer("prairie", {}, true)
+	W = jeu.monde
+	var comptes := {}
+	var i_b := 0
+	for type in ["foret", "taiga", "desert", "banquise"]:
+		await jeu.donnees.charger_lieu(type)
+		W.flore_arrivee(type)
+		var d := _semer_a_part(type, Vector2(190000.0 + i_b * 12000.0, 190000.0), true)
+		i_b += 1
+		comptes[type] = Re.compter(W, type, d["rect"], true, false)
+		comptes[type]["plan"] = d["plan"]
+		for o in d["objets"]:
+			if is_instance_valid(o):
+				W._defaire(o)
+	var f: Dictionary = comptes["foret"]
+	var ta: Dictionary = comptes["taiga"]
+	var de: Dictionary = comptes["desert"]
+	var ba: Dictionary = comptes["banquise"]
+	verif(int(f["sous_bois"]["n"]) >= 80 and float(f["sous_bois"]["sous"]) >= 0.7 and float(f["sous_bois"]["sous"]) > float(f["sous_bois"]["ailleurs"]) + 0.15
+		and int(ta["sous_bois"]["n"]) >= 80 and float(ta["sous_bois"]["sous"]) >= 0.7,
+		"le sous-bois : en forêt, %d %% des fougères et des mousses à moins de %d pixels d'un tronc (les autres plantes du sol : %d %%) ; en taïga, %d %%" % [
+		int(float(f["sous_bois"]["sous"]) * 100.0), int(Re.SOUS), int(float(f["sous_bois"]["ailleurs"]) * 100.0), int(float(ta["sous_bois"]["sous"]) * 100.0)])
+	verif(int(f["lianes"]["n"]) >= 8 and float(f["lianes"]["au_pied"]) >= 0.9,
+		"les lianes sont sur les arbres : %d, %d %% à moins de %d pixels d'un tronc" % [int(f["lianes"]["n"]), int(float(f["lianes"]["au_pied"]) * 100.0), int(Re.AU_PIED)])
+	verif(int(f["geants"]["n"]) >= 20 and float(f["geants"]["min"]) >= 100.0 and int(ta["geants"]["n"]) >= 20 and float(ta["geants"]["min"]) >= 100.0
+		and float(f["geants"]["n"]) < 0.08 * float(f["peuplements"]["arbres"]),
+		"les géants sont rares et à l'écart : %d en forêt pour %d arbres, le plus proche voisin d'aucun à moins de %d pixels (les autres arbres : %d, à la médiane) ; %d en taïga (%d)" % [
+		int(f["geants"]["n"]), int(f["peuplements"]["arbres"]), int(f["geants"]["min"]), int(f["geants"]["autres"]), int(ta["geants"]["n"]), int(ta["geants"]["min"])])
+	verif(float(f["peuplements"]["meme"]) > float(f["peuplements"]["hasard"]) + 0.07 and float(ta["peuplements"]["meme"]) > float(ta["peuplements"]["hasard"]) + 0.07
+		and float(f["peuplements"]["en_peuplement"]) > 0.12,
+		"les arbres vont par peuplements : le plus proche voisin est de la même espèce pour %d %% en forêt (au hasard : %d %%), %d %% en taïga (%d %%) ; %d %% des arbres de la forêt dans un peuplement de quatre ou plus" % [
+		int(float(f["peuplements"]["meme"]) * 100.0), int(float(f["peuplements"]["hasard"]) * 100.0), int(float(ta["peuplements"]["meme"]) * 100.0),
+		int(float(ta["peuplements"]["hasard"]) * 100.0), int(float(f["peuplements"]["en_peuplement"]) * 100.0)])
+	verif(int(de["cactus"]["n"]) >= 30 and float(de["cactus"]["serres"]) <= 0.1 and float(de["grasses"]["mediane"]) >= 90.0,
+		"au désert, les plantes grasses se partagent l'eau : %d cactus, %d %% à moins de 50 pixels d'une autre plante grasse (médiane %d) ; toutes : %d pixels à la médiane" % [
+		int(de["cactus"]["n"]), int(float(de["cactus"]["serres"]) * 100.0), int(de["cactus"]["mediane"]), int(de["grasses"]["mediane"])])
+	verif(int(ba["pierre"]["n"]) >= 300 and float(ba["pierre"]["pres"]) >= 0.25,
+		"sur la banquise, les lichens et les coussins tiennent à la pierre : %d %% des %d à moins de %d pixels d'un rocher" % [
+		int(float(ba["pierre"]["pres"]) * 100.0), int(ba["pierre"]["n"]), int(Re.PRES_ROC)])
+	verif(float(f["ecart_grand"]) < 0.06 and float(ta["ecart_grand"]) < 0.06 and float(de["ecart_grand"]) < 0.06 and float(ba["ecart_grand"]) < 0.06,
+		"et les parts d'Orvane tiennent, dans chaque strate d'au moins %d plantes : à %.1f points près en forêt, %.1f en taïga, %.1f au désert, %.1f sur la banquise" % [
+		Re.GRANDE_STRATE, 100.0 * float(f["ecart_grand"]), 100.0 * float(ta["ecart_grand"]), 100.0 * float(de["ecart_grand"]), 100.0 * float(ba["ecart_grand"])])
+	# le plan d'un morceau : toujours le même ; refait, le morceau porte les mêmes plantes aux mêmes places
+	var k := Vector2i(2, 1)
+	W.suivre(Vector2(1750.0, 1050.0), true)
+	var plan_a: Array = W._plan_m(k)
+	var plan_b: Array = W._plan_m(k)
+	var dit := func() -> Array:
+		var l: Array = W._morceaux[k]["objets"].filter(func(o): return is_instance_valid(o) and o.has_meta("rang")).map(func(o): return [int(o.get_meta("rang")), str(o.plante), o.position])
+		l.sort()
+		return l
+	var avant_m: Array = dit.call()
+	W._oublier(k)
+	W._fabriquer(k)
+	var apres_m: Array = dit.call()
+	var chez_soi: bool = W._morceaux[k]["objets"].all(func(o): return not o.has_meta("rang") or Rect2(Vector2(k) * W.MORCEAU, Vector2(W.MORCEAU, W.MORCEAU)).has_point(o.position))
+	verif(plan_a == plan_b and plan_a.size() > 20 and avant_m == apres_m and avant_m.size() > 10 and chez_soi and W.pire_ms < 60.0,
+		"le plan d'un morceau est toujours le même (%d places) ; refait, il porte les mêmes %d plantes aux mêmes places, aucune chez son voisin (fabriqué en %.1f ms)" % [
+		plan_a.size(), avant_m.size(), W.pire_ms])
+	# une partie gardée d'avant ne dit pas son plan : elle garde le premier, et ses rangs retrouvent leurs objets ; une neuve dit le sien
+	var neuve: Dictionary = W.photo_ouvert()
+	W._oublier(k)
+	W.reprendre_ouvert({"changes": {}, "ajouts": {}})
+	var plan_1: Array = W._plan_m(k)
+	W._fabriquer(k)
+	var cible = null
+	for o in W._morceaux[k]["objets"]:
+		if is_instance_valid(o) and o.has_meta("rang") and o.genre in ["arbre", "sapin"]:
+			cible = o
+			break
+	var rang_c: int = int(cible.get_meta("rang")) if cible != null else -1
+	var place_c: Vector2 = cible.position if cible != null else Vector2.ZERO
+	W._oublier(k)
+	W.reprendre_ouvert({"changes": {W._nom_m(k): {str(rang_c): ["souche", 0, 0.0, 0, 0.0]}}, "ajouts": {}})
+	W._fabriquer(k)
+	var souches_1: Array = W._morceaux[k]["objets"].filter(func(o): return is_instance_valid(o) and o.genre == "souche")
+	var garde_1: Dictionary = W.photo_ouvert()
+	verif(int(neuve.get("plan", 0)) == W.PLAN and W.plan_version == 1 and plan_1.size() > 10 and plan_1.all(func(e): return e.size() == 5)
+		and souches_1.size() == 1 and souches_1[0].position.distance_to(place_c) < 0.2 and int(garde_1.get("plan", 0)) == 1,
+		"une partie neuve dit son plan (%d) ; une partie gardée d'avant ne le dit pas : elle garde le premier (%d places sans milieu dans ce morceau), l'arbre qu'elle avait abattu est encore une souche, à sa place, et elle se garde de nouveau avec ce plan" % [
+		int(neuve.get("plan", 0)), plan_1.size()])
+	# (on rend au monde le plan d'aujourd'hui)
+	W._oublier(k)
+	W.reprendre_ouvert({"changes": {}, "ajouts": {}, "plan": W.PLAN})
+	W._fabriquer(k)
+	verif(W.plan_version == W.PLAN and W._plan_m(k) == plan_a, "et le plan d'aujourd'hui revient tel quel")
 
 
 func _la_flore() -> void:

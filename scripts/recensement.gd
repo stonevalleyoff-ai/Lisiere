@@ -19,6 +19,8 @@ const PRES_EAU := 70.0         # « au bord de l'eau » : à moins de tant de la
 const SOUS := 70.0             # « sous le couvert » : à moins de tant d'un tronc
 const ALENTOUR := 130.0        # les arbres « autour » d'une plante
 const PRES_ROC := 60.0         # « près d'un rocher »
+const AU_PIED := 30.0           # « au pied d'un arbre » (une liane)
+const GRANDE_STRATE := 120     # une strate d'au moins tant de plantes : on y juge les parts (en dessous, le hasard d'un petit nombre domine)
 const PEUPLEMENT := 170.0      # deux arbres de la même espèce à moins de tant sont du même peuplement
 
 
@@ -66,7 +68,9 @@ static func _part(l: Array, sous: float) -> float:
 
 # le recensement d'un monde (tous ses objets, ou ceux d'un rectangle) : { plantes: { id: {…} }, strates, rives, sous_bois,
 # grasses, peuplements, geants, pierre, genres, parts_ecart }
-static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -> Dictionary:
+# pese : un géant compte pour la place qu'il tient (faux : chaque pied pour un, comme l'ancien semis) ; eau : mesurer la distance
+# de chaque plante à l'eau (c'est long sur un grand rectangle)
+static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true, eau := true) -> Dictionary:
 	var objets: Array = monde.objets.filter(func(o): return is_instance_valid(o) and (rect.size.x <= 0.0 or rect.has_point(o.position)))
 	var carte = monde.get("carte")
 	var climat = monde.jeu.get("climat") if monde.get("jeu") != null else null
@@ -115,13 +119,17 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 			continue
 		var id := str(o.plante)
 		if not P.has(id):
-			P[id] = {"n": 0, "eau": [], "arbres": [], "sous": 0, "roc": 0, "places": [], "forme": parts[id]["forme"], "strate": parts[id]["strate"],
+			P[id] = {"n": 0, "eau": [], "arbres": [], "sous": 0, "roc": 0, "fond": 0, "pied": 0, "places": [], "forme": parts[id]["forme"], "strate": parts[id]["strate"],
 				"nom": parts[id]["nom"], "part": parts[id]["part"]}
 		var e: Dictionary = P[id]
 		e["n"] += 1
 		e["places"].append(o.position)
 		n_strate[e["strate"]] = float(n_strate.get(e["strate"], 0.0)) + float(parts[id]["place"])
-		e["eau"].append(_vers_l_eau(o.position, mares, carte, climat))
+		e["eau"].append(_vers_l_eau(o.position, mares, carte, climat) if eau else INF)
+		if o.has_meta("milieu") and int(o.get_meta("milieu")) & Milieu.COEUR:
+			e["fond"] += 1
+		if autour.any(func(a): return a.position.distance_to(o.position) <= AU_PIED):
+			e["pied"] += 1
 		var autour: Array = pres.call(o.position, ALENTOUR)
 		autour.erase(o)
 		e["arbres"].append(autour.size())
@@ -132,6 +140,7 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 				e["roc"] += 1
 				break
 	var ecart := 0.0
+	var ecart_grand := 0.0
 	for id in parts:
 		var st: String = parts[id]["strate"]
 		var attendu: float = maxf(0.02, float(parts[id]["part"])) / maxf(0.0001, float(tot_strate[st]))
@@ -141,10 +150,12 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 			P[id]["vu"] = vu
 			P[id]["attendu"] = attendu
 		elif n_strate.has(st):
-			P[id] = {"n": 0, "eau": [], "arbres": [], "sous": 0, "roc": 0, "places": [], "forme": parts[id]["forme"], "strate": st, "nom": parts[id]["nom"],
+			P[id] = {"n": 0, "eau": [], "arbres": [], "sous": 0, "roc": 0, "fond": 0, "pied": 0, "places": [], "forme": parts[id]["forme"], "strate": st, "nom": parts[id]["nom"],
 				"part": parts[id]["part"], "vu": 0.0, "attendu": attendu}
 		if n_strate.has(st):
 			ecart = maxf(ecart, absf(vu - attendu))
+			if float(n_strate[st]) >= GRANDE_STRATE:
+				ecart_grand = maxf(ecart_grand, absf(vu - attendu))
 	# les rives : ce qui est de rive, à quelle distance de l'eau
 	var d_rive: Array = []
 	var d_autres: Array = []
@@ -152,6 +163,9 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 	var sol_ailleurs := [0, 0]
 	var pierre := [0, 0]
 	var grasses: Array = []
+	var cactus: Array = []
+	var fond := {"nenuphar": [0, 0], "lentille": [0, 0]}
+	var lianes := [0, 0]
 	for id in P:
 		var e: Dictionary = P[id]
 		if RIVE.has(e["forme"]):
@@ -169,6 +183,14 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 			pierre[1] += int(e["n"])
 		if GRASSES.has(e["forme"]):
 			grasses.append_array(e["places"])
+		if e["forme"] == "cactus":
+			cactus.append_array(e["places"])
+		if fond.has(e["forme"]):
+			fond[e["forme"]][0] += int(e["fond"])
+			fond[e["forme"]][1] += int(e["n"])
+		if e["forme"] == "liane":
+			lianes[0] += int(e["pied"])
+			lianes[1] += int(e["n"])
 	# les plantes grasses : la distance de chacune à sa plus proche voisine
 	var d_grasses: Array = []
 	for i in grasses.size():
@@ -178,6 +200,15 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 				d = minf(d, grasses[i].distance_to(grasses[j]))
 		if d < INF:
 			d_grasses.append(d)
+	# les cactus : la distance de chacun à sa plus proche voisine grasse
+	var d_cactus: Array = []
+	for c in cactus:
+		var d := INF
+		for g in grasses:
+			if g != c:
+				d = minf(d, c.distance_to(g))
+		if d < INF:
+			d_cactus.append(d)
 	# les peuplements : l'arbre le plus proche est-il de la même espèce ? et la taille des peuplements (les arbres de la même
 	# espèce qui se tiennent à moins de PEUPLEMENT, de proche en proche)
 	var meme := 0
@@ -238,7 +269,11 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 		for a in arbres:
 			if str(a.plante) != "" and parts.has(str(a.plante)) and GEANTS.has(parts[a.plante]["forme"]):
 				print("géant en ", a.position, " : ", Milieu.dire(int(a.get_meta("milieu", 0))), " graine ", a.graine)
-	return {"biome": biome, "plantes": P, "n_strate": n_strate, "genres": genres, "ecart": ecart, "objets": objets.size(),
+	return {"biome": biome, "plantes": P, "n_strate": n_strate, "genres": genres, "ecart": ecart, "ecart_grand": ecart_grand, "objets": objets.size(),
+		"cactus": {"n": d_cactus.size(), "mediane": _mediane(d_cactus), "min": d_cactus.min() if not d_cactus.is_empty() else -1.0, "serres": _part(d_cactus, 50.0)},
+		"fond": {"nenuphars": float(fond["nenuphar"][0]) / maxf(1.0, float(fond["nenuphar"][1])), "lentilles": float(fond["lentille"][0]) / maxf(1.0, float(fond["lentille"][1])),
+			"n": int(fond["nenuphar"][1]) + int(fond["lentille"][1])},
+		"lianes": {"n": lianes[1], "au_pied": float(lianes[0]) / maxf(1.0, float(lianes[1]))},
 		"rives": {"n": d_rive.size(), "mediane": _mediane(d_rive), "pres": _part(d_rive, PRES_EAU), "autres_pres": _part(d_autres, PRES_EAU), "autres": d_autres.size(), "mares": mares.size()},
 		"sous_bois": {"n": sous_bois[1], "sous": float(sous_bois[0]) / maxf(1.0, float(sous_bois[1])), "ailleurs": float(sol_ailleurs[0]) / maxf(1.0, float(sol_ailleurs[1])), "n_ailleurs": sol_ailleurs[1]},
 		"pierre": {"n": pierre[1], "pres": float(pierre[0]) / maxf(1.0, float(pierre[1])), "rochers": rochers.size()},
@@ -249,8 +284,8 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -
 
 
 # le recensement, dit ligne à ligne
-static func dire(monde, biome: String, rect: Rect2 = Rect2(), titre := "", pese := true) -> Dictionary:
-	var c := compter(monde, biome, rect, pese)
+static func dire(monde, biome: String, rect: Rect2 = Rect2(), titre := "", pese := true, eau := true) -> Dictionary:
+	var c := compter(monde, biome, rect, pese, eau)
 	print("recensement : %s%s — %d objets (%s)" % [biome, (" " + titre) if titre != "" else "", int(c["objets"]),
 		", ".join(c["genres"].keys().map(func(k): return "%s %d" % [k, int(c["genres"][k])]))])
 	var ids: Array = c["plantes"].keys()
@@ -272,7 +307,15 @@ static func dire(monde, biome: String, rect: Rect2 = Rect2(), titre := "", pese 
 	var pe: Dictionary = c["peuplements"]
 	var ge: Dictionary = c["geants"]
 	var pi: Dictionary = c["pierre"]
-	print("  parts : l'écart le plus grand entre la part réalisée et celle d'Orvane (dans la strate) : %.1f points" % (100.0 * float(c["ecart"])))
+	print("  parts : l'écart le plus grand entre la part réalisée et celle d'Orvane, dans les strates d'au moins %d plantes : %.1f points (toutes strates : %.1f)" % [GRANDE_STRATE,
+		100.0 * float(c["ecart_grand"]), 100.0 * float(c["ecart"])])
+	if int(c["fond"]["n"]) > 0:
+		print("  eau profonde : %.0f %% des nénuphars au milieu d'une mare, au large d'une eau (les lentilles d'eau : %.0f %%)" % [100.0 * float(c["fond"]["nenuphars"]), 100.0 * float(c["fond"]["lentilles"])])
+	if int(c["lianes"]["n"]) > 0:
+		print("  lianes : %d, %.0f %% à moins de %d pixels d'un tronc" % [int(c["lianes"]["n"]), 100.0 * float(c["lianes"]["au_pied"]), int(AU_PIED)])
+	if int(c["cactus"]["n"]) > 0:
+		print("  cactus : %d, à %d pixels de leur plus proche voisine grasse (médiane ; au plus près %d), %.0f %% à moins de 50" % [int(c["cactus"]["n"]), int(c["cactus"]["mediane"]), int(c["cactus"]["min"]),
+			100.0 * float(c["cactus"]["serres"])])
 	if int(rv["n"]) > 0:
 		print("  rives : %d plantes de rive, à %s pixels de l'eau (médiane), %.0f %% à moins de %d (les autres plantes du sol : %.0f %% de %d) ; %d mares" % [int(rv["n"]),
 			("%d" % int(rv["mediane"])) if float(rv["mediane"]) < INF else "plus de 400", 100.0 * float(rv["pres"]), int(PRES_EAU), 100.0 * float(rv["autres_pres"]), int(rv["autres"]), int(rv["mares"])])

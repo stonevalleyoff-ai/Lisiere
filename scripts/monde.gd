@@ -793,7 +793,7 @@ func _plan_m(k: Vector2i) -> Array:
 # (le monde ouvert : ce que la carte et le pays y mettent d'eau, de feu)
 func _contexte(type: String, rect: Rect2 = Rect2()) -> Dictionary:
 	var ctx: Dictionary
-	if type == "" or carte == null:
+	if type == "":
 		ctx = {"t": _terrain, "s": _parts, "mesures": _mesures, "bosquets": _bosquets, "arbre": _arbre, "type": type, "graine": _graine, "herbes": HERBES,
 			"borne": 0.0 if ouvert else R.DEMI, "relief": _relief, "crue": _crue}
 	else:
@@ -801,7 +801,7 @@ func _contexte(type: String, rect: Rect2 = Rect2()) -> Dictionary:
 		ctx = {"t": _terrain, "s": L["parts"], "mesures": L["mesures"], "bosquets": _bosquets, "arbre": str(L["arbre"]), "type": type, "graine": _graine, "herbes": HERBES,
 			"borne": 0.0, "relief": _relief, "crue": float(L["crue"])}
 	if rect.size.x > 0.0:
-		_pays(ctx, rect, lieu if (type == "" or carte == null) else type)
+		_pays(ctx, rect, lieu if type == "" else type)
 	return ctx
 
 
@@ -851,7 +851,7 @@ func _pays(ctx: Dictionary, rect: Rect2, type: String) -> void:
 # est — la rive de l'eau qui reste dans les creux d'un lieu détrempé, le tour d'une mare (une plante d'eau parmi ces objets),
 # d'une fondrière. Les eaux du rectangle sont cherchées une fois
 func _rive_du_decor(rect: Rect2, type: String, objets_: Array) -> Callable:
-	var crue := _crue if (type == "" or carte == null) else float(lieu_de(type)["crue"])
+	var crue := _crue if type == "" else float(lieu_de(type)["crue"])
 	var niveau := lerpf(0.26, 0.5, crue) + 0.008 if crue > 0.01 else -1.0
 	var large := rect.grow(70.0)
 	# [où, son rayon, sa hauteur pour sa largeur, de combien on peut y entrer]
@@ -859,7 +859,7 @@ func _rive_du_decor(rect: Rect2, type: String, objets_: Array) -> Callable:
 	for o in objets_:
 		if is_instance_valid(o) and o.genre == "aquatique" and large.has_point(o.position):
 			eaux.append([o.position, float(o._rx), R.MILIEU_OVALE, -2.0])
-	if not Biomes.de(lieu if (type == "" or carte == null) else type).is_empty() and (rect.size.x <= 2.0 * MORCEAU or not ouvert):
+	if not Biomes.de(lieu if type == "" else type).is_empty() and (rect.size.x <= 2.0 * MORCEAU or not ouvert):
 		var a := Vector2i((rect.grow(120.0).position / Pays.CASE).floor())
 		var b := Vector2i((rect.grow(120.0).end / Pays.CASE).floor())
 		for x in range(a.x, b.x + 1):
@@ -986,7 +986,7 @@ func _echantillon(type: String) -> Dictionary:
 	var n := int(R.MILIEU_ECHANTILLON / cote)
 	var plan: Array = []
 	var coin := Vector2(40000.0, 40000.0)
-	_pays_factice(ctx, r, Rect2(coin, Vector2(n, n) * cote), lieu if (type == "" or carte == null) else type)
+	_pays_factice(ctx, r, Rect2(coin, Vector2(n, n) * cote), lieu if type == "" else type)
 	var tout := {"eaux": ctx.get("eaux", []), "feux": ctx.get("feux", []), "dunes": ctx.get("dunes", [])}
 	for x in n:
 		for y in n:
@@ -1005,7 +1005,7 @@ func _echantillon(type: String) -> Dictionary:
 func _table(type: String) -> Dictionary:
 	if _tables.has(type):
 		return _tables[type]
-	var seul := type == "" or carte == null
+	var seul := type == ""
 	var fl: Dictionary = flore if seul else lieu_de(type)["flore"]
 	var ech := _echantillon(type)
 	var ctx := _contexte(type)
@@ -1026,7 +1026,7 @@ func _table(type: String) -> Dictionary:
 # ce que la météo d'Orvane fait aux densités d'un biome, ce cycle (scripts/milieu.gd, densites)
 func _densite(type: String) -> Dictionary:
 	if not _densites.has(type):
-		_densites[type] = Milieu.densites(Orvane.meteo(lieu if (type == "" or carte == null) else type))
+		_densites[type] = Milieu.densites(Orvane.meteo(lieu if type == "" else type))
 	return _densites[type]
 
 
