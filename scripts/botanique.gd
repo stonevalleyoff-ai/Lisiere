@@ -11,6 +11,11 @@ extends RefCounted
 #  - en la donnant à une bête, dans un appât.
 # Reconnue, une herbe se prépare : un baume, une tisane, un philtre (à la popote, sur un feu, avec de l'eau) ; une botte à
 # jeter au feu, un appât empoisonné, un appât dormant (au mortier). Et elle se sème, dans un carré de jardin.
+# Les aromates (un buisson aromatique en donne, en fleurs ou non : scripts/flore.gd) ne cachent rien : on sait ce qu'ils font.
+# Pilés au mortier, liés d'une gorgée d'eau, ils font un baume qui soigne longtemps (une minute presque) et chasse le poison
+# bien plus vite que le temps ; jetés dans un feu, une fumée bleue qui sent la résine : qui s'y tient sent son cœur se poser,
+# et en garde l'odeur sur elle (les sangsues n'y mordent pas : scripts/biome_terrain.gd). Mieux que les simples et que le
+# baume des herbes, mais ils ne poussent qu'au sec et au chaud (la lande, le volcan, le désert) : il faut aller les chercher.
 
 const R := preload("res://scripts/regles.gd")
 const CAPS := ["l'est", "le sud-est", "le sud", "le sud-ouest", "l'ouest", "le nord-ouest", "le nord", "le nord-est"]
@@ -93,6 +98,10 @@ var visions := 0.0
 var voyance := 0.0
 var calme := 0.0
 var fumees := {}                  # le feu → secondes de fumée âcre
+var encens := {}                  # le feu → secondes de fumée d'aromates
+var onguent := 0.0                # secondes : le baume des aromates soigne encore
+var parfum := 0.0                 # secondes : l'odeur des aromates qu'elle garde sur elle
+var _dans_l_encens := false       # elle se tient dans leur fumée (on l'entend respirer quand elle y entre)
 var dernier_gout := ""            # la vertu de la dernière herbe goûtée (le geste « gouter » en lit la grimace)
 var _vertus := {}                 # le lieu → [la vertu de chacune de ses six herbes]
 var _indices := {}                # l'espèce → son indice
@@ -480,6 +489,110 @@ func utiliser(p: String) -> bool:
 	return true
 
 
+# --- les aromates : un baume, une fumée ---
+
+# ce qui l'empêche de piler un baume d'aromates ("" : rien) : des aromates, le mortier, une gorgée d'eau
+func empeche_piler_aromates() -> String:
+	var inv: Dictionary = jeu.joueur.inventaire
+	if int(inv.get("aromates", 0)) < R.AROMATES_BAUME:
+		return "Il te faut %d aromates." % R.AROMATES_BAUME
+	if jeu.atelier.possede("mortier") <= 0:
+		return "Il te faut un mortier."
+	if int(inv.get("eau", 0)) <= 0:
+		return "Il te faut une gorgée d'eau."
+	return ""
+
+
+# au mortier, des aromates pilés dans un peu d'eau : un baume vert et gras
+func piler_aromates() -> bool:
+	var pourquoi := empeche_piler_aromates()
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, GRIS)
+		return false
+	var inv: Dictionary = jeu.joueur.inventaire
+	inv["aromates"] = int(inv["aromates"]) - R.AROMATES_BAUME
+	inv["eau"] = int(inv["eau"]) - 1
+	inv["baume_aromates"] = int(inv.get("baume_aromates", 0)) + 1
+	jeu.joueur.geste_atelier("piler")
+	# (le pilon dans la pierre, au rythme du geste, puis les brins qu'on écrase : leur odeur monte)
+	for t in [1.1, 1.32, 1.54]:
+		jeu.get_tree().create_timer(float(t)).timeout.connect(func(): jeu.sons.jouer("pierre", -13.0, 1.45))
+	jeu.sons.atelier("tresse", -6.0, 0.7)
+	jeu.ui.message("Les aromates, pilés dans un peu d'eau : un baume vert et gras, qui sent la résine. Il soigne longtemps, et chasse le poison.", TEINTE)
+	return true
+
+
+# elle s'en oint : la santé revient, une minute presque ; le poison s'en va bien plus vite que le temps
+func oindre() -> bool:
+	var j = jeu.joueur
+	var inv: Dictionary = j.inventaire
+	if int(inv.get("baume_aromates", 0)) <= 0:
+		jeu.ui.message("Tu n'as pas de baume d'aromates.", GRIS)
+		return false
+	inv["baume_aromates"] = int(inv["baume_aromates"]) - 1
+	# (un second baume, quand le premier agit encore, s'y ajoute : rien de perdu ; deux au plus à la fois)
+	onguent = minf(maxf(onguent, 0.0) + R.ONGUENT, R.ONGUENT * 2.0)
+	j.geste_atelier("boire")
+	jeu.sons.atelier("inspire", -4.0, 1.08)
+	jeu.ui.message("Le baume des aromates, frais puis chaud sur la peau.%s" % (" Le poison recule." if poison > 0.0 else " La douleur recule, lentement."), TEINTE)
+	return true
+
+
+# ce qui l'empêche de jeter des aromates au feu ("" : rien)
+func empeche_fumiger() -> String:
+	if int(jeu.joueur.inventaire.get("aromates", 0)) < R.AROMATES_FEU:
+		return "Il te faut %d aromates." % R.AROMATES_FEU
+	if jeu._feu_proche(jeu.joueur.position, true) == null:
+		return "Il faut un feu allumé, tout près."
+	return ""
+
+
+# elle jette des aromates dans le feu : une fumée bleue, qui sent la résine, monte et s'étale jusqu'au bord de sa lumière
+func fumiger() -> bool:
+	var pourquoi := empeche_fumiger()
+	if pourquoi != "":
+		jeu.ui.message(pourquoi, GRIS)
+		return false
+	var j = jeu.joueur
+	var f = jeu._feu_proche(j.position, true)
+	var inv: Dictionary = j.inventaire
+	inv["aromates"] = int(inv["aromates"]) - R.AROMATES_FEU
+	# (une seconde poignée prolonge la fumée, jusqu'à deux fois sa durée)
+	encens[f] = minf(float(encens.get(f, 0.0)) + R.ENCENS, R.ENCENS * 2.0)
+	j.geste_atelier("jeter")
+	jeu.sons.atelier("aromates", 0.0, 1.0, f.position)
+	jeu.ui.message("Les aromates dans les flammes : une fumée bleue monte, qui sent la résine et le soleil. Tiens-toi dedans : le cœur se pose.", TEINTE)
+	return true
+
+
+# la fumée d'aromates de ce feu (de 0 à 1 ; elle s'éteint sur ses dernières secondes)
+func encens_de(feu) -> float:
+	return clampf(float(encens.get(feu, 0.0)) / 4.0, 0.0, 1.0)
+
+
+# jusqu'où s'étale la fumée d'aromates d'un feu : le bord de sa lumière
+static func portee_encens(feu) -> float:
+	return maxf(float(feu.rayon()), float(feu.RAYON_MIN)) * 0.9
+
+
+# la fumée d'aromates là où elle est (de 0 à 1) : la plus forte de celles qui l'atteignent, plus mince vers leur bord
+func dans_l_encens(p: Vector2) -> float:
+	var k := 0.0
+	for f in encens:
+		if not is_instance_valid(f) or not f.allume():
+			continue
+		var r := portee_encens(f)
+		var d: float = f.position.distance_to(p)
+		if d < r:
+			k = maxf(k, encens_de(f) * clampf((r - d) / (r * 0.25), 0.0, 1.0))
+	return k
+
+
+# garde-t-elle sur elle l'odeur des aromates ? (les sangsues n'y mordent pas)
+func impregnee() -> bool:
+	return parfum > 0.0
+
+
 # --- le jardin : une herbe reconnue se sème ---
 
 func empeche_semer(id: String) -> String:
@@ -553,10 +666,39 @@ func maj(delta: float) -> void:
 	if j == null:
 		return
 	if poison > 0.0:
-		poison = maxf(0.0, poison - delta)
+		# (le baume des aromates le chasse bien plus vite que le temps)
+		poison = maxf(0.0, poison - delta * (1.0 + (R.ONGUENT_POISON if onguent > 0.0 else 0.0)))
 		jeu._mal("poison", POISON_MAL * delta)
 		if poison <= 0.0:
 			jeu.ui.message("Le poison s'est éteint.", TEINTE)
+	# le baume des aromates : la santé revient, longtemps
+	if onguent > 0.0:
+		onguent = maxf(0.0, onguent - delta)
+		if float(j.sante) > 0.0:
+			j.sante = minf(100.0, float(j.sante) + R.ONGUENT_SOIN * delta)
+	# la fumée des aromates : qui s'y tient sent son cœur se poser, et en garde l'odeur sur elle
+	for f in encens.keys():
+		if not is_instance_valid(f) or not f.allume():
+			encens.erase(f)
+			continue
+		encens[f] = float(encens[f]) - delta
+		if float(encens[f]) <= 0.0:
+			encens.erase(f)
+	var e := dans_l_encens(j.position)
+	if e > 0.3:
+		j.peur = maxf(0.0, float(j.peur) - R.ENCENS_APAISE * e * delta)
+		parfum = R.PARFUM
+		if not _dans_l_encens:
+			_dans_l_encens = true
+			# (elle respire l'odeur : on l'entend, comme on la sentirait)
+			jeu.sons.atelier("inspire")
+			if not _dit.has("encens"):
+				_dit["encens"] = true
+				jeu.ui.message("La fumée des aromates t'enveloppe. Le cœur se pose ; l'odeur te reste sur la peau, et tient les sangsues.", TEINTE)
+	else:
+		if e < 0.1:
+			_dans_l_encens = false
+		parfum = maxf(0.0, parfum - delta)
 	torpeur = maxf(0.0, torpeur - delta)
 	visions = maxf(0.0, visions - delta)
 	voyance = maxf(0.0, voyance - delta)
@@ -596,12 +738,22 @@ func commencer(graine_partie: int) -> void:
 	voyance = 0.0
 	calme = 0.0
 	fumees = {}
+	encens = {}
+	onguent = 0.0
+	parfum = 0.0
+	_dans_l_encens = false
 	dernier_gout = ""
 
 
 func photo() -> Dictionary:
+	# (la fumée d'aromates d'un feu se garde avec sa place : le feu, repris, la retrouve)
+	var la := []
+	for f in encens:
+		if is_instance_valid(f):
+			la.append([snappedf(f.position.x, 0.1), snappedf(f.position.y, 0.1), snappedf(float(encens[f]), 0.1)])
 	return {"graine": graine, "savoir": savoir.duplicate(true), "poison": snappedf(poison, 0.1), "torpeur": snappedf(torpeur, 0.1),
-		"visions": snappedf(visions, 0.1), "voyance": snappedf(voyance, 0.1), "calme": snappedf(calme, 0.1)}
+		"visions": snappedf(visions, 0.1), "voyance": snappedf(voyance, 0.1), "calme": snappedf(calme, 0.1),
+		"onguent": snappedf(onguent, 0.1), "parfum": snappedf(parfum, 0.1), "encens": la}
 
 
 func reprendre(d: Dictionary) -> void:
@@ -616,3 +768,12 @@ func reprendre(d: Dictionary) -> void:
 	visions = float(d.get("visions", 0.0))
 	voyance = float(d.get("voyance", 0.0))
 	calme = float(d.get("calme", 0.0))
+	onguent = float(d.get("onguent", 0.0))
+	parfum = float(d.get("parfum", 0.0))
+	# (les feux sont déjà repris : chaque fumée retrouve le sien, à sa place)
+	for x in d.get("encens", []):
+		if typeof(x) != TYPE_ARRAY or x.size() < 3:
+			continue
+		for f in jeu.feux:
+			if is_instance_valid(f) and f.position.distance_to(Vector2(float(x[0]), float(x[1]))) < 2.0:
+				encens[f] = float(x[2])

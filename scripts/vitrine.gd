@@ -24,15 +24,24 @@ extends Node
 #   --noire reveil : de jour, endormie puis réveillée (sa charge, sa morsure, son départ, en pleine lumière)
 #   l'atelier (scripts/atelier.gd) : --pose etabli,tente,hamac,recuperateur,filet,cerf_volant,vestige : ces choses, posées
 #   autour d'elle dans une clairière ; --etat travail,occupe,eau,prise,branche,foudre,fouille,popote : dans cet état ;
-#   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac ;
+#   --tenue sac,chaud,pluie,lampe : ce qu'elle porte ; --geste marteler : ce geste, repris ; --dort ; --page etabli|sac
+#   (--nourrir : le sac plein de la cueillette nourricière) ;
 #   --fabrique tente,popote : à l'établi, elle fabrique ces choses l'une après l'autre ; --aupres tente : elle se tient
 #   près de cette chose (avec --dort : elle s'y couche)
+#   l'artisanat des plantes : --artisanat (avec --page : la fibre longue, le filin, les aromates, leur baume, un grand filet,
+#   une longe de filin dans le sac) ; --pose filet_filin ; --compagne longe ; --botanique encens,onguent,parfum ; --filin (avec
+#   --pont : le pont se lie de filin) ; --pont-ici : un pont lié de filin posé devant elle, pour le regarder (sans rivière) ;
+#   --compagne longe,piquet,affolee : sa bête au piquet posé (--pose piquet), la nuit déjà affolée ; --loupe 2 : la caméra
+#   deux fois plus près
 #   les herbes (scripts/botanique.gd) : --botanique poison,torpeur,visions,voyance,calme,fumee : cet état, tenu ; --herbes :
 #   son sac plein des herbes du lieu, la moitié reconnues, un mortier, une popote ; --geste gouter|piler|jeter
 #   le jardin, l'élevage : --pose carre,epouvantail,piquet,mangeoire,appat ; --etat lin,fleur,eau (ou baie, simple ; semis,
 #   pousse, mur ; gel ; regard, alerte ; foin ; attache) ; --compagne licol,selle,sacoche,grande,reste,monte : une bête à elle
 #   la cueillette (scripts/flore.gd) : --cueillette : elle va de fleur en champignon des bois, et les cueille (avec --ouvert
-#   --depuis x,y : dans le biome de son choix)
+#   --depuis x,y : dans le biome de son choix) ; --fruits : elle va d'arbre en arbre, ramasse les fruits tombés et cueille
+#   ceux des branches (et les épis mûrs, le lichen des rennes, la pulpe des cactus) ; --planche arbres|sol : une planche de la cueillette nourricière, posée dans une clairière à côté
+#   d'elle, de près (les arbres et leurs fruits, à chaque état ; les épis, le lichen, le cactus, les grains au jardin ; « geste » :
+#   elle cueille un pommier, de tout près) ; --gros : la caméra va de l'une à l'autre, de tout près
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
@@ -66,12 +75,14 @@ var _etats := {}
 var _fabrique: PackedStringArray = PackedStringArray()
 var _fabrique_k := 0
 var _dormir_dans = null
+var _affolee = null            # (--compagne affolee) la bête qu'on tient affolée au bout de sa longe, même de jour
 var _botanique := {}
 var _geste_atelier_t := 0.0
 var _brules: Array = []
 var _meute := 0                # (--meute) combien de chasseurs, pour regarder leur affût
 var _trace: FileAccess = null  # (--trace) où ils sont, cinq fois par seconde
 var _trace_t := 0.0
+var _planche: Array = []       # (--planche) ce qui y est posé ; avec --gros, la caméra va de l'un à l'autre, de tout près
 
 
 func _ready() -> void:
@@ -236,6 +247,22 @@ func _lancer() -> void:
 		if ar2.has("--pays"):
 			j.inventaire["obsidienne"] = 3
 			j.inventaire["tourbe"] = 2
+		# (--artisanat : et ce que donnent l'agave et les aromates ; scripts/atelier.gd, scripts/botanique.gd)
+		if ar2.has("--artisanat"):
+			j.inventaire["fibre_longue"] = 6
+			j.inventaire["filin"] = 4
+			j.inventaire["aromates"] = 7
+			j.inventaire["baume_aromates"] = 1
+			jeu.atelier.objets["longe"] = 1
+			jeu.atelier.objets["filet_filin"] = 1
+			jeu.atelier.objets["mortier"] = 1
+		# (--nourrir : et ce que donne la cueillette nourricière, les fruits, les grains, le lichen, la pulpe, et ce que la
+		# popote en a fait ; un mortier, une popote)
+		if ar2.has("--nourrir"):
+			for k4 in ["pomme", "figue", "coco", "pain_de_singe", "grains", "lichen", "pulpe", "gruau", "soupe_lichen"]:
+				j.inventaire[k4] = 2 + k4.length() % 4
+			jeu.atelier.objets["mortier"] = 1
+			jeu.atelier.objets["popote"] = 1
 		jeu.atelier.portes = {"sac_a_dos": true}
 		jeu.atelier.charge = 62.0
 		jeu.atelier._tenue()
@@ -289,6 +316,9 @@ func _lancer() -> void:
 					"filet":
 						if _etats.has("prise"):
 							s.etat["prise"] = {"id": "", "nom": "une bête", "masse": 2.4}
+					"filet_filin":
+						if _etats.has("prise"):
+							s.etat["prise"] = {"id": "", "nom": "une bête", "masse": 24.0}
 					"cerf_volant":
 						if _etats.has("branche") or _etats.has("foudre"):
 							jeu.atelier.objets["piles"] = 1
@@ -336,16 +366,38 @@ func _lancer() -> void:
 				continue
 			jeu.atelier.objets["licol"] = 1
 			jeu.elevage.apprivoiser(b)
-			for k in ["selle", "sacoche"]:
+			for k in ["selle", "sacoche", "longe"]:
 				if veut.has(k):
 					b.harnais[k] = true
 			if veut.has("reste"):
 				b.suit_la = false
 				b.maison = b.position
+			# (--compagne longe,piquet : au piquet posé avec --pose piquet, sa longe nouée à l'anneau)
+			if veut.has("piquet"):
+				for s2 in jeu.atelier.poses:
+					if str(s2.genre) == "piquet":
+						b.suit_la = false
+						b.maison = s2.position + Vector2(18.0, 10.0)
+						b.position = b.maison
+						break
 			if veut.has("monte"):
 				b.harnais["selle"] = true
 				jeu.elevage.monter(b)
+			# (--compagne longe,piquet,affolee : la nuit, déjà affolée par le noir, au bout de sa longe)
+			if veut.has("affolee"):
+				jeu.elevage._noir[b] = jeu.elevage.NOIR + 0.5
+				_affolee = b
 			break
+	# (--pont-ici : un pont lié de filin et un pont de fibres, posés devant elle à même le sol, pour en comparer le dessin)
+	if ar2.has("--pont-ici"):
+		var a0: Vector2 = j.position + Vector2(50.0, 46.0)
+		jeu.poser_pont(a0, a0 + Vector2(180.0, -24.0), R.PONT_DUREE * R.PONT_FILIN_DUREE, true)
+		jeu.poser_pont(a0 + Vector2(-20.0, 86.0), a0 + Vector2(160.0, 62.0), R.PONT_DUREE, false)
+		_plan = [[0.0, 1.0, "attendre"]]
+	# (--loupe 2 : la caméra deux fois plus près, pour regarder un dessin)
+	var i_lp := ar2.find("--loupe")
+	if i_lp >= 0 and i_lp + 1 < ar2.size():
+		jeu.effets.recul = float(ar2[i_lp + 1])
 	# (--botanique poison,torpeur,visions,voyance,calme,fumee : cet état des herbes, tenu ; --herbes : son sac plein d'herbes
 	# du lieu, la moitié reconnues ; scripts/botanique.gd)
 	var i_b := ar2.find("--botanique")
@@ -416,6 +468,14 @@ func _lancer() -> void:
 	# (--cueillette : elle cueille les fleurs et les champignons des bois autour d'elle)
 	if OS.get_cmdline_user_args().has("--cueillette"):
 		_plan = [[0.0, 0.08, "attendre"], [0.08, 1.0, "cueillette"]]
+	# (--fruits : elle va d'arbre en arbre et cueille leurs fruits ; --planche arbres|sol : la planche de la cueillette)
+	if OS.get_cmdline_user_args().has("--fruits"):
+		_plan = [[0.0, 0.06, "attendre"], [0.06, 1.0, "fruits"]]
+		# (de plus près : le geste se lit, le bras tendu dans les branches)
+		jeu.effets.recul = 1.9
+	var i_pl := OS.get_cmdline_user_args().find("--planche")
+	if i_pl >= 0 and i_pl + 1 < OS.get_cmdline_user_args().size():
+		_planche_cueillette(OS.get_cmdline_user_args()[i_pl + 1])
 	# (--sans son,ciel,sol,flammes : pour chercher ce qui coûte, on éteint une chose à la fois)
 	var args := OS.get_cmdline_user_args()
 	var i_sans := args.find("--sans")
@@ -652,6 +712,11 @@ func _process(delta: float) -> void:
 		if _regles.has(k):
 			j.set(k.trim_prefix("--"), float(_regles[k]))
 	var u := _t / duree
+	# (--planche --gros : de tout près, chaque plante de la planche à son tour)
+	if not _planche.is_empty() and OS.get_cmdline_user_args().has("--gros"):
+		var o = _planche[clampi(int(u * _planche.size()), 0, _planche.size() - 1)]
+		jeu.camera.position = o.position + Vector2(0.0, -float(o.hauteur) * 0.42) - j.position
+		jeu.effets.recul = 2.6 if o.genre == "arbre" else 3.4
 	if nu and jeu.ui != null and jeu.ui.visible:
 		jeu.ui.visible = false
 	_le_temps_passe(u)
@@ -735,6 +800,20 @@ func _process(delta: float) -> void:
 			for f in jeu.feux:
 				if is_instance_valid(f):
 					B.fumees[f] = maxf(float(B.fumees.get(f, 0.0)), 6.0)
+		# (l'artisanat des plantes : la fumée des aromates sur les feux, le baume qui agit, l'odeur gardée)
+		if _botanique.has("encens"):
+			for f in jeu.feux:
+				if is_instance_valid(f):
+					B.encens[f] = maxf(float(B.encens.get(f, 0.0)), 6.0)
+		if _botanique.has("onguent"):
+			B.onguent = maxf(B.onguent, 6.0)
+			jeu.joueur.sante = minf(jeu.joueur.sante, 70.0)
+		if _botanique.has("parfum"):
+			# (tout frais : elle sort de la fumée, l'odeur monte d'elle)
+			B.parfum = maxf(B.parfum, R.PARFUM - 5.0)
+	# (--compagne affolee : elle se débat au bout de sa longe, même de jour, pour qu'on voie le filin se tendre)
+	if _affolee != null and is_instance_valid(_affolee) and jeu.elevage.betes.has(_affolee) and _affolee.longe != null:
+		jeu.elevage._affoler(_affolee, delta)
 	if _dormir_dans != null and u > 0.3 and not _fait.has("dort"):
 		_fait["dort"] = true
 		for b in get_tree().get_nodes_in_group("betes"):
@@ -786,6 +865,8 @@ func _process(delta: float) -> void:
 		_fait["pont"] = true
 		j.inventaire["bois"] = 40
 		j.inventaire["fibre"] = 12
+		if OS.get_cmdline_user_args().has("--filin"):
+			j.inventaire["filin"] = 4
 		jeu.fabriquer("pont")
 		if not jeu.ponts.is_empty():
 			var pt = jeu.ponts[0]
@@ -822,6 +903,21 @@ func _process(delta: float) -> void:
 				else:
 					j.deplacer(Vector2.ZERO, delta, jeu.monde)
 					_cadence(geste, delta)
+		"fruits":
+			# (ce qui nourrit, le plus proche : elle se poste à son pied, de côté, et cueille)
+			var arbre = _fruitier_proche()
+			if arbre != null:
+				var d3: Vector2 = arbre.position + Vector2(16.0 * (1.0 if j.position.x >= arbre.position.x else -1.0), 9.0) - j.position
+				if d3.length() > 20.0:
+					j.deplacer(d3.normalized(), delta, jeu.monde)
+				else:
+					j.deplacer(Vector2.ZERO, delta, jeu.monde)
+					_coup -= delta
+					if _coup <= 0.0:
+						_coup = 0.75
+						jeu.agir()
+			else:
+				j.deplacer(Vector2.ZERO, delta, jeu.monde)
 		"chasser":
 			if not _fait.has("proie"):
 				_fait["proie"] = jeu._creer(jeu.faune["proies_jour"][0], "proie", j.position + Vector2(26, 0))
@@ -882,6 +978,110 @@ func _plus_proche(genres: Array):
 				d0 = d
 				meilleur = o
 	return meilleur
+
+
+# (--fruits) ce qui nourrit, le plus proche : un arbre qui porte encore des fruits, des épis mûrs, du lichen des rennes, un cactus
+func _fruitier_proche():
+	var j = jeu.joueur
+	var meilleur = null
+	var d0 := INF
+	for o in jeu.monde.autour(j.position, 900.0):
+		var nourrit: bool = o.porte_fruits() if o.genre == "arbre" else (str(o.forme) in ["cereale", "riz", "lichen_rennes", "cactus"] and not o.epuise())
+		if nourrit:
+			var d: float = j.position.distance_to(o.position)
+			if d < d0:
+				d0 = d
+				meilleur = o
+	return meilleur
+
+
+# (--planche arbres|sol) la cueillette nourricière, posée en planche dans une clairière à côté d'elle, regardée de près : chaque
+# plante dans chacun de ses états, comme sur une page de l'herbier. Rien n'y bouge que le vent ; elle se tient au bord
+func _planche_cueillette(quoi: String) -> void:
+	var j = jeu.joueur
+	var W = jeu.monde
+	var Objet := load("res://scripts/objet.gd")
+	var centre: Vector2 = j.position + Vector2(0.0, -60.0)
+	# (la clairière : rien d'autre dans le cadre, ni bête)
+	for o in W.autour(centre, 520.0):
+		if is_instance_valid(o) and o != j:
+			W.retirer(o)
+	for b in get_tree().get_nodes_in_group("betes"):
+		b.queue_free()
+	_plan = [[0.0, 1.0, "attendre"]]
+	# (une plante de cette forme, posée par le monde comme les siennes : un lieu où il ne pousse qu'elle)
+	var poser := func(genre: String, forme: String, p: Vector2, graine: int, caracteres: Array = [], saison: String = "été"):
+		var garde: String = Objet.saison
+		Objet.saison = saison
+		var strate := "arbre" if genre == "arbre" else "sol"
+		var e := {"id": "planche-" + forme, "poids": 1.0, "taille": 1.0, "port": forme, "forme": forme, "genre": genre, "planche": false, "nom": forme,
+			"stade": "feuilles", "defense": [], "caracteres": caracteres, "couleur": null, "fleur": null}
+		var o = W._poser(strate, centre + p, W.palette["feuilles" if strate == "arbre" else "herbe"], graine, {"flore": {strate: [e]}, "climat": Objet.climat, "palette": W.palette})
+		Objet.saison = garde
+		_planche.append(o)
+		return o
+	if quoi == "geste":
+		# (un pommier chargé, et elle qui cueille, de tout près : le geste, le bras tendu ; l'arbre ne se vide pas)
+		var o = poser.call("arbre", "fruitier", Vector2(0.0, 60.0), _graine_qui_porte(12))
+		o.tombes = 0
+		o.fruits_plein = 9
+		o.fruits = 9
+		j.position = o.position + Vector2(-16.0, 9.0)
+		_plan = [[0.0, 0.05, "attendre"], [0.05, 1.0, "fruits"]]
+		jeu.effets.recul = 3.0
+		jeu.camera.position = Vector2(14.0, -34.0)
+	elif quoi == "arbres":
+		# (la rangée du fond, chargée : le pommier, le figuier, le palmier, le baobab, chacun avec ses fruits tombés à son pied)
+		var fond := [["fruitier", 12], ["figuier", 28], ["palmier", 31], ["bouteille", 46]]
+		for i in fond.size():
+			var g := _graine_qui_porte(fond[i][1])
+			var o = poser.call("arbre", fond[i][0], Vector2(-285.0 + 190.0 * i, -60.0), g)
+			o.tombes = o.tombes_plein
+		# (la rangée de devant : le pommier à moitié cueilli, vidé (ses fruits verts reviennent), au printemps (en fleurs), et
+		# un arbre qu'Orvane dit aux fruits charnus : ses sorbes)
+		var o1 = poser.call("arbre", "fruitier", Vector2(-285.0, 150.0), _graine_qui_porte(55))
+		o1.fruits = o1.fruits_plein / 2
+		o1.tombes = 0
+		var o2 = poser.call("arbre", "fruitier", Vector2(-95.0, 150.0), _graine_qui_porte(66))
+		o2.fruits = 0
+		o2.tombes = 0
+		o2._repousse_fruits = 0.3 * load("res://scripts/regles.gd").REPOUSSE_FRUITS
+		poser.call("arbre", "fruitier", Vector2(95.0, 150.0), _graine_qui_porte(77), [], "printemps")
+		var o4 = poser.call("arbre", "pionnier", Vector2(285.0, 150.0), _graine_qui_porte(88), ["fruits_charnus"])
+		o4.tombes = o4.tombes_plein
+		j.position = centre + Vector2(385.0, 150.0)
+		jeu.effets.recul = 1.15
+		# (la caméra regarde la planche, pas elle)
+		jeu.camera.position = centre + Vector2(0.0, 20.0) - j.position
+	else:
+		# (de gauche à droite : la céréale mûre, ses épis cueillis, sa paille coupée, au printemps ; le riz sauvage mûr, cueilli ;
+		# le lichen des rennes entier, entamé, tout pris ; le cactus entier, un bras coupé, les deux)
+		var rangs := [
+			[["touffe", "cereale", 2, "été"], ["touffe", "cereale", 1, "été"], ["touffe", "cereale", 0, "été"], ["touffe", "cereale", 2, "printemps"], ["touffe", "riz", 2, "été"], ["touffe", "riz", 1, "été"]],
+			[["touffe", "lichen_rennes", 2, "été"], ["touffe", "lichen_rennes", 1, "été"], ["touffe", "lichen_rennes", 0, "été"], ["touffe", "cactus", 2, "été"], ["touffe", "cactus", 1, "été"], ["touffe", "cactus", 0, "été"]],
+		]
+		for ri in rangs.size():
+			for i in rangs[ri].size():
+				var e: Array = rangs[ri][i]
+				var o = poser.call(e[0], e[1], Vector2(-150.0 + 60.0 * i, -40.0 + 85.0 * ri), 4000 + i * 7 + ri * 31, [], e[3])
+				o.reste = int(e[2])
+				o.queue_redraw()
+		# (au jardin : trois carrés de grains, qui sortent, qui épient, mûrs)
+		for i in 3:
+			jeu.atelier._creer("carre", centre + Vector2(-100.0 + 100.0 * i, 115.0), {"culture": "grain", "stade": [1.1, 2.1, 3.0][i], "eau": 0.8})
+		j.position = centre + Vector2(215.0, 60.0)
+		jeu.effets.recul = 1.8
+		jeu.camera.position = centre + Vector2(0.0, 30.0) - j.position
+	jeu.camera.reset_smoothing()
+
+
+
+# une graine d'arbre qui porte des fruits cette année (scripts/objet.gd, _porter_fruits : une part de la graine en décide)
+func _graine_qui_porte(depart: int) -> int:
+	var g := depart * 1009 + 7
+	while float((g / 7) % 100) >= load("res://scripts/regles.gd").PORTE_FRUITS * 100.0 or (g / 17) % 3 == 0:
+		g += 1
+	return g
 
 
 func _chasseur_proche():

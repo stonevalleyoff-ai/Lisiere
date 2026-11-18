@@ -25,6 +25,16 @@ const NOURRITURE := ["baies", "champignons", "viande", "viande_cuite", "bouillon
 # ce qu'on cueille et qui sert (scripts/flore.gd) : les fleurs (une infusion), l'infusion, l'amanite (un appât) ; et leurs noms
 const CUEILLETTE := ["fleurs", "infusion", "amanite"]
 const NOMS_CUEILLETTE := {"fleurs": "Fleurs", "infusion": "Infusion de fleurs", "amanite": "Amanite", "champignons": "cèpes"}
+# l'artisanat des plantes (scripts/botanique.gd) : les aromates (un baume au mortier ; jetés au feu, une fumée), leur baume
+const AROMATES := ["aromates", "baume_aromates"]
+const NOMS_AROMATES := {"aromates": "Aromates", "baume_aromates": "Baume d'aromates", "fumigation": "Aromates au feu"}
+# la cueillette nourricière (scripts/atelier.gd, NOURRITURE_CUEILLIE) : ce qui ne se montre dans « À manger » qu'une fois qu'elle
+# en a, et son nom, court, sous l'icône ; ce qui a un usage dans le sac (les grains : un gruau ; le lichen : une soupe ; la pulpe :
+# pressée, de l'eau), et son nom
+const NOMS_COURTS := {"pomme": "Pommes", "figue": "Figues", "coco": "Coco", "pain_de_singe": "Baobab", "grains": "Grains", "lichen": "Lichen",
+	"pulpe": "Pulpe", "gruau": "Gruau", "soupe_lichen": "Soupe"}
+const CUEILLETTE_NOURRICIERE := ["grains", "lichen", "pulpe"]
+const NOMS_NOURRICIERS := {"grains": "Grains", "lichen": "Lichen des rennes", "pulpe": "Pulpe de cactus"}
 const Jardin := preload("res://scripts/jardin.gd")
 const Elevage := preload("res://scripts/elevage.gd")
 const Botanique := preload("res://scripts/botanique.gd")
@@ -1034,8 +1044,9 @@ class Feuille extends Control:
 	func _matieres() -> Array:
 		var cases := []
 		for k in Atelier.MATIERES:
-			# (ce que seuls certains pays donnent ne se montre qu'une fois trouvé : scripts/biomes.gd)
-			if (k == "obsidienne" or k == "tourbe") and atelier.possede(k) <= 0:
+			# (ce que seuls certains pays donnent ne se montre qu'une fois trouvé : scripts/biomes.gd ; de même la fibre longue de
+			# l'agave, qui ne pousse qu'au chaud, et le filin qu'on en commet)
+			if k in ["obsidienne", "tourbe", "fibre_longue", "filin"] and atelier.possede(k) <= 0:
 				continue
 			var sur: int = atelier.capacite()
 			if k == "eau":
@@ -1123,6 +1134,13 @@ class Sac extends Feuille:
 		var inv: Dictionary = jeu.joueur.inventaire
 		for k in NOURRITURE:
 			manger.append({"id": k, "nom": Plume.majuscule(str(R.NOMS.get(k, NOMS_CUEILLETTE.get(k, k)))), "n": int(inv.get(k, 0)), "sur": 0})
+		# (les fruits, les grains, le lichen, la pulpe, et ce que la popote en a fait : une fois qu'elle en a)
+		for k in Atelier.NOURRITURE_CUEILLIE:
+			if int(inv.get(k, 0)) > 0:
+				manger.append({"id": k, "nom": str(NOMS_COURTS[k]), "n": int(inv.get(k, 0)), "sur": 0})
+		# (trop de choses pour la bande : ce qu'elle n'a pas s'efface, pour que chaque nom se lise)
+		if manger.size() > 8:
+			manger = manger.filter(func(c): return int(c["n"]) > 0)
 		return [{"titre": "Ce que tu portes · %d de chaque, au plus" % int(atelier.capacite()), "cases": _matieres()}, {"titre": "À manger", "cases": manger}]
 
 	# ce qui est posé à portée de main, et qui se replie (un vestige ne se replie pas)
@@ -1180,6 +1198,9 @@ class Sac extends Feuille:
 				la.append({"cle": "bete:selle", "id": "selle", "nom": "La seller", "pale": E.empeche_harnacher(b, "selle") != ""})
 			if not bool(b.harnais.get("sacoche", false)) and float(b.masse) >= Elevage.MASSE_SACOCHE:
 				la.append({"cle": "bete:sacoche", "id": "sacoche", "nom": "Ses sacoches", "pale": E.empeche_harnacher(b, "sacoche") != ""})
+			# (la longe de filin : seulement si elle en a une, pour une bête qui n'a que sa longe de chanvre)
+			if not bool(b.harnais.get("longe", false)) and atelier.possede("longe") > 0:
+				la.append({"cle": "bete:longe", "id": "longe", "nom": "Sa longe de filin"})
 			if float(b.masse) >= Elevage.MASSE_LAIT:
 				la.append({"cle": "bete:traire", "id": "lait", "nom": "La traire", "pale": E.empeche_traire(b) != ""})
 			la.append({"cle": "bete:liberer", "id": "licol", "nom": "La relâcher"})
@@ -1192,11 +1213,18 @@ class Sac extends Feuille:
 			if n > 0:
 				dons.append({"cle": ("use:" if k in ["simples", "lait"] else "graine:") + k, "id": k, "nom": str(NOMS_DU_JARDIN[k]), "n": n})
 		# (ce qu'elle a cueilli et qui sert : des fleurs à infuser, une infusion à boire, une amanite à piler)
-		for k in CUEILLETTE:
+		for k in CUEILLETTE + CUEILLETTE_NOURRICIERE:
 			var nc := int(inv.get(k, 0))
 			if nc > 0:
-				var gene := str(atelier.empeche_infuser()) if k == "fleurs" else (str(atelier.empeche_piler_amanite()) if k == "amanite" else "")
-				dons.append({"cle": "use:" + k, "id": k, "nom": str(NOMS_CUEILLETTE[k]), "n": nc, "pale": gene != ""})
+				dons.append({"cle": "use:" + k, "id": k, "nom": str(NOMS_CUEILLETTE.get(k, NOMS_NOURRICIERS.get(k, k))), "n": nc, "pale": _empeche_cueillette(k) != ""})
+		# (les aromates : un baume au mortier, une poignée au feu ; et le baume qu'on en a fait)
+		for k in AROMATES:
+			var na := int(inv.get(k, 0))
+			if na > 0:
+				var gene_a := str(B.empeche_piler_aromates()) if k == "aromates" else ""
+				dons.append({"cle": "use:" + k, "id": k, "nom": str(NOMS_AROMATES[k]), "n": na, "pale": gene_a != ""})
+				if k == "aromates":
+					dons.append({"cle": "use:fumigation", "id": "fumigation", "nom": str(NOMS_AROMATES["fumigation"]), "pale": B.empeche_fumiger() != ""})
 		# (et ce qu'elle a préparé de ses herbes : scripts/botanique.gd)
 		for p in Botanique.ORDRE_PREPARATIONS:
 			if int(inv.get(p, 0)) > 0:
@@ -1224,6 +1252,21 @@ class Sac extends Feuille:
 			if str(c).begins_with("obj:"):
 				return str(c)
 		return super(cles)
+
+	# ce qui l'empêche de se servir de ce qu'elle a cueilli ("" : rien) : infuser, piler, cuire un gruau, une soupe, presser
+	func _empeche_cueillette(k: String) -> String:
+		match k:
+			"fleurs":
+				return str(atelier.empeche_infuser())
+			"amanite":
+				return str(atelier.empeche_piler_amanite())
+			"grains":
+				return str(atelier.empeche_cuire("gruau"))
+			"lichen":
+				return str(atelier.empeche_cuire("soupe_lichen"))
+			"pulpe":
+				return str(atelier.empeche_presser())
+		return ""
 
 	# le carré de jardin à portée de main (null : aucun)
 	func _carre():
@@ -1266,8 +1309,16 @@ class Sac extends Feuille:
 			for k in o["donne"]:
 				donne.append("%d %s" % [int(o["donne"][k]), str(NOMS_DU_JARDIN.get(k, R.NOMS.get(k, Atelier.NOMS_MATIERES.get(k, k)))).to_lower()])
 			var manque := "" if J.graines(c) >= Jardin.GRAINES else "Il te faut %d %s." % [Jardin.GRAINES, str(Jardin.NOMS_GRAINES[o["graine"]])]
+			var jours := "un jour" if float(o["jours"]) <= 1.0 else ("un jour et demi" if float(o["jours"]) < 2.0 else "deux jours")
+			if o["donne"].has(o["graine"]):
+				# (des grains : ce qu'on récolte est aussi ce qu'on sème)
+				var rend := PackedStringArray()
+				for k in o["donne"]:
+					rend.append("%d %s" % [int(o["donne"][k]) + (Jardin.RENDUES if k == o["graine"] else 0), str(R.NOMS.get(k, Atelier.NOMS_MATIERES.get(k, k))).to_lower()])
+				return _carte("grains", str(o["nom"]), "Tu as %d grains ; il en faut %d." % [J.graines(c), Jardin.GRAINES],
+					"Mûr en %s, la terre humide. Un carré rend %s : de quoi manger, et de quoi semer encore." % [jours, " et ".join(rend)], "Semer", manque)
 			return _carte(str(o["graine"]), str(o["nom"]), "Tu as %d graines ; il en faut %d." % [J.graines(c), Jardin.GRAINES],
-				"Mûr en %s, la terre humide. Un carré rend %s, et %d graines." % ["un jour" if float(o["jours"]) <= 1.0 else ("un jour et demi" if float(o["jours"]) < 2.0 else "deux jours"), ", ".join(donne), Jardin.RENDUES],
+				"Mûr en %s, la terre humide. Un carré rend %s, et %d graines." % [jours, ", ".join(donne), Jardin.RENDUES],
 				"Semer", manque)
 		if cle == "recolter" and carre != null:
 			return _carte("carre", "Le carré", J.dire(carre), "Ce qui est mûr se récolte ; le carré est de nouveau libre.", "Récolter")
@@ -1288,10 +1339,35 @@ class Sac extends Feuille:
 		if cle == "use:infusion":
 			return _carte("infusion", "Infusion de fleurs", "Tu en as %d." % int(inv.get("infusion", 0)),
 				"Chaude et douce : elle calme la peur (%d) et réchauffe un peu." % int(R.INFUSION_PEUR), "Boire")
+		if cle == "use:aromates":
+			return _carte("aromates", "Aromates", "Tu en as %d." % int(inv.get("aromates", 0)),
+				"Des brins gris-vert, gommeux, qui sentent la résine (un buisson aromatique, au sec et au chaud). %d, pilés au mortier dans une gorgée d'eau : un baume, qui soigne longtemps et chasse le poison." % R.AROMATES_BAUME,
+				"Piler un baume", jeu.botanique.empeche_piler_aromates())
+		if cle == "use:fumigation":
+			return _carte("fumigation", "Aromates au feu", "Tu as %d aromates ; il en faut %d." % [int(inv.get("aromates", 0)), R.AROMATES_FEU],
+				"Jetés dans un feu allumé : une fumée bleue, qui sent la résine, s'étale jusqu'au bord de sa lumière (une minute et demie). Qui s'y tient sent son cœur se poser, et en garde l'odeur : les sangsues n'y mordent pas.",
+				"Jeter au feu", jeu.botanique.empeche_fumiger())
+		if cle == "use:baume_aromates":
+			var agit: float = float(jeu.botanique.onguent)
+			return _carte("baume_aromates", "Baume d'aromates", "Tu en as %d." % int(inv.get("baume_aromates", 0)),
+				"Vert et gras, il sent la résine. Sur la peau, il rend la santé longtemps (%d en %d secondes), et chasse le poison bien plus vite que le temps." % [int(R.ONGUENT * R.ONGUENT_SOIN), int(R.ONGUENT)],
+				"S'en oindre", "", [["jauge", "Il agit", agit / R.ONGUENT, "encore %d s" % int(ceil(agit)) if agit > 0.0 else "pas encore"]])
 		if cle == "use:amanite":
 			return _carte("amanite", "Amanite", "Tu en as %d." % int(inv.get("amanite", 0)),
 				"Rouge, piquée de blanc : elle empoisonne qui la mange. Pilée au mortier avec de la viande crue, elle fait un appât pour ce qui chasse.",
 				"Piler un appât", atelier.empeche_piler_amanite())
+		if cle == "use:grains":
+			return _carte("grains", "Grains", "Tu en as %d." % int(inv.get("grains", 0)),
+				"Cueillis aux épis d'une céréale, d'un riz sauvage. Crus, ils nourrissent à peine (E). %d grains et une gorgée d'eau, à la popote sur un feu allumé : un gruau, presque un bouillon (C, ou ici). Semés dans un carré de jardin, ils poussent." % R.GRUAU_GRAINS,
+				"Cuire un gruau", atelier.empeche_cuire("gruau"))
+		if cle == "use:lichen":
+			return _carte("lichen", "Lichen des rennes", "Tu en as %d." % int(inv.get("lichen", 0)),
+				"Cru, il est amer et noue le ventre. %d lichens et une gorgée d'eau, à la popote sur un feu : une soupe maigre, mais chaude (C, ou ici). Sur la banquise, c'est ce qui tient." % R.SOUPE_LICHENS,
+				"Faire une soupe", atelier.empeche_cuire("soupe_lichen"))
+		if cle == "use:pulpe":
+			return _carte("pulpe", "Pulpe de cactus", "Tu en as %d." % int(inv.get("pulpe", 0)),
+				"Mangée (E), elle nourrit à peine mais rafraîchit : la chaleur pèse moins un moment. %d pulpes pressées au mortier : une gorgée d'eau dans ta gourde." % R.PULPES_GORGEE,
+				"Presser", atelier.empeche_presser())
 		if cle.begins_with("graine:"):
 			var g := cle.trim_prefix("graine:")
 			var d_ou := "Un buisson cueilli en rend parfois." if g == "graine_baie" else ("Une touffe coupée en rend parfois." if g == "graine_lin" else "On en trouve dans les vestiges d'autres veilleuses.")
@@ -1306,13 +1382,17 @@ class Sac extends Feuille:
 		var jauges := [["jauge", "Faim", faim / 100.0, "repue" if faim > 60.0 else ("a faim" if faim > 25.0 else "affamée")]]
 		match cle:
 			"bete:suite":
-				return _carte("bete", str(b.nom), "Elle te suit." if bool(b.suit_la) else "Elle reste là.",
-					"Laissée près d'un piquet d'attache, elle y est liée et broute autour. La nuit, garde-la dans la lumière d'un feu : le noir les rend folles.",
+				var filin: bool = bool(b.harnais.get("longe", false))
+				return _carte("bete", str(b.nom), ("Elle te suit." if bool(b.suit_la) else "Elle reste là.") + (" Elle se débat au bout de sa longe." if E.affolee(b) else ""),
+					("Laissée près d'un piquet d'attache, elle y est liée et broute autour. La nuit, garde-la dans la lumière d'un feu : le noir les rend folles."
+					+ (" Sa longe de filin ne rompt pas : au piquet ou dans ta main, elle s'y débattra, mais restera." if filin else "")),
 					"Reste là" if bool(b.suit_la) else "Suis-moi", "", jauges)
 			"bete:selle":
 				return _carte("selle", "La seller", str(b.nom), str(Atelier.OBJETS["selle"]["dit"]), "Seller", E.empeche_harnacher(b, "selle"))
 			"bete:sacoche":
 				return _carte("sacoche", "Ses sacoches", str(b.nom), str(Atelier.OBJETS["sacoche"]["dit"]), "Les lui mettre", E.empeche_harnacher(b, "sacoche"))
+			"bete:longe":
+				return _carte("longe", "Sa longe de filin", str(b.nom), str(Atelier.OBJETS["longe"]["dit"]), "La lui passer", E.empeche_harnacher(b, "longe"))
 			"bete:monter":
 				return _carte("selle", "La monter", str(b.nom), "En selle, on va bien plus vite. Ce qui lui fait peur te jette à terre.", "Monter", E.empeche_monter(b))
 			"bete:traire":
@@ -1366,12 +1446,28 @@ class Sac extends Feuille:
 			atelier.boire_infusion()
 		elif cle == "use:amanite":
 			atelier.piler_amanite()
+		elif cle == "use:aromates":
+			jeu.botanique.piler_aromates()
+		elif cle == "use:fumigation":
+			# (elle jette ses aromates : on le voit dans la partie, page fermée)
+			if jeu.botanique.fumiger():
+				refermer()
+		elif cle == "use:baume_aromates":
+			jeu.botanique.oindre()
+		elif cle == "use:grains":
+			atelier.cuire_plat("gruau")
+		elif cle == "use:lichen":
+			atelier.cuire_plat("soupe_lichen")
+		elif cle == "use:pulpe":
+			atelier.presser()
 		elif cle == "bete:suite":
 			E.basculer_suite(b)
 		elif cle == "bete:selle":
 			E.harnacher(b, "selle")
 		elif cle == "bete:sacoche":
 			E.harnacher(b, "sacoche")
+		elif cle == "bete:longe":
+			E.harnacher(b, "longe")
 		elif cle == "bete:monter":
 			E.monter(b)
 			refermer()
@@ -1424,7 +1520,7 @@ class Sac extends Feuille:
 		elif id in ["carte", "plume"]:
 			f["bouton"] = "Ouvrir"
 			f["lignes"] = [["note", "À la pause, le carnet montre ta carte." if id == "carte" else "Sur ta carte, tu écris ce qui est là où tu te tiens."]]
-		elif id in ["licol", "selle", "sacoche"]:
+		elif id in ["licol", "selle", "sacoche", "longe"]:
 			f["lignes"] = [["note", "Pour une bête à toi : approche-la, et rouvre ton sac." if id != "licol" else "Pose un appât, écarte-toi : la bête qui y mange se laisse passer le licol."]]
 		elif bool(o.get("pose", false)):
 			f["lignes"] = [["note", "Se pose devant toi. Se replie quand tu veux."]]
@@ -1475,7 +1571,7 @@ class Sac extends Feuille:
 		# (ce qu'on perdrait à replier maintenant)
 		if id == "recuperateur" and float(s.etat.get("eau", 0.0)) >= 1.0:
 			lignes.append(["note", "L'eau qu'il garde sera perdue : remplis d'abord ta gourde."])
-		elif id == "filet" and s.etat.has("prise"):
+		elif id in ["filet", "filet_filin"] and s.etat.has("prise"):
 			lignes.append(["note", "Une bête s'y est prise : relève-le d'abord."])
 		elif id == "cerf_volant" and atelier.fil == s:
 			lignes.append(["note", "Tes piles reviennent avec lui."])

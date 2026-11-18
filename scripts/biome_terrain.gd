@@ -518,8 +518,12 @@ func _dangers(delta: float, p: Vector2) -> void:
 		if enlise > 0.3:
 			jeu._conseil("fondriere", true, "La fondrière t'aspire. Ne t'arrête pas : marche pour t'en tirer.", Color(0.72, 0.82, 0.92))
 		if _enfoncee > 3.0:
-			jeu._mal("sangsues", R.SANGSUES * delta)
-			jeu._conseil("sangsues", true, "Des sangsues ! Sors de cette eau dormante.", Color(0.85, 0.6, 0.55))
+			# (l'odeur des aromates, gardée sur elle depuis leur fumée, tient les sangsues : scripts/botanique.gd, impregnee)
+			if jeu.get("botanique") != null and jeu.botanique.impregnee():
+				jeu._conseil("sangsues_aromates", true, "Les sangsues approchent, puis s'écartent : l'odeur des aromates les tient.", Color(0.72, 0.84, 0.6))
+			else:
+				jeu._mal("sangsues", R.SANGSUES * delta)
+				jeu._conseil("sangsues", true, "Des sangsues ! Sors de cette eau dormante.", Color(0.85, 0.6, 0.55))
 	else:
 		enlise = maxf(0.0, enlise - 2.0 * delta)
 		_enfoncee = 0.0

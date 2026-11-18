@@ -10,6 +10,9 @@ extends RefCounted
 # torche aussi, sauf si sa lignée s'est faite au feu (ce que sa population a appris des joueurs : scripts/bete.gd, faite_au_feu).
 # Le feu, lui, est leur abri : elles n'en ont pas peur. Tenue (en licol ou au piquet), une bête ne s'enfuit pas : ce qui
 # l'effraie la fait tressaillir dans la lumière d'un feu, ou faire un écart au bout de sa longe (scripts/bete.gd, effrayer).
+# La longe de filin (scripts/atelier.gd : la fibre longue de l'agave, du papyrus) ne rompt pas : nouée au piquet ou dans la
+# main de la veilleuse, la bête que le noir affole s'y débat, s'épuise (elle a faim deux fois plus vite), mais reste. Le noir
+# l'affole toujours ; laissée sans rien qui la tienne, elle fuit ; la Noire la prend comme une autre.
 # Les choses posées de l'élevage (scripts/campement.gd les dessine), leur état :
 #   appat     : « reste » (de 1 à 0 : ce qu'il en reste)
 #   piquet    : « attache » (vrai : une bête y est liée)
@@ -46,6 +49,7 @@ var jeu
 var betes: Array = []             # ses bêtes (des nœuds : scripts/bete.gd, rôle « compagne »)
 var monture = null                # celle qu'elle monte
 var _noir := {}                   # la bête → depuis combien de temps elle est dans le noir
+var _affolee := {}                # la bête → le temps avant son prochain écart, affolée au bout de sa longe de filin
 var _dit := {}
 var _t := 0.0
 
@@ -182,6 +186,9 @@ func empeche_harnacher(b, quoi: String) -> String:
 		return "Elle en porte déjà."
 	if _atelier().possede(quoi) <= 0:
 		return "Tu n'en as pas."
+	# (une longe de filin se passe à toute bête qu'on a ; seuls la selle et les sacoches demandent une bête assez forte)
+	if quoi == "longe":
+		return ""
 	if float(b.masse) < (MASSE_SELLE if quoi == "selle" else MASSE_SACOCHE):
 		return "Elle est trop petite pour %s." % ("porter quelqu'un" if quoi == "selle" else "des sacoches")
 	return ""
@@ -196,6 +203,13 @@ func harnacher(b, quoi: String) -> bool:
 	var A = _atelier()
 	A.objets[quoi] = A.possede(quoi) - 1
 	b.harnais[quoi] = true
+	if quoi == "longe":
+		# (la longe de chanvre s'ôte, celle de filin se noue à l'anneau du licol : on l'entend se tendre)
+		_aupres(b, "caresser")
+		jeu.joueur.geste_atelier("caresser")
+		jeu.sons.atelier("filin", -3.0, 1.0, b.position)
+		jeu.ui.message("%s a sa longe de filin. Nouée au piquet ou dans ta main, le noir ne la fera plus partir ; il lui fera peur quand même." % str(b.nom), TEINTE)
+		return true
 	_aupres(b, "seller")
 	jeu.joueur.geste_atelier("seller")
 	jeu.sons.atelier("sangle", 0.0, 0.85)
@@ -224,6 +238,7 @@ func _rendre(b) -> void:
 		jeu.bete_rendue(b)
 	betes.erase(b)
 	_noir.erase(b)
+	_affolee.erase(b)
 	b.harnais = {}
 	b.longe = null
 	b.montee = false
@@ -453,8 +468,11 @@ func maj(delta: float) -> void:
 				b.faim = minf(100.0, float(b.faim) + FOIN_RASSASIE)
 		if float(b.faim) > 40.0 and float(b.masse) >= MASSE_LAIT:
 			b.lait = minf(1.0, float(b.lait) + LAIT * delta)
+		# (sa longe de filin, nouée au piquet ou dans la main de la veilleuse : rien ne la rompt)
+		var filin: bool = bool(b.harnais.get("longe", false))
+		var tient: bool = filin and b.longe != null and not bool(b.montee)
 		if float(b.faim) <= 0.0:
-			_perdre(b, "%s avait trop faim : elle a rompu sa longe." % str(b.nom))
+			_perdre(b, ("%s avait trop faim : elle a rongé sa longe de filin." if filin else "%s avait trop faim : elle a rompu sa longe.") % str(b.nom))
 			continue
 		# le noir, la nuit : elle prend peur
 		var dans_le_noir: bool = nuit and float(jeu.eclairage(b.position)) < 0.25
@@ -463,11 +481,18 @@ func maj(delta: float) -> void:
 			_prendre(b)
 			continue
 		if float(_noir[b]) > NOIR and not bool(b.montee):
-			_perdre(b, "%s a pris peur dans le noir : elle a rompu sa longe." % str(b.nom))
-			continue
+			if tient:
+				_affoler(b, delta)
+			else:
+				_affolee.erase(b)
+				_perdre(b, ("%s a pris peur dans le noir : rien ne la tenait, elle s'est enfuie." if filin else "%s a pris peur dans le noir : elle a rompu sa longe.") % str(b.nom))
+				continue
+		else:
+			_affolee.erase(b)
 		if dans_le_noir and float(_noir[b]) > NOIR * 0.5 and not _dit.has("noir"):
 			_dit["noir"] = true
-			jeu.ui.message("%s tremble dans le noir. Ramène-la près d'un feu." % str(b.nom), ROUGE)
+			jeu.ui.message(("%s tremble dans le noir. Sa longe de filin la tiendra ; ramène-la quand même près d'un feu." if tient
+				else "%s tremble dans le noir. Ramène-la près d'un feu.") % str(b.nom), ROUGE)
 	# en selle : elle va où va la veilleuse ; ce qui l'affole la jette à terre
 	if monture != null:
 		if not is_instance_valid(monture) or float(monture.pv) <= 0.0:
@@ -481,6 +506,29 @@ func maj(delta: float) -> void:
 				descendre(true)
 			elif float(j.torche) > 0.0 and not monture.faite_au_feu():
 				descendre(true, "la torche")
+
+
+# affolée par le noir au bout de sa longe de filin : elle tire, fait un écart, se reprend, recommence ; le filin grince et
+# tient. Elle s'y épuise : elle a faim plus vite. Ce que la veilleuse en voit et en entend ; elle ne la perd pas
+func _affoler(b, delta: float) -> void:
+	b.faim = maxf(0.0, float(b.faim) - FAIM * (R.LONGE_AFFOLEE - 1.0) * delta)
+	var dans := float(_affolee.get(b, 0.0)) - delta
+	if dans <= 0.0:
+		dans = randf_range(2.6, 4.2)
+		# (elle tire à l'opposé de ce qui la tient : la main de la veilleuse, l'anneau du piquet)
+		var tient_la: Vector2 = Vector2(b.longe)
+		b.effrayer(tient_la + (b.position - tient_la).normalized().rotated(randf_range(-0.6, 0.6)) * -40.0, 2.0)
+		if b.position.distance_to(jeu.joueur.position) < 700.0:
+			jeu.sons.atelier("filin", -6.0, randf_range(0.92, 1.05), b.position)
+		if not _dit.has("filin-tient"):
+			_dit["filin-tient"] = true
+			jeu.ui.message("%s se débat au bout de sa longe de filin. Le filin tient." % str(b.nom), ROUGE)
+	_affolee[b] = dans
+
+
+# est-elle affolée au bout de sa longe de filin ? (le sac, l'essai)
+func affolee(b) -> bool:
+	return _affolee.has(b)
 
 
 # elle s'enfuit : elle retourne au lieu, son harnais avec elle
@@ -498,6 +546,7 @@ func _prendre(b) -> void:
 	var nom := str(b.nom)
 	betes.erase(b)
 	_noir.erase(b)
+	_affolee.erase(b)
 	jeu.sons.jouer("mord", -2.0, 0.7)
 	jeu.sons.jouer("cri", -6.0, 0.8)
 	b.remove_from_group("betes")
@@ -512,6 +561,7 @@ func vider() -> void:
 	betes.clear()
 	monture = null
 	_noir.clear()
+	_affolee.clear()
 	_dit.clear()
 
 

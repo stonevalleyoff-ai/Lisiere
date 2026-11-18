@@ -8,6 +8,7 @@ extends RefCounted
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/interface_theme.gd")
 const I := preload("res://scripts/interface_icones.gd")
+const Icones := preload("res://scripts/atelier_icones.gd")
 const R := preload("res://scripts/regles.gd")
 const Trace := preload("res://scripts/interface_trace.gd")
 
@@ -508,6 +509,7 @@ class Recette extends Allege:
 	var tactile := false
 	var pret := false
 	var manques := {}         # ce qui manque, par objet (rien : tout y est)
+	var cout := {}            # ce qu'elle coûte, là (le pont se lie de filin quand elle en a : principal.gd, cout_de)
 	var _allume := 0.0        # de 0 (éteinte) à 1 (on peut la faire)
 	var _vague := -1.0        # la lumière qui passe quand elle s'allume
 	var _ressort := Ressort.new()
@@ -531,12 +533,18 @@ class Recette extends Allege:
 
 	func maj(peut: bool, inv: Dictionary) -> void:
 		var rec: Dictionary = R.RECETTES[cle]
+		cout = rec["cout"]
+		# (le pont : deux filins dans le sac, il se lie de filin à la place de ses fibres ; scripts/pont.gd)
+		if cle == "pont" and int(inv.get("filin", 0)) >= R.PONT_FILIN:
+			cout = cout.duplicate()
+			cout.erase("fibre")
+			cout["filin"] = R.PONT_FILIN
 		# (le lance-pierre : sa carte ne dit pas ce que coûte un tir, mais ce qu'il lui reste de galets)
 		if cle == "tir":
 			reste = int(inv.get("galet", 0))
 		manques.clear()
-		for k in rec["cout"]:
-			var m := int(rec["cout"][k]) - int(inv.get(k, 0))
+		for k in cout:
+			var m := int(cout[k]) - int(inv.get(k, 0))
 			if m > 0:
 				manques[k] = m
 		if peut and not pret:
@@ -601,14 +609,19 @@ class Recette extends Allege:
 		var g := T.texte_gras()
 		var morceaux := []
 		var total := 0.0
-		for k in rec["cout"]:
-			var t := str(rec["cout"][k]) if reste < 0 else str(reste)
+		var c_: Dictionary = cout if not cout.is_empty() else rec["cout"]
+		for k in c_:
+			var t := str(c_[k]) if reste < 0 else str(reste)
 			var lw := g.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, gs).x
 			morceaux.append([k, t, lw])
 			total += isz + lw + 7.0
 		var x := p.x - total if a_droite else p.x
 		for m in morceaux:
-			I.icone(self, m[0], Vector2(x + isz * 0.5, p.y), isz, Color(1, 1, 1, a))
+			# (le filin est une icône de l'atelier : scripts/atelier_icones.gd)
+			if Icones.connue(str(m[0])):
+				Icones.icone(self, str(m[0]), Vector2(x + isz * 0.5, p.y), isz, Color(1, 1, 1, a))
+			else:
+				I.icone(self, m[0], Vector2(x + isz * 0.5, p.y), isz, Color(1, 1, 1, a))
 			x += isz + 1.0
 			var manque: bool = manques.has(m[0])
 			var c := Color("e8846a") if manque else Color(P.IVOIRE, 0.9)

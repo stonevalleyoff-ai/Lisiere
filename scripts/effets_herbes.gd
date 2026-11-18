@@ -12,17 +12,24 @@ extends RefCounted
 #    pâle d'une proie : on apprend à ne pas les croire), et des guetteurs au bord de l'écran, toujours dans son dos ;
 #  - la voyance : chaque bête se devine dans le noir (un contour pâle, à la couleur de ses yeux), un fil de lueur part vers la
 #    tanière de la Noire ;
-#  - la fumée âcre d'un feu (la classe Fumee, que scripts/feu.gd monte le temps qu'elle dure).
+#  - la fumée âcre d'un feu (la classe Fumee, que scripts/feu.gd monte le temps qu'elle dure) ; et, de la même classe, la
+#    fumée bleue des aromates jetés au feu (sorte « encens »), plus fine, qui monte plus haut et sent la résine ;
+#  - l'odeur des aromates qu'elle garde sur elle, sortie de leur fumée : deux ou trois volutes bleues montent encore de ses
+#    épaules, de plus en plus rares.
 # Rien ici ne change une règle.
 
 const P := preload("res://scripts/palette.gd")
 const T := preload("res://scripts/effets_textures.gd")
+const R := preload("res://scripts/regles.gd")
 const NAPPE := preload("res://shaders/fumee_nappe.gdshader")
 const COLONNE := preload("res://shaders/fumee_colonne.gdshader")
 const C_POISON := Color(0.45, 0.55, 0.17)
 const C_VOYANCE := Color(0.53, 0.72, 0.95)
 const OCRE := Color(0.69, 0.5, 0.25)
 const OCRE_SOMBRE := Color(0.3, 0.23, 0.15)
+# (la fumée des aromates : la lune et l'ivoire, un souffle de mousse ; son ombre, le bleu de la nuit vers la mousse)
+const ENCENS := Color(0.59, 0.62, 0.64)
+const ENCENS_SOMBRE := Color(0.18, 0.24, 0.24)
 const MACHE := 1.0               # secondes : tant qu'elle mâche (le geste « gouter »), rien ne l'a encore prise
 const NAUSEE := 1.15             # secondes : un haut-le-cœur
 const SOUPIR := 2.0              # secondes : le poison la quitte, elle se redresse et souffle
@@ -62,6 +69,7 @@ var _guet_dans := 0.0
 var _guet_n := 0
 var _avant := Vector2.INF
 var _calque: Node2D
+var _odeur: CPUParticles2D       # l'odeur des aromates, qui monte d'elle (créée la première fois qu'il le faut)
 var _mobile := false
 var _nuit := 0.0
 
@@ -102,6 +110,9 @@ func vider() -> void:
 	if _calque != null and is_instance_valid(_calque):
 		_calque.queue_free()
 	_calque = null
+	if _odeur != null and is_instance_valid(_odeur):
+		_odeur.queue_free()
+	_odeur = null
 
 
 # vrai quand l'image doit être lue (la passe d'écran, en qualité haute : scripts/effets_ecran.gd)
@@ -136,12 +147,61 @@ func maj(delta: float, nuit: float) -> Dictionary:
 	if j != null:
 		_hanter(delta, nuit, j)
 		_guetter(delta, j)
+		_sentir(B, j)
 	# la caméra : elle tangue avec le poison, plonge au haut-le-cœur ; la torpeur la fait pencher, très lentement
 	tangage = poison * (0.02 * sin(_t * 1.15) + 0.008 * pouls) + nausee * 0.02 + torpeur * 0.007 * sin(_t * 0.52)
 	derive = Vector2(sin(_t * 0.9) * 5.0, cos(_t * 0.7) * 3.0) * poison + Vector2(0.0, 9.0 * nausee + 5.0 * paupiere)
 	devie = poison * (0.34 * sin(_t * 1.7) + 0.2 * sin(_t * 0.63 + 1.3)) + nausee * 0.3 * sin(_t * 9.0)
 	return {"poison": poison, "pouls": clampf(pouls + 0.9 * nausee, 0.0, 1.4), "torpeur": torpeur, "paupiere": paupiere,
 		"flou": clampf(paupiere * 1.15 + torpeur * 0.22, 0.0, 1.0), "visions": visions, "voyance": voyance}
+
+
+# --- l'odeur des aromates ---
+
+# sortie de leur fumée, l'odeur gardée sur elle (scripts/botanique.gd, parfum) se voit : des volutes bleues montent de ses
+# épaules, quelques-unes, puis de plus en plus rares (une bouffée toutes les cinq secondes, jusqu'à ce qu'elle s'en aille).
+# Dans la fumée même, rien : elle y est déjà
+func _sentir(B, j) -> void:
+	var parfum: float = float(B.parfum) if B != null else 0.0
+	if parfum <= 0.0 or bool(j.morte):
+		if _odeur != null and is_instance_valid(_odeur):
+			_odeur.emitting = false
+		return
+	if _odeur == null or not is_instance_valid(_odeur):
+		_odeur = CPUParticles2D.new()
+		_odeur.amount = 3 if _mobile else 5
+		_odeur.lifetime = 3.0
+		_odeur.lifetime_randomness = 0.3
+		_odeur.texture = Fumee.bouffee()
+		_odeur.material = T.materiau(false, true)
+		_odeur.position = Vector2(0.0, -34.0)
+		# (par-dessus son manteau : ses calques sont ses enfants aussi)
+		_odeur.z_index = 1
+		_odeur.emission_shape = CPUParticles2D.EMISSION_SHAPE_SPHERE
+		_odeur.emission_sphere_radius = 5.0
+		_odeur.direction = Vector2(0, -1)
+		_odeur.spread = 30.0
+		_odeur.initial_velocity_min = 8.0
+		_odeur.initial_velocity_max = 14.0
+		_odeur.gravity = Vector2(0.0, -3.0)
+		_odeur.angle_min = 0.0
+		_odeur.angle_max = 360.0
+		_odeur.angular_velocity_min = -14.0
+		_odeur.angular_velocity_max = 14.0
+		_odeur.scale_amount_min = 0.14
+		_odeur.scale_amount_max = 0.24
+		_odeur.scale_amount_curve = T.courbe([[0.0, 0.5], [0.4, 1.0], [1.0, 1.7]])
+		# (un lavis bleu de lune, plus soutenu que la fumée du feu : il doit se lire sur le sable clair comme sur la terre)
+		var ton := P.LUNE.lerp(ENCENS, 0.45)
+		var clair := ton.lerp(P.IVOIRE, 0.35)
+		_odeur.color_ramp = T.rampe([[0.0, Color(ton, 0.0)], [0.18, Color(ton, 0.55)], [0.6, Color(clair, 0.32)], [1.0, Color(clair, 0.0)]])
+		# (l'odeur la suit : elle est sur elle)
+		_odeur.local_coords = true
+		j.add_child(_odeur)
+	var frais := clampf((parfum - (R.PARFUM - 30.0)) / 30.0, 0.0, 1.0)
+	var dedans: bool = B.dans_l_encens(j.position) > 0.3
+	_odeur.emitting = not dedans and (frais > 0.0 or fmod(_t, 5.0) < 0.7)
+	_odeur.gravity = Vector2(float(jeu.vent()) * 8.0 if jeu != null and jeu.has_method("vent") else 0.0, -3.0)
 
 
 # --- le poison ---
@@ -525,9 +585,15 @@ class Guetteurs extends Node2D:
 # des bouffées qui s'en détachent et dérivent ; des escarbilles ; et au sol, sous tout ce qui se tient debout, la nappe qui
 # s'étale jusqu'où les chasseurs sont tenus (shaders/fumee_nappe.gdshader). Elle prend en une seconde, s'étale en quatre,
 # s'éteint avec « force ».
+# Des aromates dans un feu (sorte « encens » : scripts/botanique.gd, encens_de) : la même, en bleu-gris de lune ; une colonne
+# plus fine qui monte plus haut, des volutes qui tournent lentement, quelques brins qui crépitent, et la nappe jusqu'au bord de
+# la lumière du feu.
 class Fumee extends Node2D:
 	const LARGE := 220.0
 	const HAUTE := 200.0
+	var sorte := "acre"           # « acre », « encens » (à dire avant poser)
+	var _ton := OCRE
+	var _ton_sombre := OCRE_SOMBRE
 	var _colonne: Sprite2D
 	var _nappe: Sprite2D
 	var _bouffees: CPUParticles2D
@@ -558,10 +624,16 @@ class Fumee extends Node2D:
 
 	func poser(sol: Node2D, mobile: bool, graine: int) -> void:
 		var g := float(graine % 1000) * 0.137
+		var encens := sorte == "encens"
+		if encens:
+			_ton = ENCENS
+			_ton_sombre = ENCENS_SOMBRE
+		# (l'encens : plus fin, plus haut)
+		var taille := Vector2(LARGE * 0.62, HAUTE * 1.2) if encens else Vector2(LARGE, HAUTE)
 		_colonne = Sprite2D.new()
 		_colonne.texture = T.blanc()
-		_colonne.scale = Vector2(LARGE, HAUTE) / 4.0
-		_colonne.position = Vector2(0.0, -HAUTE * 0.5 - 6.0)
+		_colonne.scale = taille / 4.0
+		_colonne.position = Vector2(0.0, -taille.y * 0.5 - 6.0)
 		_colonne.material = _materiau(COLONNE, g)
 		add_child(_colonne)
 		_bouffees = CPUParticles2D.new()
@@ -586,14 +658,25 @@ class Fumee extends Node2D:
 		_bouffees.scale_amount_min = 0.55
 		_bouffees.scale_amount_max = 0.9
 		_bouffees.scale_amount_curve = T.courbe([[0.0, 0.4], [0.35, 0.85], [1.0, 1.7]])
-		var clair := OCRE.lerp(P.IVOIRE, 0.25)
-		_bouffees.color_ramp = T.rampe([[0.0, Color(OCRE, 0.0)], [0.14, Color(OCRE, 0.5)], [0.55, Color(clair, 0.26)], [1.0, Color(clair, 0.0)]])
+		var clair := _ton.lerp(P.IVOIRE, 0.25)
+		_bouffees.color_ramp = T.rampe([[0.0, Color(_ton, 0.0)], [0.14, Color(_ton, 0.5)], [0.55, Color(clair, 0.26)], [1.0, Color(clair, 0.0)]])
+		if encens:
+			# (des volutes plus petites, qui montent plus haut et tournent lentement sur elles-mêmes, comme une odeur qui s'en va)
+			_bouffees.position = Vector2(0.0, -90.0)
+			_bouffees.lifetime = 6.4
+			_bouffees.scale_amount_min = 0.36
+			_bouffees.scale_amount_max = 0.62
+			_bouffees.angular_velocity_min = -12.0
+			_bouffees.angular_velocity_max = 12.0
+			_bouffees.tangential_accel_min = -6.0
+			_bouffees.tangential_accel_max = 6.0
 		_bouffees.local_coords = false
 		_bouffees.emitting = false
 		add_child(_bouffees)
 		# les escarbilles : des brins qui brûlent encore, montent en tournant, retombent
 		_escarbilles = CPUParticles2D.new()
-		_escarbilles.amount = 6 if mobile else 14
+		# (l'encens : quelques brins gommeux qui crépitent, pas une gerbe)
+		_escarbilles.amount = (3 if mobile else 6) if encens else (6 if mobile else 14)
 		_escarbilles.lifetime = 2.6
 		_escarbilles.lifetime_randomness = 0.5
 		_escarbilles.texture = T.eclat()
@@ -631,8 +714,8 @@ class Fumee extends Node2D:
 		m.shader = sh
 		m.set_shader_parameter("bruit", T.bruit())
 		m.set_shader_parameter("graine", graine)
-		m.set_shader_parameter("ocre", OCRE)
-		m.set_shader_parameter("sombre", OCRE_SOMBRE)
+		m.set_shader_parameter("ocre", _ton)
+		m.set_shader_parameter("sombre", _ton_sombre)
 		m.set_shader_parameter("braise", P.BRAISE)
 		return m
 
@@ -651,7 +734,8 @@ class Fumee extends Node2D:
 		var jour := clampf((ambiance.r + ambiance.g + ambiance.b) / 3.0, 0.0, 1.0)
 		var lueur := clampf(vif, 0.0, 1.0) * lerpf(1.0, 0.3, smoothstep(0.3, 0.9, jour))
 		var m: ShaderMaterial = _colonne.material
-		m.set_shader_parameter("force", force)
+		# (l'encens est une fumée claire : on voit le camp au travers)
+		m.set_shader_parameter("force", force * (0.72 if sorte == "encens" else 1.0))
 		m.set_shader_parameter("monte", monte)
 		m.set_shader_parameter("vent", clampf(vent, -1.0, 1.0))
 		m.set_shader_parameter("ambiance", ambiance)

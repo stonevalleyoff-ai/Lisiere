@@ -629,10 +629,10 @@ class Savoirs extends ScrollContainer:
 class Commandes extends Control:
 	var tactile := false
 	const CLAVIER := [["patte", "ZQSD · WASD · flèches", "marcher"], ["lance", "Espace · clic", "récolter, frapper"],
-		["manger", "E", "manger"], ["nourrir", "F", "nourrir le feu"], ["cuire", "C", "cuire la viande"],
+		["manger", "E", "manger"], ["nourrir", "F", "nourrir le feu"], ["cuire", "C", "cuire (viande, gruau, soupe)"],
 		["feu", "1", "un feu de camp"], ["torche", "2", "une torche"], ["tir", "3", "tirer au lance-pierre"], ["pause", "Échap", "reprendre"]]
 	const DOIGT := [["patte", "pouce gauche", "marcher"], ["lance", "Agir", "récolter, frapper"],
-		["manger", "Manger", "manger"], ["nourrir", "Nourrir", "nourrir le feu"], ["cuire", "Cuire", "cuire la viande"],
+		["manger", "Manger", "manger"], ["nourrir", "Nourrir", "nourrir le feu"], ["cuire", "Cuire", "cuire (viande, gruau, soupe)"],
 		["feu", "Feu", "un feu de camp"], ["torche", "Torche", "une torche"], ["tir", "Tirer", "tirer au lance-pierre"], ["pause", "en haut", "reprendre"]]
 
 	var _cadre := StyleBoxFlat.new()

@@ -122,6 +122,8 @@ func creer_sol(biome: Dictionary, graine: int) -> Node2D:
 	Objet.vegetation.set_shader_parameter("simple", _mobile)
 	Objet.fixe.set_shader_parameter("simple", _mobile)
 	Objet.climat = {"froid": float(_parts["froid"]), "humide": float(_parts["humide"])}
+	# (la saison du monde : les fruits des arbres et les épis mûrissent l'été et l'automne ; scripts/flore.gd, maturite)
+	Objet.saison = str(jeu.get("saison")) if jeu != null and jeu.get("saison") != null else "été"
 	_racine = Node2D.new()
 	_mat_sol = ShaderMaterial.new()
 	_mat_sol.shader = SHADER_SOL
@@ -235,7 +237,8 @@ func _semer_tout(r: RandomNumberGenerator, arbre: String, bosquets, couvert: flo
 
 # --- une partie gardée ---
 
-# chaque objet, tel qu'il est : [espèce, genre, x, y, graine, reste, repousse] (une souche était un arbre, son espèce le dit)
+# chaque objet, tel qu'il est : [espèce, genre, x, y, graine, reste, repousse, brûlé] (une souche était un arbre, son espèce le
+# dit) ; un arbre qui porte des fruits, en plus : [ses fruits, ceux tombés à son pied, le temps avant qu'il en porte de nouveau]
 func photo_objets() -> Array:
 	var out := []
 	for o in objets:
@@ -244,8 +247,11 @@ func photo_objets() -> Array:
 			var feu: bool = o.brule > 0.0
 			var arbre: bool = o.genre == "arbre" or o.genre == "sapin"
 			# (ce que le lieu a semé à sa place — une strate, d'où la plante se retire de sa graine —, sinon son genre)
-			out.append([o.semis if o.semis != "" else o._espece, "souche" if (feu and arbre) else o.genre, snappedf(o.position.x, 0.1), snappedf(o.position.y, 0.1), o.graine,
-				0 if feu else o.reste, snappedf(o._repousse, 0.1), 1 if (o.calcine or feu) else 0])
+			var x := [o.semis if o.semis != "" else o._espece, "souche" if (feu and arbre) else o.genre, snappedf(o.position.x, 0.1), snappedf(o.position.y, 0.1), o.graine,
+				0 if feu else o.reste, snappedf(o._repousse, 0.1), 1 if (o.calcine or feu) else 0]
+			if o.fruits_plein > 0 or o.tombes_plein > 0:
+				x.append_array([o.fruits, o.tombes, snappedf(o._repousse_fruits, 0.1)])
+			out.append(x)
 	return out
 
 
@@ -260,6 +266,8 @@ func _reposer(gardes: Array) -> void:
 		var o = _poser(espece, Vector2(float(g[2]), float(g[3])), palette[ton] if ton != "" else Color.WHITE, int(g[4]))
 		if o != null:
 			o.reprendre(str(g[1]), int(g[5]), float(g[6]), g.size() > 7 and int(g[7]) == 1)
+			if g.size() > 10:
+				o.reprendre_fruits(int(g[8]), int(g[9]), float(g[10]))
 
 
 # le ton du lieu que prend ce qu'on sème
@@ -862,6 +870,15 @@ func _fabriquer_(k: Vector2i) -> void:
 			# (ce qui a changé n'est plus ce qui pousse là : l'herbier est arrivé depuis, et la place porte une autre plante)
 			changes.erase(str(i))
 		elif typeof(c) == TYPE_ARRAY and c.size() >= 5:
+			# (les fruits d'un arbre ont mûri pendant qu'on était loin, eux aussi)
+			if c.size() >= 8:
+				var fruits_a_pousser := float(c[7])
+				if fruits_a_pousser > 0.0:
+					fruits_a_pousser -= heure - float(c[4])
+				if fruits_a_pousser > 0.0:
+					o.reprendre_fruits(int(c[5]), int(c[6]), fruits_a_pousser)
+				elif float(c[7]) <= 0.0:
+					o.reprendre_fruits(int(c[5]), int(c[6]), 0.0)
 			# (ce qui repoussait a continué de repousser pendant qu'on était loin)
 			var reste_a_pousser := float(c[2])
 			if reste_a_pousser > 0.0:
@@ -918,6 +935,9 @@ func _noter(k: Vector2i) -> void:
 			var feu: bool = o.brule > 0.0
 			var arbre: bool = o.genre == "arbre" or o.genre == "sapin"
 			changes[i] = ["souche" if (feu and arbre) else o.genre, 0 if feu else o.reste, snappedf(o._repousse, 0.1), 1 if (o.calcine or feu) else 0, snappedf(heure, 0.1)]
+			if o.fruits_plein > 0 or o.tombes_plein > 0:
+				# (un arbre qui porte des fruits : ce qu'il en a encore, à son pied, et le temps avant qu'il en porte de nouveau)
+				changes[i].append_array([o.fruits, o.tombes, snappedf(o._repousse_fruits, 0.1)])
 	if changes.is_empty():
 		_changes.erase(nom)
 	else:

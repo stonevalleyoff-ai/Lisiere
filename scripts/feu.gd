@@ -45,6 +45,7 @@ var _ombres: Array = []
 var _ombres_t := 0.0
 var _mobile := false
 var _acre                       # la fumée âcre d'une botte d'herbe (Herbes.Fumee), le temps qu'elle dure ; null : aucune
+var _encens                     # la fumée bleue des aromates (Herbes.Fumee, sorte « encens »), le temps qu'elle dure ; null : aucune
 
 
 # la lumière d'un feu (et celle de la torche) : vive au centre, qui baisse doucement, puis un bord qu'on lit, vers les 0,85
@@ -260,6 +261,7 @@ func _maj(delta: float) -> void:
 	var fa := lerpf(0.55, 1.0, meurt) if vif else clampf(1.0 - _eteint / FUMEE_DUREE, 0.0, 1.0)
 	fumee.self_modulate = Color(1, 1, 1, fa)
 	_enfumer(delta, vent)
+	_encenser(delta, vent)
 	etincelles.position = Vector2(0, -(6.0 + 16.0 * _vif))
 	# le foyer se redessine chaque image (ses braises battent) ; le reste, quand il change
 	_foyer.queue_redraw()
@@ -298,6 +300,30 @@ func _enfumer(delta: float, vent: float) -> void:
 	if not _acre.regler(force, vent, portee, ambiance, _vif, delta, rayon()):
 		_acre.queue_free()
 		_acre = null
+
+
+# la fumée des aromates jetés au feu (scripts/botanique.gd, encens_de) : bleue, plus fine que l'âcre, elle monte plus haut et
+# s'étale jusqu'au bord de la lumière, là où elle apaise qui s'y tient. La fumée de toujours bleuit avec elle
+func _encenser(delta: float, vent: float) -> void:
+	var B = jeu.get("botanique") if jeu != null else null
+	var force: float = float(B.encens_de(self)) if B != null and B.has_method("encens_de") else 0.0
+	# (les brins volent encore vers lui — le geste « jeter » : la fumée ne prend que lorsqu'ils y tombent)
+	var j = jeu.joueur if jeu != null else null
+	if _encens == null and j != null and str(j.get("atelier")) == "jeter" and float(j.get("atelier_t")) < 0.86:
+		force = 0.0
+	if force > 0.0 and _encens == null and is_inside_tree():
+		_encens = Herbes.Fumee.new()
+		_encens.sorte = "encens"
+		add_child(_encens)
+		_encens.poser(_sol, _mobile, _graine + 17)
+	if _encens == null:
+		return
+	var portee: float = float(B.portee_encens(self)) if B != null else maxf(rayon(), RAYON_MIN) * 0.9
+	var ambiance: Color = jeu.effets.teinte if jeu != null and jeu.get("effets") != null else Color.WHITE
+	fumee.self_modulate = fumee.self_modulate * Color(1.0, 1.0, 1.0).lerp(Color(0.84, 0.92, 1.0), force)
+	if not _encens.regler(force, vent, portee, ambiance, _vif, delta, rayon()):
+		_encens.queue_free()
+		_encens = null
 
 
 func _buches_n() -> int:
