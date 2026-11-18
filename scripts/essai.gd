@@ -8133,6 +8133,17 @@ func _le_lichen() -> void:
 	for k in ["baies", "viande", "viande_cuite", "bouillon", "champignons", "amanite", "gruau", "soupe_lichen", "pomme", "figue", "coco", "pain_de_singe", "pulpe", "grains"]:
 		inv[k] = 0
 	inv["lichen"] = 0
+	# (la première : ses tapis vont par quatre, serrés, et « Agir » prendrait la touffe voisine, une brindille, une bête à frapper.
+	# La place est dégagée autour d'elle, comme pour les fleurs et les champignons ; ce qu'on y ôte ne compte plus parmi les libres)
+	if not libres.is_empty():
+		var o0 = libres[0]
+		for x in W.autour(o0.position, 60.0):
+			if x != o0:
+				W.retirer(x)
+		for b in get_tree().get_nodes_in_group("betes"):
+			if b.position.distance_to(o0.position) < 300.0:
+				_oter(b)
+		libres = libres.filter(func(x): return is_instance_valid(x) and W.objets.has(x))
 	var premier: int = cueillir.call(libres[0]) if not libres.is_empty() else 0
 	var epuise: bool = not libres.is_empty() and libres[0].epuise()
 	_remettre(camp)
