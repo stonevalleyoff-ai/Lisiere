@@ -289,9 +289,12 @@ func photo_objets() -> Array:
 				0 if feu else o.reste, snappedf(o._repousse, 0.1), 1 if (o.calcine or feu) else 0]
 			if o.fruits_plein > 0 or o.tombes_plein > 0:
 				x.append_array([o.fruits, o.tombes, snappedf(o._repousse_fruits, 0.1)])
-			# (son milieu, en dernier : « m » et son nombre ; la plante s'en retire comme elle en était venue)
+			# (son milieu, en dernier : « m » et son nombre ; puis la plante, « @ » et son id : elle revient elle-même, quel que soit le
+			# temps qu'Orvane dit cette année-là — ses parts en dépendent —, et son milieu reste le sien)
 			if o.has_meta("milieu"):
 				x.append("m%d" % int(o.get_meta("milieu")))
+				if str(o.plante) != "":
+					x.append("@" + str(o.plante))
 			out.append(x)
 	return out
 
@@ -300,21 +303,31 @@ func _reposer(gardes: Array) -> void:
 	for g0 in gardes:
 		if typeof(g0) != TYPE_ARRAY or g0.size() < 7:
 			continue
-		# (le milieu de sa place, s'il est gardé ; une partie gardée d'avant n'en a pas : sa plante se tire comme avant, de sa
-		# graine et de sa seule part)
+		# (le milieu de sa place et sa plante, s'ils sont gardés ; une partie gardée d'avant n'en a pas : sa plante se tire comme
+		# avant, de sa graine et de sa seule part)
 		var g: Array = g0
 		var milieu := -1
-		if typeof(g.back()) == TYPE_STRING and str(g.back()).begins_with("m"):
-			milieu = int(str(g.back()).substr(1))
+		var id := ""
+		while g.size() > 7 and typeof(g.back()) == TYPE_STRING:
+			var fin := str(g.back())
+			if fin.begins_with("@"):
+				id = fin.substr(1)
+			elif fin.begins_with("m"):
+				milieu = int(fin.substr(1))
 			g = g.slice(0, g.size() - 1)
 		var espece := str(g[0])
 		if (not Objet.BUTIN.has(espece) and Flore.strate_de(espece) == "") or espece == "souche":
 			continue
 		var ton := str(TONS.get(espece, ""))
-		var o = _poser(espece, Vector2(float(g[2]), float(g[3])), palette[ton] if ton != "" else Color.WHITE, int(g[4]), {}, milieu)
+		# (une plante gardée revient elle-même, à sa place ; si l'herbier ne l'a plus, celle que son milieu tire — sans que la
+		# place puisse rester vide : elle portait quelque chose)
+		var o = _poser(espece, Vector2(float(g[2]), float(g[3])), palette[ton] if ton != "" else Color.WHITE, int(g[4]), {}, milieu, false, id)
 		if o == null and milieu >= 0:
-			# (l'herbier a changé depuis, et sa place ne porterait plus rien : ce qu'on avait laissé reste, tiré de sa seule part)
+			# (l'herbier a changé depuis, et aucune de ses plantes ne veut plus de ce milieu : ce qu'on avait laissé reste, tiré de sa
+			# seule part ; son milieu, lui, reste le sien)
 			o = _poser(espece, Vector2(float(g[2]), float(g[3])), palette[ton] if ton != "" else Color.WHITE, int(g[4]))
+			if o != null and str(o.plante) != "":
+				o.set_meta("milieu", milieu)
 		if o != null:
 			o.reprendre(str(g[1]), int(g[5]), float(g[6]), g.size() > 7 and int(g[7]) == 1)
 			if g.size() > 10:
@@ -543,7 +556,9 @@ func _plante(genre: String, graine: int, flore_: Dictionary) -> Dictionary:
 # main) : la plante se tire alors de sa seule part
 # sur_la_carte : rien ne se pose là où la carte dit que rien ne pousse (l'eau, une paroi, la roche) — demandé en dernier, quand
 # on sait que la place servira : la carte est lente à lire
-func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Dictionary = {}, milieu: int = -1, sur_la_carte: bool = false):
+# garde : une plante d'une partie gardée (null : non) — l'id de sa plante, ou "" s'il n'est pas gardé : elle revient elle-même si
+# l'herbier l'a encore ; sinon sa place tire dans son milieu, mais ne reste pas vide (ni l'éclaircie, ni la taille du groupe)
+func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Dictionary = {}, milieu: int = -1, sur_la_carte: bool = false, garde = null):
 	if not ici.is_empty():
 		Objet.climat = ici["climat"]
 	var fl: Dictionary = ici["flore"] if not ici.is_empty() else flore
@@ -577,11 +592,19 @@ func _poser(genre: String, p: Vector2, couleur: Color, graine: int, ici: Diction
 				m = Milieu.sans_arbres(m) & Milieu.MILIEUX
 			st = "sol"
 			couleur = (ici["palette"] if not ici.is_empty() else palette).get("herbe", couleur)
-		var tb = _table(str(ici.get("type", ""))).get(st)
-		if tb == null:
-			return null
 		var k := absi(graine) % 10007
-		pl = Milieu.tirer(tb, m, k, Milieu.cellule(st, p, k, m, _graine))
+		if garde != null and str(garde) != "":
+			for x in fl.get(st, []):
+				if str(x["id"]) == str(garde):
+					pl = x
+					break
+		if pl.is_empty():
+			var tb = _table(str(ici.get("type", ""))).get(st)
+			if tb == null:
+				return null
+			pl = Milieu.tirer(tb, m, k, Milieu.cellule(st, p, k, m, _graine))
+			if pl.is_empty() and garde != null:
+				pl = Milieu.tirer(tb, m, k, Milieu.cellule(st, p, k, m, _graine), true)
 		if pl.is_empty():
 			return null
 		vrai = str(pl["genre"])

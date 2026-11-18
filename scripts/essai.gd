@@ -5944,7 +5944,12 @@ func _la_repartition() -> void:
 	# (et une plante gardée sans milieu — une partie d'avant — se repose aussi, tirée de sa seule part)
 	# (une partie gardée d'avant : la même photo, sans le milieu — c'est ainsi qu'elle était gardée —, se repose entière : chaque
 	# plante revient à sa place, de sa graine et de sa seule part, une plante de l'herbier d'aujourd'hui, sans milieu)
-	var vieille: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) in ["arbre", "sapin", "buisson", "sol", "eau"]).map(func(g): return g.slice(0, g.size() - 1))
+	var sans_milieu := func(g: Array) -> Array:
+		var x: Array = g.duplicate()
+		while x.size() > 7 and typeof(x.back()) == TYPE_STRING:
+			x.pop_back()
+		return x
+	var vieille: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) in ["arbre", "sapin", "buisson", "sol", "eau"]).map(sans_milieu)
 	var avant_v: int = W.objets.size()
 	W._reposer(vieille)
 	var revenues: Array = W.objets.slice(avant_v)
@@ -5959,6 +5964,61 @@ func _la_repartition() -> void:
 	verif(avec >= 100 and pareilles == essayees and vieille.size() >= 300 and revenues.size() == vieille.size() and a_sa_place == vieille.size(),
 		"le lieu gardé : la photo de chaque plante porte son milieu, et %d sur %d se retirent les mêmes, à leur place ; gardées sans milieu (une partie d'avant), les %d plantes du lieu se reposent toutes (%d), à leur place (%d), de leur seule part" % [
 		pareilles, essayees, vieille.size(), revenues.size(), a_sa_place])
+	# reprise une année plus sèche pour Orvane (les parts du lieu en dépendent : moins de plantes au sol, de buissons ; une place
+	# de rive en veut moins), la partie gardée revient pareille : chaque plante elle-même, à sa place, dans son milieu. Et gardée
+	# sans ses plantes (une partie d'avant ce correctif, un herbier qui a changé de cycle), chacune revient dans son milieu et le
+	# garde : le riz et le papyrus, qui ne vivent qu'au bord de l'eau, ne s'en vont pas ailleurs
+	var met: Dictionary = Orvane.meteo("marais")
+	var met_avant: Dictionary = met.duplicate(true)
+	var poids_avant: Array = Array(W._table("")["sol"]["poids"])
+	met["secheresse"] = 1.0
+	met["production"] = 0.6
+	met["e"] = -1.0
+	met["eaux"] = 0.0
+	W._tables.erase("")
+	W._densites.erase("")
+	var poids_sec: Array = Array(W._table("")["sol"]["poids"])
+	var plantes: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) in ["arbre", "sapin", "buisson", "sol", "eau"])
+	var avec_id: Array = []
+	for i in mini(photo.size(), vivants.size()):
+		if typeof(photo[i].back()) == TYPE_STRING and str(vivants[i].plante) != "":
+			avec_id.append([photo[i], vivants[i]])
+	var memes_sec := 0
+	for e in avec_id:
+		var n_avant: int = W.objets.size()
+		W._reposer([e[0]])
+		if W.objets.size() == n_avant + 1:
+			var o1 = W.objets[W.objets.size() - 1]
+			if str(o1.plante) == str(e[1].plante) and int(o1.get_meta("milieu", -1)) == int(e[1].get_meta("milieu", -2)) and o1.position.distance_to(e[1].position) < 0.2:
+				memes_sec += 1
+			W._defaire(o1)
+	var Mi2 = load("res://scripts/milieu.gd")
+	var sans_id: Array = plantes.map(func(g): return g.filter(func(x): return not (typeof(x) == TYPE_STRING and str(x).begins_with("@"))))
+	var avant_s: int = W.objets.size()
+	W._reposer(sans_id)
+	var revenues_s: Array = W.objets.slice(avant_s)
+	var gardent := 0
+	var de_rive_ailleurs := 0
+	var de_rive := 0
+	for o_s in revenues_s:
+		if not is_instance_valid(o_s) or str(o_s.plante) == "":
+			continue
+		if o_s.has_meta("milieu"):
+			gardent += 1
+		if str(o_s.forme) in ["riz", "papyrus"]:
+			de_rive += 1
+			if not (int(o_s.get_meta("milieu", 0)) & Mi2.RIVE):
+				de_rive_ailleurs += 1
+	for o_s in revenues_s:
+		if is_instance_valid(o_s):
+			W._defaire(o_s)
+	met.clear()
+	met.merge(met_avant)
+	W._tables.erase("")
+	W._densites.erase("")
+	verif(poids_sec != poids_avant and avec_id.size() >= 300 and memes_sec == avec_id.size() and revenues_s.size() == sans_id.size() and gardent == revenues_s.size() and de_rive >= 10 and de_rive_ailleurs <= 1,
+		"reprise une année sèche (les parts du lieu en changent), la partie gardée revient pareille : %d plantes sur %d elles-mêmes, dans leur milieu ; gardées sans leur plante (un herbier qui a changé de cycle), %d sur %d gardent leur milieu, et le riz, le papyrus restent au bord de l'eau (%d sur %d ailleurs)" % [
+		memes_sec, avec_id.size(), gardent, revenues_s.size(), de_rive_ailleurs, de_rive])
 	# le monde ouvert : quatre biomes, chacun semé à part sur quatre fois la surface d'un lieu, et compté
 	seed(20261121)
 	await jeu._commencer("prairie", {}, true)

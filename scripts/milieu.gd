@@ -335,8 +335,10 @@ static func regler(flore: Dictionary, ech: Dictionary, cibles: Dictionary) -> Di
 
 
 # la plante d'une place ({} : la place reste vide). k : le tirage du groupe (le reste de sa graine, modulo 10 007 : toutes les
-# places d'un groupe ont le même) ; k_cellule : celui de la cellule où elle est (un peuplement), ou -1
-static func tirer(tb: Dictionary, milieu: int, k: int, k_cellule: int = -1) -> Dictionary:
+# places d'un groupe ont le même) ; k_cellule : celui de la cellule où elle est (un peuplement), ou -1. pleine : la place porte
+# quelque chose (une plante d'une partie gardée, que l'herbier n'a plus) — ni l'éclaircie, ni la taille du groupe ne la vident ;
+# seul un milieu dont aucune plante ne veut le peut
+static func tirer(tb: Dictionary, milieu: int, k: int, k_cellule: int = -1, pleine: bool = false) -> Dictionary:
 	var m := milieu & MILIEUX
 	if not bool(tb["boise"]):
 		m = sans_arbres(m)
@@ -358,13 +360,13 @@ static func tirer(tb: Dictionary, milieu: int, k: int, k_cellule: int = -1) -> D
 	if s <= 0.0:
 		return {}
 	# (une place dont l'herbier veut peu reste souvent vide : le même tirage pour tout le groupe)
-	if bool(tb["eclaircie"]) and s < 1.0 and float(absi(hash(k + 77003)) % 10007) / 10007.0 >= s:
+	if not pleine and bool(tb["eclaircie"]) and s < 1.0 and float(absi(hash(k + 77003)) % 10007) / 10007.0 >= s:
 		return {}
 	var x := float(k_cellule if k_cellule >= 0 else k) / 10007.0 * s
 	var i := 0
 	while i < cum.size() - 1 and x >= cum[i]:
 		i += 1
-	if rang(milieu) >= int(tb["tailles"][i]):
+	if not pleine and rang(milieu) >= int(tb["tailles"][i]):
 		return {}
 	return tb["plantes"][i]
 
