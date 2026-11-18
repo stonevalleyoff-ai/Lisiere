@@ -883,8 +883,22 @@ func _le_collet_de_la_noire() -> void:
 	A.poser("collet")
 	s = collet_pose.call()
 	jeu.agir()
-	verif(encore and lave and replie and rendu and fume and parfumee and s != null and bool(s.etat.get("amorce", false)) and not bool(s.etat.get("odeur", true)) and C.note_du_sac(s).contains("ne sent rien"),
-		"une averse de %d secondes lave l'odeur ; replié, le collet revient dans le sac avec sa viande ; retendu et amorcé avec l'odeur des aromates sur elle, il ne sent rien (le sac le dit)" % int(RR.NOIRE_COLLET_PLUIE))
+	# (le sac : le collet posé juste là, ce qu'on en sait, « Replier »)
+	jeu.ouvrir_page("sac")
+	var sac_c = jeu.ui._pages.get("sac")
+	var tuile_c := false
+	if sac_c != null:
+		for sec in sac_c._sections():
+			for tu in sec["tuiles"]:
+				tuile_c = tuile_c or (str(tu["cle"]) == "pose" and str(tu["id"]) == "collet")
+	var fiche_c: Dictionary = sac_c._fiche_de("pose") if sac_c != null else {}
+	jeu.fermer_page()
+	var note_c := ""
+	for l in fiche_c.get("lignes", []):
+		note_c += str(l[1]) if l.size() > 1 else ""
+	verif(encore and lave and replie and rendu and fume and parfumee and s != null and bool(s.etat.get("amorce", false)) and not bool(s.etat.get("odeur", true))
+		and tuile_c and str(fiche_c.get("bouton", "")) == "Replier" and note_c.contains("Amorcé") and note_c.contains("ne sent rien"),
+		"une averse de %d secondes lave l'odeur ; replié, le collet revient dans le sac avec sa viande ; retendu et amorcé avec l'odeur des aromates sur elle, il ne sent rien (le sac le dit : « %s »)" % [int(RR.NOIRE_COLLET_PLUIE), note_c])
 
 	# --- la prise : elle y met la patte, le nœud se serre ; tenue, elle se jette au bout du filin ---
 	# (les nombres, par le calcul : la bande où la lance porte et où sa gueule ne porte pas)

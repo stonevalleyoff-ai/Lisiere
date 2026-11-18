@@ -18,9 +18,9 @@ static func nombre(p: Planche) -> int:
 	return clampi(int(p.plan.get("cicatrices", 0)), 0, 3)
 
 
-# la peau refaite : un ivoire à peine rosé, terni
+# la peau refaite : un ivoire à peine rosé, terni (pâle sur son poil d'encre, sans y faire une tache de papier)
 static func _pale() -> Color:
-	return Pal.IVOIRE.lerp(Pal.SANG, 0.14).darkened(0.1)
+	return Pal.IVOIRE.lerp(Pal.SANG, 0.16).darkened(0.24)
 
 
 # une balafre de a à b, large de w en son milieu : la peau pelée autour (un halo gris), la cicatrice pâle, effilée aux deux
@@ -38,34 +38,39 @@ static func balafre(p: Planche, a: Vector2, b: Vector2, w: float, graine: int) -
 	var axe := PackedVector2Array()
 	for i in n + 1:
 		var t := float(i) / n
-		axe.append(a.lerp(b, t) + nrm * long * 0.035 * sin(t * PI * 1.6 + r.randf() * 0.6) + nrm * r.randf_range(-0.25, 0.25) * w)
+		axe.append(a.lerp(b, t) + nrm * long * 0.035 * sin(t * PI * 1.6 + r.randf() * 0.6) + nrm * r.randf_range(-0.1, 0.1) * w)
+	# (ses bords ne sont pas d'un trait : la plaie s'est refermée par endroits plus large, par endroits un fil)
+	var larges := PackedFloat32Array()
+	for i in n + 1:
+		larges.append(pow(sin(PI * clampf(float(i) / n, 0.02, 0.98)), 0.6) * r.randf_range(0.78, 1.12))
 	var lentille := func(k: float) -> String:
 		var haut := PackedVector2Array()
 		var bas := PackedVector2Array()
 		for i in n + 1:
-			var t := float(i) / n
-			var e := w * k * pow(sin(PI * clampf(t, 0.02, 0.98)), 0.6) * 0.5
+			var e := w * k * larges[i] * 0.5
 			haut.append(axe[i] - nrm * e)
 			bas.append(axe[i] + nrm * e)
 		bas.reverse()
 		return Planche.ferme(haut + bas, 0.7)
 	# (le poil ne repousse pas autour : la peau, grise, se voit)
-	p.aplat(lentille.call(2.3), T["accent"].lerp(_pale(), 0.3), 0.6)
-	p.aplat(lentille.call(1.0), _pale(), 0.96)
+	p.aplat(lentille.call(2.4), T["accent"].lerp(_pale(), 0.25), 0.55)
+	p.aplat(lentille.call(1.0), _pale(), 0.94)
 	# (son bourrelet, côté ombre ; un fil de lumière de l'autre)
 	var ombre := PackedVector2Array()
 	var clair := PackedVector2Array()
 	for i in range(1, n):
-		var e := w * pow(sin(PI * float(i) / n), 0.6) * 0.5
+		var e := w * larges[i] * 0.5
 		ombre.append(axe[i] + nrm * e)
-		clair.append(axe[i] - nrm * e * 0.4)
-	p.tracer(Planche.ouvert(ombre), maxf(0.5, w * 0.22), T["encre"], 0.75)
-	p.tracer(Planche.ouvert(clair), maxf(0.4, w * 0.16), Pal.IVOIRE, 0.5)
-	# (les points où la peau a tiré)
-	for i in 3:
-		var t := r.randf_range(0.18, 0.82)
-		var q := a.lerp(b, t) + nrm * w * (1.3 if i % 2 == 0 else -1.3)
-		p.aplat(Planche.ferme(Planche.ellipse(q, w * 0.22, w * 0.16, 6, dir.angle()), 1.0), _pale(), 0.7)
+		clair.append(axe[i] - nrm * e * 0.35)
+	p.tracer(Planche.ouvert(ombre), maxf(0.5, w * 0.2), T["encre"], 0.7)
+	p.tracer(Planche.ouvert(clair), maxf(0.4, w * 0.14), Pal.IVOIRE, 0.42)
+	# (le poil d'à côté, qui retombe en travers : quelques mèches fines, qui la coupent)
+	for i in 5:
+		var t := r.randf_range(0.1, 0.9)
+		var cote := 1.0 if i % 2 == 0 else -1.0
+		var q := a.lerp(b, t) - nrm * w * 1.5 * cote
+		var bout := q + nrm * w * r.randf_range(1.4, 2.4) * cote + dir * w * r.randf_range(-0.8, 0.8)
+		p.tracer("M%s Q%s %s" % [Planche.pt(q), Planche.pt(q.lerp(bout, 0.5) + dir * w * 0.5), Planche.pt(bout)], maxf(0.5, w * 0.17), T["dos"], 0.85)
 
 
 # la première : à la naissance du cou, en avant de l'épaule (son cou, qui passe devant l'omoplate : il se dessine avec la tête)

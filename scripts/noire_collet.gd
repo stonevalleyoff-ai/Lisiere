@@ -58,6 +58,7 @@ var aube_dite := false           # l'aube de son départ est passée : sa piste,
 var page_dite := false           # la page « Elle est partie. » a été lue
 var depuis_a_coup := INF         # secondes depuis le dernier à-coup du filin (le dessin fait bouger les pieux)
 var prise_a := Vector2.INF       # où était sa patte, depuis le milieu du nœud, quand il s'est serré
+var de_jour := false             # (la vitrine) le nœud la tient même de jour, pour la regarder
 var _phase := ""                 # tenue : « saisie », « ramasse », « jette », « sonnee »
 var _pt := 0.0
 var _dir := Vector2.RIGHT        # où elle se jette
@@ -95,6 +96,7 @@ func commencer() -> void:
 	_appel = false
 	_page_dans = -1.0
 	_a_revoir = false
+	de_jour = false
 	_r.seed = int(jeu.graine) ^ 0xc011e7
 
 
@@ -471,7 +473,7 @@ func _tenir(delta: float, j) -> void:
 		return
 	tenue += delta
 	_pt += delta
-	if tenue >= R.NOIRE_COLLET_TENUE or jeu.jour_du_ciel() > 0.5:
+	if tenue >= R.NOIRE_COLLET_TENUE or (jeu.jour_du_ciel() > 0.5 and not de_jour):
 		_se_liberer()
 		return
 	var pieu := ancre(s)
@@ -524,6 +526,7 @@ func _elan(j, pieu: Vector2) -> void:
 		_dir = Vector2.from_angle(a)
 	_phase = "ramasse"
 	_pt = 0.0
+	c.sonnee = 0.0
 
 
 # le filin l'arrête net, au bout de son élan : il grince, les pieux bougent, la terre vole sous sa patte ; elle en reste
@@ -533,6 +536,7 @@ func _a_coup(s, c) -> void:
 	_pt = 0.0
 	depuis_a_coup = 0.0
 	c.ordre = ""
+	c.sonnee = 1.0
 	c.sursauter()
 	s.etat["vers"] = [snappedf(_dir.x, 0.01), snappedf(_dir.y, 0.01)]
 	var pied: Vector2 = c.pied_pris()
@@ -628,6 +632,7 @@ func _rompre(s) -> void:
 		c.tenue_a = Vector2.INF
 		c.aplatie = 0.0
 		c.flaire = 0.0
+		c.sonnee = 0.0
 		c.sursauter()
 		if s != null and is_instance_valid(s):
 			var vers: Vector2 = (c.position - ancre(s)).normalized()

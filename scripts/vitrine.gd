@@ -1027,9 +1027,11 @@ func _la_fin_de_la_noire(quelle: String) -> void:
 		if is_instance_valid(x) and x.position.distance_to(place) < 700.0:
 			jeu.atelier.poses.erase(x)
 			x.queue_free()
+	# (la septième nuit : l'heure, le jour et les nuits tenues d'accord entre eux, que l'aube ne vienne pas d'elle-même)
+	jeu.horloge += R.DUREE * 6.0
 	jeu.nuits = 6
 	jeu.jour = 7
-	jeu._etait_nuit = heure != "jour"
+	jeu._etait_nuit = jeu.jour_du_ciel() <= 0.0
 	N.acte = 3
 	N.taniere = feu_p + Vector2(-1900.0, -1300.0)
 	N.ou = N.taniere
@@ -1059,6 +1061,10 @@ func _la_fin_de_la_noire(quelle: String) -> void:
 				N.corps.regard = 1.0
 				C.vise = _collet
 				C._cote = 1.0
+				# (hors de la nuit, pour la regarder : le nœud la tient quand même ; --torche : la veilleuse en porte une)
+				C.de_jour = true
+				if ar.has("--torche"):
+					j.torche = R.DUREE_TORCHE
 				C._serrer(_collet)
 				var pieu: Vector2 = C.ancre(_collet)
 				var d := R.NOIRE_COLLET_LONGE + (R.NOIRE_COLLET_MORD - 22.0 if ar.has("--dedans") else R.NOIRE_COLLET_MORD + 26.0)
@@ -1068,6 +1074,8 @@ func _la_fin_de_la_noire(quelle: String) -> void:
 		"part":
 			# (l'aube de son départ : le collet rompu, sa piste qui en part et sort du lieu, sa couche vide ; puis la page)
 			jeu.horloge = R.DUREE * 7.0 + R.TRANSITION * 0.5
+			jeu.jour = 8
+			jeu.nuits = 7
 			jeu._etait_nuit = false
 			_collet = jeu.atelier._creer("collet", place, {"amorce": false, "odeur": false, "phase": "rompu", "vers": [-0.92, 0.38]})
 			N.cicatrices = R.NOIRE_CICATRICES

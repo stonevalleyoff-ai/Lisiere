@@ -200,7 +200,7 @@ const NOIRE_REVEIL := 120.0      # le jour, à cette distance de sa tanière, on
 # milieu de son corps ; tenue, sa gueule porte à NOIRE_COLLET_MORD, et son corps ne va pas plus loin que NOIRE_COLLET_LONGE
 # du pieu. Entre 175 et 235 pixels du pieu, la veilleuse la touche au bout de son filin sans qu'elle l'atteigne : une bande
 # de 60 pixels (près de trois fois sa largeur, un tiers de seconde de marche), que le filin tendu montre.
-const NOIRE_COLLET_FLAIR := 600.0      # jusqu'où elle sent un collet amorcé, de là où elle passe (sa tanière, son chemin, sa ronde autour du camp)
+const NOIRE_COLLET_FLAIR := 750.0      # jusqu'où elle sent un collet amorcé, de là où elle passe (sa tanière, son chemin, sa ronde autour du camp)
 const NOIRE_COLLET_FLAIRE := 2.4       # secondes : elle flaire un collet qui sent la main, le nez dessus, avant de renâcler
 const NOIRE_COLLET_PLUIE := 30.0       # secondes d'averse qui lavent d'un collet l'odeur d'une main
 const NOIRE_COLLET_TENUE := 15.0       # secondes : le nœud la tient ce temps-là (six ou sept élans : ci-dessous)

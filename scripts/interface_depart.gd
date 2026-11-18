@@ -125,9 +125,12 @@ func remplir(d: Dictionary, jeu) -> void:
 	_dit.text = str(d.get("dit", ""))
 	_reste.text = str(d.get("reste", ""))
 	var cicatrices := 3
+	var vers_la_gauche := false
 	if jeu != null and jeu.get("noire") != null:
 		cicatrices = int(jeu.noire.cicatrices)
-	_vignette.remplir(cicatrices)
+		# (elle sort de la page du côté où elle a quitté le lieu)
+		vers_la_gauche = float(jeu.noire.collet.sortie.x) < float(jeu.noire.collet.depart_de.x)
+	_vignette.remplir(cicatrices, vers_la_gauche)
 	_t = 0.0
 	_disposer()
 	if not compact and _boutons.size() > 0:
@@ -157,14 +160,16 @@ func _unhandled_input(e: InputEvent) -> void:
 class Vignette extends Control:
 	const FILIN := Color("c9ad6e")
 	var _portrait := {}
+	var _miroir := false          # elle s'en va vers la gauche de la page
 	var _t := 0.0
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		custom_minimum_size = Vector2(0, 150)
 
-	func remplir(cicatrices: int) -> void:
+	func remplir(cicatrices: int, vers_la_gauche: bool = false) -> void:
 		_portrait = Bestiaire.portrait(LaNoire.lignee_a(cicatrices), 300.0)
+		_miroir = vers_la_gauche
 		_t = 0.0
 
 	func _process(d: float) -> void:
@@ -176,6 +181,9 @@ class Vignette extends Control:
 		var w := size.x
 		var h := size.y
 		var sol := h * 0.86
+		if _miroir:
+			# (la même page, retournée : le collet à droite, elle qui sort par la gauche)
+			draw_set_transform(Vector2(w, 0.0), 0.0, Vector2(-1.0, 1.0))
 		# le sol : un trait d'encre, qui s'interrompt
 		I.trait_encre(self, Vector2(w * 0.04, sol), Vector2(w * 0.5, sol), 1.4, Color(P.ENCRE, 0.35))
 		I.trait_encre(self, Vector2(w * 0.56, sol), Vector2(w * 0.96, sol), 1.4, Color(P.ENCRE, 0.28))
@@ -198,7 +206,7 @@ class Vignette extends Control:
 		var k_dessin := 1.0
 		if not _portrait.is_empty():
 			var taille: Vector2 = _portrait["taille"]
-			k_dessin = minf(minf(haut / taille.y, w * 0.34 / taille.x), 1.0)
+			k_dessin = minf(minf(haut / taille.y, w * 0.42 / taille.x), 1.5)
 		# sa piste : du collet à elle, puis d'elle au bord de la page ; les empreintes viennent une à une, et s'effacent au loin
 		var debut := c.x + 62.0
 		var fin := w * 0.985
@@ -206,7 +214,7 @@ class Vignette extends Control:
 		var n := int((fin - debut) / pas)
 		for i in n:
 			var x := debut + pas * (i + 0.5)
-			if absf(x - elle.x) < w * 0.17 * k_dessin + 8.0 and not _portrait.is_empty():
+			if not _portrait.is_empty() and absf(x - elle.x) < float(_portrait["taille"].x) * 0.5 * k_dessin + 6.0:
 				continue
 			var vient := smoothstep(0.5 + 0.09 * i, 0.8 + 0.09 * i, _t)
 			if vient <= 0.0:

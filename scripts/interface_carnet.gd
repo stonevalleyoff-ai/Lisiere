@@ -576,12 +576,13 @@ class Savoirs extends ScrollContainer:
 			var pied := "Il reste %d chose%s à apprendre d'elle." % [reste, "s" if reste > 1 else ""] if reste > 0 else ""
 			# (ce qu'elle garde du collet ; et, partie, sa dernière page : scripts/noire_collet.gd)
 			var titre := "La Noire"
+			var tete := ""
 			if bool(noire.partie):
 				titre = "La Noire, partie"
-				pied = str(noire.collet.derniere_page())
+				tete = str(noire.collet.derniere_page())
 			elif int(noire.cicatrices) > 0:
 				titre = "La Noire, %s" % ("une cicatrice" if int(noire.cicatrices) == 1 else "%d cicatrices" % int(noire.cicatrices))
-			_liste.add_child(_carte(titre, tex, sus, pied, true, "Tu ne l'as pas encore vue dans la lumière."))
+			_liste.add_child(_carte(titre, tex, sus, pied, true, "Tu ne l'as pas encore vue dans la lumière.", tete))
 		var vues = jeu.get("vues")
 		if typeof(vues) == TYPE_DICTIONARY:
 			for id in vues:
@@ -594,7 +595,7 @@ class Savoirs extends ScrollContainer:
 			_liste.add_child(Encre.libelle("Aucune bête ne s'est encore montrée dans la lumière.", T.titre_italique(), 17, P.ENCRE_DOUCE))
 
 	# une bête : son dessin à gauche (ou ce qui en tient lieu), son nom et ce qu'on en sait à droite
-	func _carte(titre: String, tex, lignes: Array, pied: String, grande: bool, sans_dessin: String) -> Control:
+	func _carte(titre: String, tex, lignes: Array, pied: String, grande: bool, sans_dessin: String, tete: String = "") -> Control:
 		var h := HBoxContainer.new()
 		h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		h.add_theme_constant_override("separation", 16)
@@ -620,6 +621,12 @@ class Savoirs extends ScrollContainer:
 		droite.add_theme_constant_override("separation", 3 if not grande else 6)
 		h.add_child(droite)
 		droite.add_child(Encre.libelle(titre, T.titre(), 28 if grande else 21, P.ENCRE, false))
+		if tete != "":
+			# (sa dernière page : dite d'abord, sous son nom)
+			var derniere := Encre.libelle(tete, T.titre_italique(), 17, P.SANG, false)
+			derniere.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			derniere.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			droite.add_child(derniere)
 		for t in lignes:
 			var l := Encre.libelle("·  " + str(t), T.texte_moyen(), 15 if grande else 14, P.ENCRE, false)
 			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

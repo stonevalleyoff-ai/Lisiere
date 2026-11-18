@@ -26,7 +26,7 @@ const OEIL := -0.42                          # où est l'œil du nœud, sur son 
 const RX := 25.0
 const RY := 11.5
 const TORON := Color("8c7546")               # les torons du filin, plus sombres (ceux de scripts/harnais.gd)
-const CHAIR := Color("8a2a22")               # la viande crue
+const CHAIR := Color("6e2620")               # la viande crue : le sang, tiré vers la terre
 
 
 # --- ce que la chose demande (scripts/campement.gd) ---
@@ -199,7 +199,8 @@ static func sol(c, p) -> void:
 		var d := Vector2(vers.x, vers.y * 0.5).normalized() * 15.0
 		p.tracer(PackedVector2Array([o - d * 0.5, o + d * 0.2, o + d * 0.7]), 2.0, Color(P.ENCRE, 0.6))
 		p.tracer(PackedVector2Array([o - d * 0.5 + Vector2(0.0, -0.9), o + d * 0.6 + Vector2(0.0, -0.9)]), 0.8, Color(P.TERRE.lightened(0.2), 0.7))
-	c._pastille(p, Vector2(-2.0, 1.6), 5.2, 2.0, Color(P.SANG, 0.45))
+	# (ce qu'il reste de l'appât : une tache sombre, que la terre a bue)
+	p.eventail(Vector2(-2.0, 1.6), 7.0, 2.8, Color(P.SANG.darkened(0.35), 0.4), Color(P.SANG.darkened(0.35), 0.0), 10)
 	for f in [Vector2(-24.0, 3.0), Vector2(9.0, 12.0)]:
 		var fo: Vector2 = f
 		c._baton(p, PackedVector2Array([fo, fo + Vector2(5.6, 1.2)]), 1.4, c.BOIS.darkened(0.2 + 0.15 * mouille), 0.9)
@@ -266,13 +267,18 @@ static func _pieu_couche(c, p, a: Vector2, b: Vector2, w: float, bois: Color) ->
 
 # l'appât : un morceau de viande crue, sombre, luisant ; son gras en liseré, un bout d'os ; le sang qu'il a rendu ; une mouche
 static func _viande(c, p, o: Vector2, k: float, r: RandomNumberGenerator) -> void:
-	c._pastille(p, o + Vector2(0.6, 1.8), 7.4 * k, 2.6, Color(P.SANG, 0.5))
+	p.eventail(o + Vector2(0.8, 2.0), 9.6 * k, 3.6, Color(P.SANG.darkened(0.3), 0.6), Color(P.SANG.darkened(0.3), 0.0), 12)
 	var morceau := PackedVector2Array()
 	for q in [Vector2(-6.8, 0.4), Vector2(-5.0, -2.9), Vector2(-0.8, -4.2), Vector2(3.8, -3.3), Vector2(6.6, -0.5), Vector2(5.8, 2.2), Vector2(1.6, 3.2), Vector2(-3.4, 3.0)]:
 		morceau.append(o + (q as Vector2) * k)
 	c._baton(p, PackedVector2Array([o + Vector2(4.6, -0.8) * k, o + Vector2(9.2, -2.6) * k]), 1.5, P.IVOIRE.lightened(0.15), 0.9)
 	c._pastille(p, o + Vector2(9.6, -2.8) * k, 1.2, 1.1, P.IVOIRE.lightened(0.2))
-	p.aplat(morceau, CHAIR.darkened(0.14 * c._mouille_cran()), Pinceau.DOME, o + Vector2(0.0, -0.5), Vector2(7.6, 4.4) * k)
+	p.aplat(morceau, CHAIR.darkened(0.14 * c._mouille_cran()))
+	# (son dessus luit un peu ; son dessous est dans l'ombre)
+	var dessus := PackedVector2Array()
+	for q in [Vector2(-5.6, -0.4), Vector2(-4.2, -2.6), Vector2(-0.6, -3.6), Vector2(3.4, -2.8), Vector2(5.2, -0.9), Vector2(1.0, -0.2)]:
+		dessus.append(o + (q as Vector2) * k)
+	p.aplat(dessus, CHAIR.lightened(0.14).lerp(P.BRAISE_ROUGE, 0.2))
 	p.contour(morceau, 1.1, c.ENCRE, r, 3)
 	p.tracer(PackedVector2Array([o + Vector2(-5.6, -0.2) * k, o + Vector2(-3.8, -2.4) * k, o + Vector2(-0.6, -3.3) * k]), 0.9, Color(P.IVOIRE, 0.85))
 	for y in [0.9, 2.1]:
@@ -405,8 +411,8 @@ static func _couche(c, p) -> void:
 	var terre := P.TERRE.darkened(0.3 + 0.1 * mouille)
 	var paille: Color = c.CORDE.lerp(P.MOUSSE, 0.35).darkened(0.12 + 0.2 * mouille)
 	# le creux : long comme elle, la terre tassée, plus sombre au milieu
-	p.eventail(Vector2(0.0, 0.0), 82.0, 33.0, Color(terre, 0.5), Color(terre, 0.0), 24)
-	p.eventail(Vector2(-4.0, 1.0), 56.0, 21.0, Color(terre.darkened(0.2), 0.5), Color(terre, 0.0), 20)
+	p.eventail(Vector2(0.0, 0.0), 86.0, 35.0, Color(terre, 0.62), Color(terre, 0.0), 24)
+	p.eventail(Vector2(-4.0, 1.0), 58.0, 22.0, Color(terre.darkened(0.25), 0.6), Color(terre, 0.0), 20)
 	# l'herbe couchée, en rond : elle tournait sur elle-même avant de se coucher
 	for i in 46:
 		var a := r.randf() * TAU
@@ -414,25 +420,34 @@ static func _couche(c, p) -> void:
 		var q := Vector2(cos(a) * 74.0 * k, sin(a) * 29.0 * k)
 		var tang := Vector2(-sin(a) * 74.0, cos(a) * 29.0).normalized()
 		var l := r.randf_range(5.0, 11.0)
-		p.tracer(PackedVector2Array([q - tang * l, q + Vector2(cos(a), sin(a) * 0.4) * 1.2, q + tang * l]), r.randf_range(0.7, 1.2), Color(paille.lightened(r.randf_range(0.0, 0.22)), 0.85))
+		p.tracer(PackedVector2Array([q - tang * l, q + Vector2(cos(a), sin(a) * 0.4) * 1.2, q + tang * l]), r.randf_range(0.7, 1.2), Color(paille.lightened(r.randf_range(-0.08, 0.14)), r.randf_range(0.4, 0.7)))
 	# des os rongés : une côte, deux os longs, fendus
-	var os := P.IVOIRE.lightened(0.12).darkened(0.1 * mouille)
+	var os := P.IVOIRE.darkened(0.08 + 0.1 * mouille)
 	var cote: PackedVector2Array = c._courbe(Vector2(26.0, -8.0), Vector2(40.0, -15.0), Vector2(53.0, -6.0), 8)
-	c._baton(p, cote, 1.5, os, 0.9)
-	for b in [[Vector2(-44.0, 9.0), Vector2(-28.0, 12.5)], [Vector2(14.0, 14.0), Vector2(27.0, 10.0)]]:
+	c._baton(p, cote, 1.3, os, 0.9)
+	for b in [[Vector2(-44.0, 9.0), Vector2(-36.0, 12.2), Vector2(-28.0, 12.0)], [Vector2(14.0, 14.0), Vector2(20.0, 11.2), Vector2(27.0, 10.6)]]:
+		# (un os long : un peu courbe, une tête à un bout, l'autre bout fendu par ses dents)
 		var a0: Vector2 = b[0]
-		var b0: Vector2 = b[1]
-		c._baton(p, PackedVector2Array([a0, b0]), 1.9, os, 0.9)
-		c._pastille(p, a0, 1.9, 1.5, c.ENCRE)
-		c._pastille(p, a0, 1.3, 1.0, os.lightened(0.1))
-		p.tracer(PackedVector2Array([b0, b0 + (b0 - a0).normalized() * 2.4 + Vector2(0.0, -1.2)]), 0.9, os.darkened(0.25))
+		var b0: Vector2 = b[2]
+		c._baton(p, PackedVector2Array([a0, b[1], b0]), 1.6, os, 0.9)
+		var hors := (a0 - Vector2(b[1])).normalized()
+		for k in [-1.0, 1.0]:
+			c._pastille(p, a0 + hors * 0.6 + hors.orthogonal() * 1.2 * float(k), 1.7, 1.4, c.ENCRE)
+		for k in [-1.0, 1.0]:
+			c._pastille(p, a0 + hors * 0.6 + hors.orthogonal() * 1.2 * float(k), 1.1, 0.9, os.lightened(0.08))
+		var fend := (b0 - Vector2(b[1])).normalized()
+		p.tracer(PackedVector2Array([b0, b0 + fend.rotated(0.5) * 2.6]), 0.9, os)
+		p.tracer(PackedVector2Array([b0, b0 + fend.rotated(-0.4) * 2.0]), 0.8, os.darkened(0.2))
 	# son poil : des touffes noires prises dans l'herbe
 	for i in 7:
 		var a := r.randf() * TAU
 		var q := Vector2(cos(a) * r.randf_range(10.0, 60.0), sin(a) * r.randf_range(4.0, 22.0))
-		for k in 4:
-			var d := Vector2.from_angle(r.randf_range(-0.5, 0.5) + (PI if k % 2 == 0 else 0.0)) * r.randf_range(2.5, 5.5)
-			p.tracer(PackedVector2Array([q, q + d * 0.5 + Vector2(0.0, -0.8), q + d]), 0.8, Color(P.NUIT.lerp(P.ENCRE, 0.4), 0.9))
+		# (une mèche : cinq ou six poils fins, couchés du même côté, un peu frisés)
+		var pente := r.randf_range(-0.4, 0.4)
+		for k in 6:
+			var o := q + Vector2(r.randf_range(-2.0, 2.0), r.randf_range(-1.0, 1.0))
+			var d := Vector2.from_angle(pente + r.randf_range(-0.3, 0.3)) * r.randf_range(3.0, 6.5)
+			p.tracer(PackedVector2Array([o, o + d * 0.5 + Vector2(0.0, -r.randf_range(0.4, 1.2)), o + d]), 0.55, Color(P.NUIT.lerp(P.ENCRE, 0.4), 0.8))
 	# les nœuds qu'elle a ramenés à la patte, et tranchés : des boucles de filin blond, ouvertes, leurs bouts effilochés
 	if not fouillee:
 		var fibre: Color = c.FILIN.darkened(0.1 + 0.16 * mouille)

@@ -60,9 +60,9 @@ const SAVOIRS := [
 		"Tu as dormi loin d'elle : elle est arrivée tard."],
 	# (la fin : le collet de filin, l'appât, les cicatrices, son départ ; scripts/noire_collet.gd)
 	["odeur", "Un collet posé à mains nues sent la main : elle le flaire, renâcle et s'en détourne. L'odeur des aromates, gardée sur soi, couvre la sienne.",
-		"Elle a flairé le collet, renâclé, et s'en est détournée : il sent ta main. La fumée des aromates couvre ton odeur."],
+		"Elle flaire le collet, renâcle, s'en détourne : il sent ta main. La fumée des aromates couvre ton odeur."],
 	["collet", "Un grand collet de filin, amorcé de viande crue, hors de la lumière : elle y met la patte. Il ne la tient qu'un moment.",
-		"Le nœud s'est serré : elle est prise. Le filin ne la tiendra pas longtemps : frappe, au bout de sa portée."],
+		"Le nœud s'est serré : elle est prise. Il ne la tiendra pas longtemps. Reste au-delà de ses griffes, et frappe quand le filin l'arrête."],
 	["cicatrice", "Tenue au collet, les coups comptent : assez de coups, et elle en garde une cicatrice. Chacune la ralentit.",
 		"Elle s'arrache, et s'en va dans le noir. Celle-là, elle la gardera : une balafre sans poil."],
 	["depart", "À la troisième cicatrice, elle a quitté le lieu. Sa piste en sort, et ne revient pas.",

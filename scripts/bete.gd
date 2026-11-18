@@ -142,7 +142,9 @@ var _tic_t := 2.0
 var flaire := 0.0                # de 0 à 1 : le nez au sol, elle flaire (un appât, un collet)
 var tenue_a := Vector2.INF       # le pieu du collet qui la tient par la patte (INF : rien ne la tient)
 var tenue_long := 0.0            # et jusqu'où son corps va, de ce pieu, au bout du filin
+var sonnee := 0.0                # de 0 à 1 : l'à-coup du filin l'a sonnée (la tête pend et ballotte, elle ne mord pas)
 var _flaire_l := 0.0
+var _sonnee_l := 0.0
 var _boite_i := -1               # la patte dont elle boite : celle qu'on a prise deux fois (-1 : aucune)
 var _prise_i := -1               # sa patte de devant, de notre côté : celle que prend le collet
 # la bête apprivoisée (rôle « compagne », scripts/elevage.gd), et ce qui tente une proie (un appât, un jardin)
@@ -2114,6 +2116,11 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 		_flaire_l = lerpf(_flaire_l, flaire, 1.0 - exp(-delta * 3.2))
 		y += H * 0.06 * _flaire_l
 		tang += 0.09 * _flaire_l
+		# sonnée par l'à-coup : elle plie sur ses pattes de devant, et vacille
+		_sonnee_l = lerpf(_sonnee_l, sonnee, 1.0 - exp(-delta * (11.0 if sonnee > _sonnee_l else 4.0)))
+		y += H * 0.07 * _sonnee_l
+		tang += 0.07 * _sonnee_l
+		x += H * 0.03 * sin(_anim * 7.0) * _sonnee_l
 		if _boite_i >= 0 and marche > 0.05:
 			# deux cicatrices : elle boite de la patte prise. Son garrot se relève quand cette patte touche (elle ne s'y
 			# appuie pas), et retombe sur l'autre
@@ -2240,7 +2247,10 @@ func _corps(v: float, delta: float, lisse: float, fx: float) -> void:
 			var pieds: Vector2 = jeu.joueur.position - position
 			var devant := pieds.x * signf(fx) > -20.0
 			var visee := clampf(atan2(maxf(-pv0.y - 36.0, 0.0), maxf(absf(pieds.x), 40.0)) * 0.6 + 0.3 * clampf(pieds.y / 160.0, -1.0, 1.0), -0.3, 0.55)
-			rot = lerpf(rot, visee, (0.45 if ordre == "charge" else 0.9) * (1.0 if devant else 0.25) * (1.0 - _flaire_l))
+			rot = lerpf(rot, visee, (0.45 if ordre == "charge" else 0.9) * (1.0 if devant else 0.25) * (1.0 - _flaire_l) * (1.0 - 0.8 * _sonnee_l))
+			# (sonnée : la tête pend, de côté, et ballotte)
+			rot += (0.3 + 0.06 * sin(_anim * 13.0)) * _sonnee_l
+			d += Vector2(-0.05, 0.16) * H * _sonnee_l
 			# (elle flaire : le nez au sol, qui cherche, à petits coups ; scripts/noire_collet.gd)
 			rot += (0.4 + 0.03 * sin(_anim * 11.0) + 0.02 * sin(_anim * 4.3)) * _flaire_l
 			d += Vector2(0.07 + 0.012 * sin(_anim * 2.7), 0.3) * H * _flaire_l
