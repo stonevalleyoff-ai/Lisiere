@@ -283,7 +283,7 @@ static func gravier(p, q: Vector2, s: float, c: Color) -> void:
 
 # de la neige posée sur le haut d'un aplat (un feuillage, un coussin), s'il fait froid dans le lieu de la plante : la part du
 # polygone au-dessus d'une ligne tremblée (scripts/objet.gd, _neige_sur). part : ce que la neige en couvre, par grand froid
-static func neige(o, p, poly: PackedVector2Array, centre: Vector2, rx: float, ry: float, r: RandomNumberGenerator, part := 0.42) -> void:
+static func neige(o, p, poly: PackedVector2Array, centre: Vector2, rx: float, ry: float, r: RandomNumberGenerator, part := 0.34) -> void:
 	var froid := float(o._climat.get("froid", 0.0))
 	if froid <= 0.25:
 		return

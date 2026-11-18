@@ -15,6 +15,7 @@ const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const T := preload("res://scripts/flore_trait.gd")
 const Arbres := preload("res://scripts/flore_arbres.gd")
 const Sol := preload("res://scripts/flore_sol.gd")
+const Buissons := preload("res://scripts/flore_buissons.gd")
 # ce que le vent ne plie pas : les plantes grasses, les coussins, les lichens, les tapis
 const RAIDES := ["cactus", "agave", "succulente", "caillou", "mousse", "lichen", "lichen_croute", "lichen_rennes", "coussin"]
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
@@ -102,6 +103,8 @@ static func mesurer(o, r: RandomNumberGenerator) -> void:
 					o._ry = o._rx * r.randf_range(0.42, 0.55)
 					o.hauteur = 2.0
 		"buisson":
+			if Buissons.mesurer(o, r, f):
+				return
 			match f:
 				"bruyere", "aromatique":
 					o._rx = r.randf_range(11.0, 14.0)
@@ -182,6 +185,11 @@ static func ecorce_du_pied(o, p, r: RandomNumberGenerator) -> void:
 # le haut de l'arbre (la couronne, sur son propre nœud) ; faux : le feuillu d'objet.gd
 static func couronne(o, p, r: RandomNumberGenerator) -> bool:
 	return Arbres.couronne(o, p, r)
+
+
+# ce que les caractères d'Orvane ajoutent à une couronne (lobes : [[centre, rx, ry]…])
+static func caracteres_de_couronne(o, p, lobes: Array, t: Color) -> void:
+	Arbres.caracteres_de_couronne(o, p, lobes, t)
 
 
 # le bois nu d'un arbre en feu, roussi (faux : les branches de tous les arbres)
@@ -432,6 +440,8 @@ static func dessiner(o, p, r: RandomNumberGenerator) -> bool:
 	var f := str(o.forme)
 	match str(o.genre):
 		"buisson":
+			if Buissons.dessiner(o, p, r, f):
+				return true
 			match f:
 				"epine":
 					_epine(o, p, r)

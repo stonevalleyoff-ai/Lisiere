@@ -1159,6 +1159,10 @@ func _feuillu(p, r: RandomNumberGenerator) -> void:
 	var poly := festons(_cc, _rx, _ry, r.randi_range(7, 9), 0.16, r, 60, 0.12)
 	var t := teinte.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.18)).lightened(r.randf_range(0.0, 0.08))
 	p.aplat(poly, t, Pinceau.FEUILLAGE, _cc, Vector2(_rx, _ry) * 1.08)
+	# (la neige, posée sur le haut de la couronne, s'il fait froid : comme sur les sapins)
+	var froid := float(_climat.get("froid", 0.0))
+	if froid > 0.25:
+		_neige_sur(p, poly, _cc + Vector2(0, -_ry * 0.55), _rx * 0.9, _ry * 0.5, _cc.y - _ry * lerpf(0.62, 0.36, froid), r)
 	# l'encre : le contour, en quelques traits, et des arcs de touffes du côté de l'ombre
 	p.contour(poly, 1.5, ENCRE, r, 4)
 	for i in r.randi_range(3, 5):
@@ -1170,6 +1174,9 @@ func _feuillu(p, r: RandomNumberGenerator) -> void:
 			var a := a0 + k * 0.32
 			arc.append(q + Vector2(cos(a), sin(a) * 0.9) * rr)
 		p.tracer(arc, 0.9, Color(ENCRE, 0.6))
+	# (ce que ses caractères d'Orvane y ajoutent : scripts/flore_arbres.gd)
+	if not caracteres.is_empty():
+		Dessins.caracteres_de_couronne(self, p, [[_cc, _rx, _ry]], t)
 
 
 # un sapin : des étages d'aiguilles, du bas vers le haut, chacun bordé de dents d'encre ; la neige s'il fait froid
@@ -1334,6 +1341,10 @@ func _buisson(p, r: RandomNumberGenerator) -> void:
 	if reste <= 0:
 		t = t.lerp(P.TERRE, 0.12)
 	p.aplat(poly, t, Pinceau.FEUILLAGE, centre, Vector2(_rx, _ry * 0.55) * 1.08)
+	# (la neige posée dessus, s'il fait froid)
+	var froid := float(_climat.get("froid", 0.0))
+	if froid > 0.25:
+		_neige_sur(p, poly, centre + Vector2(0, -_ry * 0.3), _rx * 0.9, _ry * 0.3, centre.y - _ry * 0.55 * lerpf(0.6, 0.3, froid), r)
 	p.contour(poly, 1.35, ENCRE, r, 3)
 	if epineux:
 		# (une plante épineuse : de petites épines d'encre, tournées vers dehors, sur le haut et les flancs)

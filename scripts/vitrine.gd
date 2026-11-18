@@ -1544,9 +1544,10 @@ func _mettre_en_etat(o) -> void:
 		o.calciner()
 		o._tiede = -1.0
 		o.material = o._matiere_au_repos()
-	if _etats.has("feu") and o.combustible():
-		o.enflammer(600.0)
-		o.brule = 600.0 * (0.55 if o.get_index() % 2 == 0 else 0.25)
+	if _etats.has("feu") and o.combustible() and jeu.incendie != null and jeu.incendie.enflammer(o):
+		# (son feu, tenu à mi-chemin le temps de le regarder : les feuilles roussies et trouées, le bois qui paraît)
+		o._brule_total *= 8.0
+		o.brule = o._brule_total * (0.62 if o.graine % 2 == 0 else 0.38)
 	if o.couronne != null:
 		o.couronne.queue_redraw()
 	o.queue_redraw()
