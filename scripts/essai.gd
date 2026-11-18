@@ -7549,8 +7549,16 @@ func _la_pulpe() -> void:
 	# (loin de ce que le pays a de debout, que « Agir » prendrait d'abord : une carcasse)
 	var debout := func(q: Vector2) -> bool:
 		return jeu.terrain._autour(q, 130.0).any(func(t): return str(t["genre"]) in jeu.terrain.DEBOUT or str(t["genre"]) == "mare")
-	var cactus: Array = W.objets.filter(func(x): return str(x.forme) == "cactus" and not debout.call(x.position))
-	var c = cactus[0] if not cactus.is_empty() else null
+	var tous: int = W.objets.filter(func(x): return str(x.forme) == "cactus").size()
+	# (le cactus qu'elle cueille est posé exprès, la place dégagée, loin de ce que le pays a de debout : le contrôle ne dépend
+	# pas de ce que le tirage du lieu a semé — d'un tirage à l'autre, le désert a de 13 à 45 cactus)
+	var ou := Vector2(-600.0, 600.0)
+	for k in 400:
+		var q := Vector2(-1500.0 + 150.0 * (k % 20), -1500.0 + 150.0 * (k / 20))
+		if q.length() > 300.0 and not debout.call(q) and float(C.eau(q)) <= 0.0:
+			ou = q
+			break
+	var c = _poser_seule("cactus", "sol", "touffe", ou)
 	if c == null:
 		verif(false, "le désert a ses cactus")
 		return
@@ -7564,8 +7572,7 @@ func _la_pulpe() -> void:
 	jeu.agir()
 	var gardee: float = 100.0 - j.sante
 	A.portes.erase("vetement_chaud")
-	var tous: int = W.objets.filter(func(x): return str(x.forme) == "cactus").size()
-	verif(tous >= 15 and une == 1 and int(inv["pulpe"]) == 2 and absf(pique - RR.EPINES) < 0.01 and gardee < 0.01 and c.epuise(),
+	verif(tous >= 1 and une == 1 and int(inv["pulpe"]) == 2 and absf(pique - RR.EPINES) < 0.01 and gardee < 0.01 and c.epuise(),
 		"le désert a ses cactus (%d) : d'un bras coupé, sa pulpe ; il pique les mains nues (-%d), la pelisse les garde" % [tous, int(pique)])
 	# au désert, en plein jour : sans rien, le corps passe la chaleur qui tue ; une pulpe mangée, il reste en deçà
 	var ici: Vector2 = c.position + Vector2(-200.0, 120.0)
