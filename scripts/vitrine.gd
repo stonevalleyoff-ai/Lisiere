@@ -57,6 +57,9 @@ extends Node
 #   d'elle, de près (les arbres et leurs fruits, à chaque état ; les épis, le lichen, le cactus, les grains au jardin ; « geste » :
 #   elle cueille un pommier, de tout près) ; --gros : la caméra va de l'une à l'autre, de tout près
 #   --mesure   dit toutes les cinq secondes les images par seconde, la plus longue image, les appels de dessin
+#   --recense   le recensement de la flore (scripts/recensement.gd) : chaque plante de l'herbier, combien on en a posé, sa part
+#   à côté de celle d'Orvane, sa distance à l'eau, son couvert ; puis on s'en va (le lieu fermé en entier ; avec --ouvert
+#   --depuis x,y : les morceaux faits autour d'elle) ; --recul vaut aussi pour un lieu fermé (une vue large)
 #   --sans son,ciel,sol,flammes,effets   éteint une chose, pour chercher ce qui coûte
 
 const R := preload("res://scripts/regles.gd")
@@ -593,6 +596,15 @@ func _lancer() -> void:
 			print("vitrine : près de ", args[i_pres + 1], " en ", ou)
 		else:
 			print("vitrine : pas de ", args[i_pres + 1], " autour")
+	# (--recul dans un lieu fermé aussi : une vue large, pour lire une rive, une lisière ; --recense : le recensement, et on s'en va)
+	var i_rec := args.find("--recul")
+	if not jeu.ouvert and i_rec >= 0 and i_rec + 1 < args.size():
+		jeu.effets.recul = float(args[i_rec + 1])
+	if args.has("--recense"):
+		var ou_r: String = str(jeu.monde.carte.type_en(jeu.joueur.position)) if jeu.monde.carte != null else str(jeu.biome)
+		load("res://scripts/recensement.gd").dire(jeu.monde, ou_r, Rect2(), "(monde ouvert, autour de %d,%d)" % [int(jeu.joueur.position.x), int(jeu.joueur.position.y)] if jeu.ouvert else "(lieu fermé)")
+		get_tree().quit()
+		return
 	_pret = true
 
 
