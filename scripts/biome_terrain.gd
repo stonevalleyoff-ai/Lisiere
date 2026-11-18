@@ -163,7 +163,8 @@ func _lister(k: Vector2i) -> Array:
 
 
 func _faire(k: Vector2i) -> void:
-	var liste := _lister(k)
+	# (le monde a peut-être déjà listé cette case, pour y semer ses plantes : la même liste, lue une seule fois)
+	var liste: Array = jeu.monde.pays_case(k) if jeu.monde != null and jeu.monde.has_method("pays_case") else _lister(k)
 	_cases[k] = liste
 	if liste.is_empty():
 		return

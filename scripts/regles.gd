@@ -324,7 +324,7 @@ const MILIEU_CREUX := 0.38            # … et « dans un creux » en dessous de
 const MILIEU_RIVAGE := 0.05           # la rive de l'eau qui reste dans les creux d'un marais : jusqu'à tant au-dessus de son niveau, sur l'échelle du relief
 const MILIEU_PROFOND := 0.06          # … et son eau est profonde à tant sous son niveau (la place des nénuphars)
 const MILIEU_ETANG := 0.5             # la part des plantes d'eau d'un lieu détrempé qui vont dans cette eau (les autres : dans des mares)
-const MILIEU_RIVAGES := 120.0         # un essai de groupe de rive par carré de tant de pixels de côté, là où l'eau reste
+const MILIEU_RIVAGES := 170.0         # un essai de groupe de rive par carré de tant de pixels de côté, là où l'eau reste
 const MILIEU_SOL := 90.0              # les plantes du sol d'un lieu (4 200 pixels de côté), sous un couvert entier…
 const MILIEU_SOL_DECOUVERT := 235.0   # … et ce que le découvert y ajoute
 const MILIEU_TOUFFES := 0.62          # les groupes de places du fond, pour une plante du sol voulue (un groupe : de trois à six places)
@@ -349,7 +349,7 @@ const MILIEU_FEU := 110.0            # près de ce qui brûle : à moins de tant
 # le réglage des parts (milieu.gd, regler)
 const MILIEU_TOURS := 40              # les tours du réglage
 const MILIEU_POIDS_MAX := 8.0         # un poids ne monte pas plus haut que tant de fois la part : une plante sans milieu ici ne va pas se poser n'importe où
-const MILIEU_ECHANTILLON := 2800.0    # (le monde ouvert) le côté du carré où le plan d'un biome est essayé, pour régler ses parts
+const MILIEU_ECHANTILLON := 2100.0    # (le monde ouvert) le côté du carré où le plan d'un biome est essayé, pour régler ses parts
 # la météo d'Orvane (production, secheresse, eaux, e) : ce qu'elle fait aux densités (milieu.gd, densites)
 const MILIEU_SECHERESSE_SOL := 0.5        # une sécheresse entière ôte cette part des plantes du sol…
 const MILIEU_SECHERESSE_BUISSONS := 0.3   # … et celle-ci des buissons

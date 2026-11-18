@@ -318,7 +318,7 @@ static func semer_dans(monde, calques: Array, t: Dictionary, s: Dictionary, pal:
 		_instance(cases, rect, "fougere", q, r.randf_range(0.8, 1.25), Color.WHITE.darkened(r.randf_range(0.0, 0.2)), r)
 	# les roseaux, dans la boue (les fleurs, elles, se cueillent : scripts/monde.gd)
 	var n_ro := _nombre(r, 1400.0 * float(s["boue"]) * k * ka)
-	for i in n_ro * (6 if rive.is_valid() else 3):
+	for i in n_ro * (5 if rive.is_valid() else 3):
 		if n_ro <= 0:
 			break
 		var q := _dans(r, rect)

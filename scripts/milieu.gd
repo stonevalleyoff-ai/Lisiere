@@ -831,11 +831,11 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		_ranger(centres, roc)
 		_groupe(r, suite, plan, rect, "sol", "herbe", type, autour[0], _milieu_du_sol(ctx, autour[0], arbres, rochers, mares) | PIERRE | EN_PLUS, combien, 0.0, autour)
 	for m in mares:
-		# (la ceinture d'une mare : deux ou trois arcs de six places, serrées contre son bord)
+		# (la ceinture d'une mare : un ou deux arcs de six places, serrées contre son bord)
 		var c: Vector2 = m[0]
 		var rx: float = m[1]
 		var tour := r.randf() * TAU
-		for b in 2 + r.randi() % 2:
+		for b in 1 + r.randi() % 2:
 			var a0 := tour + b * TAU / 3.0 + r.randf_range(-0.3, 0.3)
 			var autour: Array = []
 			for j in R.MILIEU_GROUPE:
@@ -882,9 +882,10 @@ static func _rives(ctx: Dictionary, r: RandomNumberGenerator, suite: Array, rect
 		var c: Vector2 = e[0]
 		if not rect.grow(float(e[1]) + 30.0).has_point(c) or not bool(e[2]):
 			continue
+		# (le bord d'une fondrière : un arc de six places, deux parfois)
 		var tour := r.randf() * TAU
-		for b in 3:
-			var a0 := tour + b * TAU / 3.0 + r.randf_range(-0.4, 0.4)
+		for b in 1 + (1 if r.randf() < 0.3 else 0):
+			var a0 := tour + b * TAU / 2.0 + r.randf_range(-0.4, 0.4)
 			var autour: Array = []
 			for j in R.MILIEU_GROUPE:
 				var a := a0 + j * 14.0 / maxf(30.0, float(e[1]))
