@@ -917,7 +917,8 @@ func _la_faim_de_la_noire() -> void:
 		s["pres_feu"] = minf(s["pres_feu"], c.position.distance_to(feu.position) / r)
 		if s["lisiere"] < 0.0 and N.etat == "guette":
 			s["lisiere"] = t
-		if N.etat == "guette" and F.cible == null:
+		# (sa tête au guet, avant qu'elle ne quitte le cercle pour la première fois : ensuite elle guette d'ailleurs, autrement)
+		if N.etat == "guette" and s["part"] < 0.0:
 			s["tete_guet"] = c._tete_rot
 		if N.etat == "flaire" and s["part"] < 0.0:
 			s["part"] = t
@@ -953,7 +954,7 @@ func _la_faim_de_la_noire() -> void:
 		and absf(s["fini1"] - s["mord"] - RR.NOIRE_SACCAGE) < 0.3 and str(s["dit_fait"]).contains("Ton filet est en pièces") and str(s["dit_fait"]).contains("mangé"),
 		"elle s'annonce : sur la chose, elle la flaire et gronde %.1f s (%d grondements, « Elle flaire ton filet ») avant d'y mettre la dent ; %.1f s plus tard, il est en pièces, et le jeu le dit" % [
 		s["mord"] - s["sur"], s["grogne_flair"], s["fini1"] - s["mord"]])
-	verif(s["tete_flair"] > s["tete_guet"] + 0.2 and s["profil"] > 0.9 and s["secoue"] > 0.9 and s["gueule"] > 0.1 and s["mordu"] > 0.8
+	verif(s["tete_flair"] > s["tete_guet"] + 0.15 and s["tete_flair"] > 0.4 and s["profil"] > 0.9 and s["secoue"] > 0.9 and s["gueule"] > 0.1 and s["mordu"] > 0.8
 		and absf(s["ecart"] - RR.NOIRE_LARGEUR * F.MUSEAU) < 30.0,
 		"son geste : la tête basse sur la chose (%.2f radian plus bas qu'au guet), de profil, à une longueur de cou (%d pixels) ; puis elle la secoue, la gueule entrouverte, et la chose tressaute" % [
 		s["tete_flair"] - s["tete_guet"], int(s["ecart"])])
@@ -970,6 +971,13 @@ func _la_faim_de_la_noire() -> void:
 		RR.NOIRE_SACCAGES, int(s["fini"] - s["lisiere"]), F.CHOSES[str(autre.genre)][0]])
 	verif(not F.est_epave(tente) and s["pres_feu"] >= 0.97 and j.sante == 100.0,
 		"ce qui reste juste : la tente, dans la lumière du feu, est intacte ; la Noire n'y est jamais entrée (au plus près, %.2f rayon) ; la veilleuse n'a rien" % s["pres_feu"])
+
+	# (au jour : ce qu'elle a laissé)
+	N.aube()
+	var dit_aube: String = dits.call()
+	verif(dit_aube.contains("Le jour se lève sur ce qu'elle a laissé : 2 choses en pièces") and F.prises == 0 and not F.soir and N.etat == "rentre"
+		and T.pres(seconde.position, 260.0, 2),
+		"à l'aube, elle rentre, et le jour montre ce qu'elle a laissé (le jeu le dit) : les épaves, ses empreintes autour")
 
 	# --- l'épouvantail tremble à son approche ; en pièces, il ne garde plus rien ---
 	for x in [tente, filet, epouvantail, citerne]:
@@ -1280,9 +1288,13 @@ func _la_faim_de_la_noire() -> void:
 		N2.reprendre(photo_n)
 		var tentes2: Array = A2.poses.filter(func(x): return str(x.genre) == "tente")
 		var piquets2: Array = A2.poses.filter(func(x): return str(x.genre) == "piquet" and float(x.etat.get("rompue", 0.0)) == 2.0)
+		# (ses empreintes ne se gardent pas : la partie reprise les remet autour des épaves de cette nuit)
+		T.vider()
+		N2.faim.veiller(true)
+		var retracees: bool = T.pres(tente_noire.position, 260.0, 2)
 		verif(renoue and tentes2.size() == 1 and F.est_epave(tentes2[0]) and float(tentes2[0].etat.get("cote", 0.0)) == -1.0 and piquets2.size() == 1
-			and N2.acte == N.acte and N2.faim.prises == 1 and N2.faim.betes == F.betes and N2.faim.soir,
-			"la partie gardée s'en souvient : la tente en épave (et de quel côté elle tirait), le bout de longe au piquet, ce qu'elle a déjà pris cette nuit")
+			and N2.acte == N.acte and N2.faim.prises == 1 and N2.faim.betes == F.betes and N2.faim.soir and retracees,
+			"la partie gardée s'en souvient : la tente en épave (et de quel côté elle tirait), le bout de longe au piquet, ce qu'elle a déjà pris cette nuit ; reprise, ses empreintes sont de nouveau autour de l'épave")
 		for x in A2.poses:
 			x.queue_free()
 		F.soir = false

@@ -37,7 +37,7 @@ const ETATS := ["flaire", "saccage", "devore"]
 const MUSEAU := 0.33              # de combien son museau, la tête basse, porte en avant de ses pieds (en largeurs de bête)
 const GRIS := Color(0.75, 0.7, 0.66)
 # le niveau de chaque son de la faim, tout près (en dB ; la distance l'affaiblit : sons.gd, au_loin)
-const NIVEAUX := {"dechire": -6.0, "brise": -6.0, "cede": -7.0, "pierre": -11.0, "pas_lourd": -5.0, "herbe": -9.0, "manger": -8.0}
+const NIVEAUX := {"dechire": -6.0, "brise": -6.0, "cede": -7.0, "pierre": -11.0, "pas_lourd": -5.0, "herbe": -9.0, "manger": -8.0, "inspire": -9.0}
 
 # la Noire (scripts/noire.gd), et le jeu : c'est elle qui tient la faim, pas l'inverse (pas de boucle de références)
 var _n: WeakRef
@@ -89,9 +89,19 @@ func tombee() -> void:
 	_feu = null
 
 
-# le jour revient
+# le jour revient : il montre ce qu'elle a laissé (dit une fois, si elle a pris quelque chose cette nuit)
 func aube() -> void:
 	soir = false
+	if prises + betes <= 0 or jeu.ui == null:
+		return
+	var restes_ := PackedStringArray()
+	if prises > 0:
+		restes_.append("une chose en pièces" if prises == 1 else "%d choses en pièces" % prises)
+	if betes > 0:
+		restes_.append("une longe rompue" if betes == 1 else "%d longes rompues" % betes)
+	jeu.ui.message("Le jour se lève sur ce qu'elle a laissé : %s, et ses pattes autour." % " et ".join(restes_), N.TEINTE)
+	prises = 0
+	betes = 0
 
 
 # combien de secondes avant la nuit (INF : il fait nuit)
@@ -326,12 +336,14 @@ func _flairer(delta: float, j) -> void:
 		_renoncer()
 		return
 	if not _sur_place:
-		# (une bête tire sur sa longe, d'un côté, de l'autre : elle la suit)
-		if _est_une_bete(cible):
-			var ou := _ou_se_tenir(cible.position)
-			if not ou.is_empty():
-				_place = ou[0]
-				_cote = ou[1]
+		# (où se tenir, revu à chaque pas : une bête tire sur sa longe, d'un côté, de l'autre ; un feu qu'on nourrit grandit. Si
+		# la lumière tombe des deux côtés de la chose, elle y renonce pour cette fois)
+		var ou := _ou_se_tenir(cible.position)
+		if ou.is_empty():
+			_renoncer()
+			return
+		_place = ou[0]
+		_cote = ou[1]
 		c.ordre = "va"
 		c.ordre_allure = 0.5
 		c.ordre_but = N._contourner(N.ou, _place)
@@ -349,6 +361,8 @@ func _flairer(delta: float, j) -> void:
 			N._t = 0.0
 			_cadence = 0.0
 			jeu.grognement(c, true)
+			# (elle la flaire : un grand souffle par les naseaux, bien plus grave que celui d'une veilleuse)
+			_son("inspire", N.ou, 0.0, 0.52)
 			if _est_une_bete(cible):
 				jeu.ui.message("Elle est sur %s, dans le noir. Elle gronde." % _nom(cible), N.TEINTE)
 			else:
@@ -627,5 +641,6 @@ func reprendre(d) -> void:
 		return
 	prises = int(d.get("prises", 0))
 	betes = int(d.get("betes", 0))
-	soir = bool(d.get("soir", false))
+	# (reprise au crépuscule : elle repart de sa tanière, et son appel avec elle ; de nuit, la nuit est déjà la sienne)
+	soir = bool(d.get("soir", false)) and float(jeu.jour_du_ciel()) <= 0.0
 	_a_retracer = true
