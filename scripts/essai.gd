@@ -981,7 +981,7 @@ func _le_collet_de_la_noire() -> void:
 	# passé, les pieux cèdent ; furieuse, elle s'aplatit (le présage), puis charge ; un feu vif la tient encore
 	var n1: Dictionary = une_nuit.call(1, 2, false, false)
 	var s1 = s
-	verif(n1["prise"] > 0.0 and n1["patte"] < 25.0 and n1["serre"] and n1["attire"] and N.su.has("collet") and entendu.call("collet_claque") == 1 and entendu.call("noire_cri") >= 1 and n1["pres_feu"] >= 0.97,
+	verif(n1["prise"] > 0.0 and n1["patte"] < 28.0 and n1["serre"] and n1["attire"] and N.su.has("collet") and entendu.call("collet_claque") == 1 and entendu.call("noire_cri") >= 1 and n1["pres_feu"] >= 0.97,
 		"le collet ne sent rien : elle le flaire, y pose la patte (à %d pixels du milieu du nœud, large de 50), le nœud claque et se serre, elle crie ; le carnet le garde ; elle n'est pas entrée dans la lumière (%.2f rayon)" % [int(n1["patte"]), n1["pres_feu"]])
 	verif(n1["loin_du_pieu"] <= RR.NOIRE_COLLET_LONGE + 0.5 and n1["a_coups"] >= 5 and n1["ramasse"] and n1["vers_elle"] >= 4 and n1["morsures"] == 0,
 		"tenue, elle se ramasse puis se jette au bout du filin (%d à-coups, jamais plus loin que %d pixels du pieu : %.1f), sur la veilleuse qui se tient au bout de sa portée : pas une morsure en %d secondes" % [

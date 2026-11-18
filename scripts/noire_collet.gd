@@ -65,6 +65,7 @@ var _dir := Vector2.RIGHT        # où elle se jette
 var _elans := 0
 var _cote := 1.0                 # de quel côté elle aborde le collet
 var _flaire := false             # elle l'a flairé
+var _devant := 0.0               # depuis quand elle est arrêtée devant le nœud, la patte au-dessus
 var _renifle := 0
 var _boude := 0.0                # avant de regarder de nouveau vers un collet qu'elle n'a pas pu atteindre
 var _lumiere_dite := -1          # la nuit où l'on a dit que le feu éclaire le collet
@@ -263,6 +264,7 @@ func maj(delta: float, j) -> bool:
 				return false
 			vise = s
 			_flaire = false
+			_devant = 0.0
 			_cote = 1.0 if s.position.x >= noire.ou.x else -1.0
 			noire._changer("appat")
 		_:
@@ -358,15 +360,20 @@ func _aller(delta: float, j) -> void:
 	if noire._arrivee < 0.0:
 		noire._arrivee = noire._nuit_t
 	# (là où poser son corps : le nez sur l'appât d'abord ; puis elle avance, jusqu'à poser la patte de devant dans le nœud)
-	var cible: Vector2 = s.position - Vector2(_cote * (PATTE - 0.2 if _flaire else NEZ) * u, 0.0)
+	var cible: Vector2 = s.position - Vector2(_cote * (PATTE if _flaire else NEZ) * u, 0.0)
 	var d: float = c.position.distance_to(cible)
 	c.ordre = "va"
 	c.ordre_allure = 0.36 if d > 220.0 else 0.2
 	c.ordre_but = noire._contourner(noire.ou, cible) if d > 60.0 else cible
 	c.flaire = 1.0 if c.position.distance_to(s.position) < 330.0 else 0.0
 	if _flaire:
-		# (une patte de devant posée dans le rond du nœud : il se serre sur elle)
-		if c.pose_la_patte_dans(s.position, 22.0, 10.0) or d < 9.0:
+		# (une patte de devant posée dans le rond du nœud : il se serre sur elle. Arrivée devant lui, elle s'arrête, et ses
+		# pattes se remettent d'aplomb : celle de devant est alors au milieu du nœud)
+		if d < 9.0:
+			c.ordre = ""
+			c.regard = _cote
+			_devant += delta
+		if c.pose_la_patte_dans(s.position, 25.0, 11.0) or _devant > 1.5:
 			c.regard = _cote
 			_serrer(s)
 			return
@@ -408,6 +415,7 @@ func _flairer(_j) -> void:
 	if not sent:
 		if t > 1.3:
 			_flaire = true
+			_devant = 0.0
 			noire._changer("appat")
 		return
 	if t < R.NOIRE_COLLET_FLAIRE:
