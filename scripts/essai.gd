@@ -326,9 +326,9 @@ func _lancer() -> void:
 	# (et rien autour qui pousserait ailleurs le feu qu'elle voudra y poser, ni elle : un tronc, un rocher, un vestige — la place
 	# est dégagée, le contrôle ne dépend pas de ce que le tirage du lieu y a mis)
 	if creux != Vector2.ZERO:
-		for o in jeu.monde.autour(creux + Vector2(17.0, 2.0), 90.0):
-			if is_instance_valid(o) and o != j and float(o.rayon) > 0.0:
-				jeu.monde.retirer(o)
+		for gene in jeu.monde.autour(creux + Vector2(17.0, 2.0), 90.0):
+			if is_instance_valid(gene) and gene != j and float(gene.rayon) > 0.0:
+				jeu.monde.retirer(gene)
 	j.position = creux
 	# (elle regarde vers la droite : c'est là, dans l'eau profonde, qu'elle voudra poser son feu)
 	j.regard = 1.0
