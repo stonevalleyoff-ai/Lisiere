@@ -5822,8 +5822,178 @@ func _semer_a_part(type: String, coin: Vector2) -> Dictionary:
 	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides}
 
 
+# --- le dessin de la flore (scripts/flore_trait.gd, flore_arbres.gd, flore_sol.gd, flore_buissons.gd ; monde.gd, taille_de) : la
+# taille d'après la hauteur d'Orvane, et ce que chaque forme doit avoir. Rien n'y dépend du tirage du lieu : les plantes sont
+# posées exprès, loin de tout, chacune de sa graine ---
+
+# une plante de cette forme, haute de tant de mètres dans l'herbier (0 : la hauteur de sa forme), posée loin de tout comme le
+# monde la poserait (sa taille d'après sa hauteur : monde.gd, taille_de)
+func _plante_de(forme: String, h: float, graine: int, caracteres: Array = []):
+	var Fl := load("res://scripts/flore.gd")
+	var W = jeu.monde
+	var genre: String = Fl.FORMES[forme][0]
+	var strate: String = Fl.FORMES[forme][1]
+	var ici := _ici_rien_que(forme, strate, genre, caracteres)
+	if h > 0.0:
+		ici["flore"][strate][0]["taille"] = W.taille_de(forme, genre, strate, h)
+	return W._poser(strate, Vector2(150000.0 + float(graine % 89) * 400.0, 150000.0 + float(graine % 7) * 400.0), W.palette["feuilles" if strate == "arbre" else "herbe"], graine, ici)
+
+
+# la hauteur moyenne de son dessin, sur douze individus (en pixels, du pied à la cime)
+func _hauteur_dessinee(forme: String, h: float, caracteres: Array = []) -> float:
+	var somme := 0.0
+	for k in 12:
+		var o = _plante_de(forme, h, 3000 + k * 131, caracteres)
+		somme += float(o.hauteur)
+		jeu.monde._defaire(o)
+	return somme / 12.0
+
+
+# ce que son dessin pose sur la feuille : { triangles, volumes (les points peints en volume par le shader : un feuillage, une
+# écorce, un dôme), brule (les points que le feu emportera : scripts/objet.gd, _marquer) }
+func _dessin_de(o) -> Dictionary:
+	var Dessins := load("res://scripts/flore_dessins.gd")
+	var p = load("res://scripts/decor_pinceau.gd").new()
+	var r := RandomNumberGenerator.new()
+	r.seed = int(o.graine) + 23
+	match str(o.genre):
+		"arbre":
+			if not Dessins.couronne(o, p, r):
+				o._feuillu(p, r)
+		"sapin":
+			o._sapin(p, r)
+		"buisson":
+			if not Dessins.dessiner(o, p, r):
+				o._buisson(p, r)
+		"touffe":
+			if not Dessins.dessiner(o, p, r):
+				o._touffe(p, r)
+		_:
+			Dessins.dessiner(o, p, r)
+	var volumes := 0
+	for uv in p.uvs:
+		if uv.x > 1.5:
+			volumes += 1
+	o._marquer(p, 0, str(o.genre) == "touffe")
+	var brule := 0
+	for uv in p.uvs:
+		if uv.x > 25.5:
+			brule += 1
+	return {"triangles": p.idx.size() / 3, "volumes": volumes, "brule": brule}
+
+
+func _le_dessin_de_la_flore() -> void:
+	var W = jeu.monde
+	var Fl := load("res://scripts/flore.gd")
+	var Dessins := load("res://scripts/flore_dessins.gd")
+	var Objet := load("res://scripts/objet.gd")
+	# la taille, d'après la hauteur d'Orvane : une échelle resserrée, bornée
+	var k_p45: float = W.taille_de("pionnier", "arbre", "arbre", 4.5)
+	var k_c20: float = W.taille_de("conifere", "sapin", "arbre", 20.0)
+	verif(is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 12.0), 1.0) and is_equal_approx(W.taille_de("geant", "arbre", "arbre", 45.0), 1.0)
+		and absf(k_p45 - 0.758) < 0.01 and absf(k_c20 - 1.227) < 0.01 and is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 0.5), 0.6)
+		and is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 500.0), 1.5) and W.taille_de("bambou", "touffe", "sol", 8.0) > 1.1
+		and W.taille_de("bambou", "touffe", "sol", 4.0) < 0.9 and is_equal_approx(W.taille_de("herbe", "touffe", "sol", 3.0), 1.0)
+		and is_equal_approx(W.taille_de("buisson", "buisson", "buisson", 1.5), 1.0) and is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 0.0), 1.0),
+		"la taille d'une plante suit sa hauteur d'Orvane, sur une échelle resserrée et bornée : à la hauteur de sa forme, 1 ; un pionnier de 4,5 m, %.2f ; un conifère de 20 m, %.2f ; un arbre de 0,5 m, 0,6 et de 500 m, 1,5 ; un bambou de 8 m, %.2f, de 4 m, %.2f" % [
+		k_p45, k_c20, W.taille_de("bambou", "touffe", "sol", 8.0), W.taille_de("bambou", "touffe", "sol", 4.0)])
+	# les hauteurs dessinées : un arbre ordinaire fait deux fois la veilleuse (44 pixels), un cinquième de plus qu'avant (72) ;
+	# un géant le domine, un pionnier nain est plus petit
+	var h_arbre := _hauteur_dessinee("arbre", 12.0)
+	var h_geant := _hauteur_dessinee("geant", 45.0)
+	var h_p9 := _hauteur_dessinee("pionnier", 9.0)
+	var h_p45 := _hauteur_dessinee("pionnier", 4.5)
+	var h_fruitier := _hauteur_dessinee("fruitier", 6.0)
+	var h_conifere := _hauteur_dessinee("conifere", 20.0)
+	var h_cactus := _hauteur_dessinee("cactus", 6.0)
+	verif(h_arbre > 80.0 and h_arbre < 93.0 and h_arbre > 44.0 * 1.8 and h_geant > h_arbre * 1.55 and h_geant < h_arbre * 1.95 and h_p45 < h_p9 * 0.85
+		and h_p9 < h_arbre and h_fruitier < h_p9 and h_conifere > h_arbre * 1.12 and h_conifere < h_geant and h_cactus > 44.0 * 1.3 and h_cactus < h_arbre,
+		"la hauteur d'Orvane se voit (la veilleuse fait 44 pixels) : un arbre de 12 m, %d pixels (72 avant) ; un géant de 45 m, %d ; un conifère de 20 m, %d ; un pionnier de 9 m, %d, de 4,5 m, %d ; un fruitier de 6 m, %d ; un cactus de 6 m, %d" % [
+		int(h_arbre), int(h_geant), int(h_conifere), int(h_p9), int(h_p45), int(h_fruitier), int(h_cactus)])
+	# chaque forme : un dessin fourni, peint en volume, une ombre au sol (portée, pour ce qui se dresse), et le feu l'emporte
+	var plates := ["herbe", "grande_herbe", "lentille", "lichen", "papyrus", "orchidee"]
+	var dressees := ["cactus", "bambou", "papyrus", "roseau"]
+	var maigres := []
+	var sans_volume := []
+	var sans_ombre := []
+	var sans_feu := []
+	var moins := 1 << 30
+	var formes := 0
+	for forme in Fl.FORMES:
+		var genre: String = Fl.FORMES[forme][0]
+		if genre == "champignon":
+			continue
+		formes += 1
+		var o = _plante_de(forme, 0.0, 4242)
+		var d := _dessin_de(o)
+		moins = mini(moins, int(d["triangles"]))
+		if int(d["triangles"]) < 60:
+			maigres.append(forme)
+		if int(d["volumes"]) == 0 and not plates.has(forme):
+			sans_volume.append(forme)
+		var ombres: Array = o.ombres()
+		var portee := ombres.any(func(x): return float(x[3]) > 0.5)
+		if (Fl.FORMES[forme][1] == "arbre" or dressees.has(forme)) and not portee:
+			sans_ombre.append(forme)
+		elif ombres.is_empty() and not (Fl.TAPIS.has(forme) or genre == "aquatique"):
+			sans_ombre.append(forme)
+		# (ce qui brûle : des feuilles, des palmes, que le feu emporte ; un tapis au ras du sol ne prend pas feu de lui-même)
+		if genre in ["arbre", "sapin", "buisson"] and int(d["brule"]) == 0:
+			sans_feu.append(forme)
+		W._defaire(o)
+	verif(formes >= 40 and maigres.is_empty() and sans_volume.is_empty() and sans_ombre.is_empty() and sans_feu.is_empty(),
+		"les %d formes de la flore ont la facture des premières : un dessin fourni (%d triangles pour la plus simple), un volume peint par le shader, leur ombre au sol (portée pour ce qui se dresse), un feuillage que le feu emporte%s" % [
+		formes, moins, (" ; trop maigres : %s ; sans volume : %s ; sans ombre : %s ; que le feu n'emporte pas : %s" % [str(maigres), str(sans_volume), str(sans_ombre), str(sans_feu)]) if not (maigres.is_empty() and sans_volume.is_empty() and sans_ombre.is_empty() and sans_feu.is_empty()) else ""])
+	# ce qui est raide ne plie pas au vent ; ce qui est souple, si
+	var cactus = _plante_de("cactus", 6.0, 4301)
+	var agave = _plante_de("agave", 1.5, 4302)
+	var bambou = _plante_de("bambou", 8.0, 4303)
+	var bambou_bas = _plante_de("bambou", 4.0, 4303)
+	verif(cactus.raide and cactus.material == Objet.fixe and agave.material == Objet.fixe and not bambou.raide and bambou.material == Objet.vegetation
+		and float(bambou.hauteur) > float(bambou_bas.hauteur) * 1.2 and cactus._matiere_au_repos() == Objet.fixe,
+		"un cactus, un agave sont raides (le vent ne les plie pas), un bambou ploie ; un bambou de 8 m (%d pixels) dépasse un bambou de 4 m (%d)" % [int(bambou.hauteur), int(bambou_bas.hauteur)])
+	for x in [cactus, agave, bambou, bambou_bas]:
+		W._defaire(x)
+	# les caractères d'Orvane se lisent : des échasses soulèvent le tronc, une naine se tasse, le vent couche le port vers l'est,
+	# une géante a le fût plus fort
+	var sur_echasses = _plante_de("fruitier", 6.0, 4310, ["echasses"])
+	var sans_echasses = _plante_de("fruitier", 6.0, 4310)
+	var paletuvier = _plante_de("paletuvier", 6.0, 4311)
+	var geante = _plante_de("fruitier", 6.0, 4310, ["geante"])
+	var couches := 0
+	for k in 6:
+		var a_vent = _plante_de("arbre", 12.0, 4320 + k, ["vent"])
+		if float(a_vent._penche) > 0.04 and float(a_vent._cc.x) > 0.0:
+			couches += 1
+		W._defaire(a_vent)
+	var h_naine := _hauteur_dessinee("pionnier", 9.0, ["naine"])
+	verif(float(Dessins.pied_du_tronc(sur_echasses)) < 0.0 and float(Dessins.pied_du_tronc(sans_echasses)) > 0.0 and float(Dessins.pied_du_tronc(paletuvier)) < float(Dessins.pied_du_tronc(sur_echasses))
+		and h_naine < h_p9 * 0.97 and couches == 6 and float(geante.epaisseur) > float(sans_echasses.epaisseur) * 1.1,
+		"les caractères d'Orvane se lisent : des échasses soulèvent le tronc (le palétuvier plus haut encore), une naine se tasse (%d pixels au lieu de %d), le vent couche le port vers l'est (%d arbres sur 6), une géante a le fût plus fort" % [int(h_naine), int(h_p9), couches])
+	for x in [sur_echasses, sans_echasses, paletuvier, geante]:
+		W._defaire(x)
+	# ce qui dépend de la taille d'un arbre : là où l'on bute, l'abri de la couronne (cherché à 90 pixels : scripts/climat.gd),
+	# la veilleuse cachée derrière un grand fût, les fruits dans la couronne
+	var geant = _plante_de("geant", 45.0, 4330)
+	var arbre = _plante_de("arbre", 12.0, 4331)
+	var fruitier = _plante_de("fruitier", 6.0, 4332, [])
+	var pg: Vector2 = geant.position
+	var fruits_dedans := true
+	for pl in Dessins._places_fruits(fruitier, 12):
+		if not Rect2(fruitier.couronne_rect).grow(2.0).has_point(pl[0]):
+			fruits_dedans = false
+	verif(float(geant.rayon) > float(arbre.rayon) and float(geant.rayon) <= 22.0 and float(arbre.rayon) >= 11.0 and float(geant.couvert()) > 22.0 and float(geant.couvert()) < 90.0
+		and float(arbre.couvert()) > 22.0 and float(arbre.couvert()) < 90.0 and geant.cache(pg + Vector2(0.0, -22.0)) and not geant.cache(pg + Vector2(60.0, -22.0))
+		and not geant.cache(pg + Vector2(0.0, 6.0)) and geant.cache(pg + Vector2(0.0, -70.0)) and fruits_dedans,
+		"un arbre plus grand : on bute sur son pied (%d pixels pour un arbre, %d pour un géant), sa couronne abrite (%d et %d pixels, moins que les 90 où l'abri se cherche), la veilleuse derrière le fût d'un géant ou sous sa couronne le fait s'effacer (pas devant, pas à côté), les fruits tiennent dans la couronne" % [
+		int(arbre.rayon), int(geant.rayon), int(arbre.couvert()), int(geant.couvert())])
+	for x in [geant, arbre, fruitier]:
+		W._defaire(x)
+
+
 func _la_flore() -> void:
 	print("La flore")
+	_le_dessin_de_la_flore()
 	var Fl := load("res://scripts/flore.gd")
 	var W = jeu.monde
 	var jo = jeu.joueur

@@ -1427,15 +1427,28 @@ func _champignon_geant(p, r: RandomNumberGenerator, pale: Color) -> void:
 	var penche := r.randf_range(-2.5, 2.5)
 	var tete := Vector2(penche, -h)
 	var pied := PackedVector2Array([Vector2(-4.6, 1.0), Vector2(4.6, 1.0), Vector2(penche + 3.0, -h + 2.0), Vector2(penche - 3.0, -h + 2.0)])
-	p.aplat(pied, pale)
+	# (le pied : un fût pâle que le jour modèle, ses fibres ; un anneau sous le chapeau)
+	p.aplat(pied, pale, Pinceau.ECORCE, Vector2(penche * 0.5, -h * 0.5), Vector2(4.4, h * 0.55))
 	p.contour(pied, 1.3, ENCRE, r, 2)
-	p.tracer(PackedVector2Array([Vector2(1.6, -1.0), Vector2(penche + 1.2, -h + 4.0)]), 1.0, Color(pale.darkened(0.3), 0.7))
+	var anneau := Vector2(penche * 0.82, -h * 0.8)
+	p.tracer(PackedVector2Array([anneau + Vector2(-4.4, 0.4), anneau + Vector2(0.0, 2.0), anneau + Vector2(4.4, 0.4)]), 2.0, ENCRE, false)
+	p.tracer(PackedVector2Array([anneau + Vector2(-4.0, 0.2), anneau + Vector2(0.0, 1.6), anneau + Vector2(4.0, 0.2)]), 1.1, pale.lightened(0.1), false)
 	if reste <= 0:
+		# (cueilli : le pied tranché, sa coupe claire)
+		p.disque(tete + Vector2(0.0, 2.0), 3.2, 1.2, ENCRE)
+		p.disque(tete + Vector2(0.0, 2.0), 2.6, 0.8, pale.lightened(0.12))
 		return
 	# (le chapeau : un dôme, plat dessous ; il rétrécit à mesure qu'on le cueille)
 	var k := 0.62 + 0.38 * float(reste) / maxf(float(plein), 1.0)
 	var rx := _rx * k
 	var ry := _rx * 0.6 * k
+	# (le dessous du chapeau, vu de biais : ses lames, qui rayonnent du pied)
+	var dessous := Pinceau.ellipse(tete + Vector2(0.0, 2.0), rx * 0.96, ry * 0.3, 18)
+	p.aplat(dessous, pale.darkened(0.22))
+	for i in 9:
+		var a := PI * (i + 0.5) / 9.0
+		p.tracer(PackedVector2Array([tete + Vector2(cos(a) * 2.6, 2.0 + sin(a) * 0.6), tete + Vector2(cos(a) * rx * 0.92, 2.0 + sin(a) * ry * 0.28)]), 0.6, Color(ENCRE, 0.5), false)
+	p.tracer(dessous, 1.2, ENCRE, false)
 	var dome := PackedVector2Array()
 	for i in 15:
 		var a := PI + PI * float(i) / 14.0
