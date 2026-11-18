@@ -4762,8 +4762,11 @@ func _la_durete() -> void:
 	if un != null:
 		for k in 4:
 			cueillies += int(un.recolter().get("baies", 0))
-	verif(buissons.size() <= int(RR.BUISSONS + RR.BUISSONS_HUMIDE) and buissons.size() >= 5 and pleins and cueillies == RR.BAIES_PAR_BUISSON and un._repousse == RR.REPOUSSE_BAIES,
-		"les baies sont rares : %d buissons dans le lieu, %d poignées chacun, qui repoussent en %d secondes" % [buissons.size(), cueillies, int(RR.REPOUSSE_BAIES)])
+	# (au plus ce que la règle en donne à un lieu détrempé, une année vigoureuse pour Orvane — sa météo en met jusqu'à 1,3 fois plus :
+	# scripts/milieu.gd, densites —, et ce que le tirage d'un lieu, fourré par fourré, y ajoute)
+	var au_plus := int((RR.BUISSONS + RR.BUISSONS_HUMIDE) * 1.3)
+	verif(buissons.size() <= au_plus and buissons.size() >= 5 and pleins and cueillies == RR.BAIES_PAR_BUISSON and un._repousse == RR.REPOUSSE_BAIES,
+		"les baies sont rares : %d buissons dans le lieu (au plus %d), %d poignées chacun, qui repoussent en %d secondes" % [buissons.size(), au_plus, cueillies, int(RR.REPOUSSE_BAIES)])
 	if un != null:
 		un.reprendre("buisson", un.plein, 0.0)
 	jeu.horloge = garde["h"]
@@ -8139,7 +8142,12 @@ func _le_lichen() -> void:
 	var cru: float = j.faim - 40.0
 	var peur: float = j.peur
 	verif(tous.size() >= 20 and premier == 2 and epuise and absf(cru - RR.LICHEN_CRU) < 0.01 and peur >= RR.LICHEN_CRU_PEUR - 0.01,
-		"la banquise a son lichen des rennes (%d touffes) : deux poignées chacune ; cru, il nourrit à peine (+%d) et noue le ventre (la peur monte)" % [tous.size(), int(cru)])
+		"la banquise a son lichen des rennes (%d touffes) : deux poignées chacune ; cru, il nourrit à peine (+%d) et noue le ventre (la peur monte)%s" % [tous.size(), int(cru),
+		"" if (premier == 2 and epuise) else " — cueilli %d fois, %s (reste %d sur %d) ; autour de lui : %s ; endormie %s, monture %s, bêtes %d, sac %s/%s, pays %s" % [premier, "épuisé" if epuise else "pas épuisé",
+			int(libres[0].reste) if not libres.is_empty() else -1, int(libres[0].plein) if not libres.is_empty() else -1,
+			str(W.autour(libres[0].position, 50.0).map(func(x): return "%s %s %d" % [x.genre, x.forme, int(x.position.distance_to(libres[0].position))])) if not libres.is_empty() else "rien",
+			str(A.endormie), str(jeu.elevage.monture), get_tree().get_nodes_in_group("betes").size(), str(A.charge) if A.get("charge") != null else "?", str(A.capacite()),
+			str(T._autour(libres[0].position, 60.0).map(func(t): return "%s %d" % [t["genre"], int(Vector2(t["p"]).distance_to(libres[0].position))])) if not libres.is_empty() else "rien"]])
 	# trois jours à la banquise : chaque jour, elle cueille le lichen proche du camp (il repousse en un jour), puise sous la glace,
 	# fait ses soupes au feu, et mange quand la faim vient. Elle n'a rien d'autre
 	A.objets["gourde"] = 1
