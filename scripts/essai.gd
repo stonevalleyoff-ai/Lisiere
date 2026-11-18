@@ -317,14 +317,18 @@ func _lancer() -> void:
 	# la crue : l'eau gagne les creux, pas la butte du réveil ; on y patauge, on y est trempée, un feu s'y noie, on n'en allume pas
 	C.crue = 1.0
 	var creux := Vector2.ZERO
-	for k in 400:
-		var q2 := Vector2(-1800.0 + 180.0 * (k % 20), -1800.0 + 180.0 * (k / 20))
+	for k in 1600:
+		var q2 := Vector2(-1800.0 + 90.0 * (k % 40), -1800.0 + 90.0 * (k / 40))
 		# (un creux franc : l'eau y est profonde là où elle sera, et là où sera le feu qu'on y noie)
-		# (et rien autour qui pousserait ailleurs le feu qu'elle voudra y poser : un tronc, un rocher, un vestige)
-		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and C.eau(q2 + Vector2(34, 4)) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0 \
-				and jeu.monde.repousser(q2 + Vector2(34.0, 4.0), 12.0).distance_to(q2 + Vector2(34.0, 4.0)) < 1.0:
+		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and C.eau(q2 + Vector2(34, 4)) > 0.9:
 			creux = q2
 			break
+	# (et rien autour qui pousserait ailleurs le feu qu'elle voudra y poser, ni elle : un tronc, un rocher, un vestige — la place
+	# est dégagée, le contrôle ne dépend pas de ce que le tirage du lieu y a mis)
+	if creux != Vector2.ZERO:
+		for o in jeu.monde.autour(creux + Vector2(17.0, 2.0), 90.0):
+			if is_instance_valid(o) and o != j and float(o.rayon) > 0.0:
+				jeu.monde.retirer(o)
 	j.position = creux
 	# (elle regarde vers la droite : c'est là, dans l'eau profonde, qu'elle voudra poser son feu)
 	j.regard = 1.0
@@ -340,8 +344,12 @@ func _lancer() -> void:
 	j.inventaire["bois"] = 30
 	j.inventaire["pierre"] = 10
 	jeu.fabriquer("feu")
-	verif(creux != Vector2.ZERO and C.eau(Vector2.ZERO) == 0.0 and C.allure(creux) < 0.62 and j.trempe > 40.0 and j.en_feu == 0.0 and not feu_noye.allume() and jeu.feux.size() == n_feux,
+	var crue_ok: bool = creux != Vector2.ZERO and C.eau(Vector2.ZERO) == 0.0 and C.allure(creux) < 0.62 and j.trempe > 40.0 and j.en_feu == 0.0 and not feu_noye.allume() and jeu.feux.size() == n_feux
+	verif(crue_ok,
 		"la crue : l'eau gagne les creux, pas la butte du réveil ; on y patauge (%d %% de l'allure), on y est trempée, les flammes s'y éteignent, un feu s'y noie et l'on n'en allume pas" % int(C.allure(creux) * 100.0))
+	if not crue_ok:
+		print("    (le creux %s, l'eau au réveil %.2f, l'allure %.2f, trempée %d, en feu %.1f, le feu noyé allumé : %s, feux %d pour %d)" % [
+			str(creux), C.eau(Vector2.ZERO), C.allure(creux), int(j.trempe), float(j.en_feu), str(feu_noye.allume()), jeu.feux.size(), n_feux])
 	jeu.feux.erase(feu_noye)
 	feu_noye.queue_free()
 	C.crue = 0.0
