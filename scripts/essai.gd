@@ -6058,8 +6058,18 @@ func _la_flore() -> void:
 		var d := _semer_a_part(type, Vector2(90000.0 + i * 12000.0, 90000.0))
 		i += 1
 		var manque: Array = attendues.keys().filter(func(x): return not d["formes"].has(x))
+		# (chaque plante se tient dans son milieu, et va par colonies : une forme rare d'une strate maigre — un buisson du désert,
+		# quelques colonies sur quatre lieux — peut manquer à un tirage. On sème une seconde fois avant de la dire absente)
+		var resemee := ""
+		if not manque.is_empty():
+			var d2 := _semer_a_part(type, Vector2(90000.0 + (i - 1) * 12000.0, 102000.0))
+			var revenues: Array = manque.filter(func(x): return d2["formes"].has(x))
+			if not revenues.is_empty():
+				resemee = " ; semé une seconde fois : %s" % ", ".join(PackedStringArray(revenues.map(func(x): return "%s %d" % [x, d2["formes"][x]])))
+			manque = manque.filter(func(x): return not d2["formes"].has(x))
+			d["mal"].append_array(d2["mal"])
 		var arbres: int = int(d["genres"].get("arbre", 0)) + int(d["genres"].get("sapin", 0))
-		var dit := ", ".join(PackedStringArray(d["formes"].keys().map(func(x): return "%s %d" % [x, d["formes"][x]])))
+		var dit := ", ".join(PackedStringArray(d["formes"].keys().map(func(x): return "%s %d" % [x, d["formes"][x]]))) + resemee
 		verif(not attendues.is_empty() and manque.is_empty() and d["mal"].is_empty(),
 			"%s : les %d formes de son herbier poussent, dessinées par Lisière (%s)%s" % [type, attendues.size(), dit,
 			(" ; manquent : " + ", ".join(PackedStringArray(manque))) if not manque.is_empty() else (" ; sans dessin : " + str(d["mal"]) if not d["mal"].is_empty() else "")])
@@ -7566,7 +7576,10 @@ func _le_lichen() -> void:
 			o._process(load("res://scripts/objet.gd").REPOUSSE + 1.0)
 	var besoin := ceilf(RR.FAIM * RR.DUREE / RR.SOUPE_LICHEN)
 	var loin: float = proches.back().position.distance_to(camp) if not proches.is_empty() else 0.0
-	verif(proches.size() >= 8 and faim_min > RR.FAIM_MORD and soupes >= 6 and j.temperature >= 40.0,
+	# (six touffes suffisent : deux poignées chacune, elles font six soupes par jour, il en faut trois, et elles repoussent en un
+	# jour. Le lichen des rennes se tient à découvert, sur le sol nu, par tapis de quatre ; une année sèche pour Orvane en ôte un
+	# peu : autour d'une mare gelée, il y en a parfois moins de huit à portée)
+	verif(proches.size() >= 6 and faim_min > RR.FAIM_MORD and soupes >= 6 and j.temperature >= 40.0,
 		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour) du lichen de %d touffes autour du camp (la plus loin à %d pixels), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
 		cuites, soupes, int(besoin), proches.size(), int(loin), int(faim_min)])
 	f.queue_free()
