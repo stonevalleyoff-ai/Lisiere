@@ -83,6 +83,7 @@ var ouvert := false
 # (type → { axes, palette, parts, sol (ce que reçoit le shader du sol), arbre, mesures, flore, outils (du décor), climat })
 var carte
 var _lieux := {}
+var _bases := {}                     # (ce que chacun est d'après ses seuls axes : lieu_de y ajoute ses plantes)
 var _morceaux := {}
 var _changes := {}
 var _ajouts := {}
@@ -102,6 +103,7 @@ var _pays_cases := {}                # case du pays → ce qu'elle porte (script
 var _echantillons := {}
 var _tables := {}
 var _densites := {}
+var _a_refaire := {}                 # les morceaux faits avant que l'herbier de leur biome arrive : refaits un par image (suivre)
 
 
 # les couleurs du lieu, d'après ses axes (0 à 1), toutes tirées de la palette (scripts/palette.gd)
@@ -229,7 +231,8 @@ func generer(biome: Dictionary, graine: int, gardes: Array = []) -> void:
 		if carte != null:
 			lieu_de(lieu)
 			# (les parts du biome du réveil se règlent pendant qu'on charge, pas dans le premier morceau)
-			_table(lieu)
+			if _reglage_utile(lieu):
+				_table(lieu)
 		suivre(Vector2.ZERO, true)
 		return
 	_semer_tout(r, gardes)
@@ -377,6 +380,22 @@ const PARTS_DU_SOL := ["mousse", "herbe", "litiere", "cailloux", "neige", "boue"
 func lieu_de(type: String) -> Dictionary:
 	if _lieux.has(type):
 		return _lieux[type]
+	var t0 := Time.get_ticks_usec()
+	# (ses plantes, d'après son herbier ; le reste, d'après ses axes)
+	var L: Dictionary = _base_de(type).duplicate()
+	L["flore"] = _flore_de(type, str(L["arbre"]))
+	L["outils"] = {}
+	_lieux[type] = L
+	if OS.has_environment("LISIERE_TEMPS"):
+		print("le biome « %s » fait en %.1f ms (%d plantes)%s" % [type, (Time.get_ticks_usec() - t0) / 1000.0, L["flore"].values().reduce(func(a, x): return a + x.size(), 0), " (dans un morceau)" if _en_morceau else ""])
+	return L
+
+
+# ce qu'est un biome d'après ses seuls axes (sans ses plantes) : de quoi faire son plan, son échantillon, avant que son herbier
+# arrive
+func _base_de(type: String) -> Dictionary:
+	if _bases.has(type):
+		return _bases[type]
 	var info: Dictionary = jeu.donnees.biome(type) if jeu != null and jeu.get("donnees") != null else {}
 	var axes: Dictionary = info.get("axes", {})
 	if type == "riviere":
@@ -415,29 +434,45 @@ func lieu_de(type: String) -> Dictionary:
 	# (une vallée de rivière est de la terre : seul son lit est de l'eau)
 	sol["etendue_eau"] = 1.0 if type != "riviere" and ["marin", "aquatique"].has(str(info.get("milieu", "terrestre"))) else 0.0
 	var arbre := "sapin" if pal.get("froid", false) else "arbre"
-	var L := {"type": type, "axes": axes, "palette": pal, "parts": parts, "sol": sol, "arbre": arbre,
+	var B := {"type": type, "axes": axes, "palette": pal, "parts": parts, "sol": sol, "arbre": arbre,
 		"mesures": [float(axes.get("couvert", 0.4)), float(axes.get("humidite", 0.5)), float(axes.get("altitude", 0.3))],
-		"flore": _flore_de(type, arbre), "outils": {}, "climat": {"froid": float(parts["froid"]), "humide": float(parts["humide"])},
-		"sous_terre": sous_terre, "crue": crue}
-	_lieux[type] = L
-	return L
+		"climat": {"froid": float(parts["froid"]), "humide": float(parts["humide"])}, "sous_terre": sous_terre, "crue": crue}
+	_bases[type] = B
+	return B
 
 
-# les plantes d'un biome viennent d'arriver (son herbier se lit en approchant) : ce qu'on y sèmera désormais les porte ; les
-# morceaux déjà faits de ce biome (une partie reprise loin du réveil, un pas plus vite que la lecture) l'ont été sans elles :
-# on les refait, avec ce qu'on y avait changé
+# les plantes d'un biome viennent d'arriver (son herbier se lit en approchant, bien avant le plus souvent qu'aucun de ses morceaux
+# soit fait) : ce qu'on y sèmera désormais les porte. Son biome se fait maintenant, avec elles, et ses parts s'y règlent
+# maintenant, une fois — pas dans son premier morceau, où l'échantillon et le réglage (de 20 à 40 ms) feraient un à-coup ; et
+# seulement quand elles serviront (_reglage_utile). Les morceaux déjà faits de ce biome (une partie reprise loin du réveil, un pas
+# plus vite que la lecture) l'ont été sans elles : on les refait, avec ce qu'on y avait changé — un par image (suivre), pas tous
+# dans la même
 func flore_arrivee(type: String) -> void:
+	var t0 := Time.get_ticks_usec()
 	_tables.erase(type)
 	_densites.erase(type)
-	if _lieux.has(type):
+	var deja := _lieux.has(type)
+	if deja:
 		_lieux[type]["flore"] = _flore_de(type, str(_lieux[type]["arbre"]))
-		# (ses parts se règlent maintenant, une fois, avant que ses morceaux soient refaits)
-		if carte != null and not _lieux[type]["flore"].is_empty():
-			_table(type)
+	elif carte != null:
+		lieu_de(type)
+	if carte != null and _reglage_utile(type):
+		_table(type)
+	if deja:
 		for k in _morceaux.keys():
 			if _morceaux[k].get("types", {}).has(type):
-				_oublier(k)
-				_fabriquer(k)
+				_a_refaire[k] = true
+	if OS.has_environment("LISIERE_TEMPS"):
+		print("l'herbier de « %s » arrive (son biome %s) : %.1f ms, %d morceaux à refaire" % [type, "déjà fait" if deja else "fait maintenant", (Time.get_ticks_usec() - t0) / 1000.0, _a_refaire.size()])
+
+
+# les parts d'un biome du monde ouvert servent-elles ? Pas sans plantes, pas dans une grotte (ses places n'ont pas de milieu :
+# ses champignons se tirent de leur seule part), pas au premier plan (une partie gardée d'avant : aucune place n'a de milieu)
+func _reglage_utile(type: String) -> bool:
+	if plan_version < 2 or not _lieux.has(type):
+		return false
+	var L: Dictionary = _lieux[type]
+	return not bool(L.get("sous_terre", false)) and not L["flore"].is_empty()
 
 
 # la couleur d'une plante : la moyenne des verts de son dessin de l'herbier, rendu petit une fois (null : pas de dessin)
@@ -777,6 +812,19 @@ func suivre(p: Vector2, tout := false) -> void:
 				manque = [k]
 	for k in manque:
 		_fabriquer(k)
+	# (ce qui s'était fait sans l'herbier de son biome : refait, le plus proche d'abord — un par image, quand rien ne manque ;
+	# tout, quand on charge)
+	if _a_refaire.is_empty() or (not manque.is_empty() and not tout):
+		return
+	var refaire: Array = _a_refaire.keys()
+	if not tout:
+		refaire.sort_custom(func(u, v): return ((Vector2(u) + Vector2(0.5, 0.5)) * MORCEAU).distance_squared_to(p) < ((Vector2(v) + Vector2(0.5, 0.5)) * MORCEAU).distance_squared_to(p))
+		refaire = [refaire[0]]
+	for k in refaire:
+		_a_refaire.erase(k)
+		if _morceaux.has(k):
+			_oublier(k)
+			_fabriquer(k)
 
 
 # ce qu'un morceau contient, tiré de la graine du lieu et de sa place (toujours le même) : [genre, place, ton, graine]. Les
@@ -842,7 +890,7 @@ func _contexte(type: String, rect: Rect2 = Rect2()) -> Dictionary:
 		ctx = {"t": _terrain, "s": _parts, "mesures": _mesures, "bosquets": _bosquets, "arbre": _arbre, "type": type, "graine": _graine, "herbes": HERBES,
 			"borne": 0.0 if ouvert else R.DEMI, "relief": _relief, "crue": _crue}
 	else:
-		var L := lieu_de(type)
+		var L := _base_de(type)
 		ctx = {"t": _terrain, "s": L["parts"], "mesures": L["mesures"], "bosquets": _bosquets, "arbre": str(L["arbre"]), "type": type, "graine": _graine, "herbes": HERBES,
 			"borne": 0.0, "relief": _relief, "crue": float(L["crue"])}
 	if rect.size.x > 0.0:
@@ -1026,22 +1074,57 @@ const EPARS := 7.0
 func _echantillon(type: String) -> Dictionary:
 	if _echantillons.has(type):
 		return _echantillons[type]
+	var etat := _echantillon_debut(type)
+	_echantillon_avance(etat, -1)
+	return _echantillon_fin(etat)
+
+
+# le même, fait en plusieurs images (quelques quarts à chaque fois), pendant que son herbier se lit (principal.gd, _lire_biome) :
+# à son arrivée, le réglage n'a plus qu'à régler. Rien pour une grotte, ni au premier plan (ses parts ne servent pas)
+func echantillonner(type: String) -> void:
+	if carte == null or _echantillons.has(type) or plan_version < 2 or bool(_base_de(type).get("sous_terre", false)):
+		return
+	var etat := _echantillon_debut(type)
+	while not _echantillon_avance(etat, 3000):
+		await get_tree().process_frame
+		if not is_inside_tree() or _echantillons.has(type):
+			return
+	_echantillon_fin(etat)
+
+
+func _echantillon_debut(type: String) -> Dictionary:
 	var ctx := _contexte(type)
 	ctx["borne"] = 0.0
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([_graine, type, "échantillon"])
 	var cote := MORCEAU * (0.5 if carte != null else 1.0)
-	var n := int(R.MILIEU_ECHANTILLON / cote)
-	var plan: Array = []
+	return {"type": type, "ctx": ctx, "r": r, "cote": cote, "n": int(R.MILIEU_ECHANTILLON / cote), "plan": [], "i": 0}
+
+
+# quelques quarts de plus (budget : en microsecondes ; négatif : tous) ; vrai quand c'est fini
+func _echantillon_avance(etat: Dictionary, budget: int) -> bool:
+	var t0 := Time.get_ticks_usec()
+	var n: int = etat["n"]
+	var cote: float = etat["cote"]
 	var coin := Vector2(40000.0, 40000.0)
-	for x in n:
-		for y in n:
-			var ici := Rect2(coin + Vector2(x, y) * cote * EPARS + Vector2(r.randf(), r.randf()) * cote * (EPARS - 1.0), Vector2(cote, cote))
-			_pays_factice(ctx, r, ici.grow(140.0), lieu if type == "" else type)
-			Milieu.prevoir(ctx, r, ici, plan)
-	var ech := Milieu.echantillon(plan)
-	ech["aire"] = n * n * cote * cote
-	_echantillons[type] = ech
+	var type: String = etat["type"]
+	while int(etat["i"]) < n * n:
+		var x: int = int(etat["i"]) / n
+		var y: int = int(etat["i"]) % n
+		var r: RandomNumberGenerator = etat["r"]
+		var ici := Rect2(coin + Vector2(x, y) * cote * EPARS + Vector2(r.randf(), r.randf()) * cote * (EPARS - 1.0), Vector2(cote, cote))
+		_pays_factice(etat["ctx"], r, ici.grow(140.0), lieu if type == "" else type)
+		Milieu.prevoir(etat["ctx"], r, ici, etat["plan"])
+		etat["i"] = int(etat["i"]) + 1
+		if budget >= 0 and Time.get_ticks_usec() - t0 > budget:
+			break
+	return int(etat["i"]) >= n * n
+
+
+func _echantillon_fin(etat: Dictionary) -> Dictionary:
+	var ech := Milieu.echantillon(etat["plan"])
+	ech["aire"] = int(etat["n"]) * int(etat["n"]) * float(etat["cote"]) * float(etat["cote"])
+	_echantillons[str(etat["type"])] = ech
 	return ech
 
 
@@ -1050,12 +1133,18 @@ func _echantillon(type: String) -> Dictionary:
 func _table(type: String) -> Dictionary:
 	if _tables.has(type):
 		return _tables[type]
+	var t0 := Time.get_ticks_usec()
 	var seul := type == ""
 	var fl: Dictionary = flore if seul else lieu_de(type)["flore"]
 	var ech := _echantillon(type)
+	var t_ech := Time.get_ticks_usec()
 	var ctx := _contexte(type)
 	var tb := Milieu.regler(fl, ech, Milieu.cibles(ctx["mesures"], ctx["s"], float(ech["aire"]), Orvane.meteo(lieu if seul else type), ech, fl))
 	_tables[type] = tb
+	if _en_morceau:
+		reglages_en_morceau += 1
+	if OS.has_environment("LISIERE_TEMPS"):
+		print("les parts de « %s » réglées en %.1f ms (l'échantillon %.1f)%s" % [type, (Time.get_ticks_usec() - t0) / 1000.0, (t_ech - t0) / 1000.0, " (dans un morceau)" if _en_morceau else ""])
 	if OS.has_environment("LISIERE_MILIEU"):
 		for st in tb:
 			var n_tr := 0
@@ -1236,10 +1325,14 @@ func _prevoir(r: RandomNumberGenerator, plan: Array, rect: Rect2, genre: String,
 
 
 var pire_ms := 0.0      # (la vitrine, --mesure) le morceau le plus long à fabriquer, et sa part d'objets
+var _en_morceau := false
+var reglages_en_morceau := 0   # (l'essai) les parts d'un biome réglées pendant qu'on fabriquait un morceau : un à-coup
 
 func _fabriquer(k: Vector2i) -> void:
 	var t0 := Time.get_ticks_usec()
+	_en_morceau = true
 	_fabriquer_(k)
+	_en_morceau = false
 	pire_ms = maxf(pire_ms, (Time.get_ticks_usec() - t0) / 1000.0)
 
 
@@ -1361,6 +1454,7 @@ func _noter(k: Vector2i) -> void:
 
 func _oublier(k: Vector2i) -> void:
 	_noter(k)
+	_a_refaire.erase(k)
 	var m: Dictionary = _morceaux[k]
 	for o in m["objets"]:
 		if is_instance_valid(o):

@@ -2329,6 +2329,11 @@ func _dire_le_pays(type: String) -> void:
 func _lire_biome(type: String) -> void:
 	_lecture = type
 	var partie := graine
+	# (l'échantillon de son plan, sur lequel ses parts se régleront quand son herbier arrivera : quelques quarts par image)
+	await monde.echantillonner(type)
+	if not en_partie or graine != partie:
+		_lecture = ""
+		return
 	var inst: Dictionary = await donnees.charger_lieu(type)
 	if not en_partie or graine != partie:
 		_lecture = ""

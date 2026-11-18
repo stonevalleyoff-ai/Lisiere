@@ -5969,9 +5969,12 @@ func _la_repartition() -> void:
 		int(rv_o[0]), int(rv_o[1]), int(rv_o[2]), int(rv_o[3])])
 	var comptes := {}
 	var i_b := 0
+	var regles_a_l_arrivee := true
 	for type in ["foret", "taiga", "desert", "banquise"]:
 		await jeu.donnees.charger_lieu(type)
+		var etait: bool = W._lieux.has(type)
 		W.flore_arrivee(type)
+		regles_a_l_arrivee = regles_a_l_arrivee and not etait and W._lieux.has(type) and W._tables.has(type)
 		var d := _semer_a_part(type, Vector2(190000.0 + i_b * 12000.0, 190000.0), true)
 		i_b += 1
 		comptes[type] = Re.dire(W, type, d["rect"], "(à part)", true, false) if OS.has_environment("LISIERE_MILIEU") else Re.compter(W, type, d["rect"], true, false)
@@ -5979,6 +5982,40 @@ func _la_repartition() -> void:
 		for o in d["objets"]:
 			if is_instance_valid(o):
 				W._defaire(o)
+	# les parts d'un biome se règlent quand son herbier arrive, avant qu'aucun de ses morceaux soit fait (son biome se fait alors) ;
+	# dans une grotte, au premier plan, elles ne servent pas : rien ne se règle. Puis aucun morceau de ces biomes n'en règle
+	# (l'échantillon fait en plusieurs images, pendant que l'herbier se lit, est celui qu'on ferait d'un coup)
+	W._echantillons.erase("lande")
+	await W.echantillonner("lande")
+	var ech_etale: Dictionary = W._echantillons.get("lande", {}).duplicate(true)
+	W._echantillons.erase("lande")
+	var meme_ech: bool = not ech_etale.is_empty() and ech_etale == W._echantillon("lande")
+	await jeu.donnees.charger_lieu("grotte")
+	W.flore_arrivee("grotte")
+	var plan_avant: int = W.plan_version
+	W.plan_version = 1
+	await jeu.donnees.charger_lieu("lande")
+	W._lieux.erase("lande")
+	W.flore_arrivee("lande")
+	var inutiles: Array = ["grotte", "lande"].filter(func(x): return W._tables.has(x))
+	W.plan_version = plan_avant
+	W._lieux.erase("lande")
+	W.flore_arrivee("lande")
+	var en_morceau_avant: int = W.reglages_en_morceau
+	var Ca = jeu.carte
+	for type in ["foret", "taiga", "desert", "banquise", "lande"]:
+		var ou := -1
+		for kr in Ca.regions.size():
+			if str(Ca.regions[kr]["type"]) == type and (ou < 0 or Ca.regions[kr]["pos"].length() < Ca.regions[ou]["pos"].length()):
+				ou = kr
+		var km: Vector2i = W._cle_m(Ca.regions[ou]["pos"] - Ca.tordre(Ca.regions[ou]["pos"]))
+		if not W._morceaux.has(km):
+			W._fabriquer(km)
+		W._oublier(km)
+	W.pire_ms = 0.0
+	verif(regles_a_l_arrivee and meme_ech and inutiles.is_empty() and W._tables.has("lande") and W.reglages_en_morceau == en_morceau_avant,
+		"les parts d'un biome se règlent quand son herbier arrive, son biome fait avec lui (l'échantillon fait avant, en plusieurs images : %s), pas dans son premier morceau (%d morceaux l'ont fait) ; une grotte, une partie au premier plan n'en règlent pas%s" % [
+		"le même que d'un coup" if meme_ech else "PAS le même que d'un coup", W.reglages_en_morceau - en_morceau_avant, (" (réglées pour rien : %s)" % str(inutiles)) if not inutiles.is_empty() else ""])
 	var f: Dictionary = comptes["foret"]
 	var ta: Dictionary = comptes["taiga"]
 	var de: Dictionary = comptes["desert"]
@@ -6324,6 +6361,8 @@ func _la_flore() -> void:
 	var sapins_avant: int = W.autour(p_b, 900.0).filter(func(x): return x.genre == "sapin" and sur_la_banquise.call(x)).size()
 	Orvane.ajouter_herbier("banquise", gardee)
 	W.flore_arrivee("banquise")
+	# (ses morceaux sont refaits un par image ; tout d'un coup, ici)
+	W.suivre(p_b, true)
 	var autour_b: Array = W.autour(p_b, 900.0).filter(func(x): return sur_la_banquise.call(x))
 	var sapins_apres: int = autour_b.filter(func(x): return x.genre == "sapin").size()
 	var lichens: int = autour_b.filter(func(x): return str(x.forme).begins_with("lichen")).size()
