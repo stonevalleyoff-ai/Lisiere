@@ -1274,7 +1274,10 @@ static func _pres(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, l
 		var mil := pied.lerp(bout, 0.5) + Vector2(r.randf_range(-1.0, 1.0), 0)
 		p.tracer(PackedVector2Array([pied, mil, bout]), 1.6, Color(ENCRE, 0.8), false)
 		p.tracer(PackedVector2Array([pied, mil, bout]), 0.8, vert.darkened(0.15), false)
-		_lance(p, pied + Vector2(0, -0.5), pied + Vector2(r.randf_range(2.5, 4.0) * (1.0 if t[2] < 0.5 else -1.0), -r.randf_range(2.0, 3.5)), 1.0, vert)
+		var cote_f := 1.0 if t[2] < 0.5 else -1.0
+		T.feuille(p, pied + Vector2(0, -0.3), pied + Vector2(r.randf_range(2.5, 4.2) * cote_f, -r.randf_range(2.0, 3.8)), 1.15, vert, cote_f * 0.6, 0.4, 0.5, 4)
+		if herbier:
+			T.feuille(p, pied + Vector2(0, -0.3), pied + Vector2(-r.randf_range(2.0, 3.4) * cote_f, -r.randf_range(1.6, 3.0)), 1.0, vert.darkened(0.08), -cote_f * 0.5, 0.4, 0.5, 4)
 		if la:
 			var rc := 2.6 if herbier else r.randf_range(1.8, 2.4)
 			var np := 9 if herbier else 5
@@ -1296,14 +1299,20 @@ static func _pres(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, l
 
 # des fleurs à bulbe : de longues feuilles en ruban qui retombent, une ou deux coupes de fleurs sur leurs hampes
 static func _bulbes(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, la: bool, u: float) -> void:
+	var pieds := []
 	for pied_i in r.randi_range(2, 3):
-		var pied := Vector2(r.randf_range(-o._rx * 0.6, o._rx * 0.6), r.randf_range(-o._ry * 0.5, o._ry * 0.5))
-		for i in 4:
+		pieds.append(Vector2(r.randf_range(-o._rx * 0.6, o._rx * 0.6), r.randf_range(-o._ry * 0.5, o._ry * 0.5)))
+	pieds.sort_custom(func(a, b): return a.y < b.y)
+	for pied_ in pieds:
+		var pied: Vector2 = pied_
+		# (le bulbe affleure : sa tunique brune, dans la terre remuée)
+		T.assise(p, pied + Vector2(0, 0.6), 4.0, 1.6, P.TERRE.darkened(0.3), 0.5)
+		p.disque(pied + Vector2(0, 0.2), 2.3, 1.7, ENCRE)
+		p.disque(pied + Vector2(0, 0.2), 1.7, 1.2, P.TERRE.lerp(P.BRAISE, 0.3), Pinceau.DOME)
+		for i in 5:
 			var cote := -1.0 if i % 2 == 0 else 1.0
-			var h := r.randf_range(6.0, 10.0) * u
-			var ligne := PackedVector2Array([pied, pied + Vector2(cote * 1.5, -h * 0.75), pied + Vector2(cote * r.randf_range(3.0, 5.0), -h)])
-			p.tracer(ligne, 2.6, ENCRE, false, PackedFloat32Array([2.6, 2.2, 0.8]))
-			p.tracer(ligne, 1.7, vert, false, PackedFloat32Array([1.8, 1.4, 0.3]))
+			var h := r.randf_range(6.0, 10.5) * u
+			T.feuille(p, pied, pied + Vector2(cote * r.randf_range(2.5, 6.0), -h), 1.35, vert.lightened(0.04 * i), cote * h * 0.18, 0.3, 0.5, 5)
 		var hh := r.randf_range(11.0, 15.0) * u
 		var bout := pied + Vector2(r.randf_range(-1.5, 1.5), -hh)
 		p.tracer(PackedVector2Array([pied, bout]), 1.6, ENCRE, false)
@@ -1397,13 +1406,16 @@ static func _aquatique(o, p, r: RandomNumberGenerator) -> void:
 				var q := Vector2(cos(a) * rx * d, sin(a) * ry * d)
 				p.disque(q, r.randf_range(0.7, 1.2), r.randf_range(0.45, 0.75), t.lightened(r.randf_range(0.0, 0.25)))
 		"algue":
-			# (des filaments verts sous la surface, et des nattes qui flottent)
-			for i in 7:
-				var q := Vector2(r.randf_range(-0.7, 0.7) * rx, r.randf_range(-0.5, 0.5) * ry)
+			# (ses mèches montent du fond en ondulant, comme sur la planche d'Orvane : on les voit sous l'eau, plus fines
+			# vers la surface ; et des nattes qui flottent)
+			for i in 9:
+				var q := Vector2(r.randf_range(-0.72, 0.72) * rx, r.randf_range(-0.2, 0.6) * ry)
+				var haut := r.randf_range(5.0, 9.0)
 				var ligne := PackedVector2Array()
-				for k in 6:
-					ligne.append(q + Vector2(k * 2.2, sin(k * 1.3 + i) * 1.2))
-				p.tracer(ligne, 1.1, Color(t.lightened(0.1), 0.75), false)
+				for k in 7:
+					ligne.append(q + Vector2(sin(k * 1.1 + i * 1.7) * 1.5, -haut * k / 6.0))
+				p.tracer(ligne, 1.9, Color(P.ENCRE, 0.35), false, PackedFloat32Array([2.2, 2.0, 1.8, 1.6, 1.3, 1.0, 0.6]))
+				p.tracer(ligne, 1.1, Color(t.lightened(0.04 + 0.03 * (i % 3)), 0.9), false, PackedFloat32Array([1.5, 1.4, 1.2, 1.1, 0.9, 0.7, 0.3]))
 			var nattes := 3 if o.reste > 0 else 1
 			for i in nattes:
 				var q := Vector2(r.randf_range(-0.5, 0.5) * rx, r.randf_range(-0.4, 0.4) * ry)
@@ -1423,11 +1435,15 @@ static func _aquatique(o, p, r: RandomNumberGenerator) -> void:
 				for k in 15:
 					var a := ang + 0.45 + (TAU - 0.9) * k / 14.0
 					poly.append(q + Vector2(cos(a) * s, sin(a) * s * 0.48))
+				# (son ombre sur l'eau, puis la feuille : cirée, elle luit ; ses nervures en étoile)
+				p.aplat(_grossi(poly, q + Vector2(0.6, 0.9), 0.4), Color(P.ENCRE, 0.3))
 				p.aplat(_grossi(poly, q, 0.7), ENCRE)
-				p.aplat(poly, t.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.25)), Pinceau.FEUILLAGE, q, Vector2(s, s * 0.5) * 1.05)
-				for k in 3:
-					var a := ang + 0.45 + (TAU - 0.9) * (k + 1) / 4.0
-					p.tracer(PackedVector2Array([q, q + Vector2(cos(a) * s * 0.8, sin(a) * s * 0.38)]), 0.5, Color(ENCRE, 0.35), false)
+				var ton := t.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.25))
+				p.aplat(poly, ton, Pinceau.DOME, q + Vector2(s * 0.2, s * 0.2), Vector2(s, s * 0.5) * 1.5)
+				for k in 5:
+					var a := ang + 0.45 + (TAU - 0.9) * (k + 0.5) / 5.0
+					p.tracer(PackedVector2Array([q, q + Vector2(cos(a) * s * 0.84, sin(a) * s * 0.4)]), 0.5, Color(ENCRE, 0.35), false)
+				p.tracer(PackedVector2Array([q + Vector2(-s * 0.6, -s * 0.22), q + Vector2(-s * 0.2, -s * 0.36)]), 0.6, Color(P.PAPIER, 0.4))
 			if o.reste > 0 and o.en_fleurs:
 				var q: Vector2 = feuilles[0] + Vector2(1.5, -1.5)
 				var fleur := P.PAPIER.lightened(0.1) if o.graine % 3 != 0 else P.AUBE.lerp(P.PEUR, 0.15)
