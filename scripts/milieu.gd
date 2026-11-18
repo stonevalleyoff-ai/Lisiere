@@ -460,7 +460,7 @@ static func trones(ctx: Dictionary, rect: Rect2) -> Array:
 			var q := (Vector2(x, y) + Vector2(0.2 + 0.6 * float(h % 1000) / 1000.0, 0.2 + 0.6 * float((h / 1000) % 1000) / 1000.0)) * cote
 			if q.length() < 300.0 or (borne > 0.0 and (absf(q.x) > borne - 60.0 or absf(q.y) > borne - 60.0)):
 				continue
-			if couvert_en(ctx, q) < R.MILIEU_TRONE_COUVERT:
+			if couvert_en(ctx, q) < R.MILIEU_TRONE_COUVERT or _noye(ctx, q):
 				continue
 			# (son tirage avance d'une cellule à l'autre, comme celui des peuplements : les géants ont leur part au plus juste)
 			var u: float = x * 0.7548776662 + y * 0.5698402910 + float(absi(graine) % 1000) / 1000.0
@@ -610,8 +610,9 @@ static func _graine(r: RandomNumberGenerator, suite: Array) -> int:
 
 # un groupe de places serrées autour de q (une colonie, une touffe) : la même graine modulo 10 007 (le même tirage), le même
 # milieu, leur rang et la taille du groupe
-static func _groupe(r: RandomNumberGenerator, suite: Array, plan: Array, rect: Rect2, genre: String, ton: String, type: String, q: Vector2, milieu: int, n: int, large: float, places: Array = []) -> void:
+static func _groupe(ctx: Dictionary, r: RandomNumberGenerator, suite: Array, plan: Array, rect: Rect2, genre: String, ton: String, type: String, q: Vector2, milieu: int, n: int, large: float, places: Array = []) -> void:
 	var g := _graine(r, suite)
+	var sur := q
 	for j in n:
 		var p := q
 		if j < places.size():
@@ -619,6 +620,11 @@ static func _groupe(r: RandomNumberGenerator, suite: Array, plan: Array, rect: R
 		elif j > 0:
 			p = q + Vector2(r.randf_range(-large, large), r.randf_range(-large, large) * 0.55)
 		p = p.clamp(rect.position, rect.end - Vector2(0.01, 0.01))
+		# (aucune ne va au large de l'eau qui reste dans les creux : celle qui y tomberait se serre contre la précédente)
+		if _noye(ctx, p, 0.03):
+			p = sur + Vector2(r.randf_range(-3.0, 3.0), r.randf_range(-2.0, 2.0))
+		else:
+			sur = p
 		plan.append([genre, p, ton, g + j * 10007, type, milieu | (j << RANG) | (n << TAILLE)])
 
 
@@ -724,7 +730,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		if r.randf() > R.MILIEU_ARBRES_DE_RIVE or poses >= n:
 			continue
 		var p: Vector2 = mare[0] + Vector2(cos(a), sin(a) * ov) * (float(mare[1]) + d)
-		if not rect.has_point(p) or p.length() < 150.0 or _vers(arbres, p, R.MILIEU_ESPACE_ARBRES) < INF:
+		if not rect.has_point(p) or p.length() < 150.0 or _vers(arbres, p, R.MILIEU_ESPACE_ARBRES) < INF or sites.any(func(e): return p.distance_to(e[0]) < R.MILIEU_DEGAGE):
 			continue
 		plan.append([arbre, p, "feuilles", g, type, (_sol(ctx, p) & ~SEC) | RIVE | (1 << TAILLE)])
 		_ranger(arbres, p)
@@ -786,7 +792,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 			continue
 		if _vers_mare(mares, q) < 10.0 or _dans_l_eau(ctx, q, 10.0) or _noye(ctx, q) or _vers(arbres, q, 20.0) < INF:
 			continue
-		_groupe(r, suite, plan, rect, "buisson", "feuilles", type, q, _milieu_du_sol(ctx, q, arbres, rochers, mares), combien, 30.0)
+		_groupe(ctx, r, suite, plan, rect, "buisson", "feuilles", type, q, _milieu_du_sol(ctx, q, arbres, rochers, mares), combien, 30.0)
 		n -= 1
 	n = Decor._nombre(r, float(liste_arbres.size()) * R.MILIEU_LIANES * clampf(humid * 1.6 - 0.4, 0.0, 1.0))
 	for i in n:
@@ -794,7 +800,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		var q := pied + Vector2((1.0 if r.randf() < 0.5 else -1.0) * r.randf_range(9.0, 14.0), r.randf_range(2.0, 5.0))
 		if q.length() < 170.0 or not rect.has_point(q):
 			continue
-		_groupe(r, suite, plan, rect, "buisson", "feuilles", type, q, SOUS | PIED | EN_PLUS | _sol(ctx, q), 1, 0.0)
+		_groupe(ctx, r, suite, plan, rect, "buisson", "feuilles", type, q, SOUS | PIED | EN_PLUS | _sol(ctx, q), 1, 0.0)
 	# 5. les plantes du sol, par groupes : le fond du lieu (plus espacé où il fait sec : les racines se partagent l'eau) ; puis
 	# ce qui est offert en plus à qui l'aime — le pied des arbres, le tour des rochers, la ceinture des mares, les berges
 	var ecart := lerpf(R.MILIEU_ECART, R.MILIEU_ECART_SEC, sec)
@@ -808,7 +814,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		if q.length() < 170.0 or _vers(centres, q, ecart) < INF or _vers(arbres, q, ecart * 0.8) < INF or _vers_mare(mares, q) < 6.0 or _dans_l_eau(ctx, q, 4.0) or _noye(ctx, q, 0.012):
 			continue
 		_ranger(centres, q)
-		_groupe(r, suite, plan, rect, "sol", "herbe", type, q, _milieu_du_sol(ctx, q, arbres, rochers, mares), combien, lerpf(22.0, 30.0, sec))
+		_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, q, _milieu_du_sol(ctx, q, arbres, rochers, mares), combien, lerpf(22.0, 30.0, sec))
 		n -= 1
 	n = Decor._nombre(r, float(liste_arbres.size()) * R.MILIEU_SOUS_BOIS)
 	for i in n:
@@ -817,7 +823,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		var combien := r.randi_range(2, 5)
 		if q.length() < 170.0 or not rect.has_point(q) or _vers_mare(mares, q) < 6.0 or _dans_l_eau(ctx, q, 4.0) or _noye(ctx, q, 0.012):
 			continue
-		_groupe(r, suite, plan, rect, "sol", "herbe", type, q, (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~(LISIERE | DECOUVERT)) | SOUS | PIED | EN_PLUS, combien, 16.0)
+		_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, q, (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~(LISIERE | DECOUVERT)) | SOUS | PIED | EN_PLUS, combien, 16.0)
 	n = Decor._nombre(r, float(liste_rochers.size()) * R.MILIEU_AU_ROCHER)
 	for i in n:
 		var roc: Vector2 = liste_rochers[r.randi() % liste_rochers.size()]
@@ -829,7 +835,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 		if autour[0].length() < 170.0 or not rect.has_point(autour[0]) or _dans_l_eau(ctx, autour[0], 4.0) or _noye(ctx, roc) or _vers(centres, roc, ecart * 0.7) < INF:
 			continue
 		_ranger(centres, roc)
-		_groupe(r, suite, plan, rect, "sol", "herbe", type, autour[0], _milieu_du_sol(ctx, autour[0], arbres, rochers, mares) | PIERRE | EN_PLUS, combien, 0.0, autour)
+		_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], _milieu_du_sol(ctx, autour[0], arbres, rochers, mares) | PIERRE | EN_PLUS, combien, 0.0, autour)
 	for m in mares:
 		# (la ceinture d'une mare : un ou deux arcs de six places, serrées contre son bord)
 		var c: Vector2 = m[0]
@@ -842,7 +848,7 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 				var a := a0 + j * 0.3
 				autour.append(c + Vector2(cos(a), sin(a) * ov) * (rx + r.randf_range(5.0, 16.0)))
 			var ici := (_milieu_du_sol(ctx, autour[0], arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS
-			_groupe(r, suite, plan, rect, "sol", "herbe", type, autour[0], ici, R.MILIEU_GROUPE, 0.0, autour)
+			_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], ici, R.MILIEU_GROUPE, 0.0, autour)
 	if eau > 0.0:
 		# (la rive de l'eau qui reste dans les creux : des groupes de six places, le long du rivage, les pieds dans l'eau ou juste
 		# au-dessus)
@@ -856,10 +862,10 @@ static func prevoir(ctx: Dictionary, r: RandomNumberGenerator, rect: Rect2, plan
 			if pente.length() < 0.000001 or _dans_l_eau(ctx, q, 4.0):
 				continue
 			pente = pente.normalized()
-			var autour: Array = []
-			for j in R.MILIEU_GROUPE:
-				autour.append(q + pente.orthogonal() * (j - 2.5) * 11.0 + pente * r.randf_range(-6.0, 6.0))
-			_groupe(r, suite, plan, rect, "sol", "herbe", type, autour[0], (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS, R.MILIEU_GROUPE, 0.0, autour)
+			var autour: Array = [q]
+			for j in R.MILIEU_GROUPE - 1:
+				autour.append(q + pente.orthogonal() * (j / 2 + 1) * (11.0 if j % 2 == 0 else -11.0) + pente * r.randf_range(-4.0, 8.0))
+			_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS, R.MILIEU_GROUPE, 0.0, autour)
 	_rives(ctx, r, suite, rect, plan, arbres, rochers, mares)
 	# 6. le bois mort (sous les bosquets), les herbes de l'herbier de Lisière (scripts/botanique.gd)
 	_semis(r, plan, rect, "brindille", 160.0 * ka, "", bosquets, 0.6, type)
@@ -877,7 +883,7 @@ static func _rives(ctx: Dictionary, r: RandomNumberGenerator, suite: Array, rect
 		var sens: Vector2 = ctx.get("berges_sens", {}).get(q, Vector2.RIGHT)
 		for j in R.MILIEU_GROUPE:
 			autour.append(q + sens * (j - 2.5) * 11.0 + sens.orthogonal() * r.randf_range(-7.0, 7.0))
-		_groupe(r, suite, plan, rect, "sol", "herbe", type, autour[0], (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS, R.MILIEU_GROUPE, 0.0, autour)
+		_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], (_milieu_du_sol(ctx, q, arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS, R.MILIEU_GROUPE, 0.0, autour)
 	for e in ctx.get("eaux", []):
 		var c: Vector2 = e[0]
 		if not rect.grow(float(e[1]) + 30.0).has_point(c) or not bool(e[2]):
@@ -892,7 +898,7 @@ static func _rives(ctx: Dictionary, r: RandomNumberGenerator, suite: Array, rect
 				autour.append(c + Vector2(cos(a), sin(a) * 0.82) * (float(e[1]) + r.randf_range(4.0, 14.0)))
 			if not rect.has_point(autour[0]) or autour[0].length() < 170.0:
 				continue
-			_groupe(r, suite, plan, rect, "sol", "herbe", type, autour[0], (_milieu_du_sol(ctx, autour[0], arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS, R.MILIEU_GROUPE, 0.0, autour)
+			_groupe(ctx, r, suite, plan, rect, "sol", "herbe", type, autour[0], (_milieu_du_sol(ctx, autour[0], arbres, rochers, mares) & ~NU & ~SEC) | RIVE | EN_PLUS, R.MILIEU_GROUPE, 0.0, autour)
 
 
 # ce qu'on cueille en plus dans un rectangle, et qui n'est qu'à Lisière : des fleurs des prés là où le sol est herbeux, des

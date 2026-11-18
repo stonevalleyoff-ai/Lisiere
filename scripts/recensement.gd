@@ -128,11 +128,11 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true, e
 		e["eau"].append(_vers_l_eau(o.position, mares, carte, climat) if eau else INF)
 		if o.has_meta("milieu") and int(o.get_meta("milieu")) & Milieu.COEUR:
 			e["fond"] += 1
-		if autour.any(func(a): return a.position.distance_to(o.position) <= AU_PIED):
-			e["pied"] += 1
 		var autour: Array = pres.call(o.position, ALENTOUR)
 		autour.erase(o)
 		e["arbres"].append(autour.size())
+		if autour.any(func(a): return a.position.distance_to(o.position) <= AU_PIED):
+			e["pied"] += 1
 		if autour.any(func(a): return a.position.distance_to(o.position) <= SOUS):
 			e["sous"] += 1
 		for q in rochers:

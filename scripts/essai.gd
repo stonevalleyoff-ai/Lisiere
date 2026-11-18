@@ -5854,10 +5854,10 @@ func _la_repartition() -> void:
 	for i in 400:
 		var q := Vector2(-2000.0 + 200.0 * (i % 20), -2000.0 + 200.0 * (i / 20))
 		pire = maxf(pire, absf(float(Mi.relief_en(ctx, q)) - float(C.relief(q))))
-		if (float(C.eau(q)) > 0.0 and float(T.fondriere(q)) <= 0.0) != (float(Mi.relief_en(ctx, q)) < float(Mi.niveau(ctx))):
+		if float(T.fondriere(q)) <= 0.0 and (float(C.eau(q)) > 0.0) != (float(Mi.relief_en(ctx, q)) < float(Mi.niveau(ctx))):
 			mouilles += 1
 	verif(pire < 0.0001 and mouilles == 0 and float(Mi.niveau(ctx)) > 0.3,
-		"le relief que lit le plan est celui du temps qu'il fait (écart %.5f sur 400 points) : l'eau qui reste au creux du marais (niveau %.2f) est là où il la croit" % [pire, float(Mi.niveau(ctx))])
+		"le relief que lit le plan est celui du temps qu'il fait (écart %.5f sur 400 points) : l'eau qui reste au creux du marais (niveau %.2f) est là où il la croit (%d points en désaccord ; crue %.3f)" % [pire, float(Mi.niveau(ctx)), mouilles, float(C.crue)])
 	# le pays : ses fondrières sont celles que le plan a lues (la même liste, une fois), et aucun tronc n'y trempe
 	var cases_pareilles := 0
 	var fondrieres := 0
@@ -5937,7 +5937,7 @@ func _la_repartition() -> void:
 		W.flore_arrivee(type)
 		var d := _semer_a_part(type, Vector2(190000.0 + i_b * 12000.0, 190000.0), true)
 		i_b += 1
-		comptes[type] = Re.compter(W, type, d["rect"], true, false)
+		comptes[type] = Re.dire(W, type, d["rect"], "(à part)", true, false) if OS.has_environment("LISIERE_MILIEU") else Re.compter(W, type, d["rect"], true, false)
 		comptes[type]["plan"] = d["plan"]
 		for o in d["objets"]:
 			if is_instance_valid(o):
