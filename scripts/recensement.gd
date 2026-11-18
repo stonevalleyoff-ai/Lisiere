@@ -8,6 +8,7 @@ extends RefCounted
 # contrôles (« La répartition »). Il ne change rien au lieu : il le lit.
 
 const Flore := preload("res://scripts/flore.gd")
+const Milieu := preload("res://scripts/milieu.gd")
 
 const RIVE := ["roseau", "jonc", "riz", "papyrus", "bambou"]          # ce qu'on attend au bord de l'eau
 const SOUS_BOIS := ["mousse", "fougere", "liane", "orchidee", "bromelia", "sous_bois"]   # … sous le couvert
@@ -18,7 +19,7 @@ const PRES_EAU := 70.0         # « au bord de l'eau » : à moins de tant de la
 const SOUS := 70.0             # « sous le couvert » : à moins de tant d'un tronc
 const ALENTOUR := 130.0        # les arbres « autour » d'une plante
 const PRES_ROC := 60.0         # « près d'un rocher »
-const PEUPLEMENT := 120.0      # deux arbres de la même espèce à moins de tant sont du même peuplement
+const PEUPLEMENT := 170.0      # deux arbres de la même espèce à moins de tant sont du même peuplement
 
 
 # la distance de p à l'eau la plus proche : la rive d'une mare (une plante d'eau), ou — dans le monde ouvert — une rivière, un
@@ -60,7 +61,7 @@ static func _part(l: Array, sous: float) -> float:
 
 # le recensement d'un monde (tous ses objets, ou ceux d'un rectangle) : { plantes: { id: {…} }, strates, rives, sous_bois,
 # grasses, peuplements, geants, pierre, genres, parts_ecart }
-static func compter(monde, biome: String, rect: Rect2 = Rect2()) -> Dictionary:
+static func compter(monde, biome: String, rect: Rect2 = Rect2(), pese := true) -> Dictionary:
 	var objets: Array = monde.objets.filter(func(o): return is_instance_valid(o) and (rect.size.x <= 0.0 or rect.has_point(o.position)))
 	var carte = monde.get("carte")
 	var arbres: Array = []
@@ -97,8 +98,9 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2()) -> Dictionary:
 	var tot_strate := {}
 	for e in Orvane.plantes(biome):
 		var so := Flore.sorte(e)
+		# (la place qu'un pied tient : un géant vaut plusieurs arbres ; sa part se compte en places, comme celle d'Orvane en couvert)
 		parts[str(e["id"])] = {"part": float(e.get("part", 0.0)), "strate": str(so["strate"]), "forme": str(so["forme"]), "nom": str(e.get("nom", "")),
-			"caracteres": e.get("caracteres", [])}
+			"caracteres": e.get("caracteres", []), "place": Milieu.place({"forme": so["forme"], "genre": so["genre"], "caracteres": e.get("caracteres", [])}) if pese else 1.0}
 		tot_strate[so["strate"]] = float(tot_strate.get(so["strate"], 0.0)) + maxf(0.02, float(e.get("part", 0.0)))
 	var P := {}
 	var n_strate := {}
@@ -112,7 +114,7 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2()) -> Dictionary:
 		var e: Dictionary = P[id]
 		e["n"] += 1
 		e["places"].append(o.position)
-		n_strate[e["strate"]] = int(n_strate.get(e["strate"], 0)) + 1
+		n_strate[e["strate"]] = float(n_strate.get(e["strate"], 0.0)) + float(parts[id]["place"])
 		e["eau"].append(_vers_l_eau(o.position, mares, carte))
 		var autour: Array = pres.call(o.position, ALENTOUR)
 		autour.erase(o)
@@ -129,7 +131,7 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2()) -> Dictionary:
 		var attendu: float = maxf(0.02, float(parts[id]["part"])) / maxf(0.0001, float(tot_strate[st]))
 		var vu := 0.0
 		if P.has(id):
-			vu = float(P[id]["n"]) / maxf(1.0, float(n_strate.get(st, 0)))
+			vu = float(P[id]["n"]) * float(parts[id]["place"]) / maxf(1.0, float(n_strate.get(st, 0.0)))
 			P[id]["vu"] = vu
 			P[id]["attendu"] = attendu
 		elif n_strate.has(st):
@@ -222,7 +224,7 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2()) -> Dictionary:
 		for b in pres.call(a.position, 400.0):
 			if b != a:
 				d0 = minf(d0, b.position.distance_to(a.position))
-		if str(a.plante) != "" and parts.has(str(a.plante)) and (GEANTS.has(parts[a.plante]["forme"]) or parts[a.plante]["caracteres"].has("geante")):
+		if str(a.plante) != "" and parts.has(str(a.plante)) and GEANTS.has(parts[a.plante]["forme"]):
 			d_geants.append(minf(d0, 400.0))
 		elif d0 < INF:
 			d_arbres.append(d0)
@@ -237,8 +239,8 @@ static func compter(monde, biome: String, rect: Rect2 = Rect2()) -> Dictionary:
 
 
 # le recensement, dit ligne à ligne
-static func dire(monde, biome: String, rect: Rect2 = Rect2(), titre := "") -> Dictionary:
-	var c := compter(monde, biome, rect)
+static func dire(monde, biome: String, rect: Rect2 = Rect2(), titre := "", pese := true) -> Dictionary:
+	var c := compter(monde, biome, rect, pese)
 	print("recensement : %s%s — %d objets (%s)" % [biome, (" " + titre) if titre != "" else "", int(c["objets"]),
 		", ".join(c["genres"].keys().map(func(k): return "%s %d" % [k, int(c["genres"][k])]))])
 	var ids: Array = c["plantes"].keys()
