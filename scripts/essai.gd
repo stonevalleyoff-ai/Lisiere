@@ -95,6 +95,8 @@ func _lancer() -> void:
 				await _la_faim_de_la_noire()
 			"collet":
 				await _le_collet_de_la_noire()
+			"reunie":
+				await _la_noire_reunie()
 			_:
 				await _la_cueillette_nourriciere()
 				await _les_retouches()
@@ -644,6 +646,7 @@ func _lancer() -> void:
 	await _les_retouches()
 	await _la_faim_de_la_noire()
 	await _le_collet_de_la_noire()
+	await _la_noire_reunie()
 	await _conclure()
 
 
@@ -1845,6 +1848,111 @@ func _le_collet_de_la_noire() -> void:
 				faits += 1
 				durees.append("%s %.1f s" % [nom, float(a[0].size()) / float(a[1])])
 	verif(faits == 8, "les sons du collet sont faits à la main, comme les autres : %s" % ", ".join(durees))
+
+
+# la faim et la fin dans la même nuit (les deux ont été écrites à part : scripts/noire_faim.gd, scripts/noire_collet.gd) : à
+# l'acte 5, un collet amorcé passe avant le camp ; tenue, elle ne prend rien d'autre ; libérée, elle revient au camp et le met
+# en pièces ; partie pour de bon, le crépuscule ne la fait plus venir, et la partie gardée le retient
+func _la_noire_reunie() -> void:
+	print("15. La Noire : la faim et la fin, ensemble")
+	await jeu._commencer("foret")
+	await get_tree().process_frame
+	seed(20261119)
+	var j = jeu.joueur
+	var N = jeu.noire
+	var A = jeu.atelier
+	var W = jeu.monde
+	var RR = jeu.R
+	var Faim = load("res://scripts/noire_faim.gd")
+	jeu.climat.forcer("clair", 0.0, 99999.0)
+	jeu.graine = 4242
+	N.commencer()
+	var C = N.collet
+	var F = N.faim
+	# (une clairière : rien qui dépasse à 1 250 pixels, ni chose posée, ni bête, ni autre feu)
+	var camp := Vector2(260.0, 120.0)
+	_remettre(camp)
+	j.torche = 0.0
+	for o in W.autour(camp + Vector2(-300.0, 0.0), 1250.0):
+		if float(o.rayon) > 0.0 or str(o.genre) in ["buisson", "touffe", "brindille", "fleur", "cepe", "amanite", "herbe", "aquatique"]:
+			W.retirer(o)
+	for x in A.poses.duplicate():
+		if is_instance_valid(x) and x.position.distance_to(camp) < 1500.0:
+			A.poses.erase(x)
+			x.queue_free()
+	for b in get_tree().get_nodes_in_group("betes"):
+		_oter(b)
+	for f in jeu.feux.duplicate():
+		if is_instance_valid(f):
+			f.queue_free()
+	jeu.feux.clear()
+	var feu = _faim_feu(camp + Vector2(30.0, 0.0), 40.0)
+	var r: float = feu.rayon()
+	var D: float = RR.DUREE
+	var base: float = floorf(jeu.horloge / D) * D
+	var nuit_h: float = base + D * (1.0 - jeu.part_nuit) + 20.0
+	jeu.horloge = nuit_h
+	N.taniere = camp + Vector2(-1500.0, -900.0)
+	N.ou = N.taniere
+	# le collet, amorcé, sans odeur, à gauche du feu (d'où elle vient) ; la tente à droite, hors de la lumière, à sa portée
+	var collet = A._creer("collet", feu.position + Vector2(-420.0, 0.0), {"amorce": true, "odeur": false})
+	var tente = A._creer("tente", feu.position + Vector2(r + 170.0, -50.0), {})
+	var pose_juste: bool = not C._eclaire(collet) and not F.gardee(tente.position) and Faim.saccageable(tente) and not Faim.saccageable(collet) \
+		and tente.position.distance_to(feu.position) < RR.NOIRE_FAIM_PORTEE
+	_faim_nuit()
+	# --- l'appât d'abord : elle va au collet, pas à la tente ---
+	var vu := {"hume": false, "appat": false}
+	var prise_a: float = _faim_jusqu_a(func():
+		vu["hume"] = vu["hume"] or N.etat in Faim.ETATS
+		vu["appat"] = vu["appat"] or N.etat == "appat"
+		return N.etat == "prise", 60.0)
+	if not (pose_juste and prise_a >= 0.0 and not vu["hume"]):
+		print("    (posé juste %s ; prise à %.1f s ; %s ; elle : %s, à %d pixels du collet)" % [str(pose_juste), prise_a, str(vu), str(N.etat), int(N.ou.distance_to(collet.position))])
+	verif(pose_juste and int(N.acte) >= RR.NOIRE_FAIM and vu["appat"] and prise_a >= 0.0 and not vu["hume"] and not Faim.est_epave(tente) and N.au_collet(),
+		"à la nuit de la faim, un collet amorcé passe avant le camp : elle y va tout droit et s'y prend (%d s), la tente, hors de la lumière, n'a rien" % int(prise_a))
+	# --- tenue, puis libérée (personne ne la frappe) : elle revient au feu qui la tient, puis se tourne vers la tente ---
+	var tenue_sage := true
+	var libre_a: float = _faim_jusqu_a(func():
+		tenue_sage = tenue_sage and not (N.etat in Faim.ETATS) and not Faim.est_epave(tente)
+		return N.etat != "prise", RR.NOIRE_COLLET_TENUE + 6.0)
+	var rompu: bool = str(collet.etat.get("phase", "")) != ""
+	var saccage_a: float = _faim_jusqu_a(func(): return Faim.est_epave(tente), 150.0)
+	if not (libre_a >= 0.0 and saccage_a >= 0.0):
+		print("    (libre à %.1f s ; la tente en pièces à %.1f s ; elle : %s, %d choses prises, tenue par le feu depuis %.1f s, retirée %s)" % [
+			libre_a, saccage_a, str(N.etat), int(F.prises), float(F._tenue), str(N._retiree)])
+	verif(tenue_sage and libre_a >= 0.0 and rompu and int(N.cicatrices) == 0 and C.prise_cette_nuit and saccage_a >= 0.0 and int(F.prises) == 1 and not N.au_collet(),
+		"tenue %d s sans un coup, elle se libère (le collet est rompu, pas de cicatrice) ; le feu la tient, et %d s plus tard c'est la tente qu'elle met en pièces" % [
+		int(libre_a), int(saccage_a)])
+	# --- partie pour de bon : le crépuscule de la faim ne la fait plus venir ; la partie gardée le retient ---
+	N._disparaitre()
+	N.etat = "dort"
+	N.ou = N.taniere
+	F.tombee()
+	N.cicatrices = 3
+	N.partie = true
+	C.aube_dite = true
+	C.page_dite = true
+	var garde_fou = A._creer("epouvantail", feu.position + Vector2(r + 150.0, 120.0), {})
+	jeu.nuits = N.premiere_nuit(RR.NOIRE_FAIM)
+	jeu.horloge = base + D + D * (1.0 - jeu.part_nuit) - 12.0
+	var venue := false
+	_faim_joue(40.0, func(_t):
+		venue = venue or N.corps != null or F.soir or N.etat != "dort" or N.presente(), true)
+	var nuit_tombee: bool = jeu.jour_du_ciel() <= 0.0
+	var d: Dictionary = N.photo()
+	N.partie = false
+	N.cicatrices = 0
+	N.reprendre(d)
+	verif(nuit_tombee and not venue and not Faim.est_epave(garde_fou) and N.partie and int(N.cicatrices) == 3 and not F.soir and N.au_collet(),
+		"partie pour de bon : au crépuscule d'une nuit de la faim, puis la nuit tombée, elle ne vient pas (ni appel, ni corps, ni silence), l'épouvantail hors de la lumière n'a rien ; une partie reprise s'en souvient")
+	for x in [collet, tente, garde_fou]:
+		if is_instance_valid(x):
+			A.poses.erase(x)
+			x.queue_free()
+	jeu.feux.erase(feu)
+	feu.queue_free()
+	N.partie = false
+	N.cicatrices = 0
 
 
 func _conclure() -> void:
