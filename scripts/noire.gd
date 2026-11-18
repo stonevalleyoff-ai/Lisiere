@@ -71,8 +71,8 @@ const SAVOIRS := [
 	["longe", "Une bête attachée dans le noir est à elle : le filin même cède sous sa gueule. Dans la lumière d'un feu, elle n'y touche pas.",
 		"Le filin a cédé sous sa gueule. Dans le noir, rien ne tient une bête contre elle."],
 	# (deux : regles.gd, NOIRE_SACCAGES)
-	["assez", "Elle ne met pas tout en pièces : deux choses dans une nuit, pas davantage. Ensuite, elle ne fait plus que tourner.",
-		"Elle revient tourner autour du feu. Elle ne touchera plus à rien cette nuit."],
+	["assez", "Elle ne met pas tout en pièces : deux choses dans une nuit, pas davantage. Une bête laissée dans le noir, elle la prend quand même.",
+		"Elle revient tourner autour du feu. Elle a mis assez de choses en pièces pour cette nuit."],
 ]
 
 var jeu

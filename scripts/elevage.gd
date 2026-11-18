@@ -496,7 +496,10 @@ func maj(delta: float) -> void:
 			_affolee.erase(b)
 		if dans_le_noir and float(_noir[b]) > NOIR * 0.5 and not _dit.has("noir"):
 			_dit["noir"] = true
-			jeu.ui.message(("%s tremble dans le noir. Sa longe de filin la tiendra ; ramène-la quand même près d'un feu." if tient
+			# (qui a vu le filin céder sous la gueule de la Noire ne s'y fie plus : scripts/noire_faim.gd)
+			var sait: bool = jeu.noire != null and jeu.noire.su.has("longe")
+			jeu.ui.message((("%s tremble dans le noir. Sa longe de filin la tiendra, mais pas contre la Noire : ramène-la près d'un feu." if sait
+				else "%s tremble dans le noir. Sa longe de filin la tiendra ; ramène-la quand même près d'un feu.") if tient
 				else "%s tremble dans le noir. Ramène-la près d'un feu.") % str(b.nom), ROUGE)
 	# en selle : elle va où va la veilleuse ; ce qui l'affole la jette à terre
 	if monture != null:

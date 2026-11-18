@@ -48,8 +48,8 @@ static func secousse(c) -> Transform2D:
 	var t: float = c._tr
 	var a := sin(t * 19.0) * (0.55 + 0.45 * sin(t * 5.3 + 1.0))
 	var debout: bool = str(c.genre) in ["tente", "epouvantail", "recuperateur", "mangeoire", "hamac"]
-	var tire := cote * (1.2 + 2.6 * u) * (0.55 + 0.45 * a)
-	return Transform2D((0.035 + 0.05 * u) * (0.4 * cote + a) if debout else 0.0, Vector2(tire, -absf(a) * (1.4 if debout else 0.3)))
+	var tire := cote * (1.8 + 3.6 * u) * (0.55 + 0.45 * a)
+	return Transform2D((0.05 + 0.07 * u) * (0.4 * cote + a) if debout else 0.0, Vector2(tire, -absf(a) * (1.6 if debout else 0.3)))
 
 
 # au vent, un lambeau bat encore (la tente, le récupérateur, l'épouvantail)

@@ -3,7 +3,7 @@ extends Node
 # Une scène jouée toute seule, pour regarder le jeu et le filmer : un lieu, une heure, un feu, des bêtes de chaque sorte, et la
 # veilleuse qui fait ce qu'on fait en jouant (attendre au feu, marcher, couper un arbre, cueillir, chasser, se faire mordre).
 # Rien n'est vérifié ici (c'est le travail de l'essai) : on regarde.
-#   outils/godot.sh --path . -- --vitrine [--heure jour|soir|nuit] [--duree 12] [--lieu foret]
+#   outils/godot.sh --path . -- --vitrine [--heure jour|soir|nuit|aube] [--duree 12] [--lieu foret]
 #   outils/film.sh <dossier> -- --vitrine --heure nuit      (filmée image par image, et sa planche-contact)
 # Le temps qu'il fait, montré (scripts/climat.gd) : --temps pluie|orage|crue|neige|brouillard|canicule|incendie. La veilleuse
 # attend, tourne, puis va là où ça se passe (sous un arbre, dans l'eau, près de l'arbre frappé, contre les flammes).
@@ -88,6 +88,7 @@ var _meute := 0                # (--meute) combien de chasseurs, pour regarder l
 var _trace: FileAccess = null  # (--trace) où ils sont, cinq fois par seconde
 var _trace_t := 0.0
 var _planche: Array = []       # (--planche) ce qui y est posé ; avec --gros, la caméra va de l'un à l'autre, de tout près
+var _feu_tenu := -1.0          # (--noire saccage) le bois où l'on tient son feu, pour que le camp reste dans le noir (-1 : il brûle)
 
 
 func _ready() -> void:
@@ -128,6 +129,9 @@ func _lancer() -> void:
 			jeu.horloge = R.TRANSITION + 30.0
 		"soir":
 			jeu.horloge = soir - R.TRANSITION * 0.6
+		"aube":
+			# (le jour qui se lève : ce que la nuit a laissé)
+			jeu.horloge = R.DUREE + R.TRANSITION * 0.3
 		_:
 			jeu.horloge = soir + 12.0
 	var j = jeu.joueur
@@ -136,7 +140,7 @@ func _lancer() -> void:
 	j.inventaire["fibre"] = 12
 	j.inventaire["baies"] = 3
 	# (--sans-feu : la nuit sans feu de camp, pour regarder les chasseurs autour de la seule torche)
-	if heure != "jour" and not OS.get_cmdline_user_args().has("--sans-feu"):
+	if heure != "jour" and heure != "aube" and not OS.get_cmdline_user_args().has("--sans-feu"):
 		jeu.fabriquer("feu")
 		jeu.feux[0].ajouter(3)
 	# (--lance : elle a trouvé la lance ; --tir : elle a un lance-pierre et des galets, et tire toutes les secondes)
@@ -163,10 +167,10 @@ func _lancer() -> void:
 	var i_m := OS.get_cmdline_user_args().find("--meute")
 	if i_m >= 0 and i_m + 1 < OS.get_cmdline_user_args().size():
 		_meute = maxi(1, int(OS.get_cmdline_user_args()[i_m + 1]))
-	if heure != "jour" and quelle == "" and _meute > 0:
+	if heure != "jour" and heure != "aube" and quelle == "" and _meute > 0:
 		for i in _meute:
 			jeu._creer(F["chasseurs_nuit"][i % F["chasseurs_nuit"].size()], "chasseur", j.position + Vector2.from_angle(1.0 + i * 0.12) * (430.0 + 30.0 * i))
-	elif heure != "jour" and quelle == "":
+	elif heure != "jour" and heure != "aube" and quelle == "":
 		for i in 2:
 			jeu._creer(F["chasseurs_nuit"][i % F["chasseurs_nuit"].size()], "chasseur", j.position + Vector2.from_angle(i * PI + 1.0) * 300.0)
 	match quelle:
@@ -412,8 +416,15 @@ func _lancer() -> void:
 	if quelle == "saccage":
 		jeu.nuits = jeu.noire.premiere_nuit(R.NOIRE_FAIM)
 		jeu._etait_nuit = true
-		if not jeu.feux.is_empty():
-			jeu.feux[0].bois = 26.0
+		# (un feu bas, tenu tel quel : _process ; le camp, écarté de lui : hors de sa lumière)
+		_feu_tenu = 42.0
+		for s in jeu.atelier.poses:
+			if jeu.noire.faim.CHOSES.has(str(s.genre)) or str(s.genre) == "piquet":
+				s.position = j.position + (s.position - j.position) * 1.75
+		for b in jeu.elevage.betes:
+			if is_instance_valid(b) and not bool(b.suit_la):
+				b.maison = j.position + (b.maison - j.position - Vector2(18.0, 10.0)) * 1.75 + Vector2(18.0, 10.0)
+				b.position = b.maison
 		jeu.noire.mettre_en_scene(R.NOIRE_FAIM, 700.0, PI * 0.92)
 		jeu.noire.faim._tenue = R.NOIRE_FAIM_ATTENTE - 2.0
 		_plan = [[0.0, 1.0, "attendre"]]
@@ -747,6 +758,8 @@ func _process(delta: float) -> void:
 		if _regles.has(k):
 			j.set(k.trim_prefix("--"), float(_regles[k]))
 	var u := _t / duree
+	if _feu_tenu >= 0.0 and not jeu.feux.is_empty() and is_instance_valid(jeu.feux[0]):
+		jeu.feux[0].bois = _feu_tenu
 	# (--planche --gros : de tout près, chaque plante de la planche à son tour)
 	if not _planche.is_empty() and OS.get_cmdline_user_args().has("--gros"):
 		var o = _planche[clampi(int(u * _planche.size()), 0, _planche.size() - 1)]
@@ -881,6 +894,10 @@ func _process(delta: float) -> void:
 		_fait["carnet"] = true
 		for cle in ["appel", "empreintes", "silence", "yeux", "feu", "taniere"]:
 			jeu.noire.su[cle] = true
+		# (--carnet --tout : tout ce qu'on peut apprendre d'elle, jusqu'à la faim)
+		if OS.get_cmdline_user_args().has("--tout"):
+			for s in jeu.noire.SAVOIRS:
+				jeu.noire.su[str(s[0])] = true
 		jeu.noire.vue = true
 		jeu.noire.taniere_connue = true
 		# (et les bêtes croisées : une connue, une observée, les autres seulement croisées)

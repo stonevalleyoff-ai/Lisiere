@@ -59,6 +59,7 @@ var _place := Vector2.ZERO        # où elle se tient pour y mettre le museau
 var _cote := 1.0                  # de quel côté de la chose elle se tient (1 : à sa droite)
 var _sur_place := false           # elle y est : le temps du flair court
 var _hors := {}                   # ce qu'elle n'a pas pu atteindre, cette nuit (une rivière, une paroi en travers)
+var _feu = null                   # le feu qui la tenait quand elle a regardé le camp
 var _cadence := 0.0
 var _coups := 0
 var _a_retracer := false          # une partie reprise : ses empreintes sont à remettre autour des épaves de la dernière nuit
@@ -85,6 +86,7 @@ func tombee() -> void:
 	_attente = R.NOIRE_FAIM_ATTENTE
 	_vu = 0.0
 	_hors.clear()
+	_feu = null
 
 
 # le jour revient
@@ -154,6 +156,7 @@ func tenter(delta: float, feu) -> bool:
 	if _vu > 0.0:
 		return false
 	_vu = 0.5
+	_feu = feu
 	# (une bête attachée dans le noir passe avant toute chose : la viande d'abord)
 	if _tenue >= R.NOIRE_FAIM_BETE:
 		var b = _bete_a_prendre(feu)
@@ -257,10 +260,14 @@ func _bete_prenable(b) -> bool:
 	return b != null and is_instance_valid(b) and str(b.role) == "compagne" and float(b.pv) > 0.0 and b.tenue() and not gardee(b.position)
 
 
-# où elle se tient pour mettre le museau sur ce point : à côté de lui (on la voit de profil), du côté où elle est déjà ; de
-# l'autre si la lumière d'un feu y tombe. [la place, le côté] ; vide : nulle part (la lumière des deux côtés)
+# où elle se tient pour mettre le museau sur ce point : à côté de lui (on la voit de profil), du côté opposé au feu qui la
+# tient (la chose entre elle et lui : sa tête tournée vers la lumière, qui l'accroche, tout son corps dans le noir) ; si la
+# chose est au-dessus ou au-dessous du feu, du côté où elle est déjà ; et de l'autre côté si la lumière d'un feu tombe là.
+# [la place, le côté] ; vide : nulle part (la lumière des deux côtés)
 func _ou_se_tenir(p: Vector2) -> Array:
 	var cote := 1.0 if N.ou.x >= p.x else -1.0
+	if _feu != null and is_instance_valid(_feu) and absf(p.x - _feu.position.x) > 40.0:
+		cote = signf(p.x - _feu.position.x)
 	for k in 2:
 		var q := p + Vector2(cote * R.NOIRE_LARGEUR * MUSEAU, 5.0)
 		var libre := true

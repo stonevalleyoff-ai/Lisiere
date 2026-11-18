@@ -1255,6 +1255,9 @@ class Sac extends Feuille:
 
 	# (d'abord ce qu'on peut replier, sinon la première de ses affaires, sinon l'établi à faire)
 	func _par_defaut(cles: Array) -> String:
+		# (devant ce que la Noire a mis en pièces : c'est pour cela qu'on ouvre son sac)
+		if cles.has("reparer"):
+			return "reparer"
 		for c in cles:
 			if str(c).begins_with("obj:"):
 				return str(c)
