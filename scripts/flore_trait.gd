@@ -188,12 +188,12 @@ static func feuille(p, pa: Vector2, pb: Vector2, larg: float, c: Color, pli := 0
 
 
 # une feuille charnue (une plante grasse, un agave) : la même lance, peinte en volume (elle est épaisse : le jour la modèle),
-# cernée d'encre. Rend son axe (pour ses dents, son dard)
-static func feuille_charnue(p, pa: Vector2, pb: Vector2, larg: float, c: Color, pli := 0.0, ventre := 0.34, cerne := 0.7, m := 6, creux := 0.0) -> PackedVector2Array:
+# cernée d'encre. Rend son axe et ses deux bords (pour ses dents, son dard) : { axe, g, d }
+static func feuille_charnue(p, pa: Vector2, pb: Vector2, larg: float, c: Color, pli := 0.0, ventre := 0.34, cerne := 0.7, m := 6, creux := 0.0) -> Dictionary:
 	var d := pb - pa
 	var axe := PackedVector2Array()
 	if d.length_squared() < 0.01:
-		return axe
+		return {"axe": axe, "g": axe, "d": axe}
 	var nrm := d.orthogonal().normalized()
 	var e := log(0.5) / log(clampf(ventre, 0.08, 0.92))
 	var g := PackedVector2Array()
@@ -226,7 +226,16 @@ static func feuille_charnue(p, pa: Vector2, pb: Vector2, larg: float, c: Color, 
 		p.bande(ge, de, ENCRE)
 	bande_volume(p, g, axe, c, Pinceau.DOME, uvg, uva)
 	bande_volume(p, axe, dr, c, Pinceau.DOME, uva2, uvd)
-	return axe
+	return {"axe": axe, "g": g, "d": dr}
+
+
+# un polygone, un peu agrandi depuis son centre (son liseré d'encre, dessous)
+static func grossi(poly: PackedVector2Array, centre: Vector2, de: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for q in poly:
+		var d := q - centre
+		out.append(q + d.normalized() * de)
+	return out
 
 
 # --- l'encre ---

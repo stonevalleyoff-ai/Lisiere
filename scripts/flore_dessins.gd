@@ -14,6 +14,9 @@ const P := preload("res://scripts/palette.gd")
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
 const T := preload("res://scripts/flore_trait.gd")
 const Arbres := preload("res://scripts/flore_arbres.gd")
+const Sol := preload("res://scripts/flore_sol.gd")
+# ce que le vent ne plie pas : les plantes grasses, les coussins, les lichens, les tapis
+const RAIDES := ["cactus", "agave", "succulente", "caillou", "mousse", "lichen", "lichen_croute", "lichen_rennes", "coussin"]
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
 const R_BAIES := preload("res://scripts/regles.gd").BAIES_PAR_BUISSON
 
@@ -50,6 +53,7 @@ static func regler(o) -> void:
 		"lentille", "mousse", "lichen", "lichen_croute", "caillou":
 			# (un tapis au ras du sol, une nappe sur l'eau : rien à cueillir)
 			o.plein = 0
+	o.raide = RAIDES.has(str(o.forme))
 	if str(o.genre) == "fleur":
 		# (une fleur qui n'est pas en fleurs n'a rien à donner)
 		o.plein = 1 if o.en_fleurs else 0
@@ -63,6 +67,8 @@ static func mesurer(o, r: RandomNumberGenerator) -> void:
 		"arbre":
 			Arbres.mesurer(o, r, f)
 		"touffe":
+			if Sol.mesurer(o, r, f):
+				return
 			match f:
 				"cactus":
 					o._ry = r.randf_range(46.0, 58.0)
@@ -136,6 +142,9 @@ static func ombres(o):
 		"cepe", "amanite":
 			return [[Vector2(0.5, 1), Vector2(6.0, 2.2), 0.4, 0.0, 0.0]]
 		"touffe":
+			var du_sol = Sol.ombres(o)
+			if du_sol != null:
+				return du_sol
 			match f:
 				"cactus":
 					return [[Vector2(1, 1), Vector2(9.0, 3.5), 0.45, 0.0, 0.0], [Vector2(2, 2), Vector2(o._rx * 1.4, o._rx * 0.6), 0.25, 1.0, o.hauteur * 0.8]]
@@ -437,6 +446,8 @@ static func dessiner(o, p, r: RandomNumberGenerator) -> bool:
 				_:
 					return false
 		"touffe":
+			if Sol.dessiner(o, p, r, f):
+				return true
 			match f:
 				"cereale":
 					_cereale(o, p, r, false)
