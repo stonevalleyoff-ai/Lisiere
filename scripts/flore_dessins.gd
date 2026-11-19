@@ -12,6 +12,12 @@ extends RefCounted
 
 const P := preload("res://scripts/palette.gd")
 const Pinceau := preload("res://scripts/decor_pinceau.gd")
+const T := preload("res://scripts/flore_trait.gd")
+const Arbres := preload("res://scripts/flore_arbres.gd")
+const Sol := preload("res://scripts/flore_sol.gd")
+const Buissons := preload("res://scripts/flore_buissons.gd")
+# ce que le vent ne plie pas : les plantes grasses, les coussins, les lichens, les tapis
+const RAIDES := ["cactus", "agave", "succulente", "caillou", "mousse", "lichen", "lichen_croute", "lichen_rennes", "coussin"]
 const ENCRE := Color(0.086, 0.075, 0.059, 0.92)
 const R_BAIES := preload("res://scripts/regles.gd").BAIES_PAR_BUISSON
 
@@ -32,31 +38,9 @@ static func sait(forme: String) -> bool:
 static func regler(o) -> void:
 	if bool(o.planche):
 		_planche(o)
+	# (les arbres : leur tronc, leur écorce ; scripts/flore_arbres.gd)
+	Arbres.regler(o)
 	match str(o.forme):
-		"pionnier":
-			o.epaisseur = 0.72
-			# (un bouleau : l'écorce blanche)
-			o.ecorce_teinte = P.PAPIER.lerp(P.IVOIRE, 0.45).darkened(0.04)
-		"geant", "emergent":
-			o.epaisseur = 1.35
-		"figuier":
-			o.epaisseur = 1.15
-			o.ecorce_teinte = P.CENDRE.lerp(P.IVOIRE, 0.42)
-		"bouteille":
-			o.epaisseur = 2.2
-			o.ecorce_teinte = P.CENDRE.lerp(P.IVOIRE, 0.38).lerp(P.TERRE, 0.2)
-			o.rayon = 15.0
-		"sous_bois":
-			o.epaisseur = 0.8
-		"palmier":
-			o.epaisseur = 0.68
-			o.ecorce_teinte = P.TERRE.lerp(P.IVOIRE, 0.32)
-		"fougere_arbre":
-			o.epaisseur = 0.74
-			o.ecorce_teinte = P.ENCRE_DOUCE.lerp(P.TERRE, 0.45)
-		"paletuvier":
-			o.epaisseur = 0.85
-			o.ecorce_teinte = P.TERRE.lerp(P.CENDRE, 0.4)
 		"cactus":
 			o.plein = 2
 			o.rayon = 7.0
@@ -70,6 +54,7 @@ static func regler(o) -> void:
 		"lentille", "mousse", "lichen", "lichen_croute", "caillou":
 			# (un tapis au ras du sol, une nappe sur l'eau : rien à cueillir)
 			o.plein = 0
+	o.raide = RAIDES.has(str(o.forme))
 	if str(o.genre) == "fleur":
 		# (une fleur qui n'est pas en fleurs n'a rien à donner)
 		o.plein = 1 if o.en_fleurs else 0
@@ -81,53 +66,13 @@ static func mesurer(o, r: RandomNumberGenerator) -> void:
 	var f := str(o.forme)
 	match str(o.genre):
 		"arbre":
-			_mesurer_arbre(o, r, f)
+			Arbres.mesurer(o, r, f)
 		"touffe":
-			match f:
-				"cactus":
-					o._ry = r.randf_range(46.0, 58.0)
-					o._rx = r.randf_range(6.5, 8.0)
-					o.hauteur = o._ry
-				"agave":
-					o._rx = r.randf_range(16.0, 20.0)
-					o._ry = r.randf_range(15.0, 19.0)
-					o.hauteur = o._ry
-				"bambou":
-					o._ry = r.randf_range(56.0, 74.0)
-					o.hauteur = o._ry
-				"papyrus":
-					o._ry = r.randf_range(32.0, 40.0)
-					o.hauteur = o._ry
-				"cereale", "riz":
-					o._ry = r.randf_range(19.0, 25.0)
-					o.hauteur = o._ry
-				"jonc":
-					o._ry = r.randf_range(19.0, 25.0)
-					o.hauteur = o._ry
-				"fougere":
-					o._ry = r.randf_range(19.0, 24.0)
-					o.hauteur = o._ry
-				"coussin", "lichen_rennes", "succulente", "legumineuse":
-					o._rx = r.randf_range(8.0, 11.5)
-					o._ry = r.randf_range(6.0, 9.0)
-					o.hauteur = o._ry
-				"mousse", "lichen", "lichen_croute", "caillou":
-					o._rx = r.randf_range(8.0, 13.0)
-					o._ry = o._rx * r.randf_range(0.42, 0.55)
-					o.hauteur = 2.0
+			# (les plantes du sol : scripts/flore_sol.gd ; l'herbe et la grande herbe gardent la mesure des touffes)
+			Sol.mesurer(o, r, f)
 		"buisson":
-			match f:
-				"bruyere", "aromatique":
-					o._rx = r.randf_range(11.0, 14.0)
-					o._ry = r.randf_range(9.0, 12.0)
-					o.hauteur = o._ry
-				"ronce":
-					o._rx = r.randf_range(15.0, 19.0)
-					o._ry = r.randf_range(15.0, 19.0)
-					o.hauteur = o._ry
-				"liane":
-					o._ry = r.randf_range(26.0, 32.0)
-					o.hauteur = o._ry
+			# (scripts/flore_buissons.gd ; le buisson et l'arbuste à baies gardent la mesure des buissons)
+			Buissons.mesurer(o, r, f)
 		"fleur":
 			o._rx = r.randf_range(13.0, 19.0)
 			o._ry = o._rx * r.randf_range(0.42, 0.55)
@@ -142,79 +87,13 @@ static func mesurer(o, r: RandomNumberGenerator) -> void:
 			o.hauteur = o._ry
 
 
-static func _mesurer_arbre(o, r: RandomNumberGenerator, f: String) -> void:
-	var ht := 0.0
-	var rx := 0.0
-	var ry := 0.0
-	match f:
-		"pionnier":
-			ht = r.randf_range(30.0, 38.0)
-			rx = r.randf_range(17.0, 21.0)
-			ry = rx * r.randf_range(1.05, 1.2)
-		"fruitier":
-			ht = r.randf_range(16.0, 21.0)
-			rx = r.randf_range(22.0, 27.0)
-			ry = rx * r.randf_range(0.82, 0.9)
-		"geant":
-			ht = r.randf_range(30.0, 36.0)
-			rx = r.randf_range(33.0, 38.0)
-			ry = rx * r.randf_range(0.78, 0.86)
-		"emergent":
-			ht = r.randf_range(56.0, 66.0)
-			rx = r.randf_range(34.0, 40.0)
-			ry = rx * r.randf_range(0.38, 0.46)
-		"figuier":
-			ht = r.randf_range(20.0, 25.0)
-			rx = r.randf_range(34.0, 40.0)
-			ry = rx * r.randf_range(0.62, 0.7)
-		"sous_bois":
-			ht = r.randf_range(13.0, 17.0)
-			rx = r.randf_range(16.0, 20.0)
-			ry = rx * r.randf_range(0.85, 0.95)
-		"bouteille":
-			ht = r.randf_range(30.0, 36.0)
-			rx = r.randf_range(27.0, 32.0)
-			ry = rx * r.randf_range(0.42, 0.5)
-		"paletuvier":
-			ht = r.randf_range(22.0, 27.0)
-			rx = r.randf_range(26.0, 31.0)
-			ry = rx * r.randf_range(0.68, 0.76)
-		"palmier", "fougere_arbre":
-			# (un fût, et les palmes en haut : le centre du feuillage est au sommet du fût)
-			var palmier := f == "palmier"
-			ht = r.randf_range(54.0, 66.0) if palmier else r.randf_range(34.0, 42.0)
-			rx = r.randf_range(36.0, 42.0) if palmier else r.randf_range(29.0, 34.0)
-			ry = r.randf_range(15.0, 18.0) if palmier else r.randf_range(13.0, 16.0)
-			o._ht = ht
-			o._rx = rx
-			o._ry = ry
-			o._penche = r.randf_range(0.1, 0.2) * (1.0 if o.graine % 2 == 0 else -1.0)
-			o._cc = Vector2(_courbe_palme(o, -ht), -ht)
-			o.hauteur = ht + ry
-			o.couronne_rect = Rect2(o._cc - Vector2(rx, ry * 0.9), Vector2(rx * 2.0, ry * 2.1))
-			return
-		_:
-			return
-	o._ht = ht
-	o._rx = rx
-	o._ry = ry
-	o._penche = r.randf_range(-0.06, 0.06)
-	o._cc = Vector2(o._penche * (ht + ry * 0.8) + r.randf_range(-2.0, 2.0), -(ht + ry * 0.8))
-	o.hauteur = -o._cc.y + ry
-	o.couronne_rect = Rect2(o._cc - Vector2(rx, ry), Vector2(rx, ry) * 2.0)
-
-
-# l'axe d'un fût de palmier, qui se courbe vers le haut (à la hauteur y, négative)
-static func _courbe_palme(o, y: float) -> float:
-	var u := clampf((-y - 8.5) / maxf(1.0, o._ht - 8.5), 0.0, 1.0)
-	return o._axe(-8.5) + o._penche * 70.0 * u * u
-
-
 # --- les ombres d'une forme à elle ([] : aucune ; null : celles de son genre) ---
 
 static func ombres(o):
 	var f := str(o.forme)
 	match str(o.genre):
+		"arbre":
+			return Arbres.ombres(o)
 		"fleur":
 			return [[Vector2(0, 1), Vector2(o._rx * 0.8, 3.0), 0.18, 0.0, 0.0]]
 		"aquatique":
@@ -222,300 +101,45 @@ static func ombres(o):
 		"cepe", "amanite":
 			return [[Vector2(0.5, 1), Vector2(6.0, 2.2), 0.4, 0.0, 0.0]]
 		"touffe":
-			match f:
-				"cactus":
-					return [[Vector2(1, 1), Vector2(9.0, 3.5), 0.45, 0.0, 0.0], [Vector2(2, 2), Vector2(o._rx * 1.4, o._rx * 0.6), 0.25, 1.0, o.hauteur * 0.8]]
-				"bambou", "papyrus":
-					return [[Vector2(0, 1), Vector2(10.0, 3.5), 0.35, 0.0, 0.0], [Vector2(2, 2), Vector2(9.0, 4.0), 0.2, 1.0, o.hauteur * 0.6]]
-				"agave", "coussin", "succulente", "lichen_rennes":
-					return [[Vector2(0.5, 1), Vector2(o._rx * 1.05, o._rx * 0.32), 0.32, 0.0, 0.0]]
-				"mousse", "lichen", "lichen_croute", "caillou":
-					return []
+			return Sol.ombres(o)
 	return null
 
 
-# --- les arbres : leur pied ---
+# --- les arbres (scripts/flore_arbres.gd) : ce qu'objet.gd demande de leur pied et de leur couronne ---
 
-static func pied(o, p, r: RandomNumberGenerator) -> bool:
-	match str(o.forme):
-		"paletuvier":
-			_pied_paletuvier(o, p, r)
-			return true
-	return false
+# là où l'on bute, d'après le tronc (après la mesure et l'échelle)
+static func ajuster(o) -> void:
+	Arbres.ajuster(o)
 
 
-# le palétuvier : ses racines en échasses, arquées, qui le tiennent au-dessus de la vase
-static func _pied_paletuvier(o, p, r: RandomNumberGenerator) -> void:
-	var c: Color = o._ecorce()
-	p.eventail(Vector2(0, 1.5), 20.0, 5.0, Color(P.ENCRE_DOUCE.lerp(P.TERRE, 0.4), 0.55), Color(P.ENCRE_DOUCE, 0.0), 14)
-	var n := r.randi_range(5, 7)
-	var racines := []
-	for i in n:
-		var cote := -1.0 if i % 2 == 0 else 1.0
-		var depart := Vector2(o._axe(-9.0) + cote * r.randf_range(0.5, 2.5), -r.randf_range(7.0, 12.0))
-		var bout := Vector2(cote * r.randf_range(7.0, 19.0), r.randf_range(-0.5, 2.5))
-		var haut := depart + Vector2(cote * r.randf_range(3.0, 7.0), -r.randf_range(3.0, 6.0))
-		racines.append([depart, haut, bout, r.randf()])
-	racines.sort_custom(func(a, b): return a[3] < b[3])
-	for x in racines:
-		var ligne := PackedVector2Array()
-		for k in 7:
-			var t := k / 6.0
-			ligne.append(x[0].lerp(x[1], t).lerp(x[1].lerp(x[2], t), t))
-		p.tracer(ligne, 2.9, ENCRE, false, PackedFloat32Array([3.0, 3.0, 2.8, 2.6, 2.4, 2.2, 2.0]))
-		p.tracer(ligne, 1.7, c.lightened(0.05 + 0.1 * x[3]), false, PackedFloat32Array([1.8, 1.8, 1.6, 1.5, 1.4, 1.2, 1.0]))
-	o._tronc(p, -6.0, -9.0, c)
+# les racines d'une forme à elle (faux : celles de tous les arbres)
+static func racines(o, p, r: RandomNumberGenerator, souche: bool) -> bool:
+	return Arbres.racines(o, p, r, souche)
 
 
-# --- les arbres : leur haut (la couronne, sur son propre nœud) ---
+# d'où part le bas du tronc (0,5 : du sol ; plus haut : il est sur des échasses)
+static func pied_du_tronc(o) -> float:
+	return Arbres.pied_du_tronc(o)
 
+
+# ce que l'écorce porte au pied
+static func ecorce_du_pied(o, p, r: RandomNumberGenerator) -> void:
+	Arbres.ecorce_du_pied(o, p, r)
+
+
+# le haut de l'arbre (la couronne, sur son propre nœud) ; faux : le feuillu d'objet.gd
 static func couronne(o, p, r: RandomNumberGenerator) -> bool:
-	var f := str(o.forme)
-	var cc: Vector2 = o._cc
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var t: Color = o.teinte.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.18))
-	match f:
-		"pionnier":
-			# (un bouleau : un fût blanc taché d'encre, un feuillage léger en deux ou trois touffes, plus clair)
-			var haut := cc.y + ry * 0.5
-			var lobes := [[cc + Vector2(0, ry * 0.2), rx * 0.85, ry * 0.62], [cc + Vector2(-rx * 0.3, -ry * 0.35), rx * 0.62, ry * 0.5]]
-			if r.randf() < 0.6:
-				lobes.append([cc + Vector2(rx * 0.42, -ry * 0.05), rx * 0.55, ry * 0.45])
-			_houppier(o, p, r, lobes, haut, t.lightened(0.1).lerp(P.BRAISE_COEUR, 0.06))
-			_lenticelles(o, p, r, -9.0, haut + 4.0)
-		"fruitier":
-			# (ses fruits, ronds et luisants, sont posés sur le feuillage après lui : fruits_couronne)
-			_houppier(o, p, r, [[cc, rx, ry]], cc.y + ry * 0.35, t)
-		"geant":
-			var lobes := [[cc + Vector2(-rx * 0.42, ry * 0.18), rx * 0.62, ry * 0.62], [cc + Vector2(rx * 0.44, ry * 0.22), rx * 0.6, ry * 0.6],
-				[cc + Vector2(r.randf_range(-3.0, 3.0), -ry * 0.32), rx * 0.66, ry * 0.62]]
-			_houppier(o, p, r, lobes, cc.y + ry * 0.55, t.lerp(P.FEUILLE_SOMBRE, 0.12))
-		"emergent":
-			# (au-dessus des autres : un long fût nu, une ombrelle plate)
-			var lobes := [[cc + Vector2(-rx * 0.45, 0), rx * 0.6, ry * 0.85], [cc + Vector2(rx * 0.45, ry * 0.05), rx * 0.58, ry * 0.8],
-				[cc + Vector2(0, -ry * 0.3), rx * 0.55, ry * 0.75]]
-			_houppier(o, p, r, lobes, cc.y + ry * 0.5, t)
-		"figuier":
-			var lobes := [[cc + Vector2(-rx * 0.5, ry * 0.12), rx * 0.58, ry * 0.75], [cc + Vector2(rx * 0.5, ry * 0.15), rx * 0.56, ry * 0.72],
-				[cc + Vector2(0, -ry * 0.2), rx * 0.62, ry * 0.8]]
-			# (ses racines aériennes, qui tombent du feuillage jusqu'au sol)
-			var corde := P.CENDRE.lerp(P.IVOIRE, 0.35)
-			for i in r.randi_range(4, 6):
-				var x := cc.x + r.randf_range(-0.8, 0.8) * rx
-				var y0 := cc.y + ry * r.randf_range(0.3, 0.6)
-				var ligne := PackedVector2Array([Vector2(x, y0), Vector2(x + r.randf_range(-1.5, 1.5), lerpf(y0, 0.0, 0.5)), Vector2(x + r.randf_range(-2.5, 2.5), r.randf_range(-1.0, 1.5))])
-				p.tracer(ligne, 1.6, ENCRE, false)
-				p.tracer(ligne, 0.8, corde, false)
-			_houppier(o, p, r, lobes, cc.y + ry * 0.4, t)
-		"sous_bois":
-			_houppier(o, p, r, [[cc, rx, ry]], cc.y + ry * 0.35, t.lerp(P.FEUILLE_SOMBRE, 0.3))
-		"paletuvier":
-			var lobes := [[cc + Vector2(-rx * 0.38, ry * 0.1), rx * 0.66, ry * 0.7], [cc + Vector2(rx * 0.4, ry * 0.12), rx * 0.64, ry * 0.68],
-				[cc + Vector2(0, -ry * 0.25), rx * 0.6, ry * 0.65]]
-			_houppier(o, p, r, lobes, cc.y + ry * 0.45, t.lerp(P.FEUILLE_SOMBRE, 0.15))
-		"bouteille":
-			_baobab(o, p, r, t)
-		"palmier":
-			_palmier(o, p, r, t, false)
-		"fougere_arbre":
-			_palmier(o, p, r, t, true)
-		_:
-			return false
-	return true
+	return Arbres.couronne(o, p, r)
 
 
-# un feuillu en plusieurs touffes : le tronc jusqu'à haut, une branche vers chaque touffe, puis les touffes (celles du fond
-# d'abord), chacune bordée d'encre, des arcs d'ombre en bas à droite
-static func _houppier(o, p, r: RandomNumberGenerator, lobes: Array, haut: float, teinte: Color) -> void:
-	var c: Color = o._ecorce()
-	o._tronc(p, -8.5, haut, c)
-	for i in r.randi_range(2, 3):
-		var y := r.randf_range(-12.0, haut + 6.0)
-		var x: float = o._axe(y) + r.randf_range(-1.5, 2.0)
-		p.tracer(PackedVector2Array([Vector2(x, y), Vector2(x + 0.3, y - r.randf_range(4.0, 7.0))]), 0.7, Color(ENCRE, 0.45))
-	var depart := Vector2(o._axe(haut + 3.0), haut + 3.0)
-	var ep: float = o.epaisseur
-	for l in lobes:
-		var b: Vector2 = l[0] + Vector2(0, float(l[2]) * 0.25)
-		if b.distance_to(depart) < 4.0:
-			continue
-		var m := (depart + b) * 0.5 + Vector2((b.x - depart.x) * -0.12, 2.0)
-		p.tracer(PackedVector2Array([depart, m, b]), 3.4 * ep, ENCRE)
-		p.tracer(PackedVector2Array([depart, m, b]), 2.2 * ep, c)
-	var bas := -INF
-	for l in lobes:
-		bas = maxf(bas, l[0].y + float(l[2]))
-	p.eventail(Vector2(o._axe(bas), bas - 2.0), 6.5 * ep, 5.0, Color(P.ENCRE, 0.5), Color(P.ENCRE, 0.0), 12)
-	var tries := lobes.duplicate()
-	tries.sort_custom(func(a, b): return a[0].y < b[0].y)
-	for l in tries:
-		var q: Vector2 = l[0]
-		var lx: float = l[1]
-		var ly: float = l[2]
-		var poly: PackedVector2Array = o.festons(q, lx, ly, r.randi_range(6, 8), 0.17, r, 48, 0.12)
-		var tl := teinte.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.12)).lightened(r.randf_range(0.0, 0.07))
-		p.aplat(poly, tl, Pinceau.FEUILLAGE, q, Vector2(lx, ly) * 1.08)
-		p.contour(poly, 1.4, ENCRE, r, 4)
-		for k in r.randi_range(2, 3):
-			var a0 := q + Vector2(r.randf_range(-0.05, 0.7) * lx, r.randf_range(0.0, 0.65) * ly)
-			var rr := r.randf_range(4.5, 7.0)
-			var arc := PackedVector2Array()
-			var d := r.randf_range(-0.2, 0.4)
-			for j in 6:
-				arc.append(a0 + Vector2(cos(d + j * 0.32), sin(d + j * 0.32) * 0.9) * rr)
-			p.tracer(arc, 0.85, Color(ENCRE, 0.55))
+# ce que les caractères d'Orvane ajoutent à une couronne (lobes : [[centre, rx, ry]…])
+static func caracteres_de_couronne(o, p, lobes: Array, t: Color) -> void:
+	Arbres.caracteres_de_couronne(o, p, lobes, t)
 
 
-# les taches d'encre d'un fût de bouleau, en travers
-static func _lenticelles(o, p, r: RandomNumberGenerator, y0: float, y1: float) -> void:
-	var y := y0 - r.randf_range(1.0, 3.0)
-	while y > y1:
-		var w: float = o._demi_largeur(y)
-		var x: float = o._axe(y)
-		var a := x - w * r.randf_range(0.2, 0.9)
-		var b := a + w * r.randf_range(0.5, 1.1)
-		p.tracer(PackedVector2Array([Vector2(a, y), Vector2(b, y + r.randf_range(-0.4, 0.4))]), r.randf_range(0.8, 1.4), Color(ENCRE, 0.8))
-		y -= r.randf_range(3.0, 6.0)
-
-
-# un baobab : un fût en bouteille, ventru, lisse et gris ; quelques grosses branches courtes, un feuillage maigre
-static func _baobab(o, p, r: RandomNumberGenerator, t: Color) -> void:
-	var c: Color = o._ecorce()
-	var haut: float = o._cc.y + o._ry * 0.4
-	var gauche := PackedVector2Array()
-	var droite := PackedVector2Array()
-	var n := 9
-	for i in n + 1:
-		var u := float(i) / n
-		var y := lerpf(-8.5, haut, u)
-		var w: float = o._demi_largeur(-8.5) * (1.0 + 0.28 * sin(u * PI * 0.9)) * lerpf(1.0, 0.55, smoothstep(0.65, 1.0, u))
-		gauche.append(Vector2(o._axe(y) - w, y))
-		droite.append(Vector2(o._axe(y) + w, y))
-	var poly := PackedVector2Array(gauche)
-	var rev := droite.duplicate()
-	rev.reverse()
-	poly.append_array(rev)
-	var milieu := Vector2(o._axe((haut - 8.5) * 0.5), (haut - 8.5) * 0.5)
-	p.aplat(poly, c, Pinceau.ECORCE, milieu, Vector2(o._demi_largeur(-8.5) * 1.3, absf(haut) * 0.6))
-	p.tracer(gauche, 1.2, ENCRE, false)
-	p.tracer(droite, 1.8, ENCRE, false)
-	# (des plis verticaux sur l'écorce lisse)
-	for i in 3:
-		var x0: float = milieu.x + r.randf_range(-0.5, 0.6) * o._demi_largeur(-8.5)
-		p.tracer(PackedVector2Array([Vector2(x0, -10.0), Vector2(x0 + r.randf_range(-1.0, 1.0), lerpf(-10.0, haut, 0.6))]), 0.7, Color(ENCRE, 0.4))
-	var sommet := Vector2(o._axe(haut), haut)
-	var touffes := []
-	for i in r.randi_range(4, 6):
-		var a := lerpf(-2.7, -0.45, (i + r.randf_range(0.2, 0.8)) / 5.0)
-		var bout: Vector2 = sommet + Vector2(cos(a) * o._rx * r.randf_range(0.6, 0.95), sin(a) * o._ry * r.randf_range(0.8, 1.4))
-		var mil := sommet.lerp(bout, 0.5) + Vector2(0, -2.0)
-		p.tracer(PackedVector2Array([sommet, mil, bout]), 4.2, ENCRE, true, PackedFloat32Array([5.0, 3.6, 1.6]))
-		p.tracer(PackedVector2Array([sommet, mil, bout]), 2.8, c, true, PackedFloat32Array([3.6, 2.4, 0.8]))
-		touffes.append(bout)
-	# (ses fruits pendent au bout de ces branches, sous leurs touffes : fruits_couronne les y retrouve)
-	o.set_meta("bouts", touffes)
-	for q in touffes:
-		var poly2: PackedVector2Array = o.festons(q + Vector2(0, -2.0), r.randf_range(9.0, 12.0), r.randf_range(5.5, 7.5), 6, 0.25, r, 26, 0.1)
-		p.aplat(poly2, t, Pinceau.FEUILLAGE, q + Vector2(0, -2.0), Vector2(12.0, 7.5))
-		p.contour(poly2, 1.0, ENCRE, r, 2)
-
-
-# un palmier (ou une fougère arborescente) : le fût qui se courbe, annelé (ou hérissé de fibres sombres), puis ses palmes qui
-# retombent en bouquet ; la fougère a ses folioles plus fines, et des crosses au cœur
-static func _palmier(o, p, r: RandomNumberGenerator, t: Color, fougere: bool) -> void:
-	var c: Color = o._ecorce()
-	var ht: float = o._ht
-	var gauche := PackedVector2Array()
-	var droite := PackedVector2Array()
-	var axe := PackedVector2Array()
-	var n := 10
-	for i in n + 1:
-		var y := lerpf(-8.5, -ht, float(i) / n)
-		var x := _courbe_palme(o, y)
-		var w: float = o._demi_largeur(-8.5) * lerpf(1.0, 0.82, float(i) / n)
-		axe.append(Vector2(x, y))
-		gauche.append(Vector2(x - w, y))
-		droite.append(Vector2(x + w, y))
-	var poly := PackedVector2Array(gauche)
-	var rev := droite.duplicate()
-	rev.reverse()
-	poly.append_array(rev)
-	var cols := PackedColorArray()
-	var uvs := PackedVector2Array()
-	for i in poly.size():
-		cols.append(c)
-		uvs.append(Vector2(10.0 if i <= n else 12.0, 11.0))
-	p.aplat_libre(poly, cols, uvs)
-	p.tracer(gauche, 1.0, ENCRE, false)
-	p.tracer(droite, 1.6, ENCRE, false)
-	# (les anneaux des palmes tombées ; les fibres d'une fougère)
-	for i in range(1, n):
-		var q := axe[i]
-		var w := gauche[i].distance_to(axe[i])
-		if fougere:
-			for k in 2:
-				var x0 := q.x + r.randf_range(-w, w) * 0.8
-				p.tracer(PackedVector2Array([Vector2(x0, q.y), Vector2(x0 + r.randf_range(-1.5, 1.5), q.y + 2.5)]), 0.8, Color(ENCRE, 0.65))
-		else:
-			p.tracer(PackedVector2Array([q + Vector2(-w, 0.6), q + Vector2(0, 1.4), q + Vector2(w, 0.4)]), 0.8, Color(ENCRE, 0.6), false)
-	var cc: Vector2 = o._cc
-	var rx: float = o._rx
-	var ry: float = o._ry
-	# les palmes : de celles du fond (vers le haut) à celles qui viennent vers nous, en tombant
-	var palmes := []
-	var np := r.randi_range(8, 10) if fougere else r.randi_range(7, 9)
-	for i in np:
-		var a := lerpf(-PI + 0.15, -0.15, float(i) / (np - 1)) + r.randf_range(-0.12, 0.12)
-		palmes.append([a, r.randf_range(0.85, 1.05)])
-	palmes.append([r.randf_range(0.35, 0.6), r.randf_range(0.6, 0.75)])
-	palmes.append([PI - r.randf_range(0.35, 0.6), r.randf_range(0.6, 0.75)])
-	palmes.sort_custom(func(a, b): return sin(a[0]) < sin(b[0]))
-	var m := 11 if fougere else 9
-	for pa in palmes:
-		var a: float = pa[0]
-		var l: float = rx * float(pa[1])
-		var d := Vector2(cos(a), sin(a) * 0.55)
-		var tombe := ry * (0.9 if fougere else 0.75)
-		var axe_p := PackedVector2Array()
-		for k in m + 1:
-			var u := float(k) / m
-			# (elle monte un peu, puis retombe sous son poids)
-			axe_p.append(cc + d * l * u + Vector2(0, -ry * 0.55 * sin(u * PI * 0.7) + tombe * u * u))
-		for passe in 2:
-			var e := 0.6 if passe == 0 else 0.0
-			var g := PackedVector2Array()
-			var dr := PackedVector2Array()
-			for k in m + 1:
-				var u := float(k) / m
-				var tan_ := (axe_p[mini(k + 1, m)] - axe_p[maxi(k - 1, 0)]).normalized()
-				var nrm := tan_.orthogonal()
-				var w := (5.2 if fougere else 6.2) * sin(PI * minf(1.0, u * 1.15 + 0.06)) * (1.0 - u * 0.55)
-				# (des folioles : la palme dentée, plus finement pour une fougère)
-				w *= (1.0 if k % 2 == 0 else (0.45 if fougere else 0.62))
-				w += e
-				var avance := tan_ * (1.4 if k % 2 == 0 else 0.0)
-				g.append(axe_p[k] + nrm * w + avance)
-				dr.append(axe_p[k] - nrm * w + avance)
-			if passe == 0:
-				p.bande(g, dr, Color(ENCRE, 0.75))
-			else:
-				var face := t.lerp(t.lightened(0.22), clampf(-sin(a), 0.0, 1.0) * 0.6 + 0.15)
-				p.bande(g, axe_p, face)
-				p.bande(axe_p, dr, face.darkened(0.22))
-				p.tracer(axe_p, 0.7, face.darkened(0.45), false, PackedFloat32Array(), false)
-	if fougere:
-		# (des crosses qui se déroulent, au cœur)
-		for i in 2:
-			var q := cc + Vector2((i - 0.5) * 5.0, -2.0)
-			var spi := PackedVector2Array()
-			for k in 12:
-				var u := k / 11.0
-				var ang := -PI * 0.5 + u * TAU * 1.1 * (1.0 if i == 0 else -1.0)
-				spi.append(q + Vector2(0, -6.0 * (1.0 - u)) + Vector2(cos(ang), sin(ang)) * (2.6 * u))
-			p.tracer(spi, 1.6, ENCRE, false)
-			p.tracer(spi, 0.9, t.lightened(0.3), false)
-	# (un palmier : ses noix, en grappe sous les palmes, sont dessinées après elles : fruits_couronne)
+# le bois nu d'un arbre en feu, roussi (faux : les branches de tous les arbres)
+static func bois_nu(o, p, dehors := false) -> bool:
+	return Arbres.bois_nu(o, p, dehors)
 
 
 # --- la cueillette nourricière : les fruits des arbres (scripts/flore.gd, FRUITS ; scripts/objet.gd, cueillir_fruit) ---
@@ -761,55 +385,9 @@ static func dessiner(o, p, r: RandomNumberGenerator) -> bool:
 	var f := str(o.forme)
 	match str(o.genre):
 		"buisson":
-			match f:
-				"epine":
-					_epine(o, p, r)
-				"ronce":
-					_ronce(o, p, r)
-				"aromatique":
-					_aromatique(o, p, r)
-				"bruyere":
-					_bruyere(o, p, r)
-				"liane":
-					_liane(o, p, r)
-				_:
-					return false
+			return Buissons.dessiner(o, p, r, f)
 		"touffe":
-			match f:
-				"cereale":
-					_cereale(o, p, r, false)
-				"riz":
-					_cereale(o, p, r, true)
-				"jonc":
-					_jonc(o, p, r)
-				"papyrus":
-					_papyrus(o, p, r)
-				"bambou":
-					_bambou(o, p, r)
-				"legumineuse":
-					_legumineuse(o, p, r)
-				"fougere":
-					_fougere(o, p, r)
-				"coussin":
-					_coussin(o, p, r)
-				"mousse":
-					_mousse(o, p, r)
-				"lichen":
-					_lichen(o, p, r, false)
-				"lichen_croute":
-					_lichen(o, p, r, true)
-				"lichen_rennes":
-					_lichen_rennes(o, p, r)
-				"succulente":
-					_succulente(o, p, r)
-				"agave":
-					_agave(o, p, r)
-				"cactus":
-					_cactus(o, p, r)
-				"caillou":
-					_plante_caillou(o, p, r)
-				_:
-					return false
+			return Sol.dessiner(o, p, r, f)
 		"fleur":
 			_fleurs(o, p, r)
 		"aquatique":
@@ -837,194 +415,6 @@ static func _planche(o) -> void:
 	o.add_child(s)
 
 
-# -- les buissons --
-
-# un buisson d'épines : dense, anguleux, sombre, hérissé ; des prunelles bleu-noir s'il en porte
-static func _epine(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var bois := P.ENCRE_DOUCE.lerp(P.TERRE, 0.35)
-	for i in 4:
-		var x := r.randf_range(-rx * 0.6, rx * 0.6)
-		p.tracer(PackedVector2Array([Vector2(x, 1.5), Vector2(x * 1.4 + r.randf_range(-2, 2), -6.0)]), 1.4, bois)
-	var centre := Vector2(0, -ry * 0.5)
-	var poly: PackedVector2Array = o.festons(centre, rx, ry * 0.55, r.randi_range(11, 14), 0.3, r, 56, 0.25)
-	var t: Color = o.teinte.lerp(P.FEUILLE_SOMBRE, 0.38)
-	if o.reste <= 0:
-		t = t.lerp(P.TERRE, 0.15)
-	p.aplat(poly, t, Pinceau.FEUILLAGE, centre, Vector2(rx, ry * 0.55) * 1.08)
-	p.contour(poly, 1.3, ENCRE, r, 4)
-	# (des rameaux qui dépassent en zigzag, et leurs épines)
-	for i in r.randi_range(4, 6):
-		var a := r.randf_range(-PI + 0.3, -0.3)
-		var d := Vector2(cos(a), sin(a) * 0.7)
-		var q0 := centre + Vector2(d.x * rx * 0.8, d.y * ry * 0.45)
-		var q1 := q0 + d * r.randf_range(3.0, 6.0) + d.orthogonal() * r.randf_range(-1.5, 1.5)
-		var q2 := q1 + d * r.randf_range(2.0, 4.0) - d.orthogonal() * r.randf_range(-1.5, 1.5)
-		p.tracer(PackedVector2Array([q0, q1, q2]), 1.1, ENCRE, false)
-		p.tracer(PackedVector2Array([q1, q1 + d.orthogonal() * 2.2 + d * 0.8]), 0.8, ENCRE)
-	for i in range(0, poly.size(), 3):
-		var q: Vector2 = poly[i]
-		var dehors := (q - centre).normalized()
-		if dehors.y > 0.55:
-			continue
-		p.tracer(PackedVector2Array([q - dehors * 0.5, q + dehors * 2.4 + dehors.orthogonal() * 0.9]), 0.85, ENCRE)
-	if o.a_fruits:
-		var prune := P.NUIT_BLEUE.lerp(P.LUNE, 0.35)
-		var rb := RandomNumberGenerator.new()
-		rb.seed = o.graine + 5
-		for i in o.reste * 4:
-			var q := centre + Vector2(rb.randf_range(-0.7, 0.7) * rx, rb.randf_range(-0.45, 0.5) * ry * 0.55)
-			p.disque(q, 2.1, 2.0, ENCRE)
-			p.disque(q, 1.55, 1.5, prune, Pinceau.DOME)
-			p.disque(q + Vector2(-0.4, -0.5), 0.6, 0.5, Color(P.LUNE.lightened(0.5), 0.8))
-	else:
-		# (sans fruits : de petites fleurs blanches, éparses)
-		for i in 6:
-			var q := centre + Vector2(r.randf_range(-0.7, 0.7) * rx, r.randf_range(-0.5, 0.2) * ry * 0.55)
-			p.disque(q, 1.1, 1.0, P.PAPIER.lightened(0.1))
-
-
-# un roncier : des tiges arquées, rougeâtres, piquantes, qui retombent jusqu'au sol ; des mûres noires (et quelques rouges)
-static func _ronce(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var tige := P.SANG.lerp(P.TERRE, 0.45)
-	var t: Color = o.teinte.lerp(P.FEUILLE_SOMBRE, 0.22)
-	var centre := Vector2(0, -ry * 0.45)
-	# (un fond de feuillage bas, sous les tiges)
-	var fond: PackedVector2Array = o.festons(centre + Vector2(0, ry * 0.12), rx * 0.82, ry * 0.42, 8, 0.22, r, 40, 0.3)
-	p.aplat(fond, t.darkened(0.12), Pinceau.FEUILLAGE, centre, Vector2(rx, ry * 0.5))
-	p.contour(fond, 1.1, ENCRE, r, 3)
-	var cannes := []
-	for i in r.randi_range(5, 7):
-		var cote := -1.0 if i % 2 == 0 else 1.0
-		var a := Vector2(r.randf_range(-rx * 0.35, rx * 0.35), 1.0)
-		var b := Vector2(cote * r.randf_range(rx * 0.75, rx * 1.15), r.randf_range(-1.0, 2.0))
-		var h := r.randf_range(ry * 0.7, ry * 1.1)
-		cannes.append([a, Vector2((a.x + b.x) * 0.5, -h), b])
-	for c in cannes:
-		var ligne := PackedVector2Array()
-		for k in 9:
-			var u := k / 8.0
-			ligne.append(c[0].lerp(c[1], u).lerp(c[1].lerp(c[2], u), u))
-		p.tracer(ligne, 2.3, ENCRE, false)
-		p.tracer(ligne, 1.3, tige, false)
-		# (des épines le long, et des feuilles par trois)
-		for k in range(1, 8, 2):
-			var q := ligne[k]
-			var d := (ligne[k + 1] - ligne[k - 1]).normalized()
-			p.tracer(PackedVector2Array([q, q + d.orthogonal() * 1.8 + d * 0.6]), 0.7, ENCRE)
-			if k % 4 == 1:
-				for j in 3:
-					var ang := d.angle() - PI * 0.5 + (j - 1) * 0.7
-					var fb := q + Vector2.from_angle(ang) * 3.4
-					p.disque(fb, 2.3, 1.6, ENCRE)
-					p.disque(fb, 1.75, 1.15, t.lightened(0.08), Pinceau.FEUILLAGE)
-	if o.reste > 0:
-		var rb := RandomNumberGenerator.new()
-		rb.seed = o.graine + 5
-		for g in o.reste * 2:
-			var c: Array = cannes[g % cannes.size()]
-			var q: Vector2 = c[0].lerp(c[1], 0.7).lerp(c[1].lerp(c[2], 0.7), 0.7) + Vector2(rb.randf_range(-2.0, 2.0), rb.randf_range(0.0, 2.0))
-			var mure := P.NUIT.lerp(P.SANG, 0.35) if rb.randf() < 0.75 else P.BRAISE_ROUGE
-			p.disque(q, 2.4, 2.6, ENCRE)
-			p.disque(q, 1.8, 2.0, mure, Pinceau.DOME)
-			for k in 3:
-				p.disque(q + Vector2(rb.randf_range(-0.9, 0.9), rb.randf_range(-1.1, 1.1)), 0.45, 0.45, Color(1.0, 0.92, 0.9, 0.6))
-
-
-# un buisson aromatique : une boule basse, gris-vert, de tiges droites ; au bout, des épis de fleurs (lavande, ou jaunes)
-static func _aromatique(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var t: Color = o.teinte.lerp(P.LUNE, 0.28).lerp(P.IVOIRE, 0.18)
-	var centre := Vector2(0, -ry * 0.42)
-	var poly: PackedVector2Array = o.festons(centre, rx, ry * 0.5, r.randi_range(9, 12), 0.2, r, 44, 0.3)
-	p.aplat(poly, t, Pinceau.FEUILLAGE, centre, Vector2(rx, ry * 0.5) * 1.08)
-	p.contour(poly, 1.2, ENCRE, r, 3)
-	var fleur := P.PEUR.lerp(P.CREPUSCULE, 0.45) if o.graine % 2 == 0 else P.BRAISE_COEUR.darkened(0.1)
-	var n := 14
-	var fleuries: int = n * o.reste / maxi(1, o.plein) if o.en_fleurs else 0
-	# (ce qu'on y a cueilli se voit, en fleurs ou non : des brins coupés court, leur coupe claire ; scripts/flore.gd, des aromates)
-	var restent: int = n * o.reste / maxi(1, o.plein)
-	for i in n:
-		var x := lerpf(-rx * 0.85, rx * 0.85, (i + r.randf_range(0.2, 0.8)) / n)
-		var y0 := centre.y + absf(x) / rx * ry * 0.25 - ry * 0.25
-		var bout := Vector2(x * 1.15 + r.randf_range(-1.0, 1.0), y0 - r.randf_range(4.0, 8.0))
-		if i >= restent:
-			bout = Vector2(x, y0).lerp(bout, 0.4)
-			p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 1.0, t.darkened(0.25))
-			p.disque(bout, 0.8, 0.6, P.IVOIRE.lerp(t, 0.3))
-			continue
-		p.tracer(PackedVector2Array([Vector2(x, y0), bout]), 1.0, t.darkened(0.25))
-		if i < fleuries:
-			var d := (bout - Vector2(x, y0)).normalized()
-			p.disque(bout - d * 1.2, 1.4, 2.6, ENCRE)
-			p.disque(bout - d * 1.2, 0.95, 2.1, fleur, Pinceau.DOME)
-
-
-# une bruyère : un coussin bas, ras, d'aiguilles brunes et vertes, piqué de petites fleurs rose-mauve
-static func _bruyere(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var feuille := P.MOUSSE.lerp(P.TERRE, 0.4).darkened(0.12)
-	var centre := Vector2(0, -ry * 0.4)
-	var poly: PackedVector2Array = o.festons(centre, rx, ry * 0.62, r.randi_range(6, 8), 0.22, r, 36, 0.2)
-	p.aplat(poly, feuille, Pinceau.FEUILLAGE, centre, Vector2(rx, ry * 0.62) * 1.08)
-	p.contour(poly, 1.0, ENCRE, r, 3)
-	for i in 10:
-		var q := centre + Vector2(r.randf_range(-0.8, 0.8) * rx, r.randf_range(-0.4, 0.5) * ry * 0.48)
-		p.tracer(PackedVector2Array([q, q + Vector2(r.randf_range(-1.0, 1.0), -2.4)]), 0.7, Color(ENCRE, 0.5))
-	if o.en_fleurs:
-		var fleur := P.CREPUSCULE.lerp(P.PEUR, 0.3).lightened(0.12)
-		var nb: int = 26 * o.reste / maxi(1, o.plein)
-		for i in nb:
-			var q := centre + Vector2(r.randf_range(-0.85, 0.75) * rx, r.randf_range(-0.95, 0.35) * ry * 0.48)
-			p.disque(q, r.randf_range(0.8, 1.3), r.randf_range(0.6, 0.95), fleur.lightened(r.randf_range(0.0, 0.25)) if q.x < 0.0 else fleur.darkened(0.08))
-
-
-# une liane : enroulée autour d'un vieux tronc mort penché, ses feuilles en cœur, ses vrilles
-static func _liane(o, p, r: RandomNumberGenerator) -> void:
-	var h: float = o._ry
-	var bois := P.TERRE.lerp(P.CENDRE, 0.35)
-	var pied := Vector2(r.randf_range(-2.0, 2.0), 0.5)
-	var tete := Vector2(r.randf_range(3.0, 7.0) * (1.0 if o.graine % 2 == 0 else -1.0), -h)
-	p.tracer(PackedVector2Array([pied, pied.lerp(tete, 0.5) + Vector2(1.0, 0), tete]), 4.6, ENCRE, false, PackedFloat32Array([5.0, 4.2, 3.0]))
-	p.tracer(PackedVector2Array([pied, pied.lerp(tete, 0.5) + Vector2(1.0, 0), tete]), 3.0, bois, false, PackedFloat32Array([3.4, 2.8, 1.8]))
-	var vigne := P.MOUSSE.lerp(P.TERRE, 0.3)
-	var spi := PackedVector2Array()
-	var tours := 3.2
-	for k in 30:
-		var u := k / 29.0
-		var q := pied.lerp(tete, u)
-		spi.append(q + Vector2(sin(u * TAU * tours) * 4.2, cos(u * TAU * tours) * 1.2))
-	p.tracer(spi, 1.6, ENCRE, false)
-	p.tracer(spi, 0.9, vigne, false)
-	var t: Color = o.teinte.lerp(P.FEUILLE_SOMBRE, 0.1)
-	var feuilles: int = 14 * maxi(o.reste, 1) / maxi(1, o.plein) if o.reste > 0 else 4
-	for i in feuilles:
-		var k := r.randi_range(2, 29)
-		var q := spi[k] + Vector2(r.randf_range(-2.0, 2.0), r.randf_range(-1.0, 1.0))
-		_coeur(p, q, r.randf_range(2.4, 3.4), r.randf_range(-0.6, 0.6) + (0.0 if q.x < tete.x * (k / 29.0) else PI * 0.2), t.lightened(r.randf_range(0.0, 0.12)))
-	# (des boucles qui pendent)
-	for i in 2:
-		var q := spi[r.randi_range(12, 26)]
-		var boucle := PackedVector2Array([q, q + Vector2(3.0 * (1 - 2 * i), 4.0), q + Vector2(1.0 * (1 - 2 * i), 8.0)])
-		p.tracer(boucle, 0.9, vigne.darkened(0.15))
-
-
-# une feuille en cœur, sa pointe vers ang
-static func _coeur(p, q: Vector2, s: float, ang: float, c: Color) -> void:
-	var poly := PackedVector2Array()
-	for i in 12:
-		var a := TAU * i / 12.0
-		var rr := s * (0.75 + 0.25 * cos(a)) * (1.0 - 0.35 * pow(maxf(0.0, -cos(a)), 6.0))
-		poly.append(q + Vector2(cos(a) * rr, sin(a) * rr * 0.8).rotated(ang + PI * 0.5))
-	p.aplat(_grossi(poly, q, 0.7), ENCRE)
-	p.aplat(poly, c, Pinceau.FEUILLAGE, q, Vector2(s, s) * 1.1)
-
-
 # un polygone, un peu agrandi depuis son centre (son liseré d'encre, dessous)
 static func _grossi(poly: PackedVector2Array, centre: Vector2, de: float) -> PackedVector2Array:
 	var out := PackedVector2Array()
@@ -1034,175 +424,6 @@ static func _grossi(poly: PackedVector2Array, centre: Vector2, de: float) -> Pac
 	return out
 
 
-# -- le sol --
-
-# une graminée à grains : des lames, et des tiges hautes au bout desquelles l'épi pèse ; le riz : ses grains en grappes qui
-# pendent, sur un sol mouillé. Mûrs (l'été, l'automne), les épis sont lourds et dorés, la touffe jaunit : on les cueille d'abord
-# (des grains), et il ne reste que les tiges, coupées net ; puis la paille (une fibre), et des chaumes. Au printemps, les épis
-# sont verts et droits ; l'hiver, il n'y en a plus
-static func _cereale(o, p, r: RandomNumberGenerator, riz: bool) -> void:
-	var h: float = o._ry
-	var murs: bool = o.epis_murs
-	var t: Color = o.teinte.lightened(0.05)
-	var paille := t.lerp(P.IVOIRE, 0.4).lerp(P.BRAISE_COEUR, 0.15)
-	if murs:
-		# (la touffe mûre se dore)
-		paille = paille.lerp(P.BRAISE_COEUR, 0.22).lerp(P.BRAISE, 0.08)
-		t = t.lerp(paille, 0.32)
-	var grain := P.BRAISE.lerp(P.IVOIRE, 0.45).darkened(0.08) if not riz else P.IVOIRE.lerp(P.BRAISE_COEUR, 0.2).darkened(0.05)
-	if not murs:
-		grain = t.lightened(0.18).lerp(P.MOUSSE, 0.2)
-	if riz:
-		p.eventail(Vector2(0, 1.5), 13.0, 3.6, Color(P.NUIT_BLEUE.lerp(P.TERRE, 0.5), 0.45), Color(P.NUIT_BLEUE, 0.0), 14)
-	if o.reste <= 0:
-		_chaumes(p, r, paille)
-		return
-	var epis: bool = o.reste >= o.plein and str(o.maturite) != ""
-	# les lames
-	for i in 9:
-		var x0 := r.randf_range(-3.0, 3.0)
-		var cote := signf(x0 + r.randf_range(-0.5, 0.5))
-		var hh := r.randf_range(0.4, 0.7) * h
-		var bout := Vector2(x0 * 2.0 + cote * r.randf_range(3.0, 9.0) * (1.4 if riz else 1.0), -hh * (0.75 if riz else 1.0))
-		var mil := Vector2(x0 * 1.2 + bout.x * 0.3, -hh * 0.7)
-		var ligne := PackedVector2Array([Vector2(x0, 1.0), mil, bout])
-		p.tracer(ligne, 2.6, ENCRE, false, PackedFloat32Array([3.0, 2.2, 0.8]))
-		p.tracer(ligne, 1.8, t.lerp(paille, r.randf() * 0.4).darkened(r.randf() * 0.15), false, PackedFloat32Array([2.2, 1.5, 0.4]))
-	# les tiges et leurs épis : un épi dressé qui ploie au bout, ses grains en chevrons et ses barbes ; le riz, une panicule
-	# qui retombe en arc, ses grains pendus dessous. Mûr, l'épi est plus lourd, et ploie davantage
-	var poids := 1.0 if not murs else (1.25 if riz else 1.9)
-	for i in r.randi_range(4, 6):
-		var x0 := r.randf_range(-2.5, 2.5)
-		var hh := h * r.randf_range(0.8, 1.05)
-		var penche := r.randf_range(0.08, 0.25) * (1.0 if r.randf() < 0.5 else -1.0) * (1.0 if not murs else 1.35)
-		if not epis:
-			# (les épis cueillis : la tige coupée net, un peu plus bas, sa coupe claire)
-			var haut := Vector2(x0 + penche * hh * 0.7, -hh * 0.78)
-			var tige := PackedVector2Array([Vector2(x0, 1.0), Vector2(x0 + penche * hh * 0.3, -hh * 0.42), haut])
-			p.tracer(tige, 1.7, ENCRE, false)
-			p.tracer(tige, 0.9, paille, false)
-			p.tracer(PackedVector2Array([haut + Vector2(-0.8, 0.3), haut + Vector2(0.8, -0.3)]), 0.6, P.IVOIRE.lightened(0.1), false)
-			continue
-		var bout := Vector2(x0 + penche * hh, -hh)
-		var ligne := PackedVector2Array([Vector2(x0, 1.0), Vector2(x0 + penche * hh * 0.4, -hh * 0.55), bout])
-		p.tracer(ligne, 1.7, ENCRE, false)
-		p.tracer(ligne, 0.9, paille, false)
-		var dir := (bout - ligne[1]).normalized()
-		var epi := PackedVector2Array([bout])
-		for k in range(1, (8 if riz else 6) + (1 if murs else 0)):
-			var u := float(k)
-			# (le poids du grain le fait ployer ; le riz, jusqu'à pendre)
-			epi.append(bout + dir * u * (1.6 if riz else 1.5) + Vector2(signf(penche) * u * u * (0.12 if riz else 0.05) * poids, u * u * (0.22 if riz else 0.04) * poids))
-		p.tracer(epi, 1.2, ENCRE, false)
-		for k in range(1, epi.size()):
-			var q := epi[k]
-			var d := (epi[k] - epi[k - 1]).normalized()
-			var nrm := d.orthogonal()
-			if riz:
-				var g := q + Vector2(0, 1.4)
-				p.disque(g, 1.0, 1.35, ENCRE)
-				p.disque(g, 0.65, 0.95, grain, Pinceau.DOME)
-				continue
-			for cote in [-1.0, 1.0]:
-				var g: Vector2 = q + nrm * cote * (0.9 if murs else 0.7)
-				var gr := 1.0 if murs else 0.8
-				p.disque(g, 1.25 * gr, 1.25 * gr, ENCRE)
-				p.disque(g, 0.85 * gr, 0.85 * gr, grain, Pinceau.DOME)
-				# (les barbes)
-				p.tracer(PackedVector2Array([g, g + nrm * cote * 1.2 + d * 3.2]), 0.45, Color(ENCRE, 0.6))
-
-
-# ce qui reste d'une touffe coupée : des chaumes
-static func _chaumes(p, r: RandomNumberGenerator, paille: Color) -> void:
-	p.eventail(Vector2(0, 1), 7.0, 2.8, Color(P.TERRE.darkened(0.3), 0.6), Color(P.TERRE.darkened(0.3), 0.0), 12)
-	for i in 7:
-		var x := r.randf_range(-4.5, 4.5)
-		p.tracer(PackedVector2Array([Vector2(x, 1), Vector2(x + r.randf_range(-1, 1), -r.randf_range(2.5, 4.5))]), 1.2, paille.darkened(0.2), false)
-
-
-# un jonc : un faisceau de tiges rondes, droites, vert sombre ; une petite grappe brune sur le côté
-static func _jonc(o, p, r: RandomNumberGenerator) -> void:
-	var h: float = o._ry
-	var t: Color = o.teinte.lerp(P.FEUILLE_SOMBRE, 0.3)
-	if o.reste <= 0:
-		_chaumes(p, r, t.lerp(P.IVOIRE, 0.3))
-		return
-	var tiges := []
-	for i in 16:
-		var x0 := r.randf_range(-3.0, 3.0)
-		tiges.append([x0, Vector2(x0 * 2.2 + r.randf_range(-1.5, 1.5), -h * r.randf_range(0.75, 1.05)), r.randf()])
-	tiges.sort_custom(func(a, b): return a[2] < b[2])
-	for i in tiges.size():
-		var tg: Array = tiges[i]
-		var ligne := PackedVector2Array([Vector2(tg[0], 1.0), tg[1]])
-		p.tracer(ligne, 2.0, ENCRE, false, PackedFloat32Array([2.0, 1.0]))
-		p.tracer(ligne, 1.1, t.lightened(0.18 * tg[2]), false, PackedFloat32Array([1.2, 0.4]))
-	for i in 2:
-		var tg: Array = tiges[tiges.size() - 1 - i * 3]
-		var q: Vector2 = Vector2(tg[0], 1.0).lerp(tg[1], 0.68) + Vector2(1.6, 0)
-		for k in 4:
-			var g := q + Vector2(r.randf_range(0.0, 2.5), r.randf_range(-1.5, 1.5))
-			p.disque(g, 1.2, 1.2, ENCRE)
-			p.disque(g, 0.8, 0.8, P.TERRE.lerp(P.BRAISE, 0.2))
-
-
-# un papyrus : de hautes tiges nues, chacune coiffée d'une ombelle de fins rayons
-static func _papyrus(o, p, r: RandomNumberGenerator) -> void:
-	var h: float = o._ry
-	var t: Color = o.teinte.lightened(0.06)
-	if o.reste <= 0:
-		_chaumes(p, r, t.lerp(P.IVOIRE, 0.3))
-		return
-	for i in r.randi_range(5, 7):
-		var x0 := r.randf_range(-4.0, 4.0)
-		var hh := h * r.randf_range(0.7, 1.0)
-		var bout := Vector2(x0 * 1.8 + r.randf_range(-3.0, 3.0), -hh)
-		p.tracer(PackedVector2Array([Vector2(x0, 1.0), bout]), 1.9, ENCRE, false)
-		p.tracer(PackedVector2Array([Vector2(x0, 1.0), bout]), 1.1, t.darkened(0.12), false)
-		for k in 14:
-			var a := -PI * 0.5 + (k / 13.0 - 0.5) * PI * 1.5
-			var l := r.randf_range(5.0, 8.0)
-			var q := bout + Vector2(cos(a) * l, sin(a) * l * 0.6 + l * 0.25 * absf(cos(a)))
-			p.tracer(PackedVector2Array([bout, q]), 0.75, t.lightened(0.18) if k % 2 == 0 else t, false)
-
-
-# un bambou : des cannes droites, nouées d'encre, vert-jaune ; des feuilles en lance aux nœuds du haut. Coupé, des moignons
-static func _bambou(o, p, r: RandomNumberGenerator) -> void:
-	var h: float = o._ry
-	var canne: Color = o.teinte.lerp(P.BRAISE_COEUR, 0.22).lightened(0.05)
-	var t: Color = o.teinte.lerp(P.FEUILLE_SOMBRE, 0.1)
-	var n := 5
-	var debout: int = n - (o.plein - o.reste) * 2
-	for i in n:
-		var x0 := lerpf(-6.0, 6.0, (i + r.randf_range(0.2, 0.8)) / n)
-		var hh := h * r.randf_range(0.7, 1.0)
-		var w := r.randf_range(1.5, 2.1)
-		var penche := r.randf_range(-0.05, 0.05)
-		if i >= debout:
-			# (une canne coupée en biseau)
-			var cut := r.randf_range(4.0, 7.0)
-			var poly := PackedVector2Array([Vector2(x0 - w, 1), Vector2(x0 + w, 1), Vector2(x0 + w, -cut + 1.5), Vector2(x0 - w, -cut)])
-			p.aplat(poly, canne.darkened(0.08), Pinceau.ECORCE, Vector2(x0, -cut * 0.5), Vector2(w, cut))
-			p.contour(poly, 0.9, ENCRE, r, 2)
-			p.tracer(PackedVector2Array([Vector2(x0 - w, -cut), Vector2(x0 + w, -cut + 1.5)]), 0.8, P.IVOIRE)
-			continue
-		var bout := Vector2(x0 + penche * hh, -hh)
-		var poly := PackedVector2Array([Vector2(x0 - w, 1), Vector2(x0 + w, 1), bout + Vector2(w * 0.6, 0), bout - Vector2(w * 0.6, 0)])
-		p.aplat(poly, canne, Pinceau.ECORCE, Vector2(x0 + penche * hh * 0.5, -hh * 0.5), Vector2(w * 1.1, hh * 0.55))
-		p.tracer(PackedVector2Array([Vector2(x0 - w, 1), bout - Vector2(w * 0.6, 0)]), 0.9, ENCRE, false)
-		p.tracer(PackedVector2Array([Vector2(x0 + w, 1), bout + Vector2(w * 0.6, 0)]), 1.3, ENCRE, false)
-		var y := -r.randf_range(7.0, 10.0)
-		while y > -hh + 3.0:
-			var q := Vector2(x0 + penche * -y, y)
-			p.tracer(PackedVector2Array([q - Vector2(w + 0.3, 0), q + Vector2(w + 0.3, 0.5)]), 0.9, ENCRE, false)
-			if y < -hh * 0.45 and r.randf() < 0.7:
-				var cote := -1.0 if r.randf() < 0.5 else 1.0
-				for k in 3:
-					var a := Vector2(cote * r.randf_range(4.0, 8.0), r.randf_range(-2.0, 3.5))
-					_lance(p, q, q + a, 1.3, t.lightened(r.randf_range(0.0, 0.15)))
-			y -= r.randf_range(8.0, 11.0)
-
-
 # une feuille en lance, de a à b
 static func _lance(p, a: Vector2, b: Vector2, larg: float, c: Color) -> void:
 	var d := b - a
@@ -1210,348 +431,6 @@ static func _lance(p, a: Vector2, b: Vector2, larg: float, c: Color) -> void:
 	var poly := PackedVector2Array([a, a + d * 0.35 + n, b, a + d * 0.35 - n])
 	p.aplat(PackedVector2Array([a - d.normalized() * 0.4, a + d * 0.35 + n * 1.5, b + d.normalized() * 0.6, a + d * 0.35 - n * 1.5]), ENCRE)
 	p.aplat(poly, c)
-
-
-# une légumineuse : basse, des feuilles par trois, des gousses qui pendent, quelques fleurs en papillon
-static func _legumineuse(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var t: Color = o.teinte.lightened(0.04)
-	if o.reste <= 0:
-		_chaumes(p, r, t.lerp(P.IVOIRE, 0.3))
-		return
-	var tiges := []
-	for i in 6:
-		var a := Vector2(r.randf_range(-2.0, 2.0), 1.0)
-		var b := Vector2(r.randf_range(-rx, rx), -r.randf_range(ry * 0.5, ry))
-		tiges.append([a, b])
-		p.tracer(PackedVector2Array([a, (a + b) * 0.5 + Vector2(0, -1.5), b]), 1.0, t.darkened(0.3))
-	for tg in tiges:
-		var q: Vector2 = tg[1]
-		for j in 3:
-			var fb: Vector2 = q + Vector2.from_angle(-PI * 0.5 + (j - 1) * 1.0) * 2.4
-			p.disque(fb, 2.0, 1.6, ENCRE)
-			p.disque(fb, 1.5, 1.15, t.lightened(0.06 * j), Pinceau.FEUILLAGE)
-	for i in 3:
-		var tg: Array = tiges[i * 2]
-		var q: Vector2 = (tg[0] + tg[1]) * 0.5
-		var gousse := PackedVector2Array([q, q + Vector2(2.5, 1.5), q + Vector2(4.5, 4.0)])
-		p.tracer(gousse, 2.6, ENCRE)
-		p.tracer(gousse, 1.7, t.lerp(P.BRAISE_COEUR, 0.25))
-	for i in 3:
-		var q: Vector2 = tiges[i * 2 + 1][1] + Vector2(0, -2.5)
-		p.disque(q, 1.5, 1.2, ENCRE)
-		p.disque(q, 1.1, 0.85, P.PAPIER if o.graine % 2 == 0 else P.PEUR.lerp(P.PAPIER, 0.4))
-
-
-# une fougère : des frondes qui partent du pied en couronne, dentées de folioles
-static func _fougere(o, p, r: RandomNumberGenerator) -> void:
-	var h: float = o._ry
-	var t: Color = o.teinte.lerp(P.MOUSSE, 0.4).lightened(0.08)
-	if o.reste <= 0:
-		_chaumes(p, r, t.lerp(P.TERRE, 0.4))
-		return
-	var frondes := []
-	var n := r.randi_range(6, 8)
-	for i in n:
-		frondes.append([lerpf(-PI + 0.35, -0.35, float(i) / (n - 1)) + r.randf_range(-0.12, 0.12), r.randf_range(0.8, 1.1) * h])
-	frondes.append([r.randf_range(0.25, 0.5), h * 0.6])
-	frondes.append([PI - r.randf_range(0.25, 0.5), h * 0.6])
-	frondes.sort_custom(func(a, b): return sin(a[0]) < sin(b[0]))
-	for fr in frondes:
-		_fronde(p, Vector2(0, -1.5), fr[0], fr[1], 4.4, t)
-
-
-# une fronde de fougère, de son pied le long de l'angle a (aplatie par la vue de biais)
-static func _fronde(p, pied: Vector2, a: float, l: float, larg: float, t: Color) -> void:
-	var m := 9
-	var d := Vector2(cos(a), sin(a) * 0.62)
-	var axe := PackedVector2Array()
-	for k in m + 1:
-		var u := float(k) / m
-		axe.append(pied + d * l * u + Vector2(0, -l * 0.32 * sin(u * PI * 0.85) + u * u * 2.0))
-	for passe in 2:
-		var e := 0.55 if passe == 0 else 0.0
-		var g := PackedVector2Array()
-		var dr := PackedVector2Array()
-		for k in m + 1:
-			var u := float(k) / m
-			var tan_ := (axe[mini(k + 1, m)] - axe[maxi(k - 1, 0)]).normalized()
-			var nrm := tan_.orthogonal()
-			var w := larg * sin(PI * minf(1.0, u * 1.2 + 0.08)) * (1.0 - u * 0.7) * (1.0 if k % 2 == 0 else 0.6) + e
-			var avance := tan_ * (1.0 if k % 2 == 0 else 0.0)
-			g.append(axe[k] + nrm * w + avance)
-			dr.append(axe[k] - nrm * w + avance)
-		if passe == 0:
-			p.bande(g, dr, Color(ENCRE, 0.7))
-		else:
-			var face := t.lerp(t.lightened(0.2), clampf(-sin(a), 0.0, 1.0) * 0.6 + 0.2)
-			p.bande(g, axe, face)
-			p.bande(axe, dr, face.darkened(0.2))
-
-
-# une plante en coussin : un dôme serré, ras, piqué de toutes petites fleurs ; poudré de neige s'il fait froid
-static func _coussin(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry * 0.85
-	var t: Color = o.teinte.lerp(P.MOUSSE, 0.3)
-	var centre := Vector2(0, -ry * 0.6)
-	var poly: PackedVector2Array = o.festons(centre, rx, ry, r.randi_range(9, 12), 0.08, r, 40, 0.15)
-	if o.reste <= 0:
-		t = t.lerp(P.TERRE, 0.25)
-	p.aplat(poly, t, Pinceau.FEUILLAGE, centre, Vector2(rx, ry) * 1.05)
-	p.contour(poly, 1.1, ENCRE, r, 3)
-	for i in 12:
-		var q := centre + Vector2(r.randf_range(-0.8, 0.8) * rx, r.randf_range(-0.6, 0.6) * ry)
-		p.disque(q, 0.5, 0.5, Color(ENCRE, 0.35))
-	if o.reste > 0:
-		var fleur := P.PAPIER.lightened(0.1) if o.graine % 3 != 0 else P.PEUR.lerp(P.PAPIER, 0.5)
-		for i in 10:
-			var q := centre + Vector2(r.randf_range(-0.7, 0.7) * rx, r.randf_range(-0.8, 0.2) * ry)
-			p.disque(q, 0.85, 0.75, fleur)
-	if float(o._climat.get("froid", 0.0)) > 0.25:
-		o._neige_sur(p, poly, centre + Vector2(0, -ry * 0.4), rx * 0.8, ry * 0.5, centre.y - ry * 0.25, r)
-
-
-# une mousse : des coussinets ras, d'un vert vif, serrés les uns contre les autres
-static func _mousse(o, p, r: RandomNumberGenerator) -> void:
-	var t := P.MOUSSE.lightened(0.12).lerp(o.teinte, 0.3)
-	for i in r.randi_range(3, 5):
-		var q := Vector2(r.randf_range(-0.6, 0.6) * o._rx, r.randf_range(-0.4, 0.5) * o._ry)
-		var rx := r.randf_range(3.5, 6.0)
-		var poly: PackedVector2Array = o.festons(q + Vector2(0, -1.0), rx, rx * 0.5, 6, 0.2, r, 20, 0.2)
-		p.aplat(poly, t.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.25)), Pinceau.FEUILLAGE, q + Vector2(0, -1.0), Vector2(rx, rx * 0.5) * 1.1)
-		p.contour(poly, 0.7, Color(ENCRE, 0.7), r, 2)
-
-
-# un lichen, à plat : des rosettes de croûte (jaune, vert pâle, orangée) sur une plaque grise ; en croûte, sur une pierre
-static func _lichen(o, p, r: RandomNumberGenerator, croute: bool) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry
-	var gris := P.CENDRE.lerp(P.IVOIRE, 0.55)
-	if croute:
-		# (une pierre plate, la croûte dessus)
-		var pierre: PackedVector2Array = o.festons(Vector2(0, -2.0), rx * 0.9, ry * 0.9, 5, 0.15, r, 18, 0.1)
-		p.aplat(pierre, gris, Pinceau.PIERRE, Vector2(0, -2.0), Vector2(rx, ry))
-		p.contour(pierre, 1.0, ENCRE, r, 2)
-	else:
-		var plaque: PackedVector2Array = o.festons(Vector2.ZERO, rx, ry, 7, 0.25, r, 26, 0.0)
-		p.aplat(plaque, Color(gris.darkened(0.15), 0.85))
-		p.contour(plaque, 0.7, Color(ENCRE, 0.45), r, 3)
-	var tons := [P.BRAISE_COEUR.darkened(0.12), P.IVOIRE.lerp(P.MOUSSE, 0.3), P.BRAISE.darkened(0.1)]
-	for i in r.randi_range(6, 10):
-		var q := Vector2(r.randf_range(-0.7, 0.7) * rx, r.randf_range(-0.6, 0.6) * ry - (2.0 if croute else 0.0))
-		var s := r.randf_range(1.2, 2.6)
-		var c: Color = tons[0 if croute and r.randf() < 0.6 else r.randi() % tons.size()]
-		p.disque(q, s, s * 0.6, c)
-		p.disque(q, s * 0.4, s * 0.25, c.darkened(0.3))
-
-
-# le lichen des rennes : un coussin pâle, gris-vert, fait de petites boules ramifiées (un chou-fleur de corail) ; brouté ou
-# cueilli, il n'en reste qu'une galette
-static func _lichen_rennes(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var ry: float = o._ry * (1.0 if o.reste > 0 else 0.45)
-	var pale := P.IVOIRE.lerp(P.LUNE, 0.22).lerp(P.MOUSSE, 0.3).darkened(0.04)
-	var centre := Vector2(0, -ry * 0.55)
-	var poly: PackedVector2Array = o.festons(centre, rx, ry, r.randi_range(10, 13), 0.18, r, 44, 0.12)
-	p.aplat(poly, pale.darkened(0.18), Pinceau.FEUILLAGE, centre, Vector2(rx, ry) * 1.05)
-	var boules := []
-	# (cueilli d'une poignée, il en manque un pan ; tout cueilli, une galette)
-	for i in (22 if o.reste >= o.plein else (14 if o.reste > 0 else 8)):
-		var a := r.randf() * TAU
-		var d := sqrt(r.randf())
-		boules.append(centre + Vector2(cos(a) * rx * 0.8 * d, sin(a) * ry * 0.75 * d - (1.0 - d) * 1.5))
-	boules.sort_custom(func(u, v): return u.y < v.y)
-	for q in boules:
-		var s0 := r.randf_range(1.4, 2.2)
-		p.disque(q, s0 + 0.45, s0 * 0.85 + 0.45, Color(ENCRE, 0.55))
-		p.disque(q, s0, s0 * 0.85, pale.lerp(P.IVOIRE, r.randf_range(0.0, 0.25)) if q.x < 0.0 else pale.darkened(r.randf_range(0.0, 0.12)), Pinceau.DOME)
-	p.contour(poly, 1.0, ENCRE, r, 3)
-
-
-# une plante grasse : une rosette de feuilles charnues en cuillère, glauques, bordées de rose, vue de biais : celles du fond
-# se dressent, celles de devant s'étalent vers nous ; cueillie, une rosette plus petite
-static func _succulente(o, p, r: RandomNumberGenerator) -> void:
-	var k: float = 1.0 if o.reste >= o.plein else 0.65
-	var rx: float = (o._rx + 2.0) * k
-	# (le vert glauque d'une plante grasse, que le lieu teinte à peine : sur la terre sèche, elle ne pâlit pas en caillou)
-	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.24).darkened(0.04).lerp(o.teinte, 0.15)
-	var bord := P.BRAISE_ROUGE.lerp(P.PEUR, 0.35).lightened(0.1)
-	var c0 := Vector2(0, -4.0 * k)
-	var feuilles := []
-	for anneau in 2:
-		var n := 9 if anneau == 0 else 6
-		for i in n:
-			var a := TAU * i / n + r.randf_range(-0.12, 0.12) + anneau * 0.3
-			feuilles.append([a, (1.0 if anneau == 0 else 0.62) * r.randf_range(0.85, 1.0), anneau])
-	# (de l'arrière vers l'avant ; le cœur, plus haut, par-dessus)
-	feuilles.sort_custom(func(u, v): return sin(u[0]) + u[2] * 3.0 < sin(v[0]) + v[2] * 3.0)
-	for fe in feuilles:
-		var a: float = fe[0]
-		var l: float = rx * float(fe[1])
-		var leve := 3.5 if fe[2] == 1 else 1.5
-		var bout := c0 + Vector2(cos(a) * l, sin(a) * l * 0.45 - leve * (1.0 - sin(a) * 0.5))
-		var d := bout - c0
-		var nrm := d.orthogonal().normalized() * (3.0 + 1.2 * float(fe[1])) * k
-		var poly := PackedVector2Array([c0 + nrm * 0.3, c0 + d * 0.45 + nrm * 0.9, c0 + d * 0.8 + nrm * 0.85, bout, c0 + d * 0.8 - nrm * 0.85, c0 + d * 0.45 - nrm * 0.9, c0 - nrm * 0.3])
-		var face := t.lerp(t.darkened(0.3), clampf(sin(a), 0.0, 1.0) * 0.45).lightened(0.06 * float(fe[2]))
-		p.aplat(_grossi(poly, c0 + d * 0.5, 0.75), ENCRE)
-		p.aplat(poly, face, Pinceau.DOME, c0 + d * 0.55, Vector2(d.length() * 0.6, nrm.length() * 1.2 + 0.5))
-		p.tracer(PackedVector2Array([c0 + d * 0.8 + nrm * 0.75, bout, c0 + d * 0.8 - nrm * 0.75]), 0.8, bord, false)
-
-
-# un agave : une grande rosette de feuilles raides, en lames, bleu-vert, chacune armée d'un dard noir et de dents
-static func _agave(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx * (1.0 if o.reste > 0 else 0.6)
-	var h: float = o._ry * (1.0 if o.reste > 0 else 0.6)
-	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.38).lightened(0.06).lerp(o.teinte, 0.2)
-	var feuilles := []
-	for i in 12:
-		var a := lerpf(-PI + 0.1, -0.1, i / 11.0) + r.randf_range(-0.08, 0.08)
-		feuilles.append([a, r.randf_range(0.7, 1.0), 0])
-	for i in 4:
-		feuilles.append([r.randf_range(0.3, 2.8), r.randf_range(0.45, 0.65), 1])
-	feuilles.sort_custom(func(a, b): return sin(a[0]) < sin(b[0]))
-	var c0 := Vector2(0, -2.0)
-	for fe in feuilles:
-		var a: float = fe[0]
-		var l: float = float(fe[1])
-		var bout := c0 + Vector2(cos(a) * rx * l, sin(a) * h * l if a < 0.0 else sin(a) * 3.0 * l)
-		var d := bout - c0
-		var nrm := d.orthogonal().normalized() * 2.6
-		var poly := PackedVector2Array([c0 + nrm, c0 + d * 0.45 + nrm * 0.8, bout, c0 + d * 0.45 - nrm * 0.8, c0 - nrm])
-		var face := t.lerp(t.lightened(0.18), clampf(-cos(a) * 0.5 + 0.3, 0.0, 1.0)).darkened(0.12 * float(fe[2]))
-		p.aplat(_grossi(poly, c0 + d * 0.45, 0.75), ENCRE)
-		p.aplat(poly, face)
-		p.tracer(PackedVector2Array([c0, bout - d * 0.08]), 0.6, face.darkened(0.3), false)
-		# (le dard, et des dents le long du bord)
-		p.tracer(PackedVector2Array([bout - d.normalized() * 1.0, bout + d.normalized() * 2.2]), 1.2, ENCRE)
-		for k in [0.35, 0.6]:
-			var q: Vector2 = c0 + d * k + nrm * (0.9 - k * 0.3)
-			p.tracer(PackedVector2Array([q, q + nrm.normalized() * 1.2 + d.normalized() * 0.5]), 0.6, ENCRE)
-
-
-# un cactus en candélabre : une colonne côtelée, un ou deux bras qui se relèvent, des aréoles épineuses. Entamé, un bras en moins
-# (ou une tranche de la colonne) : sa chair à nu, pâle et mouillée, d'où perle une goutte ; c'est sa pulpe qu'on emporte
-static func _cactus(o, p, r: RandomNumberGenerator) -> void:
-	var h: float = o._ry
-	var w: float = o._rx
-	var t: Color = P.MOUSSE.lerp(P.LUNE, 0.12).lerp(o.teinte, 0.3)
-	var bras := []
-	var nb := 2 if o.graine % 3 != 0 else 1
-	var entames: int = int(o.plein) - int(o.reste)
-	var tous := nb
-	nb = maxi(0, nb - entames)
-	var racines := []
-	for i in tous:
-		var cote := -1.0 if (i + o.graine) % 2 == 0 else 1.0
-		var b := [cote, r.randf_range(0.3, 0.55) * h, r.randf_range(0.6, 0.85) * h, r.randf_range(w * 1.8, w * 2.6)]
-		racines.append(b)
-		if i < nb:
-			bras.append(b)
-	# (les bras derrière la colonne d'abord, du côté de l'ombre)
-	for b in bras:
-		_bras_cactus(p, r, b, w * 0.72, t.darkened(0.06))
-	_colonne(p, r, Vector2.ZERO, w, h, t)
-	var chair := P.IVOIRE.lerp(P.MOUSSE, 0.32).lightened(0.06)
-	for k in entames:
-		# (là où un bras a été coupé, à sa racine ; sans bras qui reste, une tranche prise au flanc de la colonne)
-		var i_bras := tous - 1 - k
-		var cote := -1.0 if (i_bras + o.graine) % 2 == 0 else 1.0
-		var q: Vector2
-		var face: PackedVector2Array
-		if i_bras >= 0:
-			# (le bras coupé à sa racine : un moignon qui sort du flanc, sa coupe tournée vers le dehors)
-			var y := -float(racines[i_bras][1])
-			var ep := w * 0.62
-			var a := Vector2(cote * w * 0.7, y)
-			q = Vector2(cote * (w + 3.2), y - 0.6)
-			p.tracer(PackedVector2Array([a, q]), ep * 2.0 + 1.4, ENCRE, false)
-			p.tracer(PackedVector2Array([a, q]), ep * 2.0, t.darkened(0.06), false)
-			face = Pinceau.ellipse(q, 1.9, ep * 0.95, 14)
-		else:
-			# (une tranche prise au flanc de la colonne, plus bas : une coupe en biais)
-			q = Vector2(-w * 0.3, -h * 0.24)
-			face = Pinceau.ellipse(q, 3.3, 2.6, 14)
-			for n in face.size():
-				face[n] = q + (face[n] - q).rotated(-0.35)
-		p.aplat(_grossi(face, q, 0.75), ENCRE)
-		p.aplat(face, chair, Pinceau.DOME, q, Vector2(3.0, 3.0))
-		# (la peau autour, ses fibres vertes ; la chair, ses points ; une goutte qui perle et coule)
-		p.tracer(Pinceau.ellipse(q, 2.2, 1.6, 12), 0.45, Color(P.MOUSSE.darkened(0.2), 0.7), false)
-		p.disque(q + Vector2(-0.5, -0.3), 0.3, 0.3, Color(P.MOUSSE.darkened(0.35), 0.8))
-		p.disque(q + Vector2(0.6, 0.2), 0.25, 0.25, Color(P.MOUSSE.darkened(0.35), 0.8))
-		var goutte := q + Vector2(cote * 0.4, 2.6 + float(o.graine % 3))
-		p.tracer(PackedVector2Array([q + Vector2(cote * 0.3, 1.5), goutte]), 0.5, Color(P.ECHO.lerp(P.PAPIER, 0.4), 0.7), false)
-		p.disque(goutte, 0.55, 0.65, Color(P.ECHO.lerp(P.PAPIER, 0.3), 0.85))
-
-
-static func _colonne(p, r: RandomNumberGenerator, pied: Vector2, w: float, h: float, t: Color) -> void:
-	var poly := PackedVector2Array([pied + Vector2(-w, 1.0)])
-	for i in 9:
-		var a := PI + PI * i / 8.0
-		poly.append(pied + Vector2(cos(a) * w, -h + w + sin(a) * w))
-	poly.append(pied + Vector2(w, 1.0))
-	p.aplat(poly, t, Pinceau.ECORCE, pied + Vector2(0, -h * 0.5), Vector2(w * 1.05, h * 0.55))
-	p.contour(poly, 1.3, ENCRE, r, 3)
-	for k in [-0.5, 0.0, 0.5]:
-		var x: float = pied.x + w * k
-		var cote := Vector2(x, pied.y - 1.0)
-		p.tracer(PackedVector2Array([cote, Vector2(x * 0.92 + pied.x * 0.08, pied.y - h + w * (0.4 + absf(k)))]), 0.7, Color(ENCRE, 0.55), false)
-		var y := pied.y - 4.0
-		while y > pied.y - h + w:
-			p.disque(Vector2(x + 0.6, y), 0.55, 0.5, P.PAPIER.lightened(0.1))
-			y -= r.randf_range(4.0, 6.0)
-
-
-static func _bras_cactus(p, r: RandomNumberGenerator, b: Array, w: float, t: Color) -> void:
-	var cote: float = b[0]
-	var y0 := -float(b[1])
-	var y1 := -float(b[2])
-	var x1 := cote * float(b[3])
-	# (le coude : il part de la colonne à l'horizontale, puis se relève)
-	var coude := PackedVector2Array()
-	for k in 7:
-		var u := k / 6.0
-		var a := PI * 0.5 * u
-		coude.append(Vector2(lerpf(0.0, x1, sin(a)), y0 - (1.0 - cos(a)) * (x1 * cote) * 0.5))
-	var g := PackedVector2Array()
-	var d := PackedVector2Array()
-	for k in coude.size():
-		var tan_ := (coude[mini(k + 1, 6)] - coude[maxi(k - 1, 0)]).normalized()
-		g.append(coude[k] + tan_.orthogonal() * w)
-		d.append(coude[k] - tan_.orthogonal() * w)
-	p.bande(g, d, Color(ENCRE, 0.9))
-	var g2 := PackedVector2Array()
-	var d2 := PackedVector2Array()
-	for k in coude.size():
-		var tan_ := (coude[mini(k + 1, 6)] - coude[maxi(k - 1, 0)]).normalized()
-		g2.append(coude[k] + tan_.orthogonal() * (w - 1.0))
-		d2.append(coude[k] - tan_.orthogonal() * (w - 1.0))
-	p.bande(g2, d2, t)
-	var haut_du_coude := coude[6]
-	_colonne(p, r, Vector2(haut_du_coude.x, haut_du_coude.y + w * 0.5), w, maxf(6.0, haut_du_coude.y - y1 + w * 0.5), t)
-
-
-# une plante-caillou : des paires de feuilles rondes, couleur de pierre, fendues au milieu, parmi des cailloux
-static func _plante_caillou(o, p, r: RandomNumberGenerator) -> void:
-	var rx: float = o._rx
-	var pierre := P.IVOIRE.lerp(P.CENDRE, 0.25)
-	for i in r.randi_range(3, 5):
-		var q := Vector2(r.randf_range(-rx, rx), r.randf_range(-1.5, 2.5))
-		var s := r.randf_range(1.2, 2.2)
-		p.disque(q, s + 0.5, s * 0.75 + 0.5, ENCRE)
-		p.disque(q, s, s * 0.75, pierre.darkened(r.randf_range(0.0, 0.2)), Pinceau.PIERRE)
-	for i in r.randi_range(2, 4):
-		var q := Vector2(r.randf_range(-0.6, 0.6) * rx, r.randf_range(-1.0, 1.0))
-		var s := r.randf_range(2.6, 3.4)
-		var t := pierre.lerp(P.BRAISE, 0.12).lerp(o.teinte, 0.15)
-		p.disque(q + Vector2(0, -s * 0.4), s + 0.6, s * 0.7 + 0.6, ENCRE)
-		p.disque(q + Vector2(0, -s * 0.4), s, s * 0.7, t, Pinceau.DOME)
-		p.tracer(PackedVector2Array([q + Vector2(-s * 0.85, -s * 0.4), q + Vector2(0, -s * 0.3), q + Vector2(s * 0.85, -s * 0.45)]), 0.8, ENCRE, false)
-		for k in 3:
-			p.disque(q + Vector2(r.randf_range(-0.6, 0.6) * s, -s * 0.4 - r.randf_range(0.2, 0.5) * s * 0.7), 0.5, 0.4, Color(P.ENCRE_DOUCE, 0.6))
 
 
 # -- les fleurs : celles des prés (de Lisière), celles de l'herbier (une fleur, un bulbe, une orchidée, une broméliacée) --
@@ -1591,7 +470,10 @@ static func _pres(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, l
 		var mil := pied.lerp(bout, 0.5) + Vector2(r.randf_range(-1.0, 1.0), 0)
 		p.tracer(PackedVector2Array([pied, mil, bout]), 1.6, Color(ENCRE, 0.8), false)
 		p.tracer(PackedVector2Array([pied, mil, bout]), 0.8, vert.darkened(0.15), false)
-		_lance(p, pied + Vector2(0, -0.5), pied + Vector2(r.randf_range(2.5, 4.0) * (1.0 if t[2] < 0.5 else -1.0), -r.randf_range(2.0, 3.5)), 1.0, vert)
+		var cote_f := 1.0 if t[2] < 0.5 else -1.0
+		T.feuille(p, pied + Vector2(0, -0.3), pied + Vector2(r.randf_range(2.5, 4.2) * cote_f, -r.randf_range(2.0, 3.8)), 1.15, vert, cote_f * 0.6, 0.4, 0.5, 4)
+		if herbier:
+			T.feuille(p, pied + Vector2(0, -0.3), pied + Vector2(-r.randf_range(2.0, 3.4) * cote_f, -r.randf_range(1.6, 3.0)), 1.0, vert.darkened(0.08), -cote_f * 0.5, 0.4, 0.5, 4)
 		if la:
 			var rc := 2.6 if herbier else r.randf_range(1.8, 2.4)
 			var np := 9 if herbier else 5
@@ -1613,14 +495,20 @@ static func _pres(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, l
 
 # des fleurs à bulbe : de longues feuilles en ruban qui retombent, une ou deux coupes de fleurs sur leurs hampes
 static func _bulbes(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, la: bool, u: float) -> void:
+	var pieds := []
 	for pied_i in r.randi_range(2, 3):
-		var pied := Vector2(r.randf_range(-o._rx * 0.6, o._rx * 0.6), r.randf_range(-o._ry * 0.5, o._ry * 0.5))
-		for i in 4:
+		pieds.append(Vector2(r.randf_range(-o._rx * 0.6, o._rx * 0.6), r.randf_range(-o._ry * 0.5, o._ry * 0.5)))
+	pieds.sort_custom(func(a, b): return a.y < b.y)
+	for pied_ in pieds:
+		var pied: Vector2 = pied_
+		# (le bulbe affleure : sa tunique brune, dans la terre remuée)
+		T.assise(p, pied + Vector2(0, 0.6), 4.0, 1.6, P.TERRE.darkened(0.3), 0.5)
+		p.disque(pied + Vector2(0, 0.2), 2.3, 1.7, ENCRE)
+		p.disque(pied + Vector2(0, 0.2), 1.7, 1.2, P.TERRE.lerp(P.BRAISE, 0.3), Pinceau.DOME)
+		for i in 5:
 			var cote := -1.0 if i % 2 == 0 else 1.0
-			var h := r.randf_range(6.0, 10.0) * u
-			var ligne := PackedVector2Array([pied, pied + Vector2(cote * 1.5, -h * 0.75), pied + Vector2(cote * r.randf_range(3.0, 5.0), -h)])
-			p.tracer(ligne, 2.6, ENCRE, false, PackedFloat32Array([2.6, 2.2, 0.8]))
-			p.tracer(ligne, 1.7, vert, false, PackedFloat32Array([1.8, 1.4, 0.3]))
+			var h := r.randf_range(6.0, 10.5) * u
+			T.feuille(p, pied, pied + Vector2(cote * r.randf_range(2.5, 6.0), -h), 1.35, vert.lightened(0.04 * i), cote * h * 0.18, 0.3, 0.5, 5)
 		var hh := r.randf_range(11.0, 15.0) * u
 		var bout := pied + Vector2(r.randf_range(-1.5, 1.5), -hh)
 		p.tracer(PackedVector2Array([pied, bout]), 1.6, ENCRE, false)
@@ -1637,52 +525,125 @@ static func _bulbes(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color,
 			p.disque(bout, 0.7, 1.1, vert.lightened(0.15))
 
 
-# des orchidées : quelques larges feuilles au pied, une hampe arquée, des fleurs en lèvre le long
+# des orchidées : deux ou trois larges feuilles charnues couchées au pied (tachées de pourpre, chez la plupart), la dernière
+# qui engaine la hampe ; la hampe monte puis s'arque, ses fleurs alternes le long, les plus ouvertes en bas : chacune son casque
+# (trois sépales, deux pétales, en éventail) et sa lèvre qui pend devant, plus claire, piquetée de sombre ; vers la pointe, des
+# boutons verts qui s'ouvriront. Cueillie : la hampe coupée, ses boutons
 static func _orchidees(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, la: bool, u: float) -> void:
+	T.ombre_douce(p, Vector2(0.5, 0.6), 6.5, 1.8, 0.22)
+	var tachee := int(o.graine) % 3 != 0
+	var charnu := vert.lerp(P.FEUILLE_SOMBRE, 0.12)
 	for i in 3:
 		var cote := -1.0 if i % 2 == 0 else 1.0
-		var a := Vector2(0, 0)
-		var b := Vector2(cote * r.randf_range(6.0, 9.0), -r.randf_range(2.0, 4.0))
-		_lance(p, a, b, 2.4, vert.lightened(0.05 * i))
+		var pa := Vector2(cote * 0.4, 0.2)
+		var pb := Vector2(cote * r.randf_range(6.0, 8.5), -r.randf_range(0.4, 2.4)) if i < 2 else Vector2(cote * r.randf_range(2.2, 3.2), -r.randf_range(5.0, 6.5))
+		var fe: Dictionary = T.feuille_charnue(p, pa, pb, 2.2 if i < 2 else 1.5, charnu.lightened(0.05 * i), cote * (0.9 if i < 2 else 0.4), 0.4, 0.6, 6, 0.25)
+		if tachee and i < 2:
+			for k in [2, 3, 4]:
+				var q: Vector2 = fe["axe"][k].lerp(fe["g"][k] if k % 2 == 0 else fe["d"][k], 0.5)
+				p.disque(q, 0.5, 0.34, Color(P.SANG.lerp(P.NUIT, 0.35), 0.7))
 	var hampe := PackedVector2Array()
 	var sens := 1.0 if o.graine % 2 == 0 else -1.0
-	for k in 7:
-		var t := k / 6.0
-		hampe.append(Vector2(sens * 7.0 * t * t, -16.0 * u * sin(t * PI * 0.6) / sin(PI * 0.6)))
-	p.tracer(hampe, 1.5, ENCRE, false)
-	p.tracer(hampe, 0.8, vert.darkened(0.2), false)
-	for k in range(3, 7):
-		var q := hampe[k] + Vector2(0, 1.5)
-		if not la:
-			p.disque(q, 1.0, 1.3, vert.lightened(0.1))
+	var haut := 18.0 * u
+	for k in 9:
+		var t := k / 8.0
+		hampe.append(Vector2(sens * 6.5 * t * t, -haut * sin(t * PI * 0.6) / sin(PI * 0.6)))
+	if not la and u < 0.6:
+		# (coupée : un chicot de hampe, sa coupe claire)
+		var bout := hampe[3]
+		p.tracer(PackedVector2Array([hampe[0], hampe[1], hampe[2], bout]), 1.5, ENCRE, false)
+		p.tracer(PackedVector2Array([hampe[0], hampe[1], hampe[2], bout]), 0.8, vert.darkened(0.2), false)
+		p.disque(bout, 0.6, 0.5, P.IVOIRE)
+		return
+	p.tracer(hampe, 1.5, ENCRE, false, PackedFloat32Array([1.6, 1.4, 1.0]))
+	p.tracer(hampe, 0.8, vert.darkened(0.2), false, PackedFloat32Array([0.9, 0.8, 0.5]))
+	var levre := couleur.lightened(0.2)
+	var sombre := couleur.darkened(0.45).lerp(P.SANG, 0.3)
+	for k in range(3, 9):
+		var tg := (hampe[mini(k + 1, 8)] - hampe[k - 1]).normalized()
+		var cote := 1.0 if k % 2 == 0 else -1.0
+		var q := hampe[k] + tg.orthogonal() * cote * 0.9 + Vector2(0.0, 0.6)
+		var s := lerpf(0.9, 0.62, (k - 3) / 5.0)
+		if not la or k >= 7:
+			# (les boutons : verts, pointus, de plus en plus petits vers la pointe)
+			p.disque(q, 0.95 * s + 0.4, 1.2 * s + 0.4, ENCRE)
+			p.disque(q, 0.95 * s, 1.2 * s, vert.lightened(0.14).lerp(couleur, 0.15 if la else 0.0), Pinceau.DOME)
 			continue
-		for j in 3:
-			var a := -PI * 0.5 + (j - 1) * 1.15
-			var s := q + Vector2.from_angle(a) * 1.6
-			p.disque(s, 1.5, 1.0, ENCRE)
-			p.disque(s, 1.1, 0.7, couleur.lightened(0.12))
-		p.disque(q + Vector2(0, 1.0), 1.6, 1.4, ENCRE)
-		p.disque(q + Vector2(0, 1.0), 1.15, 1.0, couleur.darkened(0.2))
-		p.disque(q + Vector2(0, 0.6), 0.4, 0.35, P.BRAISE_COEUR)
+		# (le casque : trois sépales et deux pétales en éventail, au-dessus)
+		p.disque(q + Vector2(0.0, -0.75 * s), 2.05 * s, 1.55 * s, Color(ENCRE, 0.8))
+		for j in 5:
+			var ang := -PI * 0.5 + (j - 2) * 0.62
+			var e := q + Vector2.from_angle(ang) * 1.25 * s
+			p.disque(e, 0.62 * s, 0.44 * s, couleur.lightened(0.12) if j < 2 else couleur.darkened(0.06), Pinceau.DOME)
+		# (la lèvre : trois lobes qui pendent devant, plus clairs, piquetés de sombre ; la gorge au-dessus)
+		var lv := q + Vector2(0.0, 1.0 * s)
+		p.disque(lv, 1.35 * s + 0.4, 1.1 * s + 0.4, ENCRE)
+		for j in [-1.0, 1.0]:
+			p.disque(lv + Vector2(j * 0.85 * s, -0.15), 0.7 * s, 0.6 * s, levre.darkened(0.05))
+		p.disque(lv + Vector2(0.0, 0.2), 0.95 * s, 0.85 * s, levre, Pinceau.DOME)
+		# (ses points, en traînée sur la lèvre, d'un côté)
+		p.disque(lv + Vector2(0.2 * cote, 0.15), 0.2, 0.17, sombre)
+		p.disque(lv + Vector2(0.45 * cote, 0.5), 0.17, 0.15, sombre)
 
 
-# une broméliacée : une rosette de feuilles raides, rouges au cœur, et l'épi rouge vif qui en sort
+# une broméliacée : une rosette en vase de feuilles raides, charnues, arquées, cerclées de bandes pâles ; au cœur, l'eau
+# qu'elle garde (un miroir sombre qui luit) ; en fleurs, ses feuilles du cœur rougissent et il en sort, sur sa hampe, un épi de
+# bractées rouges imbriquées comme les écailles d'un cône, piquées de petites fleurs bleues. Cueillie : la rosette seule
 static func _bromelia(o, p, r: RandomNumberGenerator, couleur: Color, vert: Color, la: bool, u: float) -> void:
-	var c0 := Vector2(0, -2.0)
+	var c0 := Vector2(0, -2.2)
+	var glauque := vert.lerp(P.LUNE, 0.14)
+	var rouge := couleur if couleur.r > couleur.g + 0.2 and couleur.r > couleur.b + 0.2 else P.BRAISE_ROUGE.lerp(P.BRAISE, 0.2)
+	var bandes := int(o.graine) % 2 == 0
+	T.ombre_douce(p, Vector2(0.6, 0.6), 8.5, 2.2, 0.26)
 	var feuilles := []
-	for i in 9:
-		feuilles.append(lerpf(-PI + 0.2, -0.2, i / 8.0) + r.randf_range(-0.1, 0.1))
-	feuilles.sort_custom(func(a, b): return sin(a) < sin(b))
-	for a in feuilles:
-		var bout := c0 + Vector2(cos(a) * 9.0, sin(a) * 7.0 * u)
-		_lance(p, c0, bout, 1.8, vert.lerp(P.BRAISE_ROUGE, 0.12 if absf(cos(a)) < 0.5 else 0.0))
-	if la:
-		var rouge := couleur if couleur.r > couleur.g + 0.2 and couleur.r > couleur.b + 0.2 else P.BRAISE_ROUGE.lerp(P.BRAISE, 0.2)
-		var epi := PackedVector2Array([c0 + Vector2(-2.0, 0), c0 + Vector2(-1.6, -7.0), c0 + Vector2(0, -11.0), c0 + Vector2(1.6, -7.0), c0 + Vector2(2.0, 0)])
-		p.aplat(_grossi(epi, c0 + Vector2(0, -5.0), 0.7), ENCRE)
-		p.aplat(epi, rouge, Pinceau.DOME, c0 + Vector2(0, -5.0), Vector2(2.2, 6.0))
-		for k in 4:
-			p.tracer(PackedVector2Array([c0 + Vector2(-1.6, -2.0 - k * 2.2), c0 + Vector2(1.6, -3.0 - k * 2.2)]), 0.5, Color(ENCRE, 0.5))
+	for i in 11:
+		feuilles.append([lerpf(-PI + 0.12, -0.12, i / 10.0) + r.randf_range(-0.08, 0.08), r.randf_range(0.85, 1.1)])
+	for i in 3:
+		feuilles.append([lerpf(0.55, PI - 0.55, i / 2.0) + r.randf_range(-0.1, 0.1), r.randf_range(0.6, 0.75)])
+	feuilles.sort_custom(func(x, y): return sin(x[0]) < sin(y[0]))
+	var coeur_fait := false
+	for fe in feuilles:
+		var a: float = fe[0]
+		if not coeur_fait and sin(a) > -0.3:
+			# (le cœur du vase, entre les feuilles du fond et celles de devant : l'eau qu'il garde, et l'épi qui en sort)
+			coeur_fait = true
+			p.disque(c0 + Vector2(0.0, -1.4), 2.4, 1.2, ENCRE)
+			p.disque(c0 + Vector2(0.0, -1.4), 1.8, 0.8, P.NUIT_BLEUE.lerp(glauque, 0.25))
+			p.tracer(PackedVector2Array([c0 + Vector2(-1.1, -1.7), c0 + Vector2(0.2, -1.9)]), 0.4, Color(P.LUNE, 0.8))
+			if la:
+				_epi_de_bromelia(p, c0 + Vector2(0.0, -1.6), 13.0 * u, rouge)
+		var l: float = 9.6 * float(fe[1]) * (0.75 + 0.25 * u)
+		var leve := 2.6 + 4.2 * (1.0 - absf(cos(a))) * (1.0 if sin(a) < 0.0 else 0.35)
+		var bout := c0 + Vector2(cos(a) * l * 0.9, sin(a) * l * 0.42 - leve)
+		var du_coeur := absf(cos(a)) < 0.5 and sin(a) < 0.0
+		var ton := glauque.lerp(rouge, 0.5 if (la and du_coeur) else 0.0)
+		ton = ton.lightened(0.06) if cos(a) < 0.0 else ton.darkened(0.06)
+		var pied := c0 + Vector2(cos(a) * 1.2, 0.4)
+		var f: Dictionary = T.feuille_charnue(p, pied, bout, 1.35 + 0.2 * absf(cos(a)), ton, signf(cos(a)) * 2.0, 0.3, 0.6, 6, 0.3)
+		if bandes:
+			for k in [2, 4]:
+				p.tracer(PackedVector2Array([f["g"][k], f["d"][k]]), 0.45, Color(P.LUNE.lerp(ton, 0.3), 0.55), false)
+		# (sa pointe, un peu rougie, armée)
+		p.disque(bout, 0.4, 0.4, ton.lerp(rouge, 0.4).darkened(0.1))
+
+
+# l'épi d'une broméliacée, de pied à pied + (0, -h) : sa hampe, puis ses bractées rouges, celles du haut d'abord (chacune cache
+# la base de celle du dessus), une petite fleur bleue au bout d'une sur deux
+static func _epi_de_bromelia(p, pied: Vector2, h: float, rouge: Color) -> void:
+	var sommet := pied + Vector2(0.0, -h)
+	p.tracer(PackedVector2Array([pied, pied + Vector2(0.0, -h * 0.5)]), 1.5, ENCRE, false)
+	p.tracer(PackedVector2Array([pied, pied + Vector2(0.0, -h * 0.5)]), 0.75, rouge.darkened(0.25), false)
+	for k in range(6, -1, -1):
+		var t := k / 6.0
+		var q := pied.lerp(sommet, 0.42 + t * 0.58)
+		var w := 1.55 * (1.0 - t * 0.5)
+		var cote := 1.0 if k % 2 == 0 else -1.0
+		var pointe := q + Vector2(cote * w * 0.6, -2.0 * (1.0 - t * 0.3))
+		T.tri(p, q + Vector2(-w - 0.45, 0.9), q + Vector2(w + 0.45, 0.9), pointe + Vector2(cote * 0.2, -0.6), ENCRE)
+		T.tri(p, q + Vector2(-w, 0.7), q + Vector2(w, 0.7), pointe, rouge.lightened(0.14) if cote < 0.0 else rouge.darkened(0.08))
+		if k % 2 == 1:
+			p.disque(pointe + Vector2(cote * 0.5, 0.2), 0.5, 0.45, Color(ENCRE, 0.7))
+			p.disque(pointe + Vector2(cote * 0.5, 0.2), 0.32, 0.28, P.PEUR.lerp(P.LUNE, 0.3))
 
 
 # -- l'eau : une mare, et ce qui y flotte --
@@ -1714,13 +675,16 @@ static func _aquatique(o, p, r: RandomNumberGenerator) -> void:
 				var q := Vector2(cos(a) * rx * d, sin(a) * ry * d)
 				p.disque(q, r.randf_range(0.7, 1.2), r.randf_range(0.45, 0.75), t.lightened(r.randf_range(0.0, 0.25)))
 		"algue":
-			# (des filaments verts sous la surface, et des nattes qui flottent)
-			for i in 7:
-				var q := Vector2(r.randf_range(-0.7, 0.7) * rx, r.randf_range(-0.5, 0.5) * ry)
+			# (ses mèches montent du fond en ondulant, comme sur la planche d'Orvane : on les voit sous l'eau, plus fines
+			# vers la surface ; et des nattes qui flottent)
+			for i in 9:
+				var q := Vector2(r.randf_range(-0.72, 0.72) * rx, r.randf_range(-0.2, 0.6) * ry)
+				var haut := r.randf_range(5.0, 9.0)
 				var ligne := PackedVector2Array()
-				for k in 6:
-					ligne.append(q + Vector2(k * 2.2, sin(k * 1.3 + i) * 1.2))
-				p.tracer(ligne, 1.1, Color(t.lightened(0.1), 0.75), false)
+				for k in 7:
+					ligne.append(q + Vector2(sin(k * 1.1 + i * 1.7) * 1.5, -haut * k / 6.0))
+				p.tracer(ligne, 1.9, Color(P.ENCRE, 0.35), false, PackedFloat32Array([2.2, 2.0, 1.8, 1.6, 1.3, 1.0, 0.6]))
+				p.tracer(ligne, 1.1, Color(t.lightened(0.04 + 0.03 * (i % 3)), 0.9), false, PackedFloat32Array([1.5, 1.4, 1.2, 1.1, 0.9, 0.7, 0.3]))
 			var nattes := 3 if o.reste > 0 else 1
 			for i in nattes:
 				var q := Vector2(r.randf_range(-0.5, 0.5) * rx, r.randf_range(-0.4, 0.4) * ry)
@@ -1740,11 +704,15 @@ static func _aquatique(o, p, r: RandomNumberGenerator) -> void:
 				for k in 15:
 					var a := ang + 0.45 + (TAU - 0.9) * k / 14.0
 					poly.append(q + Vector2(cos(a) * s, sin(a) * s * 0.48))
+				# (son ombre sur l'eau, puis la feuille : cirée, elle luit ; ses nervures en étoile)
+				p.aplat(_grossi(poly, q + Vector2(0.6, 0.9), 0.4), Color(P.ENCRE, 0.3))
 				p.aplat(_grossi(poly, q, 0.7), ENCRE)
-				p.aplat(poly, t.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.25)), Pinceau.FEUILLAGE, q, Vector2(s, s * 0.5) * 1.05)
-				for k in 3:
-					var a := ang + 0.45 + (TAU - 0.9) * (k + 1) / 4.0
-					p.tracer(PackedVector2Array([q, q + Vector2(cos(a) * s * 0.8, sin(a) * s * 0.38)]), 0.5, Color(ENCRE, 0.35), false)
+				var ton := t.lerp(P.FEUILLE_SOMBRE, r.randf_range(0.0, 0.25))
+				p.aplat(poly, ton, Pinceau.DOME, q + Vector2(s * 0.2, s * 0.2), Vector2(s, s * 0.5) * 1.5)
+				for k in 5:
+					var a := ang + 0.45 + (TAU - 0.9) * (k + 0.5) / 5.0
+					p.tracer(PackedVector2Array([q, q + Vector2(cos(a) * s * 0.84, sin(a) * s * 0.4)]), 0.5, Color(ENCRE, 0.35), false)
+				p.tracer(PackedVector2Array([q + Vector2(-s * 0.6, -s * 0.22), q + Vector2(-s * 0.2, -s * 0.36)]), 0.6, Color(P.PAPIER, 0.4))
 			if o.reste > 0 and o.en_fleurs:
 				var q: Vector2 = feuilles[0] + Vector2(1.5, -1.5)
 				var fleur := P.PAPIER.lightened(0.1) if o.graine % 3 != 0 else P.AUBE.lerp(P.PEUR, 0.15)

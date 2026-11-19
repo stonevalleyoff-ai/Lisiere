@@ -535,6 +535,11 @@ func _reprise_du_compte() -> void:
 	_rev_compte = -1
 	var ici := PartieGardee.lire() if essai == null else {}
 	ui.montrer_reprise(ici)
+	# (sur l'appareil, une partie d'une version plus récente du jeu : on le dit, et une partie nouvelle ne la remplace qu'au second
+	# appui)
+	if essai == null and ici.is_empty() and PartieGardee.plus_recente(PartieGardee.lire_brut()):
+		ui.plus_recente = true
+		ui.dire_titre("Ta partie en cours vient d'une version plus récente du jeu : mets-le à jour pour la reprendre.")
 	if essai != null or session == null or not session.connecte():
 		return
 	await session.renvoyer_oubli()
@@ -547,6 +552,12 @@ func _reprise_du_compte() -> void:
 		_reprise_compte = p["donnees"]
 		ui.montrer_reprise(_reprise_compte)
 		ui.dire_titre("Ta partie te suit : la plus récente est sur ton compte.")
+	elif typeof(p) == TYPE_DICTIONARY and PartieGardee.plus_recente(p.get("donnees")):
+		# (la partie du compte vient d'une version plus récente du jeu : celui-ci ne la reprend pas, et ne l'écrase pas — celle de
+		# l'appareil, reprise, n'y part pas sans conflit ; une partie nouvelle la remplacerait, au second appui)
+		_rev_compte = -1
+		ui.plus_recente = true
+		ui.dire_titre("Ta partie en cours vient d'une version plus récente du jeu : mets-le à jour pour la reprendre.")
 
 
 # sur un téléphone, les sons se fabriquent avant la partie (sons.gd, mobile) : pendant qu'on joue, ils figeraient l'image
@@ -614,6 +625,8 @@ func _nouvelle_partie(gardee: Dictionary = {}) -> void:
 	couche_ciel.add_child(ciel)
 	incendie.vider()
 	climat.preparer(graine, biome_info.get("axes", {}), meteo, biome)
+	# (le monde ouvert : l'eau qui reste dans les creux est celle de chaque lieu, la même pour le plan, le temps et son dessin)
+	climat.crue_fond_en = Callable(monde, "crue_fond_en") if ouvert and carte != null else Callable()
 	# (ce que le temps dessine dans le lieu : le sol détrempé, l'eau, la foudre ; les flammes de l'incendie)
 	for dessin in [TempsSol.new(), IncendieFlammes.new()]:
 		dessin.jeu = self
@@ -1205,11 +1218,16 @@ func _ranger_cueilli(k: String, n: int, ou: Vector2) -> void:
 
 
 # un fruit, sur un arbre qui en porte (scripts/objet.gd, cueillir_fruit) : à son pied, elle se baisse et le ramasse ; dans ses
-# branches, elle tend le bras, la couronne frémit et lâche quelques feuilles
+# branches, elle tend le bras, la couronne frémit et lâche quelques feuilles ; trop haut pour son bras (un géant, un palmier,
+# un baobab : scripts/objet.gd, fruits_hors_de_portee), elle secoue le fût, la couronne s'ébranle et le fruit lui tombe dans
+# les mains
 func _cueillir_fruit(o) -> void:
 	var a_terre: bool = int(o.tombes) > 0
-	joueur.geste("brindille" if a_terre else "cueillir", o.position + (Vector2.ZERO if a_terre else Vector2(0.0, -30.0)))
+	var hors: bool = not a_terre and o.fruits_hors_de_portee()
+	joueur.geste("brindille" if a_terre else ("secouer" if hors else "cueillir"), o.position + (Vector2.ZERO if a_terre else Vector2(0.0, -20.0 if hors else -30.0)))
 	var g: Dictionary = o.cueillir_fruit()
+	if hors:
+		o._secoue = 0.42
 	var haut: Vector2 = o.position + (Vector2(0.0, 6.0) if a_terre else Vector2(o._cc.x, o._cc.y + o._ry * 0.7))
 	_viser({"son": "herbe", "db": -7.0 if a_terre else -4.0, "p": haut, "genre": "cueillette" if a_terre else "buisson"})
 	for k in g:
@@ -2324,6 +2342,11 @@ func _dire_le_pays(type: String) -> void:
 func _lire_biome(type: String) -> void:
 	_lecture = type
 	var partie := graine
+	# (l'échantillon de son plan, sur lequel ses parts se régleront quand son herbier arrivera : quelques quarts par image)
+	await monde.echantillonner(type)
+	if not en_partie or graine != partie:
+		_lecture = ""
+		return
 	var inst: Dictionary = await donnees.charger_lieu(type)
 	if not en_partie or graine != partie:
 		_lecture = ""

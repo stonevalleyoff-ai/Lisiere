@@ -97,6 +97,11 @@ func _lancer() -> void:
 				await _le_collet_de_la_noire()
 			"reunie":
 				await _la_noire_reunie()
+			"repartition":
+				await _la_repartition()
+			"dessin":
+				await jeu._commencer("foret")
+				_le_dessin_de_la_flore()
 			_:
 				await _la_cueillette_nourriciere()
 				await _les_retouches()
@@ -317,14 +322,18 @@ func _lancer() -> void:
 	# la crue : l'eau gagne les creux, pas la butte du réveil ; on y patauge, on y est trempée, un feu s'y noie, on n'en allume pas
 	C.crue = 1.0
 	var creux := Vector2.ZERO
-	for k in 400:
-		var q2 := Vector2(-1800.0 + 180.0 * (k % 20), -1800.0 + 180.0 * (k / 20))
+	for k in 1600:
+		var q2 := Vector2(-1800.0 + 90.0 * (k % 40), -1800.0 + 90.0 * (k / 40))
 		# (un creux franc : l'eau y est profonde là où elle sera, et là où sera le feu qu'on y noie)
-		# (et rien autour qui pousserait ailleurs le feu qu'elle voudra y poser : un tronc, un rocher, un vestige)
-		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and C.eau(q2 + Vector2(34, 4)) > 0.9 and jeu.monde.repousser(q2, 8.0).distance_to(q2) < 1.0 \
-				and jeu.monde.repousser(q2 + Vector2(34.0, 4.0), 12.0).distance_to(q2 + Vector2(34.0, 4.0)) < 1.0:
+		if C.eau(q2) > 0.9 and C.eau(q2 + Vector2(30, 0)) > 0.9 and C.eau(q2 + Vector2(34, 4)) > 0.9:
 			creux = q2
 			break
+	# (et rien autour qui pousserait ailleurs le feu qu'elle voudra y poser, ni elle : un tronc, un rocher, un vestige — la place
+	# est dégagée, le contrôle ne dépend pas de ce que le tirage du lieu y a mis)
+	if creux != Vector2.ZERO:
+		for gene in jeu.monde.autour(creux + Vector2(17.0, 2.0), 90.0):
+			if is_instance_valid(gene) and gene != j and float(gene.rayon) > 0.0:
+				jeu.monde.retirer(gene)
 	j.position = creux
 	# (elle regarde vers la droite : c'est là, dans l'eau profonde, qu'elle voudra poser son feu)
 	j.regard = 1.0
@@ -340,8 +349,12 @@ func _lancer() -> void:
 	j.inventaire["bois"] = 30
 	j.inventaire["pierre"] = 10
 	jeu.fabriquer("feu")
-	verif(creux != Vector2.ZERO and C.eau(Vector2.ZERO) == 0.0 and C.allure(creux) < 0.62 and j.trempe > 40.0 and j.en_feu == 0.0 and not feu_noye.allume() and jeu.feux.size() == n_feux,
+	var crue_ok: bool = creux != Vector2.ZERO and C.eau(Vector2.ZERO) == 0.0 and C.allure(creux) < 0.62 and j.trempe > 40.0 and j.en_feu == 0.0 and not feu_noye.allume() and jeu.feux.size() == n_feux
+	verif(crue_ok,
 		"la crue : l'eau gagne les creux, pas la butte du réveil ; on y patauge (%d %% de l'allure), on y est trempée, les flammes s'y éteignent, un feu s'y noie et l'on n'en allume pas" % int(C.allure(creux) * 100.0))
+	if not crue_ok:
+		print("    (le creux %s, l'eau au réveil %.2f, l'allure %.2f, trempée %d, en feu %.1f, le feu noyé allumé : %s, feux %d pour %d)" % [
+			str(creux), C.eau(Vector2.ZERO), C.allure(creux), int(j.trempe), float(j.en_feu), str(feu_noye.allume()), jeu.feux.size(), n_feux])
 	jeu.feux.erase(feu_noye)
 	feu_noye.queue_free()
 	C.crue = 0.0
@@ -640,6 +653,7 @@ func _lancer() -> void:
 	_les_pattes()
 	await _lieu_sans_bord()
 	await _la_flore()
+	await _la_repartition()
 	await _les_pays()
 	await _l_artisanat()
 	await _la_cueillette_nourriciere()
@@ -2443,6 +2457,12 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		var sellee: bool = E.harnacher(bete, "selle")
 		jeu.agir()
 		var en_selle: bool = E.monture == bete and bete.montee and j.monture == bete
+		# (le même bout de chemin, à cheval puis à pied, et rien dessus où buter : seule la selle y change l'allure — un tronc, un
+		# rocher que le tirage du lieu met devant elle ne la retient pas plus d'une fois que de l'autre)
+		var depart: Vector2 = j.position
+		for o_c in jeu.monde.autour(depart + Vector2(160.0, 0.0), 200.0):
+			if float(o_c.rayon) > 0.0:
+				jeu.monde.retirer(o_c)
 		var x0: float = j.position.x
 		j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
 		E.maj(0.5)
@@ -2450,6 +2470,7 @@ func _le_jardin_et_les_betes(F: Dictionary) -> void:
 		var dessous: bool = bete.position.distance_to(j.position) < 1.0
 		jeu.agir()
 		var a_pied: bool = E.monture == null and not bete.montee and j.monture == null
+		j.position = depart
 		x0 = j.position.x
 		j.deplacer(Vector2(1, 0), 0.5, jeu.monde)
 		var a_pied_dx: float = j.position.x - x0
@@ -4741,8 +4762,11 @@ func _la_durete() -> void:
 	if un != null:
 		for k in 4:
 			cueillies += int(un.recolter().get("baies", 0))
-	verif(buissons.size() <= int(RR.BUISSONS + RR.BUISSONS_HUMIDE) and buissons.size() >= 5 and pleins and cueillies == RR.BAIES_PAR_BUISSON and un._repousse == RR.REPOUSSE_BAIES,
-		"les baies sont rares : %d buissons dans le lieu, %d poignées chacun, qui repoussent en %d secondes" % [buissons.size(), cueillies, int(RR.REPOUSSE_BAIES)])
+	# (au plus ce que la règle en donne à un lieu détrempé, une année vigoureuse pour Orvane — sa météo en met jusqu'à 1,3 fois plus :
+	# scripts/milieu.gd, densites —, et ce que le tirage d'un lieu, fourré par fourré, y ajoute)
+	var au_plus := int((RR.BUISSONS + RR.BUISSONS_HUMIDE) * 1.3)
+	verif(buissons.size() <= au_plus and buissons.size() >= 5 and pleins and cueillies == RR.BAIES_PAR_BUISSON and un._repousse == RR.REPOUSSE_BAIES,
+		"les baies sont rares : %d buissons dans le lieu (au plus %d), %d poignées chacun, qui repoussent en %d secondes" % [buissons.size(), au_plus, cueillies, int(RR.REPOUSSE_BAIES)])
 	if un != null:
 		un.reprendre("buisson", un.plein, 0.0)
 	jeu.horloge = garde["h"]
@@ -5793,37 +5817,836 @@ func _l_atelier(F: Dictionary) -> void:
 
 # un grand rectangle d'un biome, loin de tout, semé comme un morceau du monde ouvert (son plan, puis ses objets) : ce qu'il y
 # pousse, par forme (les objets sont défaits ensuite)
-func _semer_a_part(type: String, coin: Vector2) -> Dictionary:
+# (le plan est celui du monde : scripts/milieu.gd — chaque place a son milieu, et sa plante s'y tire selon sa part et son goût.
+# garder : les objets restent, pour qu'on les compte — scripts/recensement.gd — ; ils sont rendus dans « objets », à défaire)
+func _semer_a_part(type: String, coin: Vector2, garder: bool = false) -> Dictionary:
 	var W = jeu.monde
+	var Mi = load("res://scripts/milieu.gd")
 	var L: Dictionary = W.lieu_de(type)
 	var rect := Rect2(coin, Vector2(8400.0, 8400.0))
 	var r := RandomNumberGenerator.new()
 	r.seed = 4242
 	var plan: Array = []
-	W._prevoir_lieu(r, plan, rect, str(L["arbre"]), L["mesures"], type)
+	var ctx: Dictionary = W._contexte(type)
+	Mi.prevoir(ctx, r, rect, plan)
 	var rc := RandomNumberGenerator.new()
 	rc.seed = 4343
-	W._prevoir_cueillette(rc, plan, rect, type, W._arbres_du_plan(plan, rect))
+	Mi.cueillette(ctx, rc, rect, plan, W._arbres_du_plan(plan, rect))
 	var par_forme := {}
 	var genres := {}
 	var mal := []
 	var vides := 0
-	for e in plan:
-		var o = W._poser(str(e[0]), e[1], L["palette"][e[2]] if e[2] != "" else Color.WHITE, int(e[3]), L)
+	var gardes: Array = []
+	# (comme le monde à son troisième plan : un groupe tire une seule plante, d'après sa première place)
+	var tete := Vector2.INF
+	var groupes := {}
+	var groupes_avant := {}
+	var i_tete := -1
+	for i_e in plan.size():
+		var e: Array = plan[i_e]
+		if int(e[5]) >= 0 and Mi.rang(int(e[5])) == 0:
+			tete = e[1]
+			i_tete = i_e
+		var o = W._poser(str(e[0]), e[1], L["palette"][e[2]] if e[2] != "" else Color.WHITE, int(e[3]), L, int(e[5]), false, null, tete if int(e[5]) >= 0 else Vector2.INF)
 		if o == null:
 			vides += 1
 			continue
+		if int(e[5]) >= 0 and Mi.taille(int(e[5])) > 1 and str(o.plante) != "" and str(e[0]) in ["sol", "buisson"]:
+			if not groupes.has(i_tete):
+				groupes[i_tete] = {}
+			groupes[i_tete][str(o.plante)] = true
+			# (au deuxième plan, chaque place tirait d'après sa propre cellule : ce que ce groupe y aurait tiré)
+			var tb_a = W._table(type).get(str(e[0]))
+			if tb_a != null:
+				var k_a := absi(int(e[3])) % 10007
+				var pl_a: Dictionary = Mi.tirer(tb_a, int(e[5]), k_a, Mi.cellule(str(e[0]), e[1], k_a, int(e[5]), W._graine))
+				if not pl_a.is_empty():
+					if not groupes_avant.has(i_tete):
+						groupes_avant[i_tete] = {}
+					groupes_avant[i_tete][str(pl_a["id"])] = true
 		genres[o.genre] = int(genres.get(o.genre, 0)) + 1
 		if o.plante != "":
 			par_forme[o.forme] = int(par_forme.get(o.forme, 0)) + 1
 			if not load("res://scripts/flore_dessins.gd").sait(o.forme) or o.planche:
 				mal.append(o.forme)
+		if garder:
+			gardes.append(o)
+		else:
+			W._defaire(o)
+	var meles := 0
+	for g_t in groupes:
+		if groupes[g_t].size() > 1:
+			meles += 1
+	var meles_avant := 0
+	for g_t in groupes_avant:
+		if groupes_avant[g_t].size() > 1:
+			meles_avant += 1
+	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides, "objets": gardes, "rect": rect, "plan": plan.size(), "groupes": groupes.size(), "meles": meles,
+		"meles_avant": meles_avant, "groupes_avant": groupes_avant.size()}
+
+
+# --- la répartition (scripts/milieu.gd, scripts/recensement.gd) : chaque plante de l'herbier d'Orvane se tient dans son milieu
+# — les roseaux au bord de l'eau, les fougères sous le couvert, les géants à l'écart, les lichens contre la pierre, les cactus
+# espacés — et garde sa part. Tout est compté sur de grands nombres (un lieu entier, puis quatre fois sa surface par biome),
+# avec de la marge : rien ne tient à un tirage. Puis les parties gardées : celle d'avant garde son plan ---
+var _version_du_lieu_ferme := 0
+const R_TRONES: float = preload("res://scripts/regles.gd").MILIEU_TRONES      # (la trame des places de géants)
+
+
+# une frontière du monde ouvert entre deux biomes : un point de « a » tout contre « b » (Vector2.INF : aucune trouvée), en partant
+# de la région de « a » la plus proche du réveil
+func _frontiere(a: String, b: String) -> Vector2:
+	var C = jeu.carte
+	var regs: Array = []
+	for kr in C.regions.size():
+		if str(C.regions[kr]["type"]) == a:
+			regs.append(kr)
+	regs.sort_custom(func(u, v): return C.regions[u]["pos"].length() < C.regions[v]["pos"].length())
+	for kr in regs:
+		var c: Vector2 = C.regions[kr]["pos"] - C.tordre(C.regions[kr]["pos"])
+		if C.type_en(c) != a:
+			continue
+		for i_d in 16:
+			var sens := Vector2.from_angle(i_d * TAU / 16.0)
+			var avant := c
+			for pas in range(1, 200):
+				var q: Vector2 = c + sens * pas * 100.0
+				var t: String = C.type_en(q)
+				if t == b:
+					return avant
+				if t != a:
+					break
+				avant = q
+	return Vector2.INF
+
+
+# --- le troisième plan du monde ouvert (monde.gd, PLAN) : ce que la carte dit nu n'a pas d'arbre prévu, les places de géants se
+# jugent chez elles, l'eau des creux est celle du lieu (la même pour le plan, le temps qu'il fait et son dessin, où que soit la
+# veilleuse). Et les plans d'avant, ceux des parties gardées, n'ont pas bougé : leurs rangs désignent les mêmes places ---
+func _le_troisieme_plan(W) -> void:
+	var Mi = load("res://scripts/milieu.gd")
+	var C = jeu.carte
+	var Cl = jeu.climat
+	var T = jeu.terrain
+	# les plans d'avant n'ont pas bougé (leur empreinte, pour la graine de l'essai)
+	var e2 := _empreinte_du_plan(W, 2)
+	var e1 := _empreinte_du_plan(W, 1)
+	verif(W._graine == 2524636127 and e2.begins_with("75debd1f67803adf") and e1.begins_with("065ee89a0f26d072"),
+		"le deuxième plan et le premier n'ont pas bougé : une partie gardée à l'un d'eux retrouve ses places par leur rang (empreintes %s et %s%s)" % [
+		e2, e1, "" if W._graine == 2524636127 else " ; la graine de l'essai a changé (%d) : les empreintes sont à refaire" % W._graine])
+	# où regarder : une vallée de rivière, une montagne, une jungle (au cœur de leur région), une frontière entre un marais et une
+	# prairie, entre une forêt et une prairie
+	var F_m := _frontiere("marais", "prairie")
+	var F_f := _frontiere("foret", "prairie")
+	var centres: Array = [F_m, F_f]
+	for type in ["riviere", "montagne", "jungle"]:
+		var ou := -1
+		for kr in C.regions.size():
+			if str(C.regions[kr]["type"]) == type and (ou < 0 or C.regions[kr]["pos"].length() < C.regions[ou]["pos"].length()):
+				ou = kr
+		if ou >= 0:
+			centres.append(C.regions[ou]["pos"] - C.tordre(C.regions[ou]["pos"]))
+	var ks := {}
+	for c in centres:
+		if c == Vector2.INF:
+			continue
+		var k0: Vector2i = W._cle_m(c)
+		for dx in range(-2, 3):
+			for dy in range(-2, 3):
+				ks[k0 + Vector2i(dx, dy)] = true
+	# rien n'est prévu de pousser là où la carte le dit nu — un lit de rivière, un lac, une paroi : ni un arbre, ni une place de
+	# géant ; et ce qui vient au pied d'un arbre (une liane, une fougère, une orchidée) a un vrai arbre près de lui
+	var avant: int = W.plan_version
+	var fantomes := {2: 0, 3: 0}
+	var arbres := {2: 0, 3: 0}
+	var seuls := {2: 0, 3: 0}
+	var pieds := {2: 0, 3: 0}
+	var surs := 0
+	var faux_surs := 0
+	for version in [2, 3]:
+		W.plan_version = version
+		for k in ks:
+			var plan: Array = W._plan_m(k)
+			var vrais: Array = []
+			for e in plan:
+				if str(e[0]) in ["arbre", "sapin"]:
+					arbres[version] += 1
+					if C.nu(e[1]):
+						fantomes[version] += 1
+					else:
+						vrais.append(e[1])
+			for e in plan:
+				if e.size() > 5 and int(e[5]) >= 0 and (int(e[5]) & Mi.PIED) and not C.nu(e[1]):
+					pieds[version] += 1
+					if not vrais.any(func(x): return x.distance_to(e[1]) < 60.0):
+						seuls[version] += 1
+				# (une place d'un quart où la carte ne dit rien nu ne la relit pas en se posant : elle ne l'est pas)
+				if e.size() > 6 and bool(e[6]):
+					surs += 1
+					if C.nu(e[1]):
+						faux_surs += 1
+	W.plan_version = avant
+	verif(fantomes[3] == 0 and seuls[3] == 0 and fantomes[2] > 0 and arbres[3] > 300 and pieds[3] > 50 and surs > 500 and faux_surs == 0,
+		"le plan sait ce que la carte dit nu : des %d arbres prévus près d'une rivière, d'un relief, d'une jungle, d'une frontière, aucun dans l'eau ni sur une paroi (%d au deuxième plan, qui ne tenaient qu'à la pose), et les %d plantes « au pied d'un arbre » ont toutes un vrai arbre près d'elles (%d à côté de rien au deuxième plan) ; les %d places des quarts où la carte ne dit rien nu ne le sont pas (%d)" % [
+		arbres[3], fantomes[2], pieds[3], seuls[2], surs, faux_surs])
+	# les places de géants se jugent chez elles : deux quarts voisins voient les mêmes, de part et d'autre d'une frontière
+	var desaccords := {2: 0, 3: 0}
+	var vus := 0
+	for version in [2, 3]:
+		W.plan_version = version
+		var sites := {}
+		var rects := {}
+		for c in [F_m, F_f]:
+			if c == Vector2.INF:
+				continue
+			var Q0 := Vector2i((c / (W.MORCEAU * 0.5)).floor())
+			for dx in range(-3, 4):
+				for dy in range(-3, 4):
+					var Q := Q0 + Vector2i(dx, dy)
+					var t: String = W._type_du_quart(Q)
+					if t == "" or sites.has(Q):
+						continue
+					var quart := Rect2(Vector2(Q) * W.MORCEAU * 0.5, Vector2(W.MORCEAU, W.MORCEAU) * 0.5)
+					var l := {}
+					for e_s in Mi.trones(W._contexte(t, quart), quart):
+						l[Vector2i((Vector2(e_s[0]) / R_TRONES).floor())] = true
+					sites[Q] = l
+					rects[Q] = quart
+		for Q in sites:
+			for Q2 in [Q + Vector2i(1, 0), Q + Vector2i(0, 1)]:
+				if not sites.has(Q2) or W._type_du_quart(Q) == W._type_du_quart(Q2):
+					continue
+				# (les cellules que les deux regardent)
+				var r_a: Rect2 = Rect2(rects[Q]).grow(115.0)
+				var r_b: Rect2 = Rect2(rects[Q2]).grow(115.0)
+				var a_c := Vector2i((r_a.position / R_TRONES).floor()).max(Vector2i((r_b.position / R_TRONES).floor()))
+				var b_c := Vector2i((r_a.end / R_TRONES).floor()).min(Vector2i((r_b.end / R_TRONES).floor()))
+				for x in range(a_c.x, b_c.x + 1):
+					for y in range(a_c.y, b_c.y + 1):
+						if version == 3:
+							vus += 1
+						if sites[Q].has(Vector2i(x, y)) != sites[Q2].has(Vector2i(x, y)):
+							desaccords[version] += 1
+	W.plan_version = avant
+	verif(vus > 20 and desaccords[3] == 0,
+		"les places de géants se jugent chez elles (le couvert du biome où elles tombent, l'eau, la carte) : de part et d'autre d'une frontière, deux quarts voisins voient les mêmes (%d cellules regardées par les deux, %d désaccords ; %d au deuxième plan)" % [
+		vus, desaccords[3], desaccords[2]])
+	# l'eau des creux, à la frontière d'un marais et d'une prairie : la même où que soit la veilleuse (dans le marais, dans la
+	# prairie), et là où le plan la croit — un marais garde la sienne, une prairie n'en a pas ; aucun arbre n'y trempe
+	if F_m == Vector2.INF:
+		verif(false, "une frontière entre un marais et une prairie, pour y regarder l'eau des creux")
+		return
+	var garde_c := {"crue": Cl.crue, "fond": Cl.crue_fond}
+	var axes_ici: Dictionary = W.lieu_de(jeu.biome)["axes"]
+	var ecarts := 0
+	var desaccord_plan := 0
+	var mouilles := 0
+	var points := 0
+	var dans_l_eau := 0
+	var poses: Array = []
+	for kx in range(-1, 2):
+		for ky in range(-1, 2):
+			var k_m: Vector2i = W._cle_m(F_m) + Vector2i(kx, ky)
+			if not W._morceaux.has(k_m):
+				W._fabriquer(k_m)
+				poses.append(k_m)
+	var arbres_la: Array = []
+	for k_m in poses:
+		for o in W._morceaux[k_m]["objets"]:
+			if is_instance_valid(o) and o.genre in ["arbre", "sapin"]:
+				arbres_la.append(o)
+	var eau_ici := {}
+	for ou_v in ["marais", "prairie"]:
+		Cl.changer_de_lieu(W.lieu_de(ou_v)["axes"], {}, ou_v)
+		Cl.crue = Cl.crue_fond
+		var l: Array = []
+		for i in 900:
+			var q: Vector2 = F_m + Vector2(-750.0 + 50.0 * (i % 30), -750.0 + 50.0 * (i / 30))
+			l.append(float(Cl.eau(q)))
+		eau_ici[ou_v] = l
+		dans_l_eau += arbres_la.filter(func(o): return float(Cl.eau(o.position)) >= 0.6).size()
+	for i in 900:
+		var q: Vector2 = F_m + Vector2(-750.0 + 50.0 * (i % 30), -750.0 + 50.0 * (i / 30))
+		if absf(float(eau_ici["marais"][i]) - float(eau_ici["prairie"][i])) > 0.0001:
+			ecarts += 1
+		var Q := Vector2i((q / (W.MORCEAU * 0.5)).floor())
+		var t: String = W._type_du_quart(Q)
+		if t == "" or C.mouille(q) or float(C.gue_en(q)) > 0.0 or (T != null and float(T.fondriere(q)) > 0.0):
+			continue
+		points += 1
+		var ctx_q: Dictionary = W._contexte(t, Rect2(Vector2(Q) * W.MORCEAU * 0.5, Vector2(W.MORCEAU, W.MORCEAU) * 0.5))
+		var plan_mouille: bool = float(Mi.relief_en(ctx_q, q)) < float(Mi.niveau(ctx_q, q))
+		if plan_mouille:
+			mouilles += 1
+		if plan_mouille != (float(eau_ici["prairie"][i]) > 0.0):
+			desaccord_plan += 1
+	Cl.changer_de_lieu(axes_ici, jeu.meteo, jeu.biome)
+	Cl.crue = garde_c["crue"]
+	Cl.crue_fond = garde_c["fond"]
+	for k_m in poses:
+		W._oublier(k_m)
+	verif(ecarts == 0 and desaccord_plan == 0 and mouilles > 10 and points > 400 and dans_l_eau == 0 and arbres_la.size() > 10,
+		"à la frontière d'un marais et d'une prairie, l'eau des creux est celle de chaque lieu : la même que la veilleuse soit dans le marais ou dans la prairie (%d points sur 900 diffèrent), là où le plan la croit (%d désaccords sur %d points, %d mouillés), et aucun des %d arbres d'alentour n'y trempe (%d)" % [
+		ecarts, desaccord_plan, points, mouilles, arbres_la.size(), dans_l_eau])
+
+# l'empreinte du plan de quelques morceaux du monde ouvert (le cœur de quelques biomes, des frontières, une rivière, du relief),
+# à une version du plan : une partie gardée à cette version y a noté ce qu'elle a changé par le rang des places — il ne doit
+# pas bouger
+func _empreinte_du_plan(W, version: int) -> String:
+	var C = jeu.carte
+	var ks: Array = [Vector2i(0, 0), Vector2i(2, 1), Vector2i(3, -13), Vector2i(5, -12), Vector2i(11, -9), Vector2i(12, -10), Vector2i(13, -9)]
+	for type in ["foret", "marais", "desert", "lande", "taiga", "volcan", "banquise", "jungle", "montagne", "riviere"]:
+		var ou := -1
+		for kr in C.regions.size():
+			if str(C.regions[kr]["type"]) == type and (ou < 0 or C.regions[kr]["pos"].length() < C.regions[ou]["pos"].length()):
+				ou = kr
+		if ou >= 0:
+			var c: Vector2 = C.regions[ou]["pos"] - C.tordre(C.regions[ou]["pos"])
+			ks.append(W._cle_m(c))
+			ks.append(W._cle_m(c) + Vector2i(1, 0))
+	var avant: int = W.plan_version
+	W.plan_version = version
+	var hc := HashingContext.new()
+	hc.start(HashingContext.HASH_SHA256)
+	var places := 0
+	for k in ks:
+		var plan: Array = W._plan_m(k)
+		places += plan.size()
+		hc.update(var_to_bytes(plan))
+	W.plan_version = avant
+	return "%s (%d morceaux, %d places)" % [hc.finish().hex_encode().substr(0, 16), ks.size(), places]
+
+func _la_repartition() -> void:
+	print("La répartition")
+	var Mi = load("res://scripts/milieu.gd")
+	var Re = load("res://scripts/recensement.gd")
+	seed(20261120)
+	await jeu._commencer("marais")
+	var W = jeu.monde
+	var C = jeu.climat
+	var T = jeu.terrain
+	C.forcer("clair", 0.0, 9999.0)
+	# le relief du plan est celui du temps qu'il fait : l'eau qui reste au creux du marais est là où le plan la croit
+	var pire := 0.0
+	var mouilles := 0
+	var ctx: Dictionary = W._contexte("")
+	for i in 400:
+		var q := Vector2(-2000.0 + 200.0 * (i % 20), -2000.0 + 200.0 * (i / 20))
+		pire = maxf(pire, absf(float(Mi.relief_en(ctx, q)) - float(C.relief(q))))
+		if float(T.fondriere(q)) <= 0.0 and (float(C.eau(q)) > 0.0) != (float(Mi.relief_en(ctx, q)) < float(Mi.niveau(ctx))):
+			mouilles += 1
+	verif(pire < 0.0001 and mouilles == 0 and float(Mi.niveau(ctx)) > 0.3,
+		"le relief que lit le plan est celui du temps qu'il fait (écart %.5f sur 400 points) : l'eau qui reste au creux du marais (niveau %.2f) est là où il la croit (%d points en désaccord ; crue %.3f)" % [pire, float(Mi.niveau(ctx)), mouilles, float(C.crue)])
+	# le pays : ses fondrières sont celles que le plan a lues (la même liste, une fois), et aucun tronc n'y trempe
+	var cases_pareilles := 0
+	var fondrieres := 0
+	for k in T._cases:
+		if W.pays_case(k) == T._cases[k]:
+			cases_pareilles += 1
+		fondrieres += T._cases[k].filter(func(x): return str(x["genre"]) == "fondriere").size()
+	var noyes: int = W.objets.filter(func(o): return o.genre in ["arbre", "sapin"] and float(T.fondriere(o.position)) > 0.0).size()
+	var dans_l_eau: int = W.objets.filter(func(o): return o.genre in ["arbre", "sapin", "buisson", "touffe"] and float(C.eau(o.position)) >= 0.6).size()
+	verif(cases_pareilles == T._cases.size() and fondrieres > 40 and noyes == 0 and dans_l_eau == 0,
+		"le plan connaît le pays : les %d cases du marais (%d fondrières) sont celles qu'il a lues ; pas un tronc dans une fondrière (%d), rien de planté au large de l'eau (%d)" % [
+		T._cases.size(), fondrieres, noyes, dans_l_eau])
+	# la clairière du réveil reste libre : pas un tronc à moins de 150 pixels, pas une plante à moins de 100 ; le bois mort et
+	# les deux pierres d'un premier feu y sont
+	var reveil := func(Wm) -> Array:
+		var vivants_r: Array = Wm.objets.filter(func(o): return is_instance_valid(o))
+		var tronc := INF
+		var plante := INF
+		for o in vivants_r:
+			if o.genre in ["arbre", "sapin"]:
+				tronc = minf(tronc, o.position.length())
+			elif o.genre in ["buisson", "touffe", "aquatique"]:
+				plante = minf(plante, o.position.length())
+		return [tronc, plante, vivants_r.filter(func(o): return o.genre == "brindille" and o.position.length() < 160.0).size(),
+			vivants_r.filter(func(o): return o.genre == "rocher" and o.position.length() < 220.0).size()]
+	var rv_f: Array = reveil.call(W)
+	verif(float(rv_f[0]) >= 150.0 and float(rv_f[1]) >= 100.0 and int(rv_f[2]) >= 6 and int(rv_f[3]) >= 2,
+		"la clairière du réveil reste libre : le tronc le plus proche à %d pixels, la plante la plus proche à %d ; %d brindilles et %d pierres pour un premier feu" % [
+		int(rv_f[0]), int(rv_f[1]), int(rv_f[2]), int(rv_f[3])])
+	# le marais entier, compté : les plantes de rive au bord de l'eau, le palétuvier les pieds dedans, les nénuphars au large
+	var c: Dictionary = Re.compter(W, "marais")
+	var P: Dictionary = c["plantes"]
+	var au_bord := func(formes: Array) -> Array:
+		var d: Array = []
+		for id in P:
+			if formes.has(P[id]["forme"]):
+				d.append_array(P[id]["eau"])
+		return [d.size(), Re._part(d, Re.PRES_EAU), Re._mediane(d)]
+	var roseaux: Array = au_bord.call(["roseau", "riz", "papyrus"])
+	var paletuviers: Array = au_bord.call(["paletuvier"])
+	var autres_arbres: Array = au_bord.call(["arbre", "pionnier", "geant"])
+	verif(int(roseaux[0]) >= 60 and float(roseaux[1]) >= 0.8 and float(roseaux[2]) <= 40.0,
+		"au marais, les roseaux et le riz tiennent le bord de l'eau : %d, %d %% à moins de %d pixels d'une mare, d'une fondrière, de l'eau des creux (médiane %d)" % [
+		int(roseaux[0]), int(float(roseaux[1]) * 100.0), int(Re.PRES_EAU), int(roseaux[2])])
+	verif(int(paletuviers[0]) >= 8 and float(paletuviers[1]) >= 0.55 and float(paletuviers[1]) > float(autres_arbres[1]) + 0.15,
+		"le palétuvier a les pieds dans l'eau : %d, %d %% au bord (les autres arbres : %d %%)" % [int(paletuviers[0]), int(float(paletuviers[1]) * 100.0), int(float(autres_arbres[1]) * 100.0)])
+	verif(int(c["fond"]["n"]) >= 15 and float(c["fond"]["nenuphars"]) > float(c["fond"]["lentilles"]) + 0.2,
+		"sur l'eau, les nénuphars sont au large (%d %% au milieu d'une mare, là où l'eau est profonde) et les lentilles d'eau au bord (%d %%)" % [
+		int(float(c["fond"]["nenuphars"]) * 100.0), int(float(c["fond"]["lentilles"]) * 100.0)])
+	verif(float(c["ecart_grand"]) < 0.12 and int(c["genres"].get("arbre", 0)) > 250 and int(c["genres"].get("touffe", 0)) > 120,
+		"et chacune garde sa part d'Orvane dans sa strate, à %.1f points près sur ce lieu (%d arbres, %d plantes du sol, %d plantes d'eau)" % [100.0 * float(c["ecart_grand"]),
+		int(c["genres"].get("arbre", 0)), int(c["genres"].get("touffe", 0)), int(c["genres"].get("aquatique", 0))])
+	# le lieu fermé gardé : la photo de chaque plante porte son milieu, et elle s'en retire la même
+	var photo: Array = JSON.parse_string(JSON.stringify(W.photo_objets()))
+	var avec := 0
+	var pareilles := 0
+	var essayees := 0
+	var vivants: Array = W.objets.filter(func(o): return is_instance_valid(o))
+	for i in range(0, mini(photo.size(), vivants.size()), 3):
+		var g: Array = photo[i]
+		var o0 = vivants[i]
+		if typeof(g.back()) != TYPE_STRING or str(o0.plante) == "":
+			continue
+		avec += 1
+		var avant_n: int = W.objets.size()
+		W._reposer([g])
+		essayees += 1
+		if W.objets.size() == avant_n + 1:
+			var o1 = W.objets[W.objets.size() - 1]
+			if str(o1.plante) == str(o0.plante) and o1.position.distance_to(o0.position) < 0.2 and int(o1.get_meta("milieu", -1)) == int(o0.get_meta("milieu", -2)):
+				pareilles += 1
+			W._defaire(o1)
+	# (et une plante gardée sans milieu — une partie d'avant — se repose aussi, tirée de sa seule part)
+	# (une partie gardée d'avant : la même photo, sans le milieu — c'est ainsi qu'elle était gardée —, se repose entière : chaque
+	# plante revient à sa place, de sa graine et de sa seule part, une plante de l'herbier d'aujourd'hui, sans milieu)
+	var sans_milieu := func(g: Array) -> Array:
+		var x: Array = g.duplicate()
+		while x.size() > 7 and typeof(x.back()) == TYPE_STRING:
+			x.pop_back()
+		return x
+	var vieille: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) in ["arbre", "sapin", "buisson", "sol", "eau"]).map(sans_milieu)
+	var avant_v: int = W.objets.size()
+	W._reposer(vieille)
+	var revenues: Array = W.objets.slice(avant_v)
+	var a_sa_place := 0
+	for i in mini(revenues.size(), vieille.size()):
+		var o_v = revenues[i]
+		if is_instance_valid(o_v) and str(o_v.plante) != "" and not o_v.has_meta("milieu") and o_v.position.distance_to(Vector2(float(vieille[i][2]), float(vieille[i][3]))) < 0.2:
+			a_sa_place += 1
+	for o_v in revenues:
+		if is_instance_valid(o_v):
+			W._defaire(o_v)
+	verif(avec >= 100 and pareilles == essayees and vieille.size() >= 300 and revenues.size() == vieille.size() and a_sa_place == vieille.size(),
+		"le lieu gardé : la photo de chaque plante porte son milieu, et %d sur %d se retirent les mêmes, à leur place ; gardées sans milieu (une partie d'avant), les %d plantes du lieu se reposent toutes (%d), à leur place (%d), de leur seule part" % [
+		pareilles, essayees, vieille.size(), revenues.size(), a_sa_place])
+	# reprise une année plus sèche pour Orvane (les parts du lieu en dépendent : moins de plantes au sol, de buissons ; une place
+	# de rive en veut moins), la partie gardée revient pareille : chaque plante elle-même, à sa place, dans son milieu. Et gardée
+	# sans ses plantes (une partie d'avant ce correctif, un herbier qui a changé de cycle), chacune revient dans son milieu et le
+	# garde : le riz et le papyrus, qui ne vivent qu'au bord de l'eau, ne s'en vont pas ailleurs
+	var met: Dictionary = Orvane.meteo("marais")
+	var met_avant: Dictionary = met.duplicate(true)
+	var poids_avant: Array = Array(W._table("")["sol"]["poids"])
+	met["secheresse"] = 1.0
+	met["production"] = 0.6
+	met["e"] = -1.0
+	met["eaux"] = 0.0
+	W._tables.erase("")
+	W._densites.erase("")
+	var poids_sec: Array = Array(W._table("")["sol"]["poids"])
+	var plantes: Array = photo.filter(func(g): return typeof(g.back()) == TYPE_STRING and str(g[0]) in ["arbre", "sapin", "buisson", "sol", "eau"])
+	var avec_id: Array = []
+	for i in mini(photo.size(), vivants.size()):
+		if typeof(photo[i].back()) == TYPE_STRING and str(vivants[i].plante) != "":
+			avec_id.append([photo[i], vivants[i]])
+	var memes_sec := 0
+	for e in avec_id:
+		var n_avant: int = W.objets.size()
+		W._reposer([e[0]])
+		if W.objets.size() == n_avant + 1:
+			var o1 = W.objets[W.objets.size() - 1]
+			if str(o1.plante) == str(e[1].plante) and int(o1.get_meta("milieu", -1)) == int(e[1].get_meta("milieu", -2)) and o1.position.distance_to(e[1].position) < 0.2:
+				memes_sec += 1
+			W._defaire(o1)
+	var Mi2 = load("res://scripts/milieu.gd")
+	var sans_id: Array = plantes.map(func(g): return g.filter(func(x): return not (typeof(x) == TYPE_STRING and str(x).begins_with("@"))))
+	var avant_s: int = W.objets.size()
+	W._reposer(sans_id)
+	var revenues_s: Array = W.objets.slice(avant_s)
+	var gardent := 0
+	var de_rive_ailleurs := 0
+	var de_rive := 0
+	for o_s in revenues_s:
+		if not is_instance_valid(o_s) or str(o_s.plante) == "":
+			continue
+		if o_s.has_meta("milieu"):
+			gardent += 1
+		if str(o_s.forme) in ["riz", "papyrus"]:
+			de_rive += 1
+			if not (int(o_s.get_meta("milieu", 0)) & Mi2.RIVE):
+				de_rive_ailleurs += 1
+	for o_s in revenues_s:
+		if is_instance_valid(o_s):
+			W._defaire(o_s)
+	met.clear()
+	met.merge(met_avant)
+	W._tables.erase("")
+	W._densites.erase("")
+	_version_du_lieu_ferme = W.version_gardee()
+	verif(poids_sec != poids_avant and avec_id.size() >= 300 and memes_sec == avec_id.size() and revenues_s.size() == sans_id.size() and gardent == revenues_s.size() and de_rive >= 10 and de_rive_ailleurs <= 1,
+		"reprise une année sèche (les parts du lieu en changent), la partie gardée revient pareille : %d plantes sur %d elles-mêmes, dans leur milieu ; gardées sans leur plante (un herbier qui a changé de cycle), %d sur %d gardent leur milieu, et le riz, le papyrus restent au bord de l'eau (%d sur %d ailleurs)" % [
+		memes_sec, avec_id.size(), gardent, revenues_s.size(), de_rive_ailleurs, de_rive])
+	# le monde ouvert : quatre biomes, chacun semé à part sur quatre fois la surface d'un lieu, et compté
+	seed(20261121)
+	await jeu._commencer("prairie", {}, true)
+	W = jeu.monde
+	var rv_o: Array = reveil.call(W)
+	verif(float(rv_o[0]) >= 150.0 and float(rv_o[1]) >= 100.0 and int(rv_o[2]) >= 6 and int(rv_o[3]) >= 2,
+		"au monde ouvert aussi : le tronc le plus proche du réveil à %d pixels, la plante la plus proche à %d ; %d brindilles, %d pierres" % [
+		int(rv_o[0]), int(rv_o[1]), int(rv_o[2]), int(rv_o[3])])
+	var comptes := {}
+	var i_b := 0
+	var regles_a_l_arrivee := true
+	var groupes_vus := 0
+	var groupes_meles := 0
+	var groupes_avant := 0
+	var groupes_meles_avant := 0
+	for type in ["foret", "taiga", "desert", "banquise"]:
+		await jeu.donnees.charger_lieu(type)
+		var etait: bool = W._lieux.has(type)
+		W.flore_arrivee(type)
+		regles_a_l_arrivee = regles_a_l_arrivee and not etait and W._lieux.has(type) and W._tables.has(type)
+		var d := _semer_a_part(type, Vector2(190000.0 + i_b * 12000.0, 190000.0), true)
+		i_b += 1
+		comptes[type] = Re.dire(W, type, d["rect"], "(à part)", true, false) if OS.has_environment("LISIERE_MILIEU") else Re.compter(W, type, d["rect"], true, false)
+		comptes[type]["plan"] = d["plan"]
+		groupes_vus += int(d["groupes"])
+		groupes_meles += int(d["meles"])
+		groupes_avant += int(d["groupes_avant"])
+		groupes_meles_avant += int(d["meles_avant"])
+		for o in d["objets"]:
+			if is_instance_valid(o):
+				W._defaire(o)
+	# les parts d'un biome se règlent quand son herbier arrive, avant qu'aucun de ses morceaux soit fait (son biome se fait alors) ;
+	# dans une grotte, au premier plan, elles ne servent pas : rien ne se règle. Puis aucun morceau de ces biomes n'en règle
+	# (l'échantillon fait en plusieurs images, pendant que l'herbier se lit, est celui qu'on ferait d'un coup)
+	W._echantillons.erase("lande")
+	await W.echantillonner("lande")
+	var ech_etale: Dictionary = W._echantillons.get("lande", {}).duplicate(true)
+	W._echantillons.erase("lande")
+	var meme_ech: bool = not ech_etale.is_empty() and ech_etale == W._echantillon("lande")
+	await jeu.donnees.charger_lieu("grotte")
+	W.flore_arrivee("grotte")
+	var plan_avant: int = W.plan_version
+	W.plan_version = 1
+	await jeu.donnees.charger_lieu("lande")
+	W._lieux.erase("lande")
+	W.flore_arrivee("lande")
+	var inutiles: Array = ["grotte", "lande"].filter(func(x): return W._tables.has(x))
+	W.plan_version = plan_avant
+	W._lieux.erase("lande")
+	W.flore_arrivee("lande")
+	var en_morceau_avant: int = W.reglages_en_morceau
+	var Ca = jeu.carte
+	for type in ["foret", "taiga", "desert", "banquise", "lande"]:
+		var ou := -1
+		for kr in Ca.regions.size():
+			if str(Ca.regions[kr]["type"]) == type and (ou < 0 or Ca.regions[kr]["pos"].length() < Ca.regions[ou]["pos"].length()):
+				ou = kr
+		var km: Vector2i = W._cle_m(Ca.regions[ou]["pos"] - Ca.tordre(Ca.regions[ou]["pos"]))
+		if not W._morceaux.has(km):
+			W._fabriquer(km)
+		W._oublier(km)
+	W.pire_ms = 0.0
+	verif(regles_a_l_arrivee and meme_ech and inutiles.is_empty() and W._tables.has("lande") and W.reglages_en_morceau == en_morceau_avant,
+		"les parts d'un biome se règlent quand son herbier arrive, son biome fait avec lui (l'échantillon fait avant, en plusieurs images : %s), pas dans son premier morceau (%d morceaux l'ont fait) ; une grotte, une partie au premier plan n'en règlent pas%s" % [
+		"le même que d'un coup" if meme_ech else "PAS le même que d'un coup", W.reglages_en_morceau - en_morceau_avant, (" (réglées pour rien : %s)" % str(inutiles)) if not inutiles.is_empty() else ""])
+	# une colonie, une touffe, un fourré : une seule plante, même à cheval sur deux cellules de peuplement (sa première place dit
+	# la sienne) ; chaque place tirait d'après la sienne
+	verif(groupes_vus >= 1000 and groupes_meles == 0 and groupes_meles_avant > 0,
+		"une colonie, une touffe, un fourré tirent une seule plante : %d groupes sur quatre biomes, aucun mêlé (chaque place tirant d'après sa cellule : %d sur %d, %.1f %%)" % [
+		groupes_vus, groupes_meles_avant, groupes_avant, 100.0 * float(groupes_meles_avant) / maxf(1.0, float(groupes_avant))])
+	var f: Dictionary = comptes["foret"]
+	var ta: Dictionary = comptes["taiga"]
+	var de: Dictionary = comptes["desert"]
+	var ba: Dictionary = comptes["banquise"]
+	verif(int(f["sous_bois"]["n"]) >= 80 and float(f["sous_bois"]["sous"]) >= 0.7 and float(f["sous_bois"]["sous"]) > float(f["sous_bois"]["ailleurs"]) + 0.15
+		and int(ta["sous_bois"]["n"]) >= 80 and float(ta["sous_bois"]["sous"]) >= 0.7,
+		"le sous-bois : en forêt, %d %% des fougères et des mousses à moins de %d pixels d'un tronc (les autres plantes du sol : %d %%) ; en taïga, %d %%" % [
+		int(float(f["sous_bois"]["sous"]) * 100.0), int(Re.SOUS), int(float(f["sous_bois"]["ailleurs"]) * 100.0), int(float(ta["sous_bois"]["sous"]) * 100.0)])
+	verif(int(f["lianes"]["n"]) >= 8 and float(f["lianes"]["au_pied"]) >= 0.9,
+		"les lianes sont sur les arbres : %d, %d %% à moins de %d pixels d'un tronc" % [int(f["lianes"]["n"]), int(float(f["lianes"]["au_pied"]) * 100.0), int(Re.AU_PIED)])
+	verif(int(f["geants"]["n"]) >= 20 and float(f["geants"]["min"]) >= 100.0 and int(ta["geants"]["n"]) >= 20 and float(ta["geants"]["min"]) >= 100.0
+		and float(f["geants"]["n"]) < 0.08 * float(f["peuplements"]["arbres"]),
+		"les géants sont rares et à l'écart : %d en forêt pour %d arbres, le plus proche voisin d'aucun à moins de %d pixels (les autres arbres : %d, à la médiane) ; %d en taïga (%d)" % [
+		int(f["geants"]["n"]), int(f["peuplements"]["arbres"]), int(f["geants"]["min"]), int(f["geants"]["autres"]), int(ta["geants"]["n"]), int(ta["geants"]["min"])])
+	verif(float(f["peuplements"]["meme"]) > float(f["peuplements"]["hasard"]) + 0.07 and float(ta["peuplements"]["meme"]) > float(ta["peuplements"]["hasard"]) + 0.07
+		and float(f["peuplements"]["en_peuplement"]) > 0.12,
+		"les arbres vont par peuplements : le plus proche voisin est de la même espèce pour %d %% en forêt (au hasard : %d %%), %d %% en taïga (%d %%) ; %d %% des arbres de la forêt dans un peuplement de quatre ou plus" % [
+		int(float(f["peuplements"]["meme"]) * 100.0), int(float(f["peuplements"]["hasard"]) * 100.0), int(float(ta["peuplements"]["meme"]) * 100.0),
+		int(float(ta["peuplements"]["hasard"]) * 100.0), int(float(f["peuplements"]["en_peuplement"]) * 100.0)])
+	verif(int(de["cactus"]["n"]) >= 30 and float(de["cactus"]["serres"]) <= 0.1 and float(de["grasses"]["mediane"]) >= 90.0,
+		"au désert, les plantes grasses se partagent l'eau : %d cactus, %d %% à moins de 50 pixels d'une autre plante grasse (médiane %d) ; toutes : %d pixels à la médiane" % [
+		int(de["cactus"]["n"]), int(float(de["cactus"]["serres"]) * 100.0), int(de["cactus"]["mediane"]), int(de["grasses"]["mediane"])])
+	verif(int(ba["pierre"]["n"]) >= 300 and float(ba["pierre"]["pres"]) >= 0.25,
+		"sur la banquise, les lichens et les coussins tiennent à la pierre : %d %% des %d à moins de %d pixels d'un rocher" % [
+		int(float(ba["pierre"]["pres"]) * 100.0), int(ba["pierre"]["n"]), int(Re.PRES_ROC)])
+	verif(float(f["ecart_grand"]) < 0.06 and float(ta["ecart_grand"]) < 0.06 and float(de["ecart_grand"]) < 0.06 and float(ba["ecart_grand"]) < 0.06,
+		"et les parts d'Orvane tiennent, dans chaque strate d'au moins %d plantes : à %.1f points près en forêt, %.1f en taïga, %.1f au désert, %.1f sur la banquise" % [
+		Re.GRANDE_STRATE, 100.0 * float(f["ecart_grand"]), 100.0 * float(ta["ecart_grand"]), 100.0 * float(de["ecart_grand"]), 100.0 * float(ba["ecart_grand"])])
+	# le plan d'un morceau : toujours le même ; refait, le morceau porte les mêmes plantes aux mêmes places
+	var k := Vector2i(2, 1)
+	W.suivre(Vector2(1750.0, 1050.0), true)
+	var plan_a: Array = W._plan_m(k)
+	var plan_b: Array = W._plan_m(k)
+	var dit := func() -> Array:
+		var l: Array = W._morceaux[k]["objets"].filter(func(o): return is_instance_valid(o) and o.has_meta("rang")).map(func(o): return [int(o.get_meta("rang")), str(o.plante), o.position])
+		l.sort()
+		return l
+	var avant_m: Array = dit.call()
+	W._oublier(k)
+	W._fabriquer(k)
+	var apres_m: Array = dit.call()
+	var chez_soi: bool = W._morceaux[k]["objets"].all(func(o): return not o.has_meta("rang") or Rect2(Vector2(k) * W.MORCEAU, Vector2(W.MORCEAU, W.MORCEAU)).has_point(o.position))
+	verif(plan_a == plan_b and plan_a.size() > 20 and avant_m == apres_m and avant_m.size() > 10 and chez_soi and W.pire_ms < 60.0,
+		"le plan d'un morceau est toujours le même (%d places) ; refait, il porte les mêmes %d plantes aux mêmes places, aucune chez son voisin (fabriqué en %.1f ms)" % [
+		plan_a.size(), avant_m.size(), W.pire_ms])
+	# une partie gardée d'avant ne dit pas son plan : elle garde le premier, et ses rangs retrouvent leurs objets ; une neuve dit le sien
+	var neuve: Dictionary = W.photo_ouvert()
+	W._oublier(k)
+	W.reprendre_ouvert({"changes": {}, "ajouts": {}})
+	var plan_1: Array = W._plan_m(k)
+	W._fabriquer(k)
+	var cible = null
+	for o in W._morceaux[k]["objets"]:
+		if is_instance_valid(o) and o.has_meta("rang") and o.genre in ["arbre", "sapin"]:
+			cible = o
+			break
+	var rang_c: int = int(cible.get_meta("rang")) if cible != null else -1
+	var place_c: Vector2 = cible.position if cible != null else Vector2.ZERO
+	W._oublier(k)
+	W.reprendre_ouvert({"changes": {W._nom_m(k): {str(rang_c): ["souche", 0, 0.0, 0, 0.0]}}, "ajouts": {}})
+	W._fabriquer(k)
+	var souches_1: Array = W._morceaux[k]["objets"].filter(func(o): return is_instance_valid(o) and o.genre == "souche")
+	var garde_1: Dictionary = W.photo_ouvert()
+	var v_1: int = W.version_gardee()
+	verif(int(neuve.get("plan", 0)) == W.PLAN and W.plan_version == 1 and plan_1.size() > 10 and plan_1.all(func(e): return e.size() == 5)
+		and souches_1.size() == 1 and souches_1[0].position.distance_to(place_c) < 0.2 and int(garde_1.get("plan", 0)) == 1,
+		"une partie neuve dit son plan (%d) ; une partie gardée d'avant ne le dit pas : elle garde le premier (%d places sans milieu dans ce morceau), l'arbre qu'elle avait abattu est encore une souche, à sa place, et elle se garde de nouveau avec ce plan" % [
+		int(neuve.get("plan", 0)), plan_1.size()])
+	# une version plus ancienne du jeu (sur un autre appareil, par le compte) ne reprend que les parties de sa version : elle
+	# reporterait les rangs d'un plan qu'elle ne connaît pas sur le sien, et réécrirait la partie au premier plan. Une partie gardée
+	# dit la version de ce qu'elle garde (le plan de son monde ; un lieu fermé dont les plantes gardent leur milieu : 3) ; une
+	# partie au premier plan reste lisible par l'ancien jeu (1). Ce jeu reprend les siennes et les plus anciennes, refuse les plus
+	# récentes, et le dit
+	var PG := load("res://scripts/partie_gardee.gd")
+	W.plan_version = W.PLAN
+	var v_neuve: int = W.version_gardee()
+	var ancien_refuse := func(v: int) -> bool: return v != 1
+	verif(v_neuve == W.PLAN and v_neuve <= PG.VERSION and ancien_refuse.call(v_neuve) and v_1 == 1 and not ancien_refuse.call(v_1) and int(_version_du_lieu_ferme) == 3
+		and PG.valide({"v": 1, "biome": "prairie"}) and PG.valide({"v": PG.VERSION, "biome": "prairie"}) and not PG.valide({"v": PG.VERSION + 1, "biome": "prairie"})
+		and PG.plus_recente({"v": PG.VERSION + 1, "biome": "prairie"}) and not PG.plus_recente({"v": 1, "biome": "prairie"}),
+		"une partie gardée dit la version de ce qu'elle garde : au plan %d, la version %d, qu'un jeu plus ancien (version 1) refuse ; au premier plan, 1, qu'il lit encore ; un lieu fermé dont les plantes gardent leur milieu, %d. Ce jeu (version %d) reprend les siennes et les plus anciennes, et refuse les plus récentes" % [
+		W.PLAN, v_neuve, int(_version_du_lieu_ferme), PG.VERSION])
+	# (on rend au monde le plan d'aujourd'hui)
+	W._oublier(k)
+	W.reprendre_ouvert({"changes": {}, "ajouts": {}, "plan": W.PLAN})
+	W._fabriquer(k)
+	verif(W.plan_version == W.PLAN and W._plan_m(k) == plan_a, "et le plan d'aujourd'hui revient tel quel")
+	await _le_troisieme_plan(W)
+
+
+# --- le dessin de la flore (scripts/flore_trait.gd, flore_arbres.gd, flore_sol.gd, flore_buissons.gd ; monde.gd, taille_de) : la
+# taille d'après la hauteur d'Orvane, et ce que chaque forme doit avoir. Rien n'y dépend du tirage du lieu : les plantes sont
+# posées exprès, loin de tout, chacune de sa graine ---
+
+# une plante de cette forme, haute de tant de mètres dans l'herbier (0 : la hauteur de sa forme), posée loin de tout comme le
+# monde la poserait (sa taille d'après sa hauteur : monde.gd, taille_de)
+func _plante_de(forme: String, h: float, graine: int, caracteres: Array = []):
+	var Fl := load("res://scripts/flore.gd")
+	var W = jeu.monde
+	var genre: String = Fl.FORMES[forme][0]
+	var strate: String = Fl.FORMES[forme][1]
+	var ici := _ici_rien_que(forme, strate, genre, caracteres)
+	if h > 0.0:
+		ici["flore"][strate][0]["taille"] = W.taille_de(forme, genre, strate, h)
+	return W._poser(strate, Vector2(150000.0 + float(graine % 89) * 400.0, 150000.0 + float(graine % 7) * 400.0), W.palette["feuilles" if strate == "arbre" else "herbe"], graine, ici)
+
+
+# la hauteur moyenne de son dessin, sur douze individus (en pixels, du pied à la cime)
+func _hauteur_dessinee(forme: String, h: float, caracteres: Array = []) -> float:
+	var somme := 0.0
+	for k in 12:
+		var o = _plante_de(forme, h, 3000 + k * 131, caracteres)
+		somme += float(o.hauteur)
+		jeu.monde._defaire(o)
+	return somme / 12.0
+
+
+# ce que son dessin pose sur la feuille : { triangles, volumes (les points peints en volume par le shader : un feuillage, une
+# écorce, un dôme), brule (les points que le feu emportera : scripts/objet.gd, _marquer) }
+func _dessin_de(o) -> Dictionary:
+	var Dessins := load("res://scripts/flore_dessins.gd")
+	var p = load("res://scripts/decor_pinceau.gd").new()
+	var r := RandomNumberGenerator.new()
+	r.seed = int(o.graine) + 23
+	match str(o.genre):
+		"arbre":
+			if not Dessins.couronne(o, p, r):
+				o._feuillu(p, r)
+		"sapin":
+			o._sapin(p, r)
+		"buisson":
+			if not Dessins.dessiner(o, p, r):
+				o._buisson(p, r)
+		"touffe":
+			if not Dessins.dessiner(o, p, r):
+				o._touffe(p, r)
+		_:
+			Dessins.dessiner(o, p, r)
+	var volumes := 0
+	for uv in p.uvs:
+		if uv.x > 1.5:
+			volumes += 1
+	o._marquer(p, 0, str(o.genre) == "touffe")
+	var brule := 0
+	for uv in p.uvs:
+		if uv.x > 25.5:
+			brule += 1
+	return {"triangles": p.idx.size() / 3, "volumes": volumes, "brule": brule}
+
+
+func _le_dessin_de_la_flore() -> void:
+	var W = jeu.monde
+	var Fl := load("res://scripts/flore.gd")
+	var Dessins := load("res://scripts/flore_dessins.gd")
+	var Objet := load("res://scripts/objet.gd")
+	# la taille, d'après la hauteur d'Orvane : une échelle resserrée, bornée
+	var k_p45: float = W.taille_de("pionnier", "arbre", "arbre", 4.5)
+	var k_c20: float = W.taille_de("conifere", "sapin", "arbre", 20.0)
+	verif(is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 12.0), 1.0) and is_equal_approx(W.taille_de("geant", "arbre", "arbre", 45.0), 1.0)
+		and absf(k_p45 - 0.758) < 0.01 and absf(k_c20 - 1.227) < 0.01 and is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 0.5), 0.6)
+		and is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 500.0), 1.5) and W.taille_de("bambou", "touffe", "sol", 8.0) > 1.1
+		and W.taille_de("bambou", "touffe", "sol", 4.0) < 0.9 and is_equal_approx(W.taille_de("herbe", "touffe", "sol", 3.0), 1.0)
+		and is_equal_approx(W.taille_de("buisson", "buisson", "buisson", 1.5), 1.0) and is_equal_approx(W.taille_de("arbre", "arbre", "arbre", 0.0), 1.0),
+		"la taille d'une plante suit sa hauteur d'Orvane, sur une échelle resserrée et bornée : à la hauteur de sa forme, 1 ; un pionnier de 4,5 m, %.2f ; un conifère de 20 m, %.2f ; un arbre de 0,5 m, 0,6 et de 500 m, 1,5 ; un bambou de 8 m, %.2f, de 4 m, %.2f" % [
+		k_p45, k_c20, W.taille_de("bambou", "touffe", "sol", 8.0), W.taille_de("bambou", "touffe", "sol", 4.0)])
+	# les hauteurs dessinées : un arbre ordinaire fait deux fois la veilleuse (44 pixels), un cinquième de plus qu'avant (72) ;
+	# un géant le domine, un pionnier de 9 m reste plus petit que lui (72 pixels : l'échelle est la même pour toutes les formes),
+	# un pionnier de 4,5 m plus encore
+	var h_arbre := _hauteur_dessinee("arbre", 12.0)
+	var h_geant := _hauteur_dessinee("geant", 45.0)
+	var h_p9 := _hauteur_dessinee("pionnier", 9.0)
+	var h_p45 := _hauteur_dessinee("pionnier", 4.5)
+	var h_fruitier := _hauteur_dessinee("fruitier", 6.0)
+	var h_conifere := _hauteur_dessinee("conifere", 20.0)
+	var h_cactus := _hauteur_dessinee("cactus", 6.0)
+	verif(h_arbre > 80.0 and h_arbre < 93.0 and h_arbre > 44.0 * 1.8 and h_geant > h_arbre * 1.55 and h_geant < h_arbre * 1.95 and h_p45 < h_p9 * 0.85
+		and h_p9 < h_arbre * 0.95 and h_fruitier < h_p9 and h_conifere > h_arbre * 1.12 and h_conifere < h_geant and h_cactus > 44.0 * 1.3 and h_cactus < h_arbre,
+		"la hauteur d'Orvane se voit (la veilleuse fait 44 pixels) : un arbre de 12 m, %d pixels (72 avant) ; un géant de 45 m, %d ; un conifère de 20 m, %d ; un pionnier de 9 m, %d, de 4,5 m, %d ; un fruitier de 6 m, %d ; un cactus de 6 m, %d" % [
+		int(h_arbre), int(h_geant), int(h_conifere), int(h_p9), int(h_p45), int(h_fruitier), int(h_cactus)])
+	# chaque forme : un dessin fourni, peint en volume, une ombre au sol (portée, pour ce qui se dresse), et le feu l'emporte
+	var plates := ["herbe", "grande_herbe", "lentille", "lichen", "papyrus", "orchidee"]
+	var dressees := ["cactus", "bambou", "papyrus", "roseau"]
+	var maigres := []
+	var sans_volume := []
+	var sans_ombre := []
+	var sans_feu := []
+	var moins := 1 << 30
+	var formes := 0
+	for forme in Fl.FORMES:
+		var genre: String = Fl.FORMES[forme][0]
+		if genre == "champignon":
+			continue
+		formes += 1
+		var o = _plante_de(forme, 0.0, 4242)
+		var d := _dessin_de(o)
+		moins = mini(moins, int(d["triangles"]))
+		if int(d["triangles"]) < 60:
+			maigres.append(forme)
+		if int(d["volumes"]) == 0 and not plates.has(forme):
+			sans_volume.append(forme)
+		var ombres: Array = o.ombres()
+		var portee := ombres.any(func(x): return float(x[3]) > 0.5)
+		if (Fl.FORMES[forme][1] == "arbre" or dressees.has(forme)) and not portee:
+			sans_ombre.append(forme)
+		elif ombres.is_empty() and not (Fl.TAPIS.has(forme) or genre == "aquatique"):
+			sans_ombre.append(forme)
+		# (ce qui brûle : des feuilles, des palmes, que le feu emporte ; un tapis au ras du sol ne prend pas feu de lui-même)
+		if genre in ["arbre", "sapin", "buisson"] and int(d["brule"]) == 0:
+			sans_feu.append(forme)
 		W._defaire(o)
-	return {"formes": par_forme, "genres": genres, "mal": mal, "vides": vides}
+	verif(formes >= 40 and maigres.is_empty() and sans_volume.is_empty() and sans_ombre.is_empty() and sans_feu.is_empty(),
+		"les %d formes de la flore ont la facture des premières : un dessin fourni (%d triangles pour la plus simple), un volume peint par le shader, leur ombre au sol (portée pour ce qui se dresse), un feuillage que le feu emporte%s" % [
+		formes, moins, (" ; trop maigres : %s ; sans volume : %s ; sans ombre : %s ; que le feu n'emporte pas : %s" % [str(maigres), str(sans_volume), str(sans_ombre), str(sans_feu)]) if not (maigres.is_empty() and sans_volume.is_empty() and sans_ombre.is_empty() and sans_feu.is_empty()) else ""])
+	# ce qui est raide ne plie pas au vent ; ce qui est souple, si
+	var cactus = _plante_de("cactus", 6.0, 4301)
+	var agave = _plante_de("agave", 1.5, 4302)
+	var bambou = _plante_de("bambou", 8.0, 4303)
+	var bambou_bas = _plante_de("bambou", 4.0, 4303)
+	verif(cactus.raide and cactus.material == Objet.fixe and agave.material == Objet.fixe and not bambou.raide and bambou.material == Objet.vegetation
+		and float(bambou.hauteur) > float(bambou_bas.hauteur) * 1.2 and cactus._matiere_au_repos() == Objet.fixe,
+		"un cactus, un agave sont raides (le vent ne les plie pas), un bambou ploie ; un bambou de 8 m (%d pixels) dépasse un bambou de 4 m (%d)" % [int(bambou.hauteur), int(bambou_bas.hauteur)])
+	for x in [cactus, agave, bambou, bambou_bas]:
+		W._defaire(x)
+	# les caractères d'Orvane se lisent : des échasses soulèvent le tronc, une naine se tasse, le vent couche le port vers l'est,
+	# une géante a le fût plus fort
+	var sur_echasses = _plante_de("fruitier", 6.0, 4310, ["echasses"])
+	var sans_echasses = _plante_de("fruitier", 6.0, 4310)
+	var paletuvier = _plante_de("paletuvier", 6.0, 4311)
+	var geante = _plante_de("fruitier", 6.0, 4310, ["geante"])
+	var couches := 0
+	for k in 6:
+		var a_vent = _plante_de("arbre", 12.0, 4320 + k, ["vent"])
+		if float(a_vent._penche) > 0.04 and float(a_vent._cc.x) > 0.0:
+			couches += 1
+		W._defaire(a_vent)
+	var h_naine := _hauteur_dessinee("pionnier", 9.0, ["naine"])
+	verif(float(Dessins.pied_du_tronc(sur_echasses)) < 0.0 and float(Dessins.pied_du_tronc(sans_echasses)) > 0.0 and float(Dessins.pied_du_tronc(paletuvier)) < float(Dessins.pied_du_tronc(sur_echasses))
+		and h_naine < h_p9 * 0.97 and couches == 6 and float(geante.epaisseur) > float(sans_echasses.epaisseur) * 1.1,
+		"les caractères d'Orvane se lisent : des échasses soulèvent le tronc (le palétuvier plus haut encore), une naine se tasse (%d pixels au lieu de %d), le vent couche le port vers l'est (%d arbres sur 6), une géante a le fût plus fort" % [int(h_naine), int(h_p9), couches])
+	for x in [sur_echasses, sans_echasses, paletuvier, geante]:
+		W._defaire(x)
+	# ce qui dépend de la taille d'un arbre : là où l'on bute, l'abri de la couronne (cherché à 90 pixels : scripts/climat.gd),
+	# la veilleuse cachée derrière un grand fût, les fruits dans la couronne
+	var geant = _plante_de("geant", 45.0, 4330)
+	var arbre = _plante_de("arbre", 12.0, 4331)
+	var fruitier = _plante_de("fruitier", 6.0, 4332, [])
+	var pg: Vector2 = geant.position
+	var fruits_dedans := true
+	for pl in Dessins._places_fruits(fruitier, 12):
+		if not Rect2(fruitier.couronne_rect).grow(2.0).has_point(pl[0]):
+			fruits_dedans = false
+	verif(float(geant.rayon) > float(arbre.rayon) and float(geant.rayon) <= 22.0 and float(arbre.rayon) >= 11.0 and float(geant.couvert()) > 22.0 and float(geant.couvert()) < 90.0
+		and float(arbre.couvert()) > 22.0 and float(arbre.couvert()) < 90.0 and geant.cache(pg + Vector2(0.0, -22.0)) and not geant.cache(pg + Vector2(60.0, -22.0))
+		and not geant.cache(pg + Vector2(0.0, 6.0)) and geant.cache(pg + Vector2(0.0, -70.0)) and fruits_dedans,
+		"un arbre plus grand : on bute sur son pied (%d pixels pour un arbre, %d pour un géant), sa couronne abrite (%d et %d pixels, moins que les 90 où l'abri se cherche), la veilleuse derrière le fût d'un géant ou sous sa couronne le fait s'effacer (pas devant, pas à côté), les fruits tiennent dans la couronne" % [
+		int(arbre.rayon), int(geant.rayon), int(arbre.couvert()), int(geant.couvert())])
+	for x in [geant, arbre, fruitier]:
+		W._defaire(x)
+	# la couronne d'un grand arbre (un géant, un émergent de 500 m : sa taille à son plus grand, 1,5) cache la veilleuse loin de
+	# son pied : le monde cherche à effacer celles-là (monde.gd, couronnes_pres, d'après la plus grande zone de ce qui est posé ;
+	# il cherchait à 120 pixels du pied)
+	var loin := 0.0
+	var au_dela := 0
+	var vus := 0
+	var manques := 0
+	for f_g in [["geant", 500.0], ["emergent", 500.0], ["palmier", 100.0], ["bouteille", 100.0], ["figuier", 100.0], ["arbre", 100.0]]:
+		for k_g in 3:
+			var o_g = _plante_de(str(f_g[0]), float(f_g[1]), 4340 + k_g * 17, ["vent", "naine"] if k_g == 2 else [])
+			var p_g: Vector2 = o_g.position
+			for x in range(-170, 171, 5):
+				for y in range(-330, 0, 5):
+					var q := p_g + Vector2(x, y)
+					if not o_g.cache(q):
+						continue
+					vus += 1
+					loin = maxf(loin, q.distance_to(p_g))
+					if q.distance_to(p_g) > 120.0:
+						au_dela += 1
+					if not W.couronnes_pres(q).has(o_g):
+						manques += 1
+			W._defaire(o_g)
+	verif(vus > 500 and loin > 150.0 and au_dela > 50 and manques == 0,
+		"la couronne d'un grand arbre cache la veilleuse jusqu'à %d pixels de son pied (%d places sur %d au-delà des 120 où on la cherchait) : de chacune, le monde la trouve pour l'effacer (%d manquées ; zone cherchée %s)" % [
+		int(loin), au_dela, vus, manques, str(W._zone_cache)])
 
 
 func _la_flore() -> void:
 	print("La flore")
+	_le_dessin_de_la_flore()
 	var Fl := load("res://scripts/flore.gd")
 	var W = jeu.monde
 	var jo = jeu.joueur
@@ -5838,8 +6661,18 @@ func _la_flore() -> void:
 		var d := _semer_a_part(type, Vector2(90000.0 + i * 12000.0, 90000.0))
 		i += 1
 		var manque: Array = attendues.keys().filter(func(x): return not d["formes"].has(x))
+		# (chaque plante se tient dans son milieu, et va par colonies : une forme rare d'une strate maigre — un buisson du désert,
+		# quelques colonies sur quatre lieux — peut manquer à un tirage. On sème une seconde fois avant de la dire absente)
+		var resemee := ""
+		if not manque.is_empty():
+			var d2 := _semer_a_part(type, Vector2(90000.0 + (i - 1) * 12000.0, 102000.0))
+			var revenues: Array = manque.filter(func(x): return d2["formes"].has(x))
+			if not revenues.is_empty():
+				resemee = " ; semé une seconde fois : %s" % ", ".join(PackedStringArray(revenues.map(func(x): return "%s %d" % [x, d2["formes"][x]])))
+			manque = manque.filter(func(x): return not d2["formes"].has(x))
+			d["mal"].append_array(d2["mal"])
 		var arbres: int = int(d["genres"].get("arbre", 0)) + int(d["genres"].get("sapin", 0))
-		var dit := ", ".join(PackedStringArray(d["formes"].keys().map(func(x): return "%s %d" % [x, d["formes"][x]])))
+		var dit := ", ".join(PackedStringArray(d["formes"].keys().map(func(x): return "%s %d" % [x, d["formes"][x]]))) + resemee
 		verif(not attendues.is_empty() and manque.is_empty() and d["mal"].is_empty(),
 			"%s : les %d formes de son herbier poussent, dessinées par Lisière (%s)%s" % [type, attendues.size(), dit,
 			(" ; manquent : " + ", ".join(PackedStringArray(manque))) if not manque.is_empty() else (" ; sans dessin : " + str(d["mal"]) if not d["mal"].is_empty() else "")])
@@ -5886,6 +6719,8 @@ func _la_flore() -> void:
 	var sapins_avant: int = W.autour(p_b, 900.0).filter(func(x): return x.genre == "sapin" and sur_la_banquise.call(x)).size()
 	Orvane.ajouter_herbier("banquise", gardee)
 	W.flore_arrivee("banquise")
+	# (ses morceaux sont refaits un par image ; tout d'un coup, ici)
+	W.suivre(p_b, true)
 	var autour_b: Array = W.autour(p_b, 900.0).filter(func(x): return sur_la_banquise.call(x))
 	var sapins_apres: int = autour_b.filter(func(x): return x.genre == "sapin").size()
 	var lichens: int = autour_b.filter(func(x): return str(x.forme).begins_with("lichen")).size()
@@ -7042,11 +7877,13 @@ func _les_fruits() -> void:
 				_oter(b)
 		var d := _un_arbre_cueilli(o)
 		var g: Array = d["gestes"]
-		var bons_gestes: bool = g.slice(0, int(d["tombes"])).all(func(x): return x == "brindille") and g.slice(int(d["tombes"])).all(func(x): return x == "cueillir")
+		# (dans ses branches : le bras tendu ; trop haut pour sa main, elle secoue le fût)
+		var en_haut := "secouer" if o.fruits_hors_de_portee() else "cueillir"
+		var bons_gestes: bool = g.slice(0, int(d["tombes"])).all(func(x): return x == "brindille") and g.slice(int(d["tombes"])).all(func(x): return x == en_haut)
 		verif(int(d["pris"]) == int(d["attendu"]) and int(d["pris"]) > 0 and bons_gestes and bool(d["dessin"]) and bool(d["vide"]) and bool(d["abat"]) and bool(d["attend"])
 			and bool(d["verts"]) and bool(d["revenus"]),
-			"%s (%s) : %d fruits, %d ramassés à son pied puis cueillis le bras tendu ; chacun manque au dessin ; vide, il s'abat (un bois) ; à mi-chemin des fruits verts, puis il en porte de nouveau" % [
-			str(o.forme), sorte, int(d["pris"]), int(d["tombes"])])
+			"%s (%s) : %d fruits, %d ramassés à son pied puis %s ; chacun manque au dessin ; vide, il s'abat (un bois) ; à mi-chemin des fruits verts, puis il en porte de nouveau" % [
+			str(o.forme), sorte, int(d["pris"]), int(d["tombes"]), "cueillis le bras tendu" if en_haut == "cueillir" else "tombés du fût secoué (trop haut pour son bras)"])
 		if not bool(d["revenus"]) or not bons_gestes:
 			print("    (gestes %s ; %s)" % [str(g), str(d)])
 	# les fruits tombés : une bête qui broute vient les manger, la tête dans l'herbe ; qui s'est postée à côté la tient à portée
@@ -7296,6 +8133,17 @@ func _le_lichen() -> void:
 	for k in ["baies", "viande", "viande_cuite", "bouillon", "champignons", "amanite", "gruau", "soupe_lichen", "pomme", "figue", "coco", "pain_de_singe", "pulpe", "grains"]:
 		inv[k] = 0
 	inv["lichen"] = 0
+	# (la première : ses tapis vont par quatre, serrés, et « Agir » prendrait la touffe voisine, une brindille, une bête à frapper.
+	# La place est dégagée autour d'elle, comme pour les fleurs et les champignons ; ce qu'on y ôte ne compte plus parmi les libres)
+	if not libres.is_empty():
+		var o0 = libres[0]
+		for x in W.autour(o0.position, 60.0):
+			if x != o0:
+				W.retirer(x)
+		for b in get_tree().get_nodes_in_group("betes"):
+			if b.position.distance_to(o0.position) < 300.0:
+				_oter(b)
+		libres = libres.filter(func(x): return is_instance_valid(x) and W.objets.has(x))
 	var premier: int = cueillir.call(libres[0]) if not libres.is_empty() else 0
 	var epuise: bool = not libres.is_empty() and libres[0].epuise()
 	_remettre(camp)
@@ -7305,11 +8153,39 @@ func _le_lichen() -> void:
 	var cru: float = j.faim - 40.0
 	var peur: float = j.peur
 	verif(tous.size() >= 20 and premier == 2 and epuise and absf(cru - RR.LICHEN_CRU) < 0.01 and peur >= RR.LICHEN_CRU_PEUR - 0.01,
-		"la banquise a son lichen des rennes (%d touffes) : deux poignées chacune ; cru, il nourrit à peine (+%d) et noue le ventre (la peur monte)" % [tous.size(), int(cru)])
+		"la banquise a son lichen des rennes (%d touffes) : deux poignées chacune ; cru, il nourrit à peine (+%d) et noue le ventre (la peur monte)%s" % [tous.size(), int(cru),
+		"" if (premier == 2 and epuise) else " — cueilli %d fois, %s (reste %d sur %d) ; autour de lui : %s ; endormie %s, monture %s, bêtes %d, sac %s/%s, pays %s" % [premier, "épuisé" if epuise else "pas épuisé",
+			int(libres[0].reste) if not libres.is_empty() else -1, int(libres[0].plein) if not libres.is_empty() else -1,
+			str(W.autour(libres[0].position, 50.0).map(func(x): return "%s %s %d" % [x.genre, x.forme, int(x.position.distance_to(libres[0].position))])) if not libres.is_empty() else "rien",
+			str(A.endormie), str(jeu.elevage.monture), get_tree().get_nodes_in_group("betes").size(), str(A.charge) if A.get("charge") != null else "?", str(A.capacite()),
+			str(T._autour(libres[0].position, 60.0).map(func(t): return "%s %d" % [t["genre"], int(Vector2(t["p"]).distance_to(libres[0].position))])) if not libres.is_empty() else "rien"]])
 	# trois jours à la banquise : chaque jour, elle cueille le lichen proche du camp (il repousse en un jour), puise sous la glace,
 	# fait ses soupes au feu, et mange quand la faim vient. Elle n'a rien d'autre
 	A.objets["gourde"] = 1
 	A.objets["popote"] = 1
+	# (le lieu en a parfois peu loin de ce qui se dresse : ses tapis vont par quatre, d'une seule plante, et un tirage les met près
+	# des blocs du pays. L'essai en pose alors autour du camp, de la plante même du lieu, à découvert, pour ne vérifier que ce qu'il
+	# vérifie : de quoi se tenir de lichen, quand on en a)
+	var poses_l := 0
+	var pl_l = null
+	for e_l in W.flore.get("sol", []):
+		if str(e_l["forme"]) == "lichen_rennes":
+			pl_l = e_l
+	if libres.size() < 13 and pl_l != null:
+		var r_l := RandomNumberGenerator.new()
+		r_l.seed = 4207
+		var essais_l := 0
+		while libres.size() < 13 and essais_l < 600:
+			essais_l += 1
+			var q_l: Vector2 = camp + Vector2.from_angle(r_l.randf() * TAU) * r_l.randf_range(140.0, 460.0)
+			var g_l := r_l.randi()
+			if debout.call(q_l) or float(jeu.climat.eau(q_l)) > 0.0 or not W.autour(q_l, 30.0).is_empty():
+				continue
+			var o_l = W._poser("sol", q_l, W.palette["herbe"], g_l, {"flore": {"sol": [pl_l]}, "climat": load("res://scripts/objet.gd").climat, "palette": W.palette})
+			if o_l != null:
+				libres.append(o_l)
+				poses_l += 1
+		libres.sort_custom(func(a, b): return a.position.distance_to(camp) < b.position.distance_to(camp))
 	var f = jeu.Feu.new()
 	f.jeu = jeu
 	f.position = camp + Vector2(30.0, 0.0)
@@ -7346,9 +8222,12 @@ func _le_lichen() -> void:
 			o._process(load("res://scripts/objet.gd").REPOUSSE + 1.0)
 	var besoin := ceilf(RR.FAIM * RR.DUREE / RR.SOUPE_LICHEN)
 	var loin: float = proches.back().position.distance_to(camp) if not proches.is_empty() else 0.0
-	verif(proches.size() >= 8 and faim_min > RR.FAIM_MORD and soupes >= 6 and j.temperature >= 40.0,
-		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour) du lichen de %d touffes autour du camp (la plus loin à %d pixels), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
-		cuites, soupes, int(besoin), proches.size(), int(loin), int(faim_min)])
+	# (six touffes suffisent : deux poignées chacune, elles font six soupes par jour, il en faut trois, et elles repoussent en un
+	# jour. Le lichen des rennes se tient à découvert, sur le sol nu, par tapis de quatre ; une année sèche pour Orvane en ôte un
+	# peu : autour d'une mare gelée, il y en a parfois moins de huit à portée)
+	verif(proches.size() >= 6 and faim_min > RR.FAIM_MORD and soupes >= 6 and j.temperature >= 40.0,
+		"la banquise se tient de lichen : trois jours de soupes (%d cuites, %d mangées ; il en faut %d par jour) du lichen de %d touffes autour du camp (la plus loin à %d pixels%s), l'eau prise sous la glace, un feu ; la faim n'est jamais descendue sous %d" % [
+		cuites, soupes, int(besoin), proches.size(), int(loin), (" ; %d posées par l'essai, le lieu en ayant peu loin des blocs" % poses_l) if poses_l > 0 else "", int(faim_min)])
 	f.queue_free()
 	jeu.feux.erase(f)
 
@@ -7368,8 +8247,16 @@ func _la_pulpe() -> void:
 	# (loin de ce que le pays a de debout, que « Agir » prendrait d'abord : une carcasse)
 	var debout := func(q: Vector2) -> bool:
 		return jeu.terrain._autour(q, 130.0).any(func(t): return str(t["genre"]) in jeu.terrain.DEBOUT or str(t["genre"]) == "mare")
-	var cactus: Array = W.objets.filter(func(x): return str(x.forme) == "cactus" and not debout.call(x.position))
-	var c = cactus[0] if not cactus.is_empty() else null
+	var tous: int = W.objets.filter(func(x): return str(x.forme) == "cactus").size()
+	# (le cactus qu'elle cueille est posé exprès, la place dégagée, loin de ce que le pays a de debout : le contrôle ne dépend
+	# pas de ce que le tirage du lieu a semé — d'un tirage à l'autre, le désert a de 13 à 45 cactus)
+	var ou := Vector2(-600.0, 600.0)
+	for k in 400:
+		var q := Vector2(-1500.0 + 150.0 * (k % 20), -1500.0 + 150.0 * (k / 20))
+		if q.length() > 300.0 and not debout.call(q) and float(C.eau(q)) <= 0.0:
+			ou = q
+			break
+	var c = _poser_seule("cactus", "sol", "touffe", ou)
 	if c == null:
 		verif(false, "le désert a ses cactus")
 		return
@@ -7383,8 +8270,7 @@ func _la_pulpe() -> void:
 	jeu.agir()
 	var gardee: float = 100.0 - j.sante
 	A.portes.erase("vetement_chaud")
-	var tous: int = W.objets.filter(func(x): return str(x.forme) == "cactus").size()
-	verif(tous >= 15 and une == 1 and int(inv["pulpe"]) == 2 and absf(pique - RR.EPINES) < 0.01 and gardee < 0.01 and c.epuise(),
+	verif(tous >= 1 and une == 1 and int(inv["pulpe"]) == 2 and absf(pique - RR.EPINES) < 0.01 and gardee < 0.01 and c.epuise(),
 		"le désert a ses cactus (%d) : d'un bras coupé, sa pulpe ; il pique les mains nues (-%d), la pelisse les garde" % [tous, int(pique)])
 	# au désert, en plein jour : sans rien, le corps passe la chaleur qui tue ; une pulpe mangée, il reste en deçà
 	var ici: Vector2 = c.position + Vector2(-200.0, 120.0)

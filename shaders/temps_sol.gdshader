@@ -20,6 +20,15 @@ uniform float flaques_gain = 0.9;      // (cuit avec moins d'octaves que le brui
 uniform bool simple = false;           // un téléphone : moins de lectures
 
 uniform float crue = 0.0;
+// (le monde ouvert) l'eau qui reste dans les creux est celle de chaque lieu (scripts/monde.gd, crue_fond_en) : la crue de fond
+// aux nœuds d'une grille (un texel par nœud, mêlés entre eux comme climat.crue_en les mêle), plus ce que la pluie a fait monter
+uniform bool crues_locales = false;
+uniform sampler2D crues : filter_linear, repeat_disable;
+uniform vec2 crues_coin = vec2(0.0);   // le nœud du premier texel, dans le lieu
+uniform float crues_pas = 128.0;
+uniform float crues_taille = 1.0;
+uniform float crue_exces = 0.0;
+uniform float dehors = 1.0;
 uniform float boue = 0.0;
 uniform float neige_sol = 0.0;
 uniform float pluie = 0.0;
@@ -222,11 +231,15 @@ void fragment() {
 	v = bruler(v, marque3, lum, n2);
 
 	// --- la crue : l'eau dans les creux, exactement là où climat.eau(p) la met ---
-	if (crue > 0.01) {
+	float crue_ici = crue;
+	if (crues_locales) {
+		crue_ici = clamp(crue_exces + texture(crues, ((monde - crues_coin) / crues_pas + 0.5) / crues_taille).r, 0.0, 1.0) * dehors;
+	}
+	if (crue_ici > 0.01) {
 		// (les nombres de climat.relief et de climat.eau)
 		float rel = clamp(texture(relief, uv).r + relief_milieu + 0.4 * exp(-dot(monde, monde) / 78400.0), 0.0, 1.0);
-		float e = (mix(0.26, 0.5, crue) - rel) / 0.07;
-		float plein = min(1.0, crue * 6.0);
+		float e = (mix(0.26, 0.5, crue_ici) - rel) / 0.07;
+		float plein = min(1.0, crue_ici * 6.0);
 		float prof = clamp(e, 0.0, 1.0) * plein;        // la profondeur, celle du jeu
 		// (le bord respire : l'eau lèche la rive)
 		float ev = e + ((n2 - 0.5) * 0.05 + 0.022 * sin(temps * 1.1 + n1 * 14.0)) * (1.0 - smoothstep(0.0, 0.5, e));

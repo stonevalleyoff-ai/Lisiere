@@ -301,6 +301,68 @@ const FRAICHEUR_CIBLE := 10.0     # … de tant (la chaleur que le corps cherche
 const PULPES_GORGEE := 2
 const MANGER_FRAIS := 66.0        # au-dessus, « Manger » prend d'abord ce qui rafraîchit (une coco, la pulpe)
 
+# --- le milieu des plantes : où chacune se tient dans le lieu, d'après sa forme et ses caractères d'Orvane (scripts/milieu.gd :
+# ses règles, forme par forme ; scripts/monde.gd : le plan ; scripts/recensement.gd : ce qui en sort, compté) ---
+# les arbres
+const MILIEU_GEANT := 4.0             # la place d'un géant : celle de quatre arbres (sa part d'Orvane est une part du couvert, pas un nombre de pieds)
+const MILIEU_TRONES := 520.0          # une place de géant au plus par cellule de tant de pixels de côté…
+const MILIEU_TRONE_COUVERT := 0.6     # … là où le couvert (de 0 à 1) est au moins tel : le cœur d'un bosquet
+const MILIEU_DEGAGE := 115.0          # rien d'autre ne pousse à moins de tant d'un géant (son dessin est le plus large du lieu)
+const MILIEU_ESPACE_ARBRES := 38.0    # deux troncs ne sont jamais plus près que cela (leur dessin a grandi d'un cinquième)
+const MILIEU_COEUR := 0.72            # le couvert au-dessus duquel un arbre est au cœur d'un bosquet
+const MILIEU_LISIERE_ARBRES := 0.45   # en dessous : il est en lisière…
+const MILIEU_ISOLE := 0.2             # … et en dessous : seul dans le pré
+const MILIEU_PEUPLEMENT := 560.0      # un peuplement (une boulaie, une sapinière) : une cellule de tant de pixels…
+const MILIEU_COHESION_ARBRES := 0.7   # … où cette part des arbres est de la même espèce
+# le sol, les buissons
+const MILIEU_BOSQUET := 0.5           # le couvert au-dessus duquel le sol est « sous les arbres »…
+const MILIEU_LISIERE := 0.25          # … et au-dessus duquel il est « en lisière »
+const MILIEU_COUVERT := 62.0          # sous un arbre : à moins de tant de son tronc
+const MILIEU_ROCHER := 46.0           # contre un rocher : à moins de tant
+const MILIEU_BUTTE := 0.66            # le sol est « au plus sec » là où le relief (de 0 à 1 : scripts/climat.gd) passe ce seuil : les buttes
+const MILIEU_CREUX := 0.38            # … et « dans un creux » en dessous de celui-ci : là où l'eau d'une crue vient d'abord
+const MILIEU_RIVAGE := 0.05           # la rive de l'eau qui reste dans les creux d'un marais : jusqu'à tant au-dessus de son niveau, sur l'échelle du relief
+const MILIEU_PROFOND := 0.06          # … et son eau est profonde à tant sous son niveau (la place des nénuphars)
+const MILIEU_ETANG := 0.5             # la part des plantes d'eau d'un lieu détrempé qui vont dans cette eau (les autres : dans des mares)
+const MILIEU_RIVAGES := 170.0         # un essai de groupe de rive par carré de tant de pixels de côté, là où l'eau reste
+const MILIEU_SOL := 90.0              # les plantes du sol d'un lieu (4 200 pixels de côté), sous un couvert entier…
+const MILIEU_SOL_DECOUVERT := 235.0   # … et ce que le découvert y ajoute
+const MILIEU_TOUFFES := 0.62          # les groupes de places du fond, pour une plante du sol voulue (un groupe : de trois à six places)
+const MILIEU_GROUPE := 6              # les places d'un groupe, au plus (une colonie, une touffe, un arc de ceinture)
+const MILIEU_ECART := 30.0            # deux groupes du sol ne sont jamais plus près…
+const MILIEU_ECART_SEC := 100.0       # … et dans un lieu sec : les racines se partagent l'eau
+const MILIEU_LIBRE := 55.0            # une plante du sol « à l'écart » : aucune autre à moins de tant (la place d'un cactus)
+const MILIEU_SOUS_BOIS := 0.3         # les groupes offerts au pied des arbres, par arbre (aux fougères, aux mousses)
+const MILIEU_AU_ROCHER := 0.8         # la part des rochers qui ont leur couronne de places, de trois à six (aux lichens, aux coussins)
+const MILIEU_FOURRES := 0.7           # les fourrés (de deux à quatre places), pour un buisson voulu
+const MILIEU_LIANES := 0.12           # les places de liane au pied des arbres, par arbre, dans un lieu humide
+# l'eau
+const MILIEU_MARES := 10.0            # les plantes d'eau d'un lieu, au plus sec…
+const MILIEU_MARES_BOUE := 80.0       # … et ce que la boue y ajoute (elles vont par mares de deux à cinq)
+const MILIEU_MARES_RESERVE := 1.25    # il y en a tant de fois plus au plan : une année d'eaux hautes les remplit toutes
+const MILIEU_OVALE := 0.45            # une mare est vue de biais : sa hauteur, pour sa largeur
+const MILIEU_RIVE := 34.0             # au bord d'une mare : à moins de tant de son eau
+const MILIEU_RIVE_ARBRES := 60.0      # … pour un arbre (le palétuvier, ce qui a des échasses)
+const MILIEU_ARBRES_DE_RIVE := 0.7    # la part des mares qui ont un arbre sur leur bord (la place du palétuvier, de ce qui a des échasses)
+const MILIEU_BERGE := 70.0            # sur une berge : à moins de tant de l'eau d'une rivière, d'un lac
+const MILIEU_BERGES := 0.8            # la part des points de berge trouvés qui portent un groupe de rive
+const MILIEU_FEU := 110.0            # près de ce qui brûle : à moins de tant d'une fumerolle, d'une faille (et sur les scories)
+# le réglage des parts (milieu.gd, regler)
+const MILIEU_TOURS := 40              # les tours du réglage
+const MILIEU_POIDS_MAX := 8.0         # un poids ne monte pas plus haut que tant de fois la part : une plante sans milieu ici ne va pas se poser n'importe où
+const MILIEU_ECHANTILLON_MIN := 12   # une strate dont l'échantillon a moins de groupes que cela garde les proportions de ses parts (un seul facteur règle combien)
+const MILIEU_ECHANTILLON := 3150.0    # (le monde ouvert) un biome règle ses parts sur autant de quarts de morceau qu'en a un carré de ce côté (9 × 9), épars
+# la météo d'Orvane (production, secheresse, eaux, e) : ce qu'elle fait aux densités (milieu.gd, densites)
+const MILIEU_SECHERESSE_SOL := 0.5        # une sécheresse entière ôte cette part des plantes du sol…
+const MILIEU_SECHERESSE_BUISSONS := 0.3   # … et celle-ci des buissons
+const MILIEU_EAUX_FOND := 0.85            # la part des mares en eau quand les eaux sont au plus bas…
+const MILIEU_EAUX := 1.0                  # … et ce que les eaux du cycle y ajoutent
+# la cueillette de Lisière (les fleurs des prés, les champignons des bois), par lieu : comme avant, avec une réserve
+const MILIEU_FLEURS := 20.0
+const MILIEU_FLEURS_HERBE := 140.0
+const MILIEU_CHAMPIGNONS := 130.0
+const MILIEU_CUEILLETTE_RESERVE := 1.25   # il y en a tant de fois plus au plan : la météo dit combien servent
+
 const NOMS := {"bois": "bois", "pierre": "pierre", "fibre": "fibres", "baies": "baies", "viande": "viande crue", "viande_cuite": "viande cuite"}
 const ORDRE_INVENTAIRE := ["bois", "pierre", "fibre", "baies", "viande", "viande_cuite"]
 

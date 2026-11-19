@@ -76,6 +76,16 @@ const GESTES := {
 		[0.58, 1.0, Vector3(6.0, 2.4, 42.0), -1.1, -2.0, 0.08, 0.2, true],
 		[0.78, 1.0, Vector3(5.0, 4.5, 29.0), -0.3, -0.7, 0.04, 0.0],
 		[1.0, 0.0, Vector3(3.0, 6.0, 17.0), 0.0, 0.0, 0.0, 0.0]]},
+	# (un fruit hors de sa portée, tout en haut d'un grand arbre — un géant, un palmier, un baobab : elle empoigne le fût des
+	# deux mains à hauteur de poitrine et le secoue, deux coups secs ; la couronne s'ébranle, un fruit tombe, elle le rattrape)
+	"secouer": {"duree": 0.62, "touche": 0.5, "biais": 0.2, "deux_mains": true, "objet": ["fruit", 0.64, 0.97], "cles": [
+		[0.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0],
+		[0.2, 1.0, Vector3(10.5, 2.0, 23.0), 0.2, 0.6, 0.05, 0.2],
+		[0.32, 1.0, Vector3(8.0, 2.0, 24.5), 0.0, -0.8, -0.05, -0.6, true],
+		[0.44, 1.0, Vector3(11.0, 2.0, 22.5), 0.3, 1.0, 0.05, 0.5, true],
+		[0.56, 1.0, Vector3(8.0, 2.0, 24.0), 0.0, -0.8, -0.05, -0.6, true],
+		[0.72, 1.0, Vector3(6.0, 4.0, 30.0), -0.2, -0.4, 0.0, 0.0],
+		[1.0, 0.0, Vector3(3.0, 6.0, 17.0), 0.0, 0.0, 0.0, 0.0]]},
 	"touffe": {"duree": 0.36, "touche": 0.6, "biais": 0.25, "deux_mains": false, "objet": ["fibre", 0.45, 0.97], "cles": [
 		[0.0, 0.0, Vector3(2.0, 7.0, 14.5), 0.0, 0.0, 0.0, 0.0],
 		[0.3, 1.0, Vector3(9.5, 2.5, 1.5), 4.0, 3.6, 0.1, 0.8],

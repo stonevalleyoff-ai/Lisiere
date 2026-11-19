@@ -18,6 +18,8 @@ extends Node
 #   jeu.climat.pluie, .orage, .neige, .brouillard, .vent (de 0 à 1), .air (de 0, glacial, à 1, brûlant), .temps (son nom)
 #   jeu.climat.tourmente, .cendre, .sable (de 0 à 1 : les temps de la banquise, du volcan, du désert)
 #   jeu.climat.boue, .crue, .neige_sol (de 0 à 1) ; .eau(p) (la profondeur d'eau en p) ; .allure(p, masse) ; .abri(p)
+#   jeu.climat.crue_en(p) : la crue en p — dans le monde ouvert, l'eau qui reste dans les creux est celle du lieu (un marais en
+#   a, une prairie non : scripts/monde.gd, crue_fond_en), où que soit la veilleuse ; la pluie y ajoute la même partout
 
 signal change(temps: String)                 # le temps nommé vient de changer
 signal presage(p: Vector2, dans: float)      # la foudre va tomber en p, dans « dans » secondes
@@ -53,6 +55,7 @@ var tiede := 0.5
 var du_monde := ""
 var boue_fond := 0.0          # un lieu gorgé d'eau (un marais) n'est jamais tout à fait sec
 var crue_fond := 0.0
+var crue_fond_en := Callable()  # (le monde ouvert) la crue de fond de chaque lieu (scripts/monde.gd, crue_fond_en) ; rien : crue_fond partout
 # le caractère du pays (scripts/biomes.gd) : son id, son identité ({} : aucune), la neige qui n'y fond jamais, ce que son sol freine
 var lieu := ""
 var identite: Dictionary = {}
@@ -111,7 +114,11 @@ func changer_de_lieu(axes: Dictionary, meteo: Dictionary, lieu_: String = "") ->
 	tiede = clampf(float(axes.get("temperature", 0.5)), 0.0, 1.0)
 	du_monde = str(meteo.get("temps", ""))
 	boue_fond = clampf((humide - 0.75) * 1.6, 0.0, 0.4)
+	# (ce que la pluie a fait monter reste monté ; l'eau des creux, elle, est celle de chaque lieu : crue_en)
+	var monte := maxf(0.0, crue - crue_fond)
 	crue_fond = clampf((humide - 0.85) * 3.0, 0.0, 0.3)
+	if crue_fond_en.is_valid():
+		crue = minf(1.0, crue_fond + monte)
 	_caractere(lieu_)
 	_air(0.0)
 
@@ -315,6 +322,14 @@ func relief(p: Vector2) -> float:
 	return clampf(_relief.get_noise_2d(p.x, p.y) * 0.5 + 0.5 + 0.4 * exp(-p.length_squared() / (280.0 * 280.0)), 0.0, 1.0)
 
 
+# la crue en p : celle du lieu (crue) ; dans le monde ouvert, l'eau qui reste dans les creux de ce lieu-ci (crue_fond_en), et ce
+# que la pluie a fait monter partout (crue, au-dessus de crue_fond, celle du biome où est la veilleuse)
+func crue_en(p: Vector2) -> float:
+	if not crue_fond_en.is_valid():
+		return crue
+	return clampf(maxf(0.0, crue - crue_fond) + float(crue_fond_en.call(p)), 0.0, 1.0)
+
+
 # la profondeur de l'eau en p, de 0 (au sec) à 1 (jusqu'aux genoux) : elle gagne d'abord les creux
 func eau(p: Vector2) -> float:
 	# (le monde ouvert : le gué d'une rivière, où l'on a de l'eau jusqu'aux genoux ; scripts/carte.gd)
@@ -324,10 +339,11 @@ func eau(p: Vector2) -> float:
 	# (une fondrière du marais : de l'eau noire, de la vase ; scripts/biome_terrain.gd)
 	if jeu != null and jeu.get("terrain") != null:
 		gue = maxf(gue, float(jeu.terrain.fondriere(p)))
-	if crue * (1.0 - toit) <= 0.01:
+	var c := crue_en(p)
+	if c * (1.0 - toit) <= 0.01:
 		return gue
-	var seuil := lerpf(0.26, 0.5, crue)
-	return maxf(gue, clampf((seuil - relief(p)) / 0.07, 0.0, 1.0) * minf(1.0, crue * 6.0))
+	var seuil := lerpf(0.26, 0.5, c)
+	return maxf(gue, clampf((seuil - relief(p)) / 0.07, 0.0, 1.0) * minf(1.0, c * 6.0))
 
 
 # ce que le sol fait à la marche en p (1 : rien ; 0,4 au pire) : la boue (plus épaisse dans ses flaques), l'eau, la neige.

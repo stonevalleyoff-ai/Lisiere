@@ -75,7 +75,7 @@ func poser(p: Vector2, angle: float, taille: float, duree: float, genre: int, qu
 		var C = jeu.get("climat")
 		if C != null:
 			# (sous la crue, on ne marque pas ; dans la neige, pas d'eau ; dans un sol gorgé, l'eau sourd tout de suite)
-			if float(C.crue) > 0.01 and float(C.eau(p)) > 0.05:
+			if float(C.crue_en(p)) > 0.01 and float(C.eau(p)) > 0.05:
 				return
 			if float(C.neige_sol) >= 0.3:
 				neige = 1.0
@@ -158,7 +158,8 @@ func maj(delta: float) -> void:
 	if _vu <= 0.0:
 		var dt := 0.33 - _vu
 		_vu = 0.33
-		var crue: bool = C != null and float(C.crue) > 0.01
+		# (dans le monde ouvert, l'eau des creux est celle de chaque lieu : on la regarde partout)
+		var crue: bool = C != null and (float(C.crue) > 0.01 or C.crue_fond_en.is_valid())
 		var fonte: bool = C != null and float(C.neige_sol) < 0.15
 		var k := 0
 		while k < _liste.size():
